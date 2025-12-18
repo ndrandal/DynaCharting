@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>D0.1 - Hello Engine</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #0b0f14; overflow: hidden; }
+      #wrap { position: relative; width: 100%; height: 100%; }
+      canvas { width: 100%; height: 100%; display: block; }
+      #hud {
+        position: absolute; left: 10px; top: 10px;
+        font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+        color: #ECEBF3; background: rgba(0,0,0,0.55);
+        padding: 8px 10px; border-radius: 10px;
+        user-select: none;
+      }
+      #hud .muted { opacity: 0.75; }
+    </style>
+  </head>
+  <body>
+    <div id="wrap">
+      <canvas id="c"></canvas>
+      <div id="hud">
+        <div><b>D0.1</b> Hello Engine</div>
+        <div>FPS: <span id="fps">0</span></div>
+        <div class="muted">GL: <span id="glver">?</span></div>
+        <div class="muted">Mem: <span id="mem">n/a</span></div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

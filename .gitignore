@@ -1,0 +1,78 @@
+########################################
+# OS / Editor
+########################################
+.DS_Store
+Thumbs.db
+
+.vscode/
+.vs/
+*.swp
+*.swo
+
+########################################
+# Node / pnpm / JS tooling
+########################################
+node_modules/
+.pnpm-store/
+
+dist/
+build-web/
+.vite/
+
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+########################################
+# Vite / React / Demo outputs
+########################################
+apps/**/dist/
+apps/**/.vite/
+apps/**/coverage/
+
+########################################
+# CMake / C++ build artifacts
+########################################
+build/
+build-*/
+cmake-build-*/
+out/
+
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+
+########################################
+# C++ binaries / objects
+########################################
+*.o
+*.obj
+*.a
+*.lib
+*.dll
+*.so
+*.dylib
+*.exe
+*.pdb
+*.ilk
+*.exp
+
+########################################
+# Test artifacts
+########################################
+Testing/
+CTestTestfile.cmake
+
+########################################
+# Generated / temporary
+########################################
+*.tmp
+*.temp
+
+########################################
+# Optional local overrides
+########################################
+.env
+.env.*
+!.env.example
