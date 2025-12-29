@@ -1,44 +1,58 @@
 #pragma once
 #include "dc/scene/Types.hpp"
+#include "dc/scene/Geometry.hpp"
+
 #include <unordered_map>
 #include <vector>
 
 namespace dc {
 
-// Persistent scene state.
-// For D1.1 it’s just a graph: Pane -> Layer -> DrawItem.
 class Scene {
 public:
   bool hasPane(Id id) const;
   bool hasLayer(Id id) const;
   bool hasDrawItem(Id id) const;
+  bool hasBuffer(Id id) const;
+  bool hasGeometry(Id id) const;
 
   const Pane*     getPane(Id id) const;
   const Layer*    getLayer(Id id) const;
   const DrawItem* getDrawItem(Id id) const;
+  const Buffer*   getBuffer(Id id) const;
+  const Geometry* getGeometry(Id id) const;
 
-  // Create (caller ensures IDs are unique / valid in registry)
+  // Mutable access (needed for bindDrawItem)
+  DrawItem* getDrawItemMutable(Id id);
+
+  // Create
   void addPane(Pane p);
   void addLayer(Layer l);
   void addDrawItem(DrawItem d);
+  void addBuffer(Buffer b);
+  void addGeometry(Geometry g);
 
   // Delete (cascades) — returns full list of deleted IDs (empty if nothing deleted).
-  // - deletePane => {paneId, layerIds..., drawItemIds...}
-  // - deleteLayer => {layerId, drawItemIds...}
-  // - deleteDrawItem => {drawItemId}
   std::vector<Id> deletePane(Id paneId);
   std::vector<Id> deleteLayer(Id layerId);
   std::vector<Id> deleteDrawItem(Id drawItemId);
+
+  // Minimal non-cascading deletes for new resources
+  std::vector<Id> deleteBuffer(Id bufferId);
+  std::vector<Id> deleteGeometry(Id geometryId);
 
   // Enumeration for listResources()
   std::vector<Id> paneIds() const;
   std::vector<Id> layerIds() const;
   std::vector<Id> drawItemIds() const;
+  std::vector<Id> bufferIds() const;
+  std::vector<Id> geometryIds() const;
 
 private:
   std::unordered_map<Id, Pane> panes_;
   std::unordered_map<Id, Layer> layers_;
   std::unordered_map<Id, DrawItem> drawItems_;
+  std::unordered_map<Id, Buffer> buffers_;
+  std::unordered_map<Id, Geometry> geometries_;
 };
 
 } // namespace dc

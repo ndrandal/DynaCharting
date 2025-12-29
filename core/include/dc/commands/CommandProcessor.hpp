@@ -2,6 +2,7 @@
 #include "dc/scene/Scene.hpp"
 #include "dc/scene/ResourceRegistry.hpp"
 #include "dc/ids/Id.hpp"
+#include "dc/pipelines/PipelineCatalog.hpp"
 
 #include <string>
 #include <vector>
@@ -10,13 +11,18 @@
 
 namespace dc {
 
+struct CmdError {
+  std::string code;     // e.g. "VALIDATION_MISSING_GEOMETRY"
+  std::string message;  // human text
+  std::string details;  // small JSON string with fields (kept minimal for now)
+};
+
 struct CmdResult {
   bool ok{true};
-  std::string error;
-
-  // For create commands, we return the created ID (0 if none).
+  CmdError err{};
   Id createdId{0};
 };
+
 
 class CommandProcessor {
 public:
@@ -50,10 +56,24 @@ private:
 
   CmdResult cmdDelete(const rapidjson::Value& obj);
 
+  CmdResult cmdCreateBuffer(const rapidjson::Value& obj);
+  CmdResult cmdCreateGeometry(const rapidjson::Value& obj);
+  CmdResult cmdBindDrawItem(const rapidjson::Value& obj);
+
+  PipelineCatalog catalog_;
+
+
+
   // helpers
   static const rapidjson::Value* getMember(const rapidjson::Value& obj, const char* key);
   static std::string getStringOrEmpty(const rapidjson::Value& obj, const char* key);
   static Id getIdOrZero(const rapidjson::Value& obj, const char* key);
+  static CmdResult fail(const std::string& code,
+                      const std::string& message,
+                      const std::string& detailsJson = "{}");
+  CmdResult validateDrawItem(const DrawItem& di) const;
+
+
 };
 
 } // namespace dc
