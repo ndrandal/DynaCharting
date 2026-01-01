@@ -95,4 +95,10 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_d1_1_smoke PRIVATE dc)
 
   add_test(NAME dc_d1_1_smoke COMMAND dc_d1_1_smoke)
+
+  add_executable(dc_d1_3_atomic_frame
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/d1_3_atomic_frame.cpp"
+  )
+  target_link_libraries(dc_d1_3_atomic_frame PRIVATE dc)
+  add_test(NAME dc_d1_3_atomic_frame COMMAND dc_d1_3_atomic_frame)
 endif()

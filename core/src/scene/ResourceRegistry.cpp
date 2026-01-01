@@ -5,9 +5,19 @@ namespace dc {
 
 ResourceRegistry::ResourceRegistry() = default;
 
+ResourceRegistry::ResourceRegistry(const ResourceRegistry& other)
+  : next_(other.next_.load(std::memory_order_relaxed))
+  , kinds_(other.kinds_) {}
+
+ResourceRegistry& ResourceRegistry::operator=(const ResourceRegistry& other) {
+  if (this == &other) return *this;
+  next_.store(other.next_.load(std::memory_order_relaxed), std::memory_order_relaxed);
+  kinds_ = other.kinds_;
+  return *this;
+}
+
 Id ResourceRegistry::allocate(ResourceKind kind) {
-  // NOTE: not lock-free due to unordered_map; D1.1 is single-threaded test harness.
-  // Later: shard/lock or use a flat_hash_map with mutex.
+  // NOTE: not lock-free due to unordered_map; D1.x is single-threaded test harness.
   for (;;) {
     Id id = next_.fetch_add(1, std::memory_order_relaxed);
     if (id == kInvalidId) continue;

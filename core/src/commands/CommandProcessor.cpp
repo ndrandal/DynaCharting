@@ -13,7 +13,8 @@
 namespace dc {
 
 CommandProcessor::CommandProcessor(Scene& scene, ResourceRegistry& registry)
-  : scene_(scene), reg_(registry) {}
+  : activeScene_(scene)
+  , activeReg_(registry) {}
 
 CmdResult CommandProcessor::fail(const std::string& code,
                                  const std::string& message,
@@ -51,6 +52,39 @@ Id CommandProcessor::getIdOrZero(const rapidjson::Value& obj, const char* key) {
   return 0;
 }
 
+std::uint64_t CommandProcessor::getU64OrZero(const rapidjson::Value& obj, const char* key) {
+  const auto* v = getMember(obj, key);
+  if (!v) return 0;
+  if (v->IsUint64()) return v->GetUint64();
+  if (v->IsInt64() && v->GetInt64() > 0) return static_cast<std::uint64_t>(v->GetInt64());
+  return 0;
+}
+
+Scene& CommandProcessor::curScene() {
+  return inFrame_ ? pendingScene_ : activeScene_;
+}
+ResourceRegistry& CommandProcessor::curReg() {
+  return inFrame_ ? pendingReg_ : activeReg_;
+}
+const Scene& CommandProcessor::curScene() const {
+  return inFrame_ ? pendingScene_ : activeScene_;
+}
+const ResourceRegistry& CommandProcessor::curReg() const {
+  return inFrame_ ? pendingReg_ : activeReg_;
+}
+
+CmdResult CommandProcessor::rejectIfFrameFailed(const char* cmdName) const {
+  if (inFrame_ && frameFailed_) {
+    return fail("FRAME_REJECTED",
+                std::string(cmdName) + ": frame already failed; no further commands accepted until commitFrame",
+                std::string(R"({"pendingFrameId":)") + std::to_string(pendingFrameId_) + "}");
+  }
+  CmdResult ok;
+  ok.ok = true;
+  ok.createdId = 0;
+  return ok;
+}
+
 CmdResult CommandProcessor::applyJsonText(const std::string& jsonText) {
   rapidjson::Document d;
   d.Parse(jsonText.c_str());
@@ -70,27 +104,43 @@ CmdResult CommandProcessor::applyJson(const rapidjson::Value& obj) {
 
   const std::string cmd = cmdV->GetString();
 
-  // D1.1
+  // Always allow these (even if a frame already failed).
   if (cmd == "hello") return cmdHello(obj);
   if (cmd == "beginFrame") return cmdBeginFrame(obj);
   if (cmd == "commitFrame") return cmdCommitFrame(obj);
 
-  if (cmd == "createPane") return cmdCreatePane(obj);
-  if (cmd == "createLayer") return cmdCreateLayer(obj);
-  if (cmd == "createDrawItem") return cmdCreateDrawItem(obj);
-  if (cmd == "delete") return cmdDelete(obj);
+  // If a command fails inside a frame, reject subsequent commands to avoid “half-built” pending edits.
+  // (Still no partial commit either way, but this keeps behavior strict + simple.)
+  if (inFrame_ && frameFailed_) {
+    return fail("FRAME_REJECTED",
+                "frame already failed; only commitFrame is allowed",
+                std::string(R"({"pendingFrameId":)") + std::to_string(pendingFrameId_) + "}");
+  }
 
-  // triSolid deliverable plumbing
-  if (cmd == "createBuffer") return cmdCreateBuffer(obj);
-  if (cmd == "createGeometry") return cmdCreateGeometry(obj);
-  if (cmd == "bindDrawItem") return cmdBindDrawItem(obj);
+  CmdResult r;
 
-  return fail("UNKNOWN_COMMAND",
-              "Unknown cmd",
-              std::string(R"({"cmd":")") + cmd + R"("})");
+  if (cmd == "createPane") r = cmdCreatePane(obj);
+  else if (cmd == "createLayer") r = cmdCreateLayer(obj);
+  else if (cmd == "createDrawItem") r = cmdCreateDrawItem(obj);
+  else if (cmd == "delete") r = cmdDelete(obj);
+  else if (cmd == "createBuffer") r = cmdCreateBuffer(obj);
+  else if (cmd == "createGeometry") r = cmdCreateGeometry(obj);
+  else if (cmd == "bindDrawItem") r = cmdBindDrawItem(obj);
+  else {
+    r = fail("UNKNOWN_COMMAND",
+             "Unknown cmd",
+             std::string(R"({"cmd":")") + cmd + R"("})");
+  }
+
+  // Transaction semantics: if we're in a frame and a command fails, mark frameFailed_.
+  if (inFrame_ && !r.ok) {
+    frameFailed_ = true;
+  }
+
+  return r;
 }
 
-// -------------------- D1.1 handlers --------------------
+// -------------------- D1.3 handlers --------------------
 
 CmdResult CommandProcessor::cmdHello(const rapidjson::Value&) {
   CmdResult r;
@@ -99,13 +149,23 @@ CmdResult CommandProcessor::cmdHello(const rapidjson::Value&) {
   return r;
 }
 
-CmdResult CommandProcessor::cmdBeginFrame(const rapidjson::Value&) {
+CmdResult CommandProcessor::cmdBeginFrame(const rapidjson::Value& obj) {
   if (inFrame_) {
     return fail("BAD_COMMAND", "beginFrame: already in frame");
   }
 
+  std::uint64_t requested = getU64OrZero(obj, "frameId");
+  if (requested == 0) {
+    requested = activeFrameId_ + 1;
+  }
+
+  // Snapshot active -> pending (transaction start)
+  pendingScene_ = activeScene_;
+  pendingReg_   = activeReg_;
+
   inFrame_ = true;
-  frameCounter_++;
+  frameFailed_ = false;
+  pendingFrameId_ = requested;
 
   CmdResult r;
   r.ok = true;
@@ -113,10 +173,33 @@ CmdResult CommandProcessor::cmdBeginFrame(const rapidjson::Value&) {
   return r;
 }
 
-CmdResult CommandProcessor::cmdCommitFrame(const rapidjson::Value&) {
+CmdResult CommandProcessor::cmdCommitFrame(const rapidjson::Value& obj) {
   if (!inFrame_) {
     return fail("BAD_COMMAND", "commitFrame: not in frame");
   }
+
+  std::uint64_t requested = getU64OrZero(obj, "frameId");
+  if (requested != 0 && requested != pendingFrameId_) {
+    // Frame id mismatch: do not commit.
+    inFrame_ = false; // end frame (transaction closed)
+    frameFailed_ = true;
+    return fail("FRAME_REJECTED",
+                "commitFrame: frameId mismatch",
+                std::string(R"({"pendingFrameId":)") + std::to_string(pendingFrameId_) +
+                  R"(,"commitFrameId":)" + std::to_string(requested) + "}");
+  }
+
+  if (frameFailed_) {
+    inFrame_ = false; // end frame without commit
+    return fail("FRAME_REJECTED",
+                "commitFrame: frame failed; nothing committed",
+                std::string(R"({"pendingFrameId":)") + std::to_string(pendingFrameId_) + "}");
+  }
+
+  // Atomic swap (single-threaded semantics here): pending -> active
+  activeScene_ = pendingScene_;
+  activeReg_   = pendingReg_;
+  activeFrameId_ = pendingFrameId_;
 
   inFrame_ = false;
 
@@ -127,19 +210,22 @@ CmdResult CommandProcessor::cmdCommitFrame(const rapidjson::Value&) {
 }
 
 CmdResult CommandProcessor::cmdCreatePane(const rapidjson::Value& obj) {
+  Scene& scene = curScene();
+  ResourceRegistry& reg = curReg();
+
   Id id = getIdOrZero(obj, "id");
   if (id != 0) {
-    if (!reg_.reserve(id, ResourceKind::Pane)) {
+    if (!reg.reserve(id, ResourceKind::Pane)) {
       return fail("ID_TAKEN", "createPane: id already exists");
     }
   } else {
-    id = reg_.allocate(ResourceKind::Pane);
+    id = reg.allocate(ResourceKind::Pane);
   }
 
   Pane p;
   p.id = id;
   p.name = getStringOrEmpty(obj, "name");
-  scene_.addPane(std::move(p));
+  scene.addPane(std::move(p));
 
   CmdResult r;
   r.ok = true;
@@ -148,8 +234,11 @@ CmdResult CommandProcessor::cmdCreatePane(const rapidjson::Value& obj) {
 }
 
 CmdResult CommandProcessor::cmdCreateLayer(const rapidjson::Value& obj) {
+  Scene& scene = curScene();
+  ResourceRegistry& reg = curReg();
+
   const Id paneId = getIdOrZero(obj, "paneId");
-  if (paneId == 0 || !scene_.hasPane(paneId)) {
+  if (paneId == 0 || !scene.hasPane(paneId)) {
     return fail("VALIDATION_INVALID_PARENT",
                 "createLayer: invalid paneId",
                 std::string(R"({"field":"paneId","paneId":)") + std::to_string(paneId) + "}");
@@ -157,18 +246,18 @@ CmdResult CommandProcessor::cmdCreateLayer(const rapidjson::Value& obj) {
 
   Id id = getIdOrZero(obj, "id");
   if (id != 0) {
-    if (!reg_.reserve(id, ResourceKind::Layer)) {
+    if (!reg.reserve(id, ResourceKind::Layer)) {
       return fail("ID_TAKEN", "createLayer: id already exists");
     }
   } else {
-    id = reg_.allocate(ResourceKind::Layer);
+    id = reg.allocate(ResourceKind::Layer);
   }
 
   Layer l;
   l.id = id;
   l.paneId = paneId;
   l.name = getStringOrEmpty(obj, "name");
-  scene_.addLayer(std::move(l));
+  scene.addLayer(std::move(l));
 
   CmdResult r;
   r.ok = true;
@@ -177,8 +266,11 @@ CmdResult CommandProcessor::cmdCreateLayer(const rapidjson::Value& obj) {
 }
 
 CmdResult CommandProcessor::cmdCreateDrawItem(const rapidjson::Value& obj) {
+  Scene& scene = curScene();
+  ResourceRegistry& reg = curReg();
+
   const Id layerId = getIdOrZero(obj, "layerId");
-  if (layerId == 0 || !scene_.hasLayer(layerId)) {
+  if (layerId == 0 || !scene.hasLayer(layerId)) {
     return fail("VALIDATION_INVALID_PARENT",
                 "createDrawItem: invalid layerId",
                 std::string(R"({"field":"layerId","layerId":)") + std::to_string(layerId) + "}");
@@ -186,19 +278,18 @@ CmdResult CommandProcessor::cmdCreateDrawItem(const rapidjson::Value& obj) {
 
   Id id = getIdOrZero(obj, "id");
   if (id != 0) {
-    if (!reg_.reserve(id, ResourceKind::DrawItem)) {
+    if (!reg.reserve(id, ResourceKind::DrawItem)) {
       return fail("ID_TAKEN", "createDrawItem: id already exists");
     }
   } else {
-    id = reg_.allocate(ResourceKind::DrawItem);
+    id = reg.allocate(ResourceKind::DrawItem);
   }
 
   DrawItem d;
   d.id = id;
   d.layerId = layerId;
   d.name = getStringOrEmpty(obj, "name");
-  // pipeline + geometry bindings default empty/0; set by bindDrawItem
-  scene_.addDrawItem(std::move(d));
+  scene.addDrawItem(std::move(d));
 
   CmdResult r;
   r.ok = true;
@@ -207,35 +298,38 @@ CmdResult CommandProcessor::cmdCreateDrawItem(const rapidjson::Value& obj) {
 }
 
 CmdResult CommandProcessor::cmdDelete(const rapidjson::Value& obj) {
+  Scene& scene = curScene();
+  ResourceRegistry& reg = curReg();
+
   const Id id = getIdOrZero(obj, "id");
   if (id == 0) {
     return fail("BAD_COMMAND", "delete: missing/invalid id");
   }
 
-  if (!reg_.exists(id)) {
+  if (!reg.exists(id)) {
     return fail("NOT_FOUND",
                 "delete: id does not exist",
                 std::string(R"({"id":)") + std::to_string(id) + "}");
   }
 
-  const auto kind = reg_.kindOf(id);
+  const auto kind = reg.kindOf(id);
 
   std::vector<Id> deleted;
   switch (kind) {
     case ResourceKind::Pane:
-      deleted = scene_.deletePane(id);
+      deleted = scene.deletePane(id);
       break;
     case ResourceKind::Layer:
-      deleted = scene_.deleteLayer(id);
+      deleted = scene.deleteLayer(id);
       break;
     case ResourceKind::DrawItem:
-      deleted = scene_.deleteDrawItem(id);
+      deleted = scene.deleteDrawItem(id);
       break;
     case ResourceKind::Buffer:
-      deleted = scene_.deleteBuffer(id);
+      deleted = scene.deleteBuffer(id);
       break;
     case ResourceKind::Geometry:
-      deleted = scene_.deleteGeometry(id);
+      deleted = scene.deleteGeometry(id);
       break;
     default:
       deleted.clear();
@@ -249,7 +343,7 @@ CmdResult CommandProcessor::cmdDelete(const rapidjson::Value& obj) {
   }
 
   for (Id did : deleted) {
-    reg_.release(did);
+    reg.release(did);
   }
 
   CmdResult r;
@@ -261,6 +355,9 @@ CmdResult CommandProcessor::cmdDelete(const rapidjson::Value& obj) {
 // -------------------- triSolid plumbing --------------------
 
 CmdResult CommandProcessor::cmdCreateBuffer(const rapidjson::Value& obj) {
+  Scene& scene = curScene();
+  ResourceRegistry& reg = curReg();
+
   const auto* bl = getMember(obj, "byteLength");
   if (!bl || !bl->IsUint()) {
     return fail("BAD_COMMAND", "createBuffer: missing uint byteLength");
@@ -268,17 +365,17 @@ CmdResult CommandProcessor::cmdCreateBuffer(const rapidjson::Value& obj) {
 
   Id id = getIdOrZero(obj, "id");
   if (id != 0) {
-    if (!reg_.reserve(id, ResourceKind::Buffer)) {
+    if (!reg.reserve(id, ResourceKind::Buffer)) {
       return fail("ID_TAKEN", "createBuffer: id already exists");
     }
   } else {
-    id = reg_.allocate(ResourceKind::Buffer);
+    id = reg.allocate(ResourceKind::Buffer);
   }
 
   Buffer b;
   b.id = id;
   b.byteLength = bl->GetUint();
-  scene_.addBuffer(std::move(b));
+  scene.addBuffer(std::move(b));
 
   CmdResult r;
   r.ok = true;
@@ -287,8 +384,11 @@ CmdResult CommandProcessor::cmdCreateBuffer(const rapidjson::Value& obj) {
 }
 
 CmdResult CommandProcessor::cmdCreateGeometry(const rapidjson::Value& obj) {
+  Scene& scene = curScene();
+  ResourceRegistry& reg = curReg();
+
   const Id vb = getIdOrZero(obj, "vertexBufferId");
-  if (vb == 0 || !scene_.hasBuffer(vb)) {
+  if (vb == 0 || !scene.hasBuffer(vb)) {
     return fail("MISSING_BUFFER",
                 "createGeometry: invalid vertexBufferId",
                 std::string(R"({"field":"vertexBufferId","vertexBufferId":)") + std::to_string(vb) + "}");
@@ -312,11 +412,11 @@ CmdResult CommandProcessor::cmdCreateGeometry(const rapidjson::Value& obj) {
 
   Id id = getIdOrZero(obj, "id");
   if (id != 0) {
-    if (!reg_.reserve(id, ResourceKind::Geometry)) {
+    if (!reg.reserve(id, ResourceKind::Geometry)) {
       return fail("ID_TAKEN", "createGeometry: id already exists");
     }
   } else {
-    id = reg_.allocate(ResourceKind::Geometry);
+    id = reg.allocate(ResourceKind::Geometry);
   }
 
   Geometry g;
@@ -324,7 +424,7 @@ CmdResult CommandProcessor::cmdCreateGeometry(const rapidjson::Value& obj) {
   g.vertexBufferId = vb;
   g.format = fmt;
   g.vertexCount = vc->GetUint();
-  scene_.addGeometry(std::move(g));
+  scene.addGeometry(std::move(g));
 
   CmdResult r;
   r.ok = true;
@@ -333,12 +433,14 @@ CmdResult CommandProcessor::cmdCreateGeometry(const rapidjson::Value& obj) {
 }
 
 CmdResult CommandProcessor::cmdBindDrawItem(const rapidjson::Value& obj) {
+  Scene& scene = curScene();
+
   const Id drawItemId = getIdOrZero(obj, "drawItemId");
   if (drawItemId == 0) {
     return fail("BAD_COMMAND", "bindDrawItem: missing/invalid drawItemId");
   }
 
-  DrawItem* di = scene_.getDrawItemMutable(drawItemId);
+  DrawItem* di = scene.getDrawItemMutable(drawItemId);
   if (!di) {
     return fail("MISSING_DRAWITEM",
                 "bindDrawItem: drawItemId does not exist",
@@ -376,14 +478,14 @@ CmdResult CommandProcessor::validateDrawItem(const DrawItem& di) const {
                 std::string(R"({"drawItemId":)") + std::to_string(di.id) + "}");
   }
 
-  const Geometry* g = scene_.getGeometry(di.geometryId);
+  const Geometry* g = curScene().getGeometry(di.geometryId);
   if (!g) {
     return fail("VALIDATION_BAD_GEOMETRY",
                 "drawItem geometryId does not exist",
                 std::string(R"({"geometryId":)") + std::to_string(di.geometryId) + "}");
   }
 
-  const Buffer* b = scene_.getBuffer(g->vertexBufferId);
+  const Buffer* b = curScene().getBuffer(g->vertexBufferId);
   if (!b) {
     return fail("VALIDATION_MISSING_BUFFER",
                 "geometry must reference an existing vertexBufferId",
@@ -398,9 +500,6 @@ CmdResult CommandProcessor::validateDrawItem(const DrawItem& di) const {
                   R"(","got":")" + toString(g->format) + R"("})");
   }
 
-  // If you want one more strict check for v1 without adding new features:
-  // ensure vertexCount is a multiple of 3 (triangles).
-  // This is consistent with “draw triangles” and still minimal.
   if ((g->vertexCount % 3u) != 0u) {
     return fail("VALIDATION_BAD_VERTEX_COUNT",
                 "triSolid@1 requires vertexCount multiple of 3",
@@ -416,6 +515,7 @@ CmdResult CommandProcessor::validateDrawItem(const DrawItem& di) const {
 // -------------------- Query --------------------
 
 std::string CommandProcessor::listResourcesJson() const {
+  // Important: list ACTIVE resources (renderer-visible), even if we're in a pending frame.
   rapidjson::StringBuffer sb;
   rapidjson::Writer<rapidjson::StringBuffer> w(sb);
 
@@ -423,34 +523,40 @@ std::string CommandProcessor::listResourcesJson() const {
 
   w.Key("panes");
   w.StartArray();
-  for (Id id : reg_.list(ResourceKind::Pane)) w.Uint64(id);
+  for (Id id : activeReg_.list(ResourceKind::Pane)) w.Uint64(id);
   w.EndArray();
 
   w.Key("layers");
   w.StartArray();
-  for (Id id : reg_.list(ResourceKind::Layer)) w.Uint64(id);
+  for (Id id : activeReg_.list(ResourceKind::Layer)) w.Uint64(id);
   w.EndArray();
 
   w.Key("drawItems");
   w.StartArray();
-  for (Id id : reg_.list(ResourceKind::DrawItem)) w.Uint64(id);
+  for (Id id : activeReg_.list(ResourceKind::DrawItem)) w.Uint64(id);
   w.EndArray();
 
   w.Key("buffers");
   w.StartArray();
-  for (Id id : reg_.list(ResourceKind::Buffer)) w.Uint64(id);
+  for (Id id : activeReg_.list(ResourceKind::Buffer)) w.Uint64(id);
   w.EndArray();
 
   w.Key("geometries");
   w.StartArray();
-  for (Id id : reg_.list(ResourceKind::Geometry)) w.Uint64(id);
+  for (Id id : activeReg_.list(ResourceKind::Geometry)) w.Uint64(id);
   w.EndArray();
 
-  w.Key("frame");
-  w.Uint64(frameCounter_);
+  w.Key("activeFrameId");
+  w.Uint64(activeFrameId_);
 
   w.Key("inFrame");
   w.Bool(inFrame_);
+
+  w.Key("pendingFrameId");
+  w.Uint64(inFrame_ ? pendingFrameId_ : 0);
+
+  w.Key("frameFailed");
+  w.Bool(inFrame_ ? frameFailed_ : false);
 
   w.EndObject();
 

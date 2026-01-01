@@ -4,6 +4,7 @@
 #include "dc/ids/Id.hpp"
 #include "dc/pipelines/PipelineCatalog.hpp"
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -23,7 +24,6 @@ struct CmdResult {
   Id createdId{0};
 };
 
-
 class CommandProcessor {
 public:
   CommandProcessor(Scene& scene, ResourceRegistry& registry);
@@ -39,11 +39,18 @@ public:
   std::string listResourcesJson() const;
 
 private:
-  Scene& scene_;
-  ResourceRegistry& reg_;
+  // Active (renderer-visible) state is owned by caller.
+  Scene& activeScene_;
+  ResourceRegistry& activeReg_;
+
+  // Pending state exists only inside beginFrame/commitFrame.
+  Scene pendingScene_{};
+  ResourceRegistry pendingReg_{};
 
   bool inFrame_{false};
-  std::uint64_t frameCounter_{0};
+  bool frameFailed_{false};
+  std::uint64_t activeFrameId_{0};
+  std::uint64_t pendingFrameId_{0};
 
   // ---- handlers ----
   CmdResult cmdHello(const rapidjson::Value& obj);
@@ -62,18 +69,26 @@ private:
 
   PipelineCatalog catalog_;
 
-
-
   // helpers
   static const rapidjson::Value* getMember(const rapidjson::Value& obj, const char* key);
   static std::string getStringOrEmpty(const rapidjson::Value& obj, const char* key);
   static Id getIdOrZero(const rapidjson::Value& obj, const char* key);
+  static std::uint64_t getU64OrZero(const rapidjson::Value& obj, const char* key);
+
   static CmdResult fail(const std::string& code,
-                      const std::string& message,
-                      const std::string& detailsJson = "{}");
+                        const std::string& message,
+                        const std::string& detailsJson = "{}");
+
   CmdResult validateDrawItem(const DrawItem& di) const;
 
+  // Transaction routing
+  Scene& curScene();
+  ResourceRegistry& curReg();
+  const Scene& curScene() const;
+  const ResourceRegistry& curReg() const;
 
+  // If we're in a frame and it already failed, block additional mutations.
+  CmdResult rejectIfFrameFailed(const char* cmdName) const;
 };
 
 } // namespace dc

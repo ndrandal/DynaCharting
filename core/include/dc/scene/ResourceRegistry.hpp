@@ -11,6 +11,13 @@ class ResourceRegistry {
 public:
   ResourceRegistry();
 
+  // Custom copy (std::atomic is not copyable by default)
+  ResourceRegistry(const ResourceRegistry& other);
+  ResourceRegistry& operator=(const ResourceRegistry& other);
+
+  ResourceRegistry(ResourceRegistry&&) noexcept = default;
+  ResourceRegistry& operator=(ResourceRegistry&&) noexcept = default;
+
   Id allocate(ResourceKind kind);               // auto-id
   bool reserve(Id id, ResourceKind kind);       // client-provided id (fails if taken)
 
