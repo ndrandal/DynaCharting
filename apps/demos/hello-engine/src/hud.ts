@@ -12,6 +12,9 @@ export function makeHud() {
   const dbgB = document.getElementById("dbg_bounds")!;
   const dbgW = document.getElementById("dbg_wire")!;
 
+  // NEW
+  const pickEl = document.getElementById("pick")!;
+
   return {
     setFps: (fps: number) => (fpsEl.textContent = fps.toFixed(1)),
     setGl: (label: string) => (glEl.textContent = label),
@@ -24,6 +27,11 @@ export function makeHud() {
       bufEl.textContent = String(s.activeBuffers);
       dbgB.textContent = s.debug.showBounds ? "1" : "0";
       dbgW.textContent = s.debug.wireframe ? "1" : "0";
+    },
+
+    // NEW
+    setPick: (id: number | null) => {
+      pickEl.textContent = id == null ? "none" : String(id);
     }
   };
 }
