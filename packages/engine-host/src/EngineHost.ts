@@ -1,13 +1,16 @@
 /* packages/engine-host/src/EngineHost.ts
  *
  * EngineHost:
- * - Control plane: JSON-adjacent commands (createBuffer, createGeometry, createDrawItem, setDebug)
+ * - Control plane: JSON-adjacent commands (createBuffer, createGeometry, createDrawItem, setDrawItemPipeline, setDebug)
  * - Data plane: binary batches (bufferAppend, bufferUpdateRange)
  * - Worker ingest stub: enqueueData(ArrayBuffer) with Transferables; drain during renderOnce
  * - "Core ingest" is represented by an internal CoreIngestStub class (no server yet)
  * - Minimal renderer: draws pos2_clip vertices as TRIANGLES
+ * - D2.1: pipeline catalog + validation (triSolid@1)
  * - Picking v1: CPU point-in-triangle over drawItem geometry
  */
+
+import { PIPELINES, PipelineId } from "./pipelines";
 
 export type PickResult = { drawItemId: number } | null;
 
@@ -56,22 +59,37 @@ const OP_UPDATE_RANGE = 2;
 type Geometry = {
   id: number;
   vertexBufferId: number;
-  vertexCount: number; // derived from CPU buffer bytes / 8
-  format: "pos2_clip";
+  vertexCount: number; // derived from CPU buffer bytes / strideBytes
+  format: "pos2_clip"; // v1: only format supported by renderer
+  strideBytes: number; // v1: pos2_clip must be 8
 };
 
 type DrawItem = {
   id: number;
   geometryId: number;
-  pipeline: "flat";
+  pipeline: PipelineId;
 };
+
+// -------------------- D2.1 structured errors --------------------
+type EngineErrorCode =
+  | "UNKNOWN_PIPELINE"
+  | "VALIDATION_MISSING_ATTR"
+  | "VALIDATION_BAD_STRIDE"
+  | "VALIDATION_NO_GEOMETRY"
+  | "VALIDATION_NO_BUFFER"
+  | "VALIDATION_BAD_GEOMETRY_FORMAT";
+
+type EngineError = { code: EngineErrorCode; message: string; details?: any };
+
+function err(code: EngineErrorCode, message: string, details?: any): EngineError {
+  return { code, message, details };
+}
 
 // -------------------- Core ingest stub --------------------
 type IngestResult = {
   touchedBufferIds: number[];
   payloadBytes: number;
   droppedBytes: number;
-  // optional: future range deltas
 };
 
 type CpuBuffer = {
@@ -114,10 +132,14 @@ class CoreIngestStub {
         throw new Error("CoreIngestStub: truncated header");
       }
 
-      const op = dv.getUint8(p); p += 1;
-      const bufferId = dv.getUint32(p, true); p += 4;
-      const offsetBytes = dv.getUint32(p, true); p += 4;
-      const len = dv.getUint32(p, true); p += 4;
+      const op = dv.getUint8(p);
+      p += 1;
+      const bufferId = dv.getUint32(p, true);
+      p += 4;
+      const offsetBytes = dv.getUint32(p, true);
+      p += 4;
+      const len = dv.getUint32(p, true);
+      p += 4;
 
       if (p + len > dv.byteLength) {
         throw new Error("CoreIngestStub: truncated payload");
@@ -149,14 +171,13 @@ class CoreIngestStub {
         next.set(payload.subarray(0, allowed), oldLen);
         b.cpu = next;
 
-        if (allowed < len) droppedBytes += (len - allowed);
+        if (allowed < len) droppedBytes += len - allowed;
 
         touched.add(bufferId);
         continue;
       }
 
       if (op === OP_UPDATE_RANGE) {
-        // clamp to cap
         if (offsetBytes >= this.MAX_BUFFER_BYTES) {
           droppedBytes += len;
           continue;
@@ -171,7 +192,6 @@ class CoreIngestStub {
           continue;
         }
 
-        // grow CPU buffer if needed
         if (allowedEnd > b.cpu.byteLength) {
           const grown = new Uint8Array(allowedEnd);
           grown.set(b.cpu, 0);
@@ -180,7 +200,7 @@ class CoreIngestStub {
 
         b.cpu.set(payload.subarray(0, allowedLen), offsetBytes);
 
-        if (allowedLen < len) droppedBytes += (len - allowedLen);
+        if (allowedLen < len) droppedBytes += len - allowedLen;
 
         touched.add(bufferId);
         continue;
@@ -231,6 +251,9 @@ export class EngineHost {
   private geometries = new Map<number, Geometry>();
   private drawItems = new Map<number, DrawItem>();
 
+  // D2.1: last validation errors (so HUD/console can show)
+  private lastErrors: EngineError[] = [];
+
   // Shader (pos2_clip)
   private prog: WebGLProgram | null = null;
   private aPosLoc = -1;
@@ -277,18 +300,18 @@ export class EngineHost {
 
     this.hud?.setGl(gl.getParameter(gl.VERSION) as string);
 
-    // Minimal shader program
+    // Minimal shader program for triSolid@1 (pos2_clip => a_pos vec2)
     this.prog = this.createProgram(
       `#version 300 es
        precision highp float;
-       in vec2 aPos;
-       void main() { gl_Position = vec4(aPos, 0.0, 1.0); }`,
+       in vec2 a_pos;
+       void main() { gl_Position = vec4(a_pos, 0.0, 1.0); }`,
       `#version 300 es
        precision highp float;
        out vec4 outColor;
        void main() { outColor = vec4(0.85, 0.15, 0.20, 1.0); }`
     );
-    this.aPosLoc = gl.getAttribLocation(this.prog, "aPos");
+    this.aPosLoc = gl.getAttribLocation(this.prog, "a_pos");
 
     this.onResize();
     window.addEventListener("resize", this.onResize, { passive: true });
@@ -321,6 +344,7 @@ export class EngineHost {
     this.dataQueue = [];
     this.geometries.clear();
     this.drawItems.clear();
+    this.lastErrors = [];
 
     this.gl = null;
     this.canvas = null;
@@ -337,9 +361,7 @@ export class EngineHost {
   }
 
   // -------------------- D3.1: Data plane (direct, no worker) --------------------
-  // Useful for tests/demos. This runs ingest immediately (main thread), so prefer enqueueData for hot loop simulation.
   applyDataBatch(batch: ArrayBuffer) {
-    // For direct calls, we still route through core and upload on next frame:
     this.enqueueData(batch);
   }
 
@@ -347,8 +369,9 @@ export class EngineHost {
   /**
    * Supported cmds:
    * - createBuffer {id}
-   * - createGeometry {id, vertexBufferId, format:"pos2_clip"}
-   * - createDrawItem {id, geometryId, pipeline:"flat"}
+   * - createGeometry {id, vertexBufferId, format:"pos2_clip", strideBytes?}
+   * - createDrawItem {id, geometryId, pipeline?:"triSolid@1"}
+   * - setDrawItemPipeline {id, pipeline:"triSolid@1"}
    * - setDebug {showBounds?, wireframe?}
    */
   applyControl(jsonTextOrObj: string | any): { ok: true } | { ok: false; error: string } {
@@ -374,19 +397,28 @@ export class EngineHost {
         const id = toU32(obj.id);
         const vb = toU32(obj.vertexBufferId);
         const fmt = obj.format ?? "pos2_clip";
+        const strideBytes = typeof obj.strideBytes === "number" ? (obj.strideBytes | 0) : 8;
+
         if (!id || !vb) throw new Error("createGeometry: missing id or vertexBufferId");
         if (fmt !== "pos2_clip") throw new Error("createGeometry: only format=pos2_clip supported");
-        this.createGeometry(id, vb);
+        this.createGeometry(id, vb, strideBytes);
         return { ok: true };
       }
 
       if (cmd === "createDrawItem") {
         const id = toU32(obj.id);
         const gid = toU32(obj.geometryId);
-        const pipe = (obj.pipeline ?? "flat") as string;
+        const pipeline = toPipelineId(obj.pipeline ?? "triSolid@1");
         if (!id || !gid) throw new Error("createDrawItem: missing id or geometryId");
-        if (pipe !== "flat") throw new Error("createDrawItem: only pipeline=flat supported for now");
-        this.createDrawItem(id, gid);
+        this.createDrawItem(id, gid, pipeline);
+        return { ok: true };
+      }
+
+      if (cmd === "setDrawItemPipeline") {
+        const id = toU32(obj.id);
+        const pipeline = toPipelineId(obj.pipeline);
+        if (!id) throw new Error("setDrawItemPipeline: missing id");
+        this.setDrawItemPipeline(id, pipeline);
         return { ok: true };
       }
 
@@ -412,19 +444,32 @@ export class EngineHost {
     this.stats.activeBuffers = this.core.getActiveBufferCount();
   }
 
-  createGeometry(id: number, vertexBufferId: number) {
+  createGeometry(id: number, vertexBufferId: number, strideBytes: number = 8) {
     this.createBuffer(vertexBufferId);
+
+    // v1 only supports pos2_clip => 2*f32 => 8 bytes
     this.geometries.set(id, {
       id,
       vertexBufferId,
       vertexCount: 0,
-      format: "pos2_clip"
+      format: "pos2_clip",
+      strideBytes
     });
   }
 
-  createDrawItem(id: number, geometryId: number) {
+  createDrawItem(id: number, geometryId: number, pipeline: PipelineId) {
     if (!this.geometries.has(geometryId)) throw new Error("createDrawItem: geometry not found");
-    this.drawItems.set(id, { id, geometryId, pipeline: "flat" });
+    if (!PIPELINES[pipeline]) {
+      throw new Error(`createDrawItem: unknown pipeline '${String(pipeline)}'`);
+    }
+    this.drawItems.set(id, { id, geometryId, pipeline });
+  }
+
+  setDrawItemPipeline(drawItemId: number, pipeline: PipelineId) {
+    const di = this.drawItems.get(drawItemId);
+    if (!di) throw new Error("setDrawItemPipeline: drawItem not found");
+    if (!PIPELINES[pipeline]) throw new Error(`setDrawItemPipeline: unknown pipeline '${String(pipeline)}'`);
+    di.pipeline = pipeline;
   }
 
   // -------------------- D10.1: stats/debug --------------------
@@ -441,6 +486,11 @@ export class EngineHost {
       droppedBytesThisFrame: this.stats.droppedBytesThisFrame,
       debug: { ...this.stats.debug }
     };
+  }
+
+  // Optional for debugging D2.1 failures
+  getLastErrors(): EngineError[] {
+    return [...this.lastErrors];
   }
 
   setDebugToggles(toggles: Partial<EngineStats["debug"]>) {
@@ -460,7 +510,7 @@ export class EngineHost {
     const ndcX = (x / w) * 2 - 1;
     const ndcY = 1 - (y / h) * 2;
 
-    // Back-to-front: later draw items win (in insertion order we don't have z, so just iterate reverse)
+    // Back-to-front: later draw items win (no z yet)
     const drawIds = [...this.drawItems.keys()];
     for (let i = drawIds.length - 1; i >= 0; i--) {
       const drawItemId = drawIds[i];
@@ -472,15 +522,17 @@ export class EngineHost {
 
       const cpu = this.core.getBufferBytes(g.vertexBufferId);
       const f32 = asF32(cpu);
-      const vcount = Math.floor(f32.length / 2);
+      const vcount = Math.floor((cpu.byteLength / g.strideBytes) | 0);
       const triCountVerts = vcount - (vcount % 3);
       if (triCountVerts < 3) continue;
 
-      // Test each triangle; v1 crude but correct
       for (let vi = 0; vi < triCountVerts; vi += 3) {
-        const x0 = f32[(vi + 0) * 2 + 0], y0 = f32[(vi + 0) * 2 + 1];
-        const x1 = f32[(vi + 1) * 2 + 0], y1 = f32[(vi + 1) * 2 + 1];
-        const x2 = f32[(vi + 2) * 2 + 0], y2 = f32[(vi + 2) * 2 + 1];
+        const x0 = f32[(vi + 0) * 2 + 0],
+          y0 = f32[(vi + 0) * 2 + 1];
+        const x1 = f32[(vi + 1) * 2 + 0],
+          y1 = f32[(vi + 1) * 2 + 1];
+        const x2 = f32[(vi + 2) * 2 + 0],
+          y2 = f32[(vi + 2) * 2 + 1];
         if (pointInTri(ndcX, ndcY, x0, y0, x1, y1, x2, y2)) {
           return { drawItemId };
         }
@@ -525,6 +577,7 @@ export class EngineHost {
     this.stats.ingestedBytesThisFrame = 0;
     this.stats.uploadedBytesThisFrame = 0;
     this.stats.droppedBytesThisFrame = 0;
+    this.lastErrors = [];
 
     // Drain queue within budget and ingest
     const touched = new Set<number>();
@@ -555,23 +608,28 @@ export class EngineHost {
       gl.useProgram(this.prog);
 
       for (const di of this.drawItems.values()) {
-        const g = this.geometries.get(di.geometryId);
-        if (!g) continue;
+        const errors = this.validateDrawItem(di);
+        if (errors.length) {
+          this.lastErrors.push(...errors);
+          continue; // D2.1: wrong bindings => structured error, no draw
+        }
 
+        const g = this.geometries.get(di.geometryId)!;
         const cpu = this.core.getBufferBytes(g.vertexBufferId);
-        // pos2_clip: 8 bytes per vertex (2 float32)
-        const vcount = Math.floor(cpu.byteLength / 8);
+
+        // pos2_clip strideBytes bytes per vertex
+        const vcount = Math.floor(cpu.byteLength / g.strideBytes);
         g.vertexCount = vcount;
 
         const triCountVerts = vcount - (vcount % 3);
         if (triCountVerts < 3) continue;
 
-        const gb = this.gpuBuffers.get(g.vertexBufferId);
-        if (!gb) continue;
+        const gb = this.gpuBuffers.get(g.vertexBufferId)!;
 
         gl.bindBuffer(gl.ARRAY_BUFFER, gb.gl);
         gl.enableVertexAttribArray(this.aPosLoc);
-        gl.vertexAttribPointer(this.aPosLoc, 2, gl.FLOAT, false, 0, 0);
+        // pos2_clip => vec2 float
+        gl.vertexAttribPointer(this.aPosLoc, 2, gl.FLOAT, false, g.strideBytes, 0);
 
         gl.drawArrays(gl.TRIANGLES, 0, triCountVerts);
         this.stats.drawCalls++;
@@ -587,12 +645,81 @@ export class EngineHost {
     if (this.frameWindow.length > this.FRAME_WINDOW_MAX) this.frameWindow.shift();
     this.stats.frameMsP95 = percentile(this.frameWindow, 0.95);
 
-    // Update HUD stats every frame (cheap string updates happen in hud.ts)
+    // Update HUD stats
     this.hud?.setStats?.(this.getStats());
+
+    // If you want quick visibility during bring-up:
+    // (only prints when errors exist; throttled by fps update in updateHud)
   }
 
+  // -------------------- D2.1 validation --------------------
+  private validateDrawItem(di: DrawItem): EngineError[] {
+    const errors: EngineError[] = [];
+
+    const spec = PIPELINES[di.pipeline];
+    if (!spec) {
+      errors.push(
+        err("UNKNOWN_PIPELINE", `Unknown pipeline '${String(di.pipeline)}'`, { drawItemId: di.id, pipeline: di.pipeline })
+      );
+      return errors;
+    }
+
+    const g = this.geometries.get(di.geometryId);
+    if (!g) {
+      errors.push(err("VALIDATION_NO_GEOMETRY", "DrawItem has no bound geometry", { drawItemId: di.id, geometryId: di.geometryId }));
+      return errors;
+    }
+
+    // v1 renderer only supports pos2_clip
+    if (g.format !== "pos2_clip") {
+      errors.push(
+        err("VALIDATION_BAD_GEOMETRY_FORMAT", "Geometry format incompatible with triSolid@1 (expected pos2_clip)", {
+          drawItemId: di.id,
+          geometryId: g.id,
+          format: g.format
+        })
+      );
+      return errors;
+    }
+
+    // triSolid@1 requires a_pos vec2 f32; pos2_clip implies that, but enforce stride
+    // If later you add layouts, this is where you'd check attribute presence explicitly.
+    if (g.strideBytes !== 8) {
+      errors.push(
+        err("VALIDATION_BAD_STRIDE", "triSolid@1 requires a_pos = vec2 f32 (strideBytes must be 8)", {
+          drawItemId: di.id,
+          geometryId: g.id,
+          strideBytes: g.strideBytes
+        })
+      );
+    }
+
+    // Ensure CPU buffer exists (core.ensureBuffer may not have been called in some flows)
+    const cpu = this.core.getBufferBytes(g.vertexBufferId);
+    if (!cpu || cpu.byteLength === 0) {
+      // Not an error; it just means nothing to draw yet.
+      // But we *do* need the GPU buffer object created once data arrives.
+    }
+
+    const gb = this.gpuBuffers.get(g.vertexBufferId);
+    if (!gb) {
+      // If there is CPU data but no GPU buffer, that means we didn't upload (shouldn't happen if touched set works).
+      // Treat as binding error for D2.1 visibility.
+      const hasCpu = this.core.getBufferBytes(g.vertexBufferId).byteLength > 0;
+      if (hasCpu) {
+        errors.push(err("VALIDATION_NO_BUFFER", "Geometry's vertex buffer not uploaded/bound on GPU", { vertexBufferId: g.vertexBufferId }));
+      }
+    }
+
+    // Attribute presence check placeholder (since we don't have an explicit layout map yet):
+    // If you later represent layouts, emit VALIDATION_MISSING_ATTR when 'a_pos' isn't provided.
+    // For now, pos2_clip implies it exists.
+
+    return errors;
+  }
+
+  // -------------------- GPU upload --------------------
   // Full upload (simple & safe): bufferData whole CPU buffer.
-  // Later you’ll optimize to range updates and preallocated GPU capacity.
   private syncGpuBufferFull(bufferId: number) {
     const gl = this.gl!;
     const cpu = this.core.getBufferBytes(bufferId);
@@ -608,6 +735,7 @@ export class EngineHost {
     gl.bindBuffer(gl.ARRAY_BUFFER, gb.gl);
     gl.bufferData(gl.ARRAY_BUFFER, cpu, gl.DYNAMIC_DRAW);
 
+    // NOTE: this counts full buffer bytes, not delta bytes; good enough for bring-up.
     gb.gpuByteLength = cpu.byteLength;
     this.stats.uploadedBytesThisFrame += cpu.byteLength;
   }
@@ -627,6 +755,13 @@ export class EngineHost {
         this.hud?.setMem(`${usedMB.toFixed(1)} / ${totalMB.toFixed(1)} MB`);
       } else {
         this.hud?.setMem("n/a");
+      }
+
+      // Print validation errors occasionally (so D2.1 failures are visible without HUD changes)
+      if (this.lastErrors.length) {
+        // Avoid spamming: only log when throttled here
+        // eslint-disable-next-line no-console
+        console.warn("[EngineHost] validation errors:", this.lastErrors);
       }
 
       this.frames = 0;
@@ -680,6 +815,13 @@ function toU32(v: any): number {
   return n >>> 0;
 }
 
+function toPipelineId(v: any): PipelineId {
+  if (typeof v !== "string") throw new Error("pipeline must be a string");
+  const p = v as PipelineId;
+  if (!PIPELINES[p]) throw new Error(`Unknown pipeline '${v}'`);
+  return p;
+}
+
 function percentile(values: number[], p: number): number {
   if (values.length === 0) return 0;
   const sorted = [...values].sort((a, b) => a - b);
@@ -688,7 +830,6 @@ function percentile(values: number[], p: number): number {
 }
 
 function asF32(u8: Uint8Array): Float32Array {
-  // If byteLength isn't multiple of 4, floor it.
   const n = (u8.byteLength / 4) | 0;
   return new Float32Array(u8.buffer, u8.byteOffset, n);
 }
@@ -697,14 +838,17 @@ function asF32(u8: Uint8Array): Float32Array {
 function pointInTri(
   px: number,
   py: number,
-  x0: number, y0: number,
-  x1: number, y1: number,
-  x2: number, y2: number
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number
 ): boolean {
   const b0 = sign(px, py, x0, y0, x1, y1) < 0;
   const b1 = sign(px, py, x1, y1, x2, y2) < 0;
   const b2 = sign(px, py, x2, y2, x0, y0) < 0;
-  return (b0 === b1) && (b1 === b2);
+  return b0 === b1 && b1 === b2;
 }
 
 function sign(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
