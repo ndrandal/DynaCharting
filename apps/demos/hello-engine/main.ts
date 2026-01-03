@@ -1,104 +1,106 @@
 import { EngineHost } from "@repo/engine-host";
 import { makeHud } from "./hud";
 
-// ----------------- binary helpers (D3.1) -----------------
-
-const OP_APPEND = 1;
-const OP_UPDATE_RANGE = 2;
-
-function buildBatch(records: Array<{
-  op: number;
-  bufferId: number;
-  offsetBytes?: number;
-  payload: Uint8Array;
-}>): ArrayBuffer {
-  let total = 0;
-  for (const r of records) {
-    total += 1 + 4 + 4 + 4 + r.payload.byteLength;
-  }
-
-  const ab = new ArrayBuffer(total);
-  const dv = new DataView(ab);
-  const u8 = new Uint8Array(ab);
-
-  let p = 0;
-  for (const r of records) {
-    dv.setUint8(p, r.op); p += 1;
-    dv.setUint32(p, r.bufferId >>> 0, true); p += 4;
-    dv.setUint32(p, (r.offsetBytes ?? 0) >>> 0, true); p += 4;
-    dv.setUint32(p, r.payload.byteLength >>> 0, true); p += 4;
-    u8.set(r.payload, p); p += r.payload.byteLength;
-  }
-  return ab;
-}
-
-function f32Payload(arr: Float32Array): Uint8Array {
-  return new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength);
-}
-
-// ----------------- demo -----------------
+// If your worker file is named differently, update this path.
+const WORKER_URL = new URL("./ingest.worker.ts", import.meta.url);
 
 const canvas = document.getElementById("c") as HTMLCanvasElement;
+if (!canvas) throw new Error("Canvas #c not found");
+
 const hud = makeHud();
 const host = new EngineHost(hud);
 
 host.init(canvas);
 
-// Control plane (JSON)
-host.applyControl({ cmd: "createBuffer", id: 1 });
-host.applyControl({ cmd: "createGeometry", id: 10, vertexBufferId: 1, format: "pos2_clip" });
-host.applyControl({ cmd: "createDrawItem", id: 42, geometryId: 10, pipeline: "flat" });
+// ------------------------------------------------------------
+// Control plane setup (JSON-adjacent)
+// One buffer (id=1) feeds one geometry (id=10) and one draw item (id=42).
+// The worker will append vertices into buffer 1.
+// ------------------------------------------------------------
+{
+  const r1 = host.applyControl({ cmd: "createBuffer", id: 1 });
+  if (!r1.ok) throw new Error(r1.error);
+
+  const r2 = host.applyControl({ cmd: "createGeometry", id: 10, vertexBufferId: 1, format: "pos2_clip" });
+  if (!r2.ok) throw new Error(r2.error);
+
+  const r3 = host.applyControl({ cmd: "createDrawItem", id: 42, geometryId: 10, pipeline: "flat" });
+  if (!r3.ok) throw new Error(r3.error);
+}
 
 host.start();
 
-// Start with one triangle (3 vertices in clip space)
-const tri0 = new Float32Array([
-  -0.6, -0.5,
-   0.0,  0.6,
-   0.6, -0.5
-]);
+// ------------------------------------------------------------
+// Worker: high-rate fake data (Transferables)
+// Main thread MUST NOT parse data here.
+// ------------------------------------------------------------
+const worker = new Worker(WORKER_URL, { type: "module" });
 
-host.applyDataBatch(buildBatch([
-  { op: OP_APPEND, bufferId: 1, payload: f32Payload(tri0) }
-]));
+worker.onmessage = (e: MessageEvent<any>) => {
+  const msg = e.data;
+  if (!msg) return;
 
-// Append another triangle every 700ms so geometry extends.
-// Each append adds 3 more vertices => another triangle rendered.
-let k = 0;
-setInterval(() => {
-  k++;
+  // Expected: { type:"batch", buffer:ArrayBuffer }
+  if (msg.type === "batch" && msg.buffer instanceof ArrayBuffer) {
+    // HOT LOOP RULE: do not parse. Just enqueue.
+    host.enqueueData(msg.buffer);
+    return;
+  }
 
-  // march triangles to the right, slightly smaller
-  const x = -0.2 + 0.25 * (k % 5);
-  const y = -0.3;
-  const s = 0.25;
+  if (msg.type === "log") {
+    console.log("[worker]", msg.message);
+    return;
+  }
+};
 
-  const tri = new Float32Array([
-    x - s, y - s,
-    x,     y + s,
-    x + s, y - s
-  ]);
+worker.onerror = (err) => {
+  console.error("Worker error:", err);
+};
 
-  const batch = buildBatch([
-    { op: OP_APPEND, bufferId: 1, payload: f32Payload(tri) }
-  ]);
+// Start fake stream: 10k vertices/sec, ~10ms batches
+worker.postMessage({
+  type: "start",
+  bufferId: 1,
+  vertsPerSec: 10_000,
+  batchMs: 10
+});
 
-  host.applyDataBatch(batch);
-}, 700);
+// ------------------------------------------------------------
+// Interaction: click-to-pick (D1.4 stays alive)
+// ------------------------------------------------------------
+canvas.addEventListener("click", (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
 
-// Optional: demonstrate updateRange (wiggle the very first vertex)
-// This proves the opcode exists, but pass criteria only needs append->extend.
-setInterval(() => {
-  const t = performance.now() * 0.001;
-  const vx = -0.6 + Math.sin(t) * 0.05;
-  const vy = -0.5 + Math.cos(t) * 0.05;
-  const update = new Float32Array([vx, vy]);
+  const hit = host.pick(x, y);
+  const id = hit ? hit.drawItemId : null;
 
-  const batch = buildBatch([
-    { op: OP_UPDATE_RANGE, bufferId: 1, offsetBytes: 0, payload: f32Payload(update) }
-  ]);
+  // If your HUD implements setPick, show it
+  (hud as any).setPick?.(id);
 
-  host.applyDataBatch(batch);
-}, 60);
+  console.log("pick:", hit);
+});
 
+// ------------------------------------------------------------
+// Debug toggles (optional, but useful while iterating)
+// B = bounds toggle, W = wireframe toggle
+// ------------------------------------------------------------
+window.addEventListener("keydown", (e) => {
+  if (e.key === "b" || e.key === "B") {
+    const s = host.getStats();
+    host.setDebugToggles({ showBounds: !s.debug.showBounds });
+  }
+  if (e.key === "w" || e.key === "W") {
+    const s = host.getStats();
+    host.setDebugToggles({ wireframe: !s.debug.wireframe });
+  }
+});
+
+// ------------------------------------------------------------
+// Dev hooks
+// ------------------------------------------------------------
 (globalThis as any).__host = host;
+(globalThis as any).__worker = worker;
+
+console.log("Demo running. Try clicking geometry for pick(), press B/W for debug toggles.");
