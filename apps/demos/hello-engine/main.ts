@@ -33,4 +33,17 @@ setInterval(() => {
 }, 500);
 
 // NEW: click -> pick
-canvas.addEventListener("cli
+canvas.addEventListener("click", (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+
+  const hit = host.pick(x, y);
+  const id = hit ? hit.drawItemId : null;
+
+  hud.setPick(id);
+  console.log("pick:", hit);
+});
+
+// Optional toggles for manual testing:
+(globalThis as any).__host = host;
