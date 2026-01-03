@@ -1,14 +1,18 @@
 /// <reference lib="webworker" />
 
-// Generates fake high-rate data and sends binary data-plane batches as Transferables.
-// Record format must match EngineHost's data-plane parser:
-// [u8 op][u32 bufferId][u32 offsetOrUnused][u32 byteLen][payload bytes...]
-
 const OP_APPEND = 1;
 const OP_UPDATE_RANGE = 2;
 
 type WorkerMsg =
-  | { type: "start"; bufferId: number; pointsPerSec?: number; batchPoints?: number }
+  | {
+      type: "startRecipes";
+      // buffer ids
+      lineBufferId: number;
+      rectBufferId: number;
+      candleBufferId: number;
+      pointsBufferId: number;
+      tickMs?: number;
+    }
   | { type: "stop" };
 
 let running = false;
@@ -18,39 +22,111 @@ function u32(view: DataView, off: number, v: number) {
   view.setUint32(off, v >>> 0, true);
 }
 
-function makeAppendBatch(bufferId: number, floats: Float32Array): ArrayBuffer {
-  const payload = new Uint8Array(floats.buffer, floats.byteOffset, floats.byteLength);
-  const headerBytes = 1 + 4 + 4 + 4; // op + bufferId + offset + byteLen
-  const out = new ArrayBuffer(headerBytes + payload.byteLength);
-  const view = new DataView(out);
-  const bytes = new Uint8Array(out);
-
-  bytes[0] = OP_APPEND;
-  u32(view, 1, bufferId);
-  u32(view, 5, 0); // unused for append
-  u32(view, 9, payload.byteLength);
-
-  bytes.set(payload, headerBytes);
-  return out;
+function writeUpdateRangeRecord(
+  out: Uint8Array,
+  view: DataView,
+  cursor: number,
+  bufferId: number,
+  offsetBytes: number,
+  payloadBytes: Uint8Array
+): number {
+  // header: u8 op + u32 bufferId + u32 offset + u32 len
+  out[cursor] = OP_UPDATE_RANGE;
+  u32(view, cursor + 1, bufferId);
+  u32(view, cursor + 5, offsetBytes);
+  u32(view, cursor + 9, payloadBytes.byteLength);
+  out.set(payloadBytes, cursor + 13);
+  return cursor + 13 + payloadBytes.byteLength;
 }
 
-function tick(bufferId: number, batchPoints: number) {
-  // Each point is vec2 position in clip-space (x,y)
-  const floats = new Float32Array(batchPoints * 2);
-
-  // Simple moving wave; deterministic enough for testing
+function tick(cfg: {
+  lineBufferId: number;
+  rectBufferId: number;
+  candleBufferId: number;
+  pointsBufferId: number;
+}) {
   const t = performance.now() * 0.001;
-  for (let i = 0; i < batchPoints; i++) {
-    const x = -1 + (2 * i) / Math.max(1, batchPoints - 1);
-    const y = 0.25 * Math.sin(6 * x + t);
-    floats[i * 2 + 0] = x;
-    floats[i * 2 + 1] = y;
+
+  // ---- line2d: segments (pairs) ----
+  const lineVerts = 512; // must be even
+  const line = new Float32Array(lineVerts * 2);
+  for (let i = 0; i < lineVerts; i++) {
+    const x = -1 + (2 * i) / Math.max(1, lineVerts - 1);
+    const y = 0.35 * Math.sin(4 * x + t);
+    line[i * 2 + 0] = x;
+    line[i * 2 + 1] = y;
   }
 
-  const batch = makeAppendBatch(bufferId, floats);
+  // ---- points: scatter ----
+  const ptsCount = 256;
+  const pts = new Float32Array(ptsCount * 2);
+  for (let i = 0; i < ptsCount; i++) {
+    const x = -1 + (2 * i) / Math.max(1, ptsCount - 1);
+    const y = 0.15 * Math.cos(8 * x - t);
+    pts[i * 2 + 0] = x;
+    pts[i * 2 + 1] = y;
+  }
 
-  // Transfer ownership of the ArrayBuffer (no copy)
-  (self as any).postMessage({ type: "data", batch }, [batch]);
+  // ---- instancedRect: rect4 (x0,y0,x1,y1) ----
+  const rectN = 80;
+  const rect = new Float32Array(rectN * 4);
+  for (let i = 0; i < rectN; i++) {
+    const cx = -0.95 + (1.9 * i) / Math.max(1, rectN - 1);
+    const w = 0.015;
+    const h = 0.10 + 0.10 * (0.5 + 0.5 * Math.sin(t + i * 0.3));
+    const x0 = cx - w;
+    const x1 = cx + w;
+    const y0 = -0.85;
+    const y1 = y0 + h;
+    rect[i * 4 + 0] = x0;
+    rect[i * 4 + 1] = y0;
+    rect[i * 4 + 2] = x1;
+    rect[i * 4 + 3] = y1;
+  }
+
+  // ---- instancedCandle: candle6 (x,open,high,low,close,halfWidth) ----
+  const candleN = 60;
+  const candle = new Float32Array(candleN * 6);
+  for (let i = 0; i < candleN; i++) {
+    const x = -0.95 + (1.9 * i) / Math.max(1, candleN - 1);
+    const base = -0.15 + 0.35 * Math.sin(t * 0.7 + i * 0.2);
+    const open = base + 0.08 * Math.sin(t + i * 0.6);
+    const close = base + 0.08 * Math.cos(t * 1.1 + i * 0.5);
+    const high = Math.max(open, close) + 0.08 + 0.03 * Math.sin(t * 1.7 + i);
+    const low = Math.min(open, close) - 0.08 - 0.03 * Math.cos(t * 1.3 + i);
+    const hw = 0.012;
+
+    const o = i * 6;
+    candle[o + 0] = x;
+    candle[o + 1] = open;
+    candle[o + 2] = high;
+    candle[o + 3] = low;
+    candle[o + 4] = close;
+    candle[o + 5] = hw;
+  }
+
+  const lineBytes = new Uint8Array(line.buffer);
+  const ptsBytes = new Uint8Array(pts.buffer);
+  const rectBytes = new Uint8Array(rect.buffer);
+  const candleBytes = new Uint8Array(candle.buffer);
+
+  const recordBytes =
+    (13 + lineBytes.byteLength) +
+    (13 + rectBytes.byteLength) +
+    (13 + candleBytes.byteLength) +
+    (13 + ptsBytes.byteLength);
+
+  const outBuf = new ArrayBuffer(recordBytes);
+  const out = new Uint8Array(outBuf);
+  const view = new DataView(outBuf);
+
+  let c = 0;
+  c = writeUpdateRangeRecord(out, view, c, cfg.lineBufferId, 0, lineBytes);
+  c = writeUpdateRangeRecord(out, view, c, cfg.rectBufferId, 0, rectBytes);
+  c = writeUpdateRangeRecord(out, view, c, cfg.candleBufferId, 0, candleBytes);
+  c = writeUpdateRangeRecord(out, view, c, cfg.pointsBufferId, 0, ptsBytes);
+
+  (self as any).postMessage({ type: "batch", buffer: outBuf }, [outBuf]);
 }
 
 self.onmessage = (ev: MessageEvent<WorkerMsg>) => {
@@ -65,20 +141,22 @@ self.onmessage = (ev: MessageEvent<WorkerMsg>) => {
     return;
   }
 
-  if (msg.type === "start") {
-    const bufferId = msg.bufferId >>> 0;
-    const pointsPerSec = Math.max(1, msg.pointsPerSec ?? 10_000);
-    const batchPoints = Math.max(32, msg.batchPoints ?? 512);
-
-    // interval so that batchPoints * (1000/interval) ~= pointsPerSec
-    const intervalMs = Math.max(5, Math.floor((1000 * batchPoints) / pointsPerSec));
-
+  if (msg.type === "startRecipes") {
     running = true;
-    if (timer !== null) clearInterval(timer);
 
+    const cfg = {
+      lineBufferId: msg.lineBufferId >>> 0,
+      rectBufferId: msg.rectBufferId >>> 0,
+      candleBufferId: msg.candleBufferId >>> 0,
+      pointsBufferId: msg.pointsBufferId >>> 0
+    };
+
+    const tickMs = Math.max(16, msg.tickMs ?? 33);
+
+    if (timer !== null) clearInterval(timer);
     timer = setInterval(() => {
       if (!running) return;
-      tick(bufferId, batchPoints);
-    }, intervalMs) as unknown as number;
+      tick(cfg);
+    }, tickMs) as unknown as number;
   }
 };

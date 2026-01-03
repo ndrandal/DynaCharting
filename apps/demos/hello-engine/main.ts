@@ -1,7 +1,6 @@
 import { EngineHost } from "@repo/engine-host";
 import { makeHud } from "./hud";
 
-// If your worker file is named differently, update this path.
 const WORKER_URL = new URL("./ingest.worker.ts", import.meta.url);
 
 const canvas = document.getElementById("c") as HTMLCanvasElement;
@@ -12,43 +11,76 @@ const host = new EngineHost(hud);
 
 host.init(canvas);
 
-// ------------------------------------------------------------
-// Control plane setup (JSON-adjacent)
-// One buffer (id=1) feeds one geometry (id=10) and one draw item (id=42).
-// The worker will append vertices into buffer 1.
-// ------------------------------------------------------------
-{
-  const r1 = host.applyControl({ cmd: "createBuffer", id: 1 });
-  if (!r1.ok) throw new Error(r1.error);
+// -------------------- Control plane demo scene for D2.2 --------------------
+// Buffers:
+//  1: line2d vertices (vec2)        stride 8
+//  2: instancedRect instances (vec4) stride 16
+//  3: instancedCandle instances (6 floats) stride 24
+//  4: points vertices (vec2)        stride 8
+const BUF_LINE = 1;
+const BUF_RECT = 2;
+const BUF_CANDLE = 3;
+const BUF_POINTS = 4;
 
-  const r2 = host.applyControl({ cmd: "createGeometry", id: 10, vertexBufferId: 1, format: "pos2_clip" });
-  if (!r2.ok) throw new Error(r2.error);
+// Geometry IDs
+const GEO_LINE = 10;
+const GEO_RECT = 11;
+const GEO_CANDLE = 12;
+const GEO_POINTS = 13;
 
-  const r3 = host.applyControl({ cmd: "createDrawItem", id: 42, geometryId: 10, pipeline: "flat" });
-  if (!r3.ok) throw new Error(r3.error);
+// DrawItem IDs
+const DI_LINE = 100;
+const DI_RECT = 101;
+const DI_CANDLE = 102;
+const DI_POINTS = 103;
+
+function must(r: { ok: true } | { ok: false; error: string }) {
+  if (!r.ok) throw new Error(r.error);
 }
+
+must(host.applyControl({ cmd: "createBuffer", id: BUF_LINE }));
+must(host.applyControl({ cmd: "createBuffer", id: BUF_RECT }));
+must(host.applyControl({ cmd: "createBuffer", id: BUF_CANDLE }));
+must(host.applyControl({ cmd: "createBuffer", id: BUF_POINTS }));
+
+// Vertex geometries (pos2_clip)
+must(host.applyControl({ cmd: "createGeometry", id: GEO_LINE, vertexBufferId: BUF_LINE, format: "pos2_clip", strideBytes: 8 }));
+must(host.applyControl({ cmd: "createGeometry", id: GEO_POINTS, vertexBufferId: BUF_POINTS, format: "pos2_clip", strideBytes: 8 }));
+
+// Instanced geometries
+must(host.applyControl({
+  cmd: "createInstancedGeometry",
+  id: GEO_RECT,
+  instanceBufferId: BUF_RECT,
+  instanceFormat: "rect4",
+  instanceStrideBytes: 16
+}));
+
+must(host.applyControl({
+  cmd: "createInstancedGeometry",
+  id: GEO_CANDLE,
+  instanceBufferId: BUF_CANDLE,
+  instanceFormat: "candle6",
+  instanceStrideBytes: 24
+}));
+
+// Draw items
+must(host.applyControl({ cmd: "createDrawItem", id: DI_LINE, geometryId: GEO_LINE, pipeline: "line2d@1" }));
+must(host.applyControl({ cmd: "createDrawItem", id: DI_RECT, geometryId: GEO_RECT, pipeline: "instancedRect@1" }));
+must(host.applyControl({ cmd: "createDrawItem", id: DI_CANDLE, geometryId: GEO_CANDLE, pipeline: "instancedCandle@1" }));
+must(host.applyControl({ cmd: "createDrawItem", id: DI_POINTS, geometryId: GEO_POINTS, pipeline: "points@1" }));
 
 host.start();
 
-// ------------------------------------------------------------
-// Worker: high-rate fake data (Transferables)
-// Main thread MUST NOT parse data here.
-// ------------------------------------------------------------
+// -------------------- Worker stream --------------------
 const worker = new Worker(WORKER_URL, { type: "module" });
 
 worker.onmessage = (e: MessageEvent<any>) => {
   const msg = e.data;
   if (!msg) return;
 
-  // Expected: { type:"batch", buffer:ArrayBuffer }
   if (msg.type === "batch" && msg.buffer instanceof ArrayBuffer) {
-    // HOT LOOP RULE: do not parse. Just enqueue.
     host.enqueueData(msg.buffer);
-    return;
-  }
-
-  if (msg.type === "log") {
-    console.log("[worker]", msg.message);
     return;
   }
 };
@@ -57,17 +89,18 @@ worker.onerror = (err) => {
   console.error("Worker error:", err);
 };
 
-// Start fake stream: 10k vertices/sec, ~10ms batches
 worker.postMessage({
-  type: "start",
-  bufferId: 1,
-  vertsPerSec: 10_000,
-  batchMs: 10
+  type: "startRecipes",
+  lineBufferId: BUF_LINE,
+  rectBufferId: BUF_RECT,
+  candleBufferId: BUF_CANDLE,
+  pointsBufferId: BUF_POINTS,
+  tickMs: 33
 });
 
-// ------------------------------------------------------------
-// Interaction: click-to-pick (D1.4 stays alive)
-// ------------------------------------------------------------
+// -------------------- Interaction: click-to-pick --------------------
+// pick currently only works for triSolid@1 in this EngineHost, so clicking won’t hit these.
+// Leave the hook in place (still useful later).
 canvas.addEventListener("click", (e) => {
   const rect = canvas.getBoundingClientRect();
   const x = e.clientX - rect.left;
@@ -75,17 +108,12 @@ canvas.addEventListener("click", (e) => {
 
   const hit = host.pick(x, y);
   const id = hit ? hit.drawItemId : null;
-
-  // If your HUD implements setPick, show it
   (hud as any).setPick?.(id);
 
   console.log("pick:", hit);
 });
 
-// ------------------------------------------------------------
-// Debug toggles (optional, but useful while iterating)
-// B = bounds toggle, W = wireframe toggle
-// ------------------------------------------------------------
+// Debug toggles
 window.addEventListener("keydown", (e) => {
   if (e.key === "b" || e.key === "B") {
     const s = host.getStats();
@@ -97,10 +125,8 @@ window.addEventListener("keydown", (e) => {
   }
 });
 
-// ------------------------------------------------------------
 // Dev hooks
-// ------------------------------------------------------------
 (globalThis as any).__host = host;
 (globalThis as any).__worker = worker;
 
-console.log("Demo running. Try clicking geometry for pick(), press B/W for debug toggles.");
+console.log("D2.2 demo running: line2d, instancedRect, instancedCandle, points");
