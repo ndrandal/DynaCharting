@@ -15,13 +15,36 @@ export type EngineHostHudSink = {
   setFps: (fps: number) => void;
   setGl: (label: string) => void;
   setMem: (label: string) => void;
+
+  // your hud.ts already implements setStats — make it official here
+  setStats?: (s: EngineStats) => void;
+
+  // optional (you already have it)
+  setPick?: (id: number | null) => void;
 };
 
-type PickableTri = {
-  drawItemId: number;
-  // 3 vertices in clip/NDC space: [x0,y0,x1,y1,x2,y2]
-  verts: Float32Array;
+type CpuGpuBuffer = {
+  id: number;
+  cpu: Uint8Array;          // authoritative bytes
+  gl: WebGLBuffer;
+  gpuByteLength: number;    // allocated size on GPU
 };
+
+type Geometry = {
+  id: number;
+  vertexBufferId: number;
+  vertexCount: number;      // number of vertices (vec2)
+  format: "pos2_clip";
+};
+
+type DrawItem = {
+  id: number;
+  geometryId: number;
+  pipeline: "flat";
+};
+
+const OP_APPEND = 1;
+const OP_UPDATE_RANGE = 2;
 
 export class EngineHost {
   private canvas: HTMLCanvasElement | null = null;
@@ -33,24 +56,23 @@ export class EngineHost {
   private frames = 0;
   private lastFpsT = 0;
 
-  // Basic stats (not required for D1.4, but harmless)
   private stats: EngineStats = {
     frameMs: 0,
     drawCalls: 0,
     uploadedBytesThisFrame: 0,
     activeBuffers: 0,
-    debug: {
-      showBounds: false,
-      wireframe: false
-    }
+    debug: { showBounds: false, wireframe: false }
   };
 
+  // Bytes staged during the JS tick, applied to stats on renderOnce()
   private pendingUploadBytes = 0;
 
-  private buffers = new Map<number, WebGLBuffer>();
+  // ---- Minimal scene state ----
+  private buffers = new Map<number, CpuGpuBuffer>();
+  private geometries = new Map<number, Geometry>();
+  private drawItems = new Map<number, DrawItem>();
 
-  // ---- D1.4 picking + minimal draw ----
-  private tris: PickableTri[] = [];
+  // ---- Minimal shader for pos2_clip triangles ----
   private prog: WebGLProgram | null = null;
   private aPosLoc: number = -1;
 
@@ -77,7 +99,6 @@ export class EngineHost {
 
     this.hud?.setGl(gl.getParameter(gl.VERSION) as string);
 
-    // Build a minimal shader for triangles in clip space
     this.prog = this.createProgram(
       `#version 300 es
        precision highp float;
@@ -89,7 +110,7 @@ export class EngineHost {
        precision highp float;
        out vec4 outColor;
        void main() {
-         outColor = vec4(0.85, 0.15, 0.20, 1.0); // red accent
+         outColor = vec4(0.85, 0.15, 0.20, 1.0);
        }`
     );
     this.aPosLoc = gl.getAttribLocation(this.prog, "aPos");
@@ -115,92 +136,241 @@ export class EngineHost {
 
     window.removeEventListener("resize", this.onResize);
 
-    if (this.gl) {
-      for (const b of this.buffers.values()) this.gl.deleteBuffer(b);
-      if (this.prog) this.gl.deleteProgram(this.prog);
+    const gl = this.gl;
+    if (gl) {
+      for (const b of this.buffers.values()) gl.deleteBuffer(b.gl);
+      if (this.prog) gl.deleteProgram(this.prog);
     }
 
     this.buffers.clear();
-    this.tris = [];
+    this.geometries.clear();
+    this.drawItems.clear();
     this.prog = null;
 
     this.gl = null;
     this.canvas = null;
   }
 
-  // ---------------- D1.4 public API ----------------
+  // ============================================================
+  // D3.1 — Control plane (JSON)
+  // ============================================================
 
   /**
-   * Register/update a pickable triangle in CLIP SPACE.
-   * vertsClip = Float32Array([x0,y0,x1,y1,x2,y2]) where each is in [-1..1]
+   * Minimal control-plane command dispatcher.
+   * Supported:
+   *  - createBuffer {id}
+   *  - createGeometry {id, vertexBufferId, format:"pos2_clip"}
+   *  - createDrawItem {id, geometryId, pipeline?}
    */
-  setPickableTriangle(drawItemId: number, vertsClip: Float32Array) {
-    if (vertsClip.length !== 6) throw new Error("setPickableTriangle: vertsClip must have length 6");
-    // Keep CPU copy for picking
-    const existing = this.tris.find(t => t.drawItemId === drawItemId);
-    if (existing) {
-      existing.verts = new Float32Array(vertsClip);
-    } else {
-      this.tris.push({ drawItemId, verts: new Float32Array(vertsClip) });
+  applyControl(jsonTextOrObj: string | any): { ok: true } | { ok: false; error: string } {
+    let obj: any;
+    try {
+      obj = typeof jsonTextOrObj === "string" ? JSON.parse(jsonTextOrObj) : jsonTextOrObj;
+    } catch {
+      return { ok: false, error: "Control: invalid JSON" };
     }
 
-    // Upload to GPU buffer keyed by drawItemId (simple mapping for v1)
-    this.uploadBuffer(drawItemId, vertsClip);
-  }
+    const cmd = obj?.cmd;
+    if (typeof cmd !== "string") return { ok: false, error: "Control: missing cmd" };
 
-  /**
-   * pick(x,y) in *canvas CSS pixels* (use event coords relative to canvas).
-   * Returns {drawItemId} if hit else null.
-   */
-  pick(x: number, y: number): PickResult {
-    const canvas = this.canvas;
-    if (!canvas) return null;
-
-    const rect = canvas.getBoundingClientRect();
-    const w = rect.width || 1;
-    const h = rect.height || 1;
-
-    // Convert to NDC/clip: x in [-1..1], y in [-1..1] with +y up
-    const ndcX = (x / w) * 2 - 1;
-    const ndcY = 1 - (y / h) * 2;
-
-    for (let i = this.tris.length - 1; i >= 0; i--) {
-      const t = this.tris[i];
-      if (pointInTri(ndcX, ndcY, t.verts)) {
-        return { drawItemId: t.drawItemId };
+    try {
+      if (cmd === "createBuffer") {
+        const id = toU32(obj.id);
+        if (!id) throw new Error("createBuffer: missing id");
+        this.ensureBuffer(id);
+        return { ok: true };
       }
+
+      if (cmd === "createGeometry") {
+        const id = toU32(obj.id);
+        const vb = toU32(obj.vertexBufferId);
+        const fmt = obj.format ?? "pos2_clip";
+        if (!id || !vb) throw new Error("createGeometry: missing id or vertexBufferId");
+        if (fmt !== "pos2_clip") throw new Error("createGeometry: only format=pos2_clip supported");
+        this.ensureBuffer(vb);
+
+        this.geometries.set(id, {
+          id,
+          vertexBufferId: vb,
+          vertexCount: 0,
+          format: "pos2_clip"
+        });
+        return { ok: true };
+      }
+
+      if (cmd === "createDrawItem") {
+        const id = toU32(obj.id);
+        const gid = toU32(obj.geometryId);
+        const pipe = (obj.pipeline ?? "flat") as "flat";
+        if (!id || !gid) throw new Error("createDrawItem: missing id or geometryId");
+        if (!this.geometries.has(gid)) throw new Error("createDrawItem: geometryId not found");
+        if (pipe !== "flat") throw new Error("createDrawItem: only pipeline=flat supported in v1");
+
+        this.drawItems.set(id, { id, geometryId: gid, pipeline: "flat" });
+        return { ok: true };
+      }
+
+      return { ok: false, error: `Control: unknown cmd ${cmd}` };
+    } catch (e: any) {
+      return { ok: false, error: e?.message ?? String(e) };
     }
-    return null;
   }
 
-  // ---------------- existing buffer plumbing ----------------
+  // ============================================================
+  // D3.1 — Data plane (binary batches)
+  // ============================================================
 
-  uploadBuffer(id: number, data: ArrayBufferView, usage: number = 0x88e4 /* gl.DYNAMIC_DRAW */) {
+  /**
+   * Apply a binary batch containing bufferAppend / bufferUpdateRange records.
+   * Format (little-endian):
+   *  u8 op (1 append, 2 updateRange)
+   *  u32 bufferId
+   *  u32 offsetBytes (updateRange only; 0 for append)
+   *  u32 payloadBytes
+   *  payloadBytes bytes
+   */
+  applyDataBatch(batch: ArrayBuffer) {
     const gl = this.gl;
     if (!gl) return;
 
-    let b = this.buffers.get(id);
-    if (!b) {
-      b = gl.createBuffer();
-      if (!b) throw new Error("Failed to create WebGLBuffer");
-      this.buffers.set(id, b);
+    const dv = new DataView(batch);
+    let p = 0;
+
+    while (p < dv.byteLength) {
+      if (p + 1 + 4 + 4 + 4 > dv.byteLength) {
+        throw new Error("DataBatch: truncated header");
+      }
+
+      const op = dv.getUint8(p); p += 1;
+      const bufferId = dv.getUint32(p, true); p += 4;
+      const offsetBytes = dv.getUint32(p, true); p += 4;
+      const payloadBytes = dv.getUint32(p, true); p += 4;
+
+      if (p + payloadBytes > dv.byteLength) {
+        throw new Error("DataBatch: truncated payload");
+      }
+
+      const payload = new Uint8Array(batch, p, payloadBytes);
+      p += payloadBytes;
+
+      if (op === OP_APPEND) {
+        this.bufferAppend(bufferId, payload);
+      } else if (op === OP_UPDATE_RANGE) {
+        this.bufferUpdateRange(bufferId, offsetBytes, payload);
+      } else {
+        throw new Error(`DataBatch: unknown op ${op}`);
+      }
     }
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, b);
-    gl.bufferData(gl.ARRAY_BUFFER, data, usage);
-
-    this.pendingUploadBytes += data.byteLength;
-    this.stats.activeBuffers = this.buffers.size;
   }
 
-  // ---------------- render loop ----------------
+  private bufferAppend(bufferId: number, payload: Uint8Array) {
+    const b = this.ensureBuffer(bufferId);
+
+    const oldLen = b.cpu.byteLength;
+    const newLen = oldLen + payload.byteLength;
+
+    const next = new Uint8Array(newLen);
+    next.set(b.cpu, 0);
+    next.set(payload, oldLen);
+    b.cpu = next;
+
+    // Grow GPU allocation if needed
+    this.syncGpuBuffer(b, /*forceRealloc*/ newLen > b.gpuByteLength);
+
+    // Count “uploaded bytes” as payload size (good enough for pass criteria)
+    this.pendingUploadBytes += payload.byteLength;
+
+    // Any geometry using this buffer extends automatically
+    this.refreshGeometriesForBuffer(bufferId);
+  }
+
+  private bufferUpdateRange(bufferId: number, offsetBytes: number, payload: Uint8Array) {
+    const b = this.ensureBuffer(bufferId);
+
+    const end = offsetBytes + payload.byteLength;
+    if (end > b.cpu.byteLength) {
+      // v1: allow implicit growth via zero-fill
+      const next = new Uint8Array(end);
+      next.set(b.cpu, 0);
+      b.cpu = next;
+    }
+
+    b.cpu.set(payload, offsetBytes);
+
+    // Ensure GPU big enough
+    const needsRealloc = b.cpu.byteLength > b.gpuByteLength;
+    this.syncGpuBuffer(b, needsRealloc, offsetBytes, payload);
+
+    this.pendingUploadBytes += payload.byteLength;
+    this.refreshGeometriesForBuffer(bufferId);
+  }
+
+  private refreshGeometriesForBuffer(bufferId: number) {
+    // pos2_clip = 2 floats = 8 bytes/vertex
+    const b = this.buffers.get(bufferId)!;
+    const vertexCount = Math.floor(b.cpu.byteLength / 8);
+
+    for (const g of this.geometries.values()) {
+      if (g.vertexBufferId === bufferId) {
+        g.vertexCount = vertexCount;
+      }
+    }
+  }
+
+  private ensureBuffer(id: number): CpuGpuBuffer {
+    const gl = this.gl;
+    if (!gl) throw new Error("ensureBuffer: gl not ready");
+
+    let b = this.buffers.get(id);
+    if (b) return b;
+
+    const glb = gl.createBuffer();
+    if (!glb) throw new Error("Failed to create WebGLBuffer");
+
+    b = {
+      id,
+      cpu: new Uint8Array(0),
+      gl: glb,
+      gpuByteLength: 0
+    };
+    this.buffers.set(id, b);
+
+    this.stats.activeBuffers = this.buffers.size;
+    return b;
+  }
+
+  private syncGpuBuffer(
+    b: CpuGpuBuffer,
+    forceRealloc: boolean,
+    subOffset?: number,
+    subPayload?: Uint8Array
+  ) {
+    const gl = this.gl!;
+    gl.bindBuffer(gl.ARRAY_BUFFER, b.gl);
+
+    if (forceRealloc) {
+      // Reallocate + upload whole CPU buffer (simple, safe for v1)
+      gl.bufferData(gl.ARRAY_BUFFER, b.cpu, gl.DYNAMIC_DRAW);
+      b.gpuByteLength = b.cpu.byteLength;
+      return;
+    }
+
+    if (subOffset != null && subPayload) {
+      gl.bufferSubData(gl.ARRAY_BUFFER, subOffset, subPayload);
+    } else {
+      // If caller didn’t provide sub-range, just upload whole thing
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, b.cpu);
+    }
+  }
+
+  // ============================================================
+  // Render loop + HUD
+  // ============================================================
 
   private readonly tick = (t: number) => {
     if (!this.running) return;
-
     this.renderOnce();
     this.updateHud(t);
-
     this.raf = requestAnimationFrame(this.tick);
   };
 
@@ -232,25 +402,46 @@ export class EngineHost {
 
     gl.clear(gl.COLOR_BUFFER_BIT);
 
-    // Minimal triangle render: draw each registered tri
     if (this.prog && this.aPosLoc >= 0) {
       gl.useProgram(this.prog);
 
-      for (const tri of this.tris) {
-        const b = this.buffers.get(tri.drawItemId);
+      // Draw all drawItems (each references a geometry, which references a buffer)
+      for (const di of this.drawItems.values()) {
+        const g = this.geometries.get(di.geometryId);
+        if (!g) continue;
+
+        const b = this.buffers.get(g.vertexBufferId);
         if (!b) continue;
 
-        gl.bindBuffer(gl.ARRAY_BUFFER, b);
+        if (g.vertexCount < 3) continue;
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, b.gl);
         gl.enableVertexAttribArray(this.aPosLoc);
         gl.vertexAttribPointer(this.aPosLoc, 2, gl.FLOAT, false, 0, 0);
 
-        gl.drawArrays(gl.TRIANGLES, 0, 3);
+        gl.drawArrays(gl.TRIANGLES, 0, g.vertexCount);
         this.stats.drawCalls++;
       }
     }
 
     const t1 = performance.now();
     this.stats.frameMs = t1 - t0;
+
+    this.hud?.setStats?.(this.getStats());
+  }
+
+  getStats(): EngineStats {
+    return {
+      frameMs: this.stats.frameMs,
+      drawCalls: this.stats.drawCalls,
+      uploadedBytesThisFrame: this.stats.uploadedBytesThisFrame,
+      activeBuffers: this.stats.activeBuffers,
+      debug: { ...this.stats.debug }
+    };
+  }
+
+  setDebugToggles(toggles: Partial<EngineStats["debug"]>) {
+    this.stats.debug = { ...this.stats.debug, ...toggles };
   }
 
   private updateHud(t: number) {
@@ -315,21 +506,8 @@ export class EngineHost {
   }
 }
 
-// -------- Picking helpers (CPU) --------
-
-// Barycentric / sign test in 2D
-function pointInTri(px: number, py: number, v: Float32Array): boolean {
-  const x0 = v[0], y0 = v[1];
-  const x1 = v[2], y1 = v[3];
-  const x2 = v[4], y2 = v[5];
-
-  const b0 = sign(px, py, x0, y0, x1, y1) < 0;
-  const b1 = sign(px, py, x1, y1, x2, y2) < 0;
-  const b2 = sign(px, py, x2, y2, x0, y0) < 0;
-
-  return (b0 === b1) && (b1 === b2);
-}
-
-function sign(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
-  return (px - bx) * (ay - by) - (ax - bx) * (py - by);
+function toU32(v: any): number {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return n >>> 0;
 }
