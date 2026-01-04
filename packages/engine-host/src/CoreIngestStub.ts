@@ -33,6 +33,11 @@ export class CoreIngestStub {
     this.buffers.set(bufferId, { id: bufferId, cpu: new Uint8Array(0) });
   }
 
+  deleteBuffer(bufferId: number) {
+    this.buffers.delete(bufferId);
+  }
+
+
   ingestData(batch: ArrayBuffer): IngestResult {
     const dv = new DataView(batch);
     let p = 0;

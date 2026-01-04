@@ -3,15 +3,23 @@
 const OP_APPEND = 1;
 const OP_UPDATE_RANGE = 2;
 
+type StreamType = "lineSine" | "pointsCos" | "rectBars" | "candles";
+
 type WorkerMsg =
   | {
+      // Back-compat (current mode): emit all 4 streams
       type: "startRecipes";
-      // buffer ids
       lineBufferId: number;
       rectBufferId: number;
       candleBufferId: number;
       pointsBufferId: number;
       tickMs?: number;
+    }
+  | {
+      // New mode (D7.1): subscriptions
+      type: "startStreams";
+      tickMs?: number;
+      streams: Array<{ stream: StreamType; bufferId: number }>;
     }
   | { type: "stop" };
 
@@ -30,7 +38,6 @@ function writeUpdateRangeRecord(
   offsetBytes: number,
   payloadBytes: Uint8Array
 ): number {
-  // header: u8 op + u32 bufferId + u32 offset + u32 len
   out[cursor] = OP_UPDATE_RANGE;
   u32(view, cursor + 1, bufferId);
   u32(view, cursor + 5, offsetBytes);
@@ -39,16 +46,9 @@ function writeUpdateRangeRecord(
   return cursor + 13 + payloadBytes.byteLength;
 }
 
-function tick(cfg: {
-  lineBufferId: number;
-  rectBufferId: number;
-  candleBufferId: number;
-  pointsBufferId: number;
-}) {
-  const t = performance.now() * 0.001;
-
-  // ---- line2d: segments (pairs) ----
-  const lineVerts = 512; // must be even
+// ---- stream payload builders (match your current shapes) ----
+function buildLineSineBytes(t: number): Uint8Array {
+  const lineVerts = 512; // must be even for LINES
   const line = new Float32Array(lineVerts * 2);
   for (let i = 0; i < lineVerts; i++) {
     const x = -1 + (2 * i) / Math.max(1, lineVerts - 1);
@@ -56,8 +56,10 @@ function tick(cfg: {
     line[i * 2 + 0] = x;
     line[i * 2 + 1] = y;
   }
+  return new Uint8Array(line.buffer);
+}
 
-  // ---- points: scatter ----
+function buildPointsCosBytes(t: number): Uint8Array {
   const ptsCount = 256;
   const pts = new Float32Array(ptsCount * 2);
   for (let i = 0; i < ptsCount; i++) {
@@ -66,8 +68,10 @@ function tick(cfg: {
     pts[i * 2 + 0] = x;
     pts[i * 2 + 1] = y;
   }
+  return new Uint8Array(pts.buffer);
+}
 
-  // ---- instancedRect: rect4 (x0,y0,x1,y1) ----
+function buildRectBarsBytes(t: number): Uint8Array {
   const rectN = 80;
   const rect = new Float32Array(rectN * 4);
   for (let i = 0; i < rectN; i++) {
@@ -83,8 +87,10 @@ function tick(cfg: {
     rect[i * 4 + 2] = x1;
     rect[i * 4 + 3] = y1;
   }
+  return new Uint8Array(rect.buffer);
+}
 
-  // ---- instancedCandle: candle6 (x,open,high,low,close,halfWidth) ----
+function buildCandlesBytes(t: number): Uint8Array {
   const candleN = 60;
   const candle = new Float32Array(candleN * 6);
   for (let i = 0; i < candleN; i++) {
@@ -104,29 +110,44 @@ function tick(cfg: {
     candle[o + 4] = close;
     candle[o + 5] = hw;
   }
+  return new Uint8Array(candle.buffer);
+}
 
-  const lineBytes = new Uint8Array(line.buffer);
-  const ptsBytes = new Uint8Array(pts.buffer);
-  const rectBytes = new Uint8Array(rect.buffer);
-  const candleBytes = new Uint8Array(candle.buffer);
+// ---- generic tick from subscriptions ----
+function tickStreams(streams: Array<{ stream: StreamType; bufferId: number }>) {
+  const t = performance.now() * 0.001;
 
-  const recordBytes =
-    (13 + lineBytes.byteLength) +
-    (13 + rectBytes.byteLength) +
-    (13 + candleBytes.byteLength) +
-    (13 + ptsBytes.byteLength);
+  const payloads: Array<{ bufferId: number; bytes: Uint8Array }> = [];
+  for (const s of streams) {
+    const bufferId = s.bufferId >>> 0;
+    if (!bufferId) continue;
+
+    if (s.stream === "lineSine") payloads.push({ bufferId, bytes: buildLineSineBytes(t) });
+    else if (s.stream === "pointsCos") payloads.push({ bufferId, bytes: buildPointsCosBytes(t) });
+    else if (s.stream === "rectBars") payloads.push({ bufferId, bytes: buildRectBarsBytes(t) });
+    else if (s.stream === "candles") payloads.push({ bufferId, bytes: buildCandlesBytes(t) });
+  }
+
+  let recordBytes = 0;
+  for (const p of payloads) recordBytes += 13 + p.bytes.byteLength;
 
   const outBuf = new ArrayBuffer(recordBytes);
   const out = new Uint8Array(outBuf);
   const view = new DataView(outBuf);
 
   let c = 0;
-  c = writeUpdateRangeRecord(out, view, c, cfg.lineBufferId, 0, lineBytes);
-  c = writeUpdateRangeRecord(out, view, c, cfg.rectBufferId, 0, rectBytes);
-  c = writeUpdateRangeRecord(out, view, c, cfg.candleBufferId, 0, candleBytes);
-  c = writeUpdateRangeRecord(out, view, c, cfg.pointsBufferId, 0, ptsBytes);
+  for (const p of payloads) c = writeUpdateRangeRecord(out, view, c, p.bufferId, 0, p.bytes);
 
   (self as any).postMessage({ type: "batch", buffer: outBuf }, [outBuf]);
+}
+
+function startInterval(tickMs: number, fn: () => void) {
+  running = true;
+  if (timer !== null) clearInterval(timer);
+  timer = setInterval(() => {
+    if (!running) return;
+    fn();
+  }, tickMs) as unknown as number;
 }
 
 self.onmessage = (ev: MessageEvent<WorkerMsg>) => {
@@ -142,21 +163,26 @@ self.onmessage = (ev: MessageEvent<WorkerMsg>) => {
   }
 
   if (msg.type === "startRecipes") {
-    running = true;
-
-    const cfg = {
-      lineBufferId: msg.lineBufferId >>> 0,
-      rectBufferId: msg.rectBufferId >>> 0,
-      candleBufferId: msg.candleBufferId >>> 0,
-      pointsBufferId: msg.pointsBufferId >>> 0
-    };
+    const streams = [
+      { stream: "lineSine" as const, bufferId: msg.lineBufferId >>> 0 },
+      { stream: "rectBars" as const, bufferId: msg.rectBufferId >>> 0 },
+      { stream: "candles" as const, bufferId: msg.candleBufferId >>> 0 },
+      { stream: "pointsCos" as const, bufferId: msg.pointsBufferId >>> 0 }
+    ];
 
     const tickMs = Math.max(16, msg.tickMs ?? 33);
+    startInterval(tickMs, () => tickStreams(streams));
+    return;
+  }
 
-    if (timer !== null) clearInterval(timer);
-    timer = setInterval(() => {
-      if (!running) return;
-      tick(cfg);
-    }, tickMs) as unknown as number;
+  if (msg.type === "startStreams") {
+    const streams = (msg.streams ?? []).map((s) => ({
+      stream: s.stream,
+      bufferId: s.bufferId >>> 0
+    }));
+
+    const tickMs = Math.max(16, msg.tickMs ?? 33);
+    startInterval(tickMs, () => tickStreams(streams));
+    return;
   }
 };

@@ -534,6 +534,22 @@ export class EngineHost {
         return { ok: true };
       }
 
+      if (cmd === "delete") {
+        const kind = String(obj.kind ?? "");
+        const id = toU32(obj.id);
+        if (obj.id === undefined) throw new Error("delete: missing id");
+        if (!kind) throw new Error("delete: missing kind");
+
+        if (kind === "drawItem") this.deleteDrawItem(id);
+        else if (kind === "geometry") this.deleteGeometry(id);
+        else if (kind === "transform") this.deleteTransform(id);
+        else if (kind === "buffer") this.deleteBuffer(id);
+        else throw new Error(`delete: unknown kind '${kind}'`);
+
+        return { ok: true };
+      }
+
+
       if (cmd === "setDrawItemPipeline") {
         const id = toU32(obj.id);
         const pipeline = toPipelineId(obj.pipeline);
@@ -602,6 +618,32 @@ export class EngineHost {
     if (!PIPELINES[pipeline]) throw new Error(`createDrawItem: unknown pipeline '${pipeline}'`);
     this.drawItems.set(id, { id, geometryId, pipeline, transformId: null });
   }
+
+  deleteDrawItem(id: number) {
+    this.drawItems.delete(id);
+  }
+
+  deleteGeometry(id: number) {
+    this.geometries.delete(id);
+  }
+
+  deleteTransform(id: number) {
+    this.transforms.delete(id);
+  }
+
+  deleteBuffer(id: number) {
+    // core
+    this.core.deleteBuffer(id);
+
+    // gpu
+    const gl = this.gl;
+    const gb = this.gpuBuffers.get(id);
+    if (gl && gb) gl.deleteBuffer(gb.gl);
+    this.gpuBuffers.delete(id);
+
+    this.stats.activeBuffers = this.core.getActiveBufferCount();
+  }
+
 
   private setDrawItemPipeline(drawItemId: number, pipeline: PipelineId) {
     const di = this.drawItems.get(drawItemId);

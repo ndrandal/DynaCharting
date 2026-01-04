@@ -24,6 +24,7 @@ export type PipelineSpec = {
   uniforms?: Record<string, "mat3" | "vec4" | "f32">;
 };
 
+
 export const PIPELINES: Record<PipelineId, PipelineSpec> = {
   "triSolid@1": {
     id: "triSolid@1",
