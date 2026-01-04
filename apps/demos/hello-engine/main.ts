@@ -34,6 +34,9 @@ const DI_RECT = 101;
 const DI_CANDLE = 102;
 const DI_POINTS = 103;
 
+// -------------------- D1.5: Transform resource --------------------
+const T_VIEW = 2000;
+
 function must(r: { ok: true } | { ok: false; error: string }) {
   if (!r.ok) throw new Error(r.error);
 }
@@ -70,6 +73,15 @@ must(host.applyControl({ cmd: "createDrawItem", id: DI_RECT, geometryId: GEO_REC
 must(host.applyControl({ cmd: "createDrawItem", id: DI_CANDLE, geometryId: GEO_CANDLE, pipeline: "instancedCandle@1" }));
 must(host.applyControl({ cmd: "createDrawItem", id: DI_POINTS, geometryId: GEO_POINTS, pipeline: "points@1" }));
 
+// -------------------- D1.5: create + attach a shared view transform --------------------
+must(host.applyControl({ cmd: "createTransform", id: T_VIEW }));
+must(host.applyControl({ cmd: "setTransform", id: T_VIEW, tx: 0, ty: 0, sx: 1, sy: 1 }));
+
+must(host.applyControl({ cmd: "attachTransform", targetId: DI_LINE, transformId: T_VIEW }));
+must(host.applyControl({ cmd: "attachTransform", targetId: DI_RECT, transformId: T_VIEW }));
+must(host.applyControl({ cmd: "attachTransform", targetId: DI_CANDLE, transformId: T_VIEW }));
+must(host.applyControl({ cmd: "attachTransform", targetId: DI_POINTS, transformId: T_VIEW }));
+
 host.start();
 
 // -------------------- Worker stream --------------------
@@ -98,6 +110,54 @@ worker.postMessage({
   tickMs: 33
 });
 
+// -------------------- D1.5: Interaction — drag to pan (uniform-only) --------------------
+let dragging = false;
+let lastX = 0;
+let lastY = 0;
+
+// Keep transform params locally (no readback API needed yet)
+let tx = 0, ty = 0, sx = 1, sy = 1;
+
+canvas.addEventListener("mousedown", (e) => {
+  dragging = true;
+  lastX = e.clientX;
+  lastY = e.clientY;
+});
+
+window.addEventListener("mouseup", () => { dragging = false; });
+
+window.addEventListener("mousemove", (e) => {
+  if (!dragging) return;
+
+  const rect = canvas.getBoundingClientRect();
+  const dxPx = e.clientX - lastX;
+  const dyPx = e.clientY - lastY;
+  lastX = e.clientX;
+  lastY = e.clientY;
+
+  // Pixels -> clip space deltas
+  const dxClip = (dxPx / Math.max(1, rect.width)) * 2;
+  const dyClip = -(dyPx / Math.max(1, rect.height)) * 2;
+
+  tx += dxClip;
+  ty += dyClip;
+
+  // Pass criteria: only transform changes (no buffer updates)
+  host.applyControl({ cmd: "setTransform", id: T_VIEW, tx, ty, sx, sy });
+});
+
+// Optional: scroll wheel zoom around center (still uniform-only)
+// (Comment out if you want ONLY pan right now.)
+canvas.addEventListener("wheel", (e) => {
+  e.preventDefault();
+
+  const zoom = Math.exp(-e.deltaY * 0.001); // smooth zoom
+  sx *= zoom;
+  sy *= zoom;
+
+  host.applyControl({ cmd: "setTransform", id: T_VIEW, tx, ty, sx, sy });
+}, { passive: false });
+
 // -------------------- Interaction: click-to-pick --------------------
 // pick currently only works for triSolid@1 in this EngineHost, so clicking won’t hit these.
 // Leave the hook in place (still useful later).
@@ -123,10 +183,16 @@ window.addEventListener("keydown", (e) => {
     const s = host.getStats();
     host.setDebugToggles({ wireframe: !s.debug.wireframe });
   }
+
+  // quick reset view
+  if (e.key === "r" || e.key === "R") {
+    tx = 0; ty = 0; sx = 1; sy = 1;
+    host.applyControl({ cmd: "setTransform", id: T_VIEW, tx, ty, sx, sy });
+  }
 });
 
 // Dev hooks
 (globalThis as any).__host = host;
 (globalThis as any).__worker = worker;
 
-console.log("D2.2 demo running: line2d, instancedRect, instancedCandle, points");
+console.log("D2.2 + D1.5 demo running: drag pans via u_transform only (buffers unchanged)");
