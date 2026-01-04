@@ -1,4 +1,13 @@
-/* packages/engine-host/src/EngineHost.ts */
+/* packages/engine-host/src/EngineHost.ts
+ *
+ * Full rewrite:
+ * - Supports D2.2 pipelines (triSolid@1, line2d@1, points@1, instancedRect@1, instancedCandle@1)
+ * - Supports D1.5 transforms as first-class resources (create/set/attach)
+ * - Supports D6.1 buffer cache policy (bufferSetMaxBytes, bufferEvictFront, bufferKeepLast)
+ * - Supports D2.3 textSDF@1 pipeline + incremental glyph atlas (no constant reuploads)
+ * - Keeps your data plane record format (append/updateRange) and worker batching model
+ * - Keeps picking v1 for triSolid@1 (CPU point-in-triangle with transforms)
+ */
 
 import { PIPELINES, PipelineId, PipelineSpec } from "./pipelines";
 
@@ -8,12 +17,16 @@ export type EngineStats = {
   frameMs: number;
   frameMsP95: number;
   drawCalls: number;
+
   ingestedBytesThisFrame: number;
   uploadedBytesThisFrame: number;
+
   activeBuffers: number;
+
   queuedBatches: number;
   droppedBatches: number;
   droppedBytesThisFrame: number;
+
   debug: { showBounds: boolean; wireframe: boolean };
 };
 
@@ -43,7 +56,7 @@ type InstancedGeometry = {
   id: number;
   instanceBufferId: number;
   instanceStrideBytes: number;
-  instanceFormat: "rect4" | "candle6";
+  instanceFormat: "rect4" | "candle6" | "glyph8";
 };
 
 type Geometry = VertexGeometry | InstancedGeometry;
@@ -57,11 +70,10 @@ type DrawItem = {
 
 // -------------------- D1.5 Transform resources --------------------
 export type TransformParams = {
-  // clip-space affine transform
-  tx: number; // translate x (clip)
-  ty: number; // translate y (clip)
-  sx: number; // scale x
-  sy: number; // scale y
+  tx: number;
+  ty: number;
+  sx: number;
+  sy: number;
 };
 
 type TransformResource = {
@@ -78,25 +90,76 @@ type EngineErrorCode =
   | "VALIDATION_NO_BUFFER"
   | "VALIDATION_BAD_STRIDE"
   | "VALIDATION_BAD_FORMAT"
-  | "VALIDATION_NO_TRANSFORM";
+  | "VALIDATION_NO_TRANSFORM"
+  | "TEXT_ATLAS_FULL"
+  | "TEXT_NO_ATLAS";
 
 type EngineError = { code: EngineErrorCode; message: string; details?: any };
 function err(code: EngineErrorCode, message: string, details?: any): EngineError {
   return { code, message, details };
 }
 
-// -------------------- Core ingest stub --------------------
+// -------------------- Core ingest stub + cache policy --------------------
 type IngestResult = { touchedBufferIds: number[]; payloadBytes: number; droppedBytes: number };
-type CpuBuffer = { id: number; cpu: Uint8Array };
+
+type CpuBuffer = {
+  id: number;
+  cpu: Uint8Array;
+  maxBytes: number; // cap; default MAX_BUFFER_BYTES
+};
 
 class CoreIngestStub {
-  readonly MAX_BUFFER_BYTES = 4 * 1024 * 1024;
+  readonly DEFAULT_MAX_BYTES = 4 * 1024 * 1024;
+
   private buffers = new Map<number, CpuBuffer>();
 
   ensureBuffer(bufferId: number) {
     if (!this.buffers.has(bufferId)) {
-      this.buffers.set(bufferId, { id: bufferId, cpu: new Uint8Array(0) });
+      this.buffers.set(bufferId, {
+        id: bufferId,
+        cpu: new Uint8Array(0),
+        maxBytes: this.DEFAULT_MAX_BYTES
+      });
     }
+  }
+
+  deleteBuffer(bufferId: number) {
+    this.buffers.delete(bufferId);
+  }
+
+  setMaxBytes(bufferId: number, maxBytes: number) {
+    this.ensureBuffer(bufferId);
+    const b = this.buffers.get(bufferId)!;
+    b.maxBytes = clampI(maxBytes, 0, 1 << 30);
+
+    // If current buffer exceeds new cap, keep last bytes (tail)
+    if (b.maxBytes >= 0 && b.cpu.byteLength > b.maxBytes) {
+      b.cpu = b.cpu.subarray(b.cpu.byteLength - b.maxBytes);
+      // NOTE: this changes semantic meaning for structured data, but matches "rolling window" goal.
+      // Your recipes should treat these buffers as time-ordered streams.
+    }
+  }
+
+  // Drop 'bytes' from the front of the CPU buffer.
+  evictFront(bufferId: number, bytes: number) {
+    const b = this.buffers.get(bufferId);
+    if (!b) return;
+
+    const n = clampI(bytes, 0, b.cpu.byteLength);
+    if (n === 0) return;
+
+    b.cpu = b.cpu.subarray(n);
+  }
+
+  // Keep only the last 'bytes' from the CPU buffer.
+  keepLast(bufferId: number, bytes: number) {
+    const b = this.buffers.get(bufferId);
+    if (!b) return;
+
+    const keep = clampI(bytes, 0, b.cpu.byteLength);
+    if (keep === b.cpu.byteLength) return;
+
+    b.cpu = b.cpu.subarray(b.cpu.byteLength - keep);
   }
 
   getActiveBufferCount(): number {
@@ -108,6 +171,7 @@ class CoreIngestStub {
     return b ? b.cpu : new Uint8Array(0);
   }
 
+  // Parse + apply a binary batch (same record format as worker)
   ingestData(batch: ArrayBuffer): IngestResult {
     const dv = new DataView(batch);
     let p = 0;
@@ -128,38 +192,58 @@ class CoreIngestStub {
 
       const payload = new Uint8Array(batch, p, len);
       p += len;
+
       payloadBytes += len;
 
       this.ensureBuffer(bufferId);
       const b = this.buffers.get(bufferId)!;
+      const cap = Math.max(0, b.maxBytes | 0);
 
       if (op === OP_APPEND) {
-        if (b.cpu.byteLength >= this.MAX_BUFFER_BYTES) { droppedBytes += len; continue; }
-        const allowed = Math.min(len, this.MAX_BUFFER_BYTES - b.cpu.byteLength);
+        if (cap === 0) { droppedBytes += len; continue; }
+
+        // If already at cap, drop all incoming
+        if (b.cpu.byteLength >= cap) {
+          droppedBytes += len;
+          continue;
+        }
+
+        const allowed = Math.min(len, cap - b.cpu.byteLength);
         if (allowed <= 0) { droppedBytes += len; continue; }
+
         const oldLen = b.cpu.byteLength;
         const next = new Uint8Array(oldLen + allowed);
         next.set(b.cpu, 0);
         next.set(payload.subarray(0, allowed), oldLen);
         b.cpu = next;
+
         if (allowed < len) droppedBytes += (len - allowed);
+
         touched.add(bufferId);
         continue;
       }
 
       if (op === OP_UPDATE_RANGE) {
-        if (offsetBytes >= this.MAX_BUFFER_BYTES) { droppedBytes += len; continue; }
+        if (cap === 0) { droppedBytes += len; continue; }
+        if (offsetBytes >= cap) { droppedBytes += len; continue; }
+
         const end = offsetBytes + len;
-        const allowedEnd = Math.min(end, this.MAX_BUFFER_BYTES);
+        const allowedEnd = Math.min(end, cap);
         const allowedLen = allowedEnd - offsetBytes;
+
         if (allowedLen <= 0) { droppedBytes += len; continue; }
+
+        // grow CPU buffer if needed (up to cap)
         if (allowedEnd > b.cpu.byteLength) {
           const grown = new Uint8Array(allowedEnd);
           grown.set(b.cpu, 0);
           b.cpu = grown;
         }
+
         b.cpu.set(payload.subarray(0, allowedLen), offsetBytes);
+
         if (allowedLen < len) droppedBytes += (len - allowedLen);
+
         touched.add(bufferId);
         continue;
       }
@@ -177,13 +261,230 @@ type GpuBuffer = { gl: WebGLBuffer; gpuByteLength: number };
 // -------------------- Programs --------------------
 type ProgramBundle = {
   prog: WebGLProgram;
+  // attribs
   a_pos?: number;
   a_rect?: number;
   a_c0?: number;
   a_c1?: number;
+  a_g0?: number;
+  a_g1?: number;
+
+  // uniforms
   u_transform?: WebGLUniformLocation | null;
   u_pointSize?: WebGLUniformLocation | null;
+
+  // text uniforms
+  u_atlas?: WebGLUniformLocation | null;
+  u_color?: WebGLUniformLocation | null;
+  u_pxRange?: WebGLUniformLocation | null;
 };
+
+// -------------------- Text SDF glyph atlas (incremental uploads) --------------------
+type GlyphInfo = {
+  codepoint: number;
+  ax: number; ay: number;
+  w: number; h: number;
+  u0: number; v0: number; u1: number; v1: number;
+};
+
+type Shelf = { x: number; y: number; h: number };
+
+// Minimal incremental atlas with CPU SDF generation.
+// Uses OffscreenCanvas if available, otherwise HTMLCanvasElement.
+class GlyphAtlas {
+  readonly atlasSize: number;
+  readonly glyphPx: number;
+  readonly pad: number;
+  readonly sdfRange: number;
+
+  private font: string;
+  private glyphMap = new Map<number, GlyphInfo>();
+
+  private shelves: Shelf[] = [{ x: 1, y: 1, h: 0 }];
+
+  private scratchCanvas: OffscreenCanvas | HTMLCanvasElement;
+  private ctx: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D;
+
+  constructor(opts?: { atlasSize?: number; glyphPx?: number; pad?: number; sdfRange?: number; font?: string }) {
+    this.atlasSize = opts?.atlasSize ?? 1024;
+    this.glyphPx = opts?.glyphPx ?? 48;
+    this.pad = opts?.pad ?? 2;
+    this.sdfRange = opts?.sdfRange ?? 12;
+    this.font = opts?.font ?? `600 ${this.glyphPx}px system-ui`;
+
+    const W = this.glyphPx + this.pad * 2 + this.sdfRange * 2;
+
+    if (typeof OffscreenCanvas !== "undefined") {
+      this.scratchCanvas = new OffscreenCanvas(W, W);
+      const c = this.scratchCanvas.getContext("2d", { willReadFrequently: true } as any);
+      if (!c) throw new Error("GlyphAtlas: 2D context unavailable");
+      this.ctx = c;
+    } else {
+      const c = document.createElement("canvas");
+      c.width = W; c.height = W;
+      const ctx = c.getContext("2d", { willReadFrequently: true } as any);
+      if (!ctx) throw new Error("GlyphAtlas: 2D context unavailable");
+      this.scratchCanvas = c;
+      this.ctx = ctx;
+    }
+  }
+
+  setFont(font: string) {
+    if (font && font !== this.font) this.font = font;
+  }
+
+  getGlyph(cp: number): GlyphInfo | null {
+    return this.glyphMap.get(cp) ?? null;
+  }
+
+  // Returns list of newly created glyphs and their R8 sdf pixels for uploading.
+  ensureGlyphs(chars: string): Array<{ g: GlyphInfo; sdfR8: Uint8Array }> {
+    const out: Array<{ g: GlyphInfo; sdfR8: Uint8Array }> = [];
+
+    for (const ch of chars) {
+      const cp = ch.codePointAt(0)!;
+      if (this.glyphMap.has(cp)) continue;
+
+      const built = this.buildGlyph(ch, cp);
+      if (!built) continue;
+
+      this.glyphMap.set(cp, built.g);
+      out.push({ g: built.g, sdfR8: built.sdfR8 });
+    }
+
+    return out;
+  }
+
+  private buildGlyph(ch: string, cp: number): { g: GlyphInfo; sdfR8: Uint8Array } | null {
+    const cell = this.glyphPx + this.pad * 2 + this.sdfRange * 2;
+    const w = cell;
+    const h = cell;
+
+    // clear scratch
+    this.ctx.save();
+    (this.ctx as any).setTransform?.(1, 0, 0, 1, 0, 0);
+    this.ctx.clearRect(0, 0, w, h);
+
+    this.ctx.fillStyle = "white";
+    this.ctx.textBaseline = "alphabetic";
+    this.ctx.textAlign = "left";
+    this.ctx.font = this.font;
+
+    const bx = this.pad + this.sdfRange;
+    const by = this.pad + this.sdfRange + this.glyphPx;
+    this.ctx.fillText(ch, bx, by);
+
+    const img = this.ctx.getImageData(0, 0, w, h);
+    this.ctx.restore();
+
+    const alpha = new Uint8Array(w * h);
+    for (let i = 0, j = 0; i < img.data.length; i += 4, j++) alpha[j] = img.data[i + 3];
+
+    const sdf = buildSdfR8(alpha, w, h, this.sdfRange);
+
+    const place = this.pack(w, h);
+    if (!place) return null;
+
+    const ax = place.ax;
+    const ay = place.ay;
+
+    const u0 = ax / this.atlasSize;
+    const v0 = ay / this.atlasSize;
+    const u1 = (ax + w) / this.atlasSize;
+    const v1 = (ay + h) / this.atlasSize;
+
+    const g: GlyphInfo = { codepoint: cp, ax, ay, w, h, u0, v0, u1, v1 };
+    return { g, sdfR8: sdf };
+  }
+
+  private pack(w: number, h: number): { ax: number; ay: number } | null {
+    const max = this.atlasSize - 1;
+
+    for (const s of this.shelves) {
+      const canFitX = s.x + w <= max;
+      const canFitY = s.y + h <= max;
+      if (!canFitX || !canFitY) continue;
+
+      if (s.h === 0) s.h = h;
+      if (h > s.h) continue;
+
+      const ax = s.x;
+      const ay = s.y;
+      s.x += w;
+      return { ax, ay };
+    }
+
+    const last = this.shelves[this.shelves.length - 1];
+    const ny = last.y + (last.h || 0);
+    if (ny + h > max) return null;
+
+    this.shelves.push({ x: 1 + w, y: ny, h });
+    return { ax: 1, ay: ny };
+  }
+}
+
+// SDF: returns R8 [0..255], where 128 is edge, >128 inside, <128 outside.
+function buildSdfR8(alpha: Uint8Array, w: number, h: number, rangePx: number): Uint8Array {
+  const inside = new Uint8Array(w * h);
+  for (let i = 0; i < inside.length; i++) inside[i] = (alpha[i] > 127) ? 1 : 0;
+
+  const distToOutside = distanceTransform(inside, w, h);
+  const inv = new Uint8Array(w * h);
+  for (let i = 0; i < inv.length; i++) inv[i] = inside[i] ? 0 : 1;
+  const distToInside = distanceTransform(inv, w, h);
+
+  const out = new Uint8Array(w * h);
+  const r = Math.max(1, rangePx);
+
+  for (let i = 0; i < out.length; i++) {
+    const signed = inside[i] ? distToOutside[i] : -distToInside[i];
+    const clamped = Math.max(-r, Math.min(r, signed));
+    const v = 128 + (clamped / r) * 127;
+    out[i] = (v < 0) ? 0 : (v > 255) ? 255 : (v | 0);
+  }
+
+  return out;
+}
+
+// 2-pass chamfer distance transform (fast, OK for UI SDF)
+function distanceTransform(mask: Uint8Array, w: number, h: number): Float32Array {
+  const INF = 1e9;
+  const d = new Float32Array(w * h);
+
+  for (let i = 0; i < d.length; i++) d[i] = mask[i] ? INF : 0;
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      const v = d[i];
+      if (v === 0) continue;
+
+      let best = v;
+      if (x > 0) best = Math.min(best, d[i - 1] + 1);
+      if (y > 0) best = Math.min(best, d[i - w] + 1);
+      if (x > 0 && y > 0) best = Math.min(best, d[i - w - 1] + 1.4142);
+      if (x + 1 < w && y > 0) best = Math.min(best, d[i - w + 1] + 1.4142);
+      d[i] = best;
+    }
+  }
+
+  for (let y = h - 1; y >= 0; y--) {
+    for (let x = w - 1; x >= 0; x--) {
+      const i = y * w + x;
+      const v = d[i];
+      if (v === 0) continue;
+
+      let best = v;
+      if (x + 1 < w) best = Math.min(best, d[i + 1] + 1);
+      if (y + 1 < h) best = Math.min(best, d[i + w] + 1);
+      if (x + 1 < w && y + 1 < h) best = Math.min(best, d[i + w + 1] + 1.4142);
+      if (x > 0 && y + 1 < h) best = Math.min(best, d[i + w - 1] + 1.4142);
+      d[i] = best;
+    }
+  }
+
+  return d;
+}
 
 // -------------------- EngineHost --------------------
 export class EngineHost {
@@ -193,18 +494,24 @@ export class EngineHost {
   private running = false;
   private raf = 0;
 
+  // FPS calc
   private frames = 0;
   private lastFpsT = 0;
 
+  // Worker -> main thread queue (Transferables)
   private dataQueue: ArrayBuffer[] = [];
   private droppedBatches = 0;
 
   private readonly MAX_QUEUE = 512;
   private readonly MAX_BATCHES_PER_FRAME = 64;
 
+  // Core ingest stub
   private core = new CoreIngestStub();
+
+  // GPU buffers mirror core buffers
   private gpuBuffers = new Map<number, GpuBuffer>();
 
+  // Scene
   private geometries = new Map<number, Geometry>();
   private drawItems = new Map<number, DrawItem>();
 
@@ -212,12 +519,20 @@ export class EngineHost {
   private transforms = new Map<number, TransformResource>();
   private readonly IDENTITY_MAT3 = new Float32Array([1,0,0, 0,1,0, 0,0,1]);
 
+  // Errors
   private lastErrors: EngineError[] = [];
 
+  // Programs
   private progPos2: ProgramBundle | null = null;
   private progInstRect: ProgramBundle | null = null;
   private progInstCandle: ProgramBundle | null = null;
+  private progTextSdf: ProgramBundle | null = null;
 
+  // Text atlas
+  private atlas = new GlyphAtlas({ atlasSize: 1024, glyphPx: 48, sdfRange: 12, pad: 2 });
+  private atlasTex: WebGLTexture | null = null;
+
+  // Stats
   private stats: EngineStats = {
     frameMs: 0,
     frameMsP95: 0,
@@ -278,7 +593,7 @@ export class EngineHost {
       ["u_transform", "u_pointSize"]
     );
 
-    // ---- instanced rect with u_transform ----
+    // ---- instanced rect ----
     this.progInstRect = this.createProgramBundle(
       `#version 300 es
        precision highp float;
@@ -309,7 +624,7 @@ export class EngineHost {
       ["u_transform"]
     );
 
-    // ---- instanced candle with u_transform ----
+    // ---- instanced candle ----
     this.progInstCandle = this.createProgramBundle(
       `#version 300 es
        precision highp float;
@@ -363,10 +678,67 @@ export class EngineHost {
       ["u_transform"]
     );
 
+    // ---- textSDF@1 ----
+    this.initAtlasTexture();
+
+    this.progTextSdf = this.createProgramBundle(
+      `#version 300 es
+       precision highp float;
+
+       in vec4 a_g0; // x0 y0 x1 y1
+       in vec4 a_g1; // u0 v0 u1 v1
+
+       uniform mat3 u_transform;
+
+       out vec2 v_uv;
+
+       void main() {
+         int vid = gl_VertexID % 6;
+         vec2 uv;
+         if (vid == 0) uv = vec2(0.0, 0.0);
+         else if (vid == 1) uv = vec2(1.0, 0.0);
+         else if (vid == 2) uv = vec2(0.0, 1.0);
+         else if (vid == 3) uv = vec2(0.0, 1.0);
+         else if (vid == 4) uv = vec2(1.0, 0.0);
+         else uv = vec2(1.0, 1.0);
+
+         float x = mix(a_g0.x, a_g0.z, uv.x);
+         float y = mix(a_g0.y, a_g0.w, uv.y);
+
+         v_uv = vec2(mix(a_g1.x, a_g1.z, uv.x), mix(a_g1.y, a_g1.w, uv.y));
+
+         vec3 p = u_transform * vec3(x, y, 1.0);
+         gl_Position = vec4(p.xy, 0.0, 1.0);
+       }`,
+      `#version 300 es
+       precision highp float;
+
+       uniform sampler2D u_atlas;
+       uniform vec4 u_color;
+       uniform float u_pxRange;
+
+       in vec2 v_uv;
+       out vec4 outColor;
+
+       void main() {
+         // R8 atlas sampled into .r (0..1)
+         float sdf = texture(u_atlas, v_uv).r;
+         float dist = sdf - 0.5;
+
+         // fwidth makes it crisp at multiple scales
+         float w = fwidth(dist) * u_pxRange;
+         float a = smoothstep(-w, w, dist);
+
+         outColor = vec4(u_color.rgb, u_color.a * a);
+       }`,
+      ["a_g0", "a_g1"],
+      ["u_transform", "u_atlas", "u_color", "u_pxRange"]
+    );
+
     this.onResize();
     window.addEventListener("resize", this.onResize, { passive: true });
 
-    // Ensure transform 0 exists (identity) as a safe default (optional)
+    // Ensure transform 0 exists (identity safe default)
     this.ensureTransform(0);
   }
 
@@ -390,9 +762,13 @@ export class EngineHost {
     const gl = this.gl;
     if (gl) {
       for (const gb of this.gpuBuffers.values()) gl.deleteBuffer(gb.gl);
+
       if (this.progPos2) gl.deleteProgram(this.progPos2.prog);
       if (this.progInstRect) gl.deleteProgram(this.progInstRect.prog);
       if (this.progInstCandle) gl.deleteProgram(this.progInstCandle.prog);
+      if (this.progTextSdf) gl.deleteProgram(this.progTextSdf.prog);
+
+      if (this.atlasTex) gl.deleteTexture(this.atlasTex);
     }
 
     this.gpuBuffers.clear();
@@ -404,6 +780,7 @@ export class EngineHost {
 
     this.gl = null;
     this.canvas = null;
+    this.atlasTex = null;
   }
 
   // -------------------- worker ingest --------------------
@@ -430,10 +807,6 @@ export class EngineHost {
     tr.mat3 = mat3FromParams(tr.params);
   }
 
-  /**
-   * attachTransform(targetId, transformId)
-   * D1.5 spec says pane/layer/drawItem; for now we implement drawItem only.
-   */
   attachTransform(targetId: number, transformId: number) {
     const di = this.drawItems.get(targetId);
     if (!di) throw new Error(`attachTransform: drawItem ${targetId} not found`);
@@ -456,25 +829,34 @@ export class EngineHost {
     if (id === null || id === undefined) return this.IDENTITY_MAT3;
     const tr = this.transforms.get(id);
     if (!tr) {
-      // Keep drawing with identity but record a structured error for visibility.
       this.lastErrors.push(err("VALIDATION_NO_TRANSFORM", "DrawItem references missing transform", { drawItemId: di.id, transformId: id }));
       return this.IDENTITY_MAT3;
     }
     return tr.mat3;
   }
 
-  // -------------------- control plane --------------------
+  // -------------------- Control plane --------------------
   /**
    * Supported cmds:
    * - createBuffer {id}
    * - createGeometry {id, vertexBufferId, format:"pos2_clip", strideBytes?}
-   * - createInstancedGeometry {id, instanceBufferId, instanceFormat:"rect4"|"candle6", instanceStrideBytes}
+   * - createInstancedGeometry {id, instanceBufferId, instanceFormat:"rect4"|"candle6"|"glyph8", instanceStrideBytes}
    * - createDrawItem {id, geometryId, pipeline}
    * - setDrawItemPipeline {id, pipeline}
+   * - delete {kind:"drawItem"|"geometry"|"transform"|"buffer", id}
+   *
+   * D1.5:
    * - createTransform {id}
-   * - setTransform {id, tx?, ty?, sx?, sy?}
+   * - setTransform {id, tx?,ty?,sx?,sy?}
    * - attachTransform {targetId, transformId}
-   * - setDebug {showBounds?, wireframe?}
+   *
+   * D6.1 cache policy:
+   * - bufferSetMaxBytes {id, maxBytes}
+   * - bufferEvictFront {id, bytes}
+   * - bufferKeepLast {id, bytes}
+   *
+   * D2.3:
+   * - ensureGlyphs {chars, font?}
    */
   applyControl(jsonTextOrObj: string | any): { ok: true } | { ok: false; error: string } {
     let obj: any;
@@ -489,20 +871,20 @@ export class EngineHost {
 
     try {
       if (cmd === "createBuffer") {
-        const id = toU32(obj.id);
-        if (!id && id !== 0) throw new Error("createBuffer: missing id");
+        const id = toU32AllowZero(obj.id);
+        if (obj.id === undefined) throw new Error("createBuffer: missing id");
         this.createBuffer(id);
         return { ok: true };
       }
 
       if (cmd === "createGeometry") {
-        const id = toU32(obj.id);
-        const vb = toU32(obj.vertexBufferId);
+        const id = toU32AllowZero(obj.id);
+        const vb = toU32AllowZero(obj.vertexBufferId);
         const fmt = obj.format ?? "pos2_clip";
         const strideBytes = typeof obj.strideBytes === "number" ? (obj.strideBytes | 0) : 8;
 
-        if (!id && id !== 0) throw new Error("createGeometry: missing id");
-        if (!vb && vb !== 0) throw new Error("createGeometry: missing vertexBufferId");
+        if (obj.id === undefined) throw new Error("createGeometry: missing id");
+        if (obj.vertexBufferId === undefined) throw new Error("createGeometry: missing vertexBufferId");
         if (fmt !== "pos2_clip") throw new Error("createGeometry: only format=pos2_clip supported");
 
         this.createVertexGeometry(id, vb, strideBytes);
@@ -510,14 +892,16 @@ export class EngineHost {
       }
 
       if (cmd === "createInstancedGeometry") {
-        const id = toU32(obj.id);
-        const ib = toU32(obj.instanceBufferId);
-        const instanceFormat = obj.instanceFormat as "rect4" | "candle6";
+        const id = toU32AllowZero(obj.id);
+        const ib = toU32AllowZero(obj.instanceBufferId);
+        const instanceFormat = String(obj.instanceFormat ?? "") as "rect4" | "candle6" | "glyph8";
         const instanceStrideBytes = typeof obj.instanceStrideBytes === "number" ? (obj.instanceStrideBytes | 0) : 0;
 
-        if (!id && id !== 0) throw new Error("createInstancedGeometry: missing id");
-        if (!ib && ib !== 0) throw new Error("createInstancedGeometry: missing instanceBufferId");
-        if (instanceFormat !== "rect4" && instanceFormat !== "candle6") throw new Error("createInstancedGeometry: instanceFormat must be rect4|candle6");
+        if (obj.id === undefined) throw new Error("createInstancedGeometry: missing id");
+        if (obj.instanceBufferId === undefined) throw new Error("createInstancedGeometry: missing instanceBufferId");
+        if (instanceFormat !== "rect4" && instanceFormat !== "candle6" && instanceFormat !== "glyph8") {
+          throw new Error("createInstancedGeometry: instanceFormat must be rect4|candle6|glyph8");
+        }
         if (instanceStrideBytes <= 0) throw new Error("createInstancedGeometry: missing/invalid instanceStrideBytes");
 
         this.createInstancedGeometry(id, ib, instanceFormat, instanceStrideBytes);
@@ -525,18 +909,30 @@ export class EngineHost {
       }
 
       if (cmd === "createDrawItem") {
-        const id = toU32(obj.id);
-        const gid = toU32(obj.geometryId);
+        const id = toU32AllowZero(obj.id);
+        const gid = toU32AllowZero(obj.geometryId);
         const pipeline = toPipelineId(obj.pipeline ?? "triSolid@1");
-        if (!id && id !== 0) throw new Error("createDrawItem: missing id");
-        if (!gid && gid !== 0) throw new Error("createDrawItem: missing geometryId");
+
+        if (obj.id === undefined) throw new Error("createDrawItem: missing id");
+        if (obj.geometryId === undefined) throw new Error("createDrawItem: missing geometryId");
+
         this.createDrawItem(id, gid, pipeline);
+        return { ok: true };
+      }
+
+      if (cmd === "setDrawItemPipeline") {
+        const id = toU32AllowZero(obj.id);
+        const pipeline = toPipelineId(obj.pipeline);
+
+        if (obj.id === undefined) throw new Error("setDrawItemPipeline: missing id");
+
+        this.setDrawItemPipeline(id, pipeline);
         return { ok: true };
       }
 
       if (cmd === "delete") {
         const kind = String(obj.kind ?? "");
-        const id = toU32(obj.id);
+        const id = toU32AllowZero(obj.id);
         if (obj.id === undefined) throw new Error("delete: missing id");
         if (!kind) throw new Error("delete: missing kind");
 
@@ -549,43 +945,35 @@ export class EngineHost {
         return { ok: true };
       }
 
-
-      if (cmd === "setDrawItemPipeline") {
-        const id = toU32(obj.id);
-        const pipeline = toPipelineId(obj.pipeline);
-        if (!id && id !== 0) throw new Error("setDrawItemPipeline: missing id");
-        this.setDrawItemPipeline(id, pipeline);
-        return { ok: true };
-      }
-
       // ---- D1.5 transforms ----
       if (cmd === "createTransform") {
-        const id = toU32(obj.id);
-        if (id === undefined || id === null) throw new Error("createTransform: missing id");
+        const id = toU32AllowZero(obj.id);
+        if (obj.id === undefined) throw new Error("createTransform: missing id");
         this.createTransform(id);
         return { ok: true };
       }
 
       if (cmd === "setTransform") {
-        const id = toU32(obj.id);
-        if (id === undefined || id === null) throw new Error("setTransform: missing id");
+        const id = toU32AllowZero(obj.id);
+        if (obj.id === undefined) throw new Error("setTransform: missing id");
         this.setTransform(id, { tx: obj.tx, ty: obj.ty, sx: obj.sx, sy: obj.sy });
         return { ok: true };
       }
 
       if (cmd === "attachTransform") {
-        const targetId = toU32(obj.targetId);
-        const transformId = toU32(obj.transformId);
-        if (targetId === undefined || targetId === null) throw new Error("attachTransform: missing targetId");
-        if (transformId === undefined || transformId === null) throw new Error("attachTransform: missing transformId");
+        const targetId = toU32AllowZero(obj.targetId);
+        const transformId = toU32AllowZero(obj.transformId);
+        if (obj.targetId === undefined) throw new Error("attachTransform: missing targetId");
+        if (obj.transformId === undefined) throw new Error("attachTransform: missing transformId");
         this.attachTransform(targetId, transformId);
         return { ok: true };
       }
 
+      // ---- D6.1 cache policy ----
       if (cmd === "bufferSetMaxBytes") {
-        const id = toU32(obj.id);
+        const id = toU32AllowZero(obj.id);
         const maxBytes = Number(obj.maxBytes);
-        if (!id) throw new Error("bufferSetMaxBytes: missing id");
+        if (obj.id === undefined) throw new Error("bufferSetMaxBytes: missing id");
         if (!Number.isFinite(maxBytes)) throw new Error("bufferSetMaxBytes: invalid maxBytes");
         this.core.ensureBuffer(id);
         this.core.setMaxBytes(id, maxBytes | 0);
@@ -593,24 +981,33 @@ export class EngineHost {
       }
 
       if (cmd === "bufferEvictFront") {
-        const id = toU32(obj.id);
+        const id = toU32AllowZero(obj.id);
         const bytes = Number(obj.bytes);
-        if (!id) throw new Error("bufferEvictFront: missing id");
+        if (obj.id === undefined) throw new Error("bufferEvictFront: missing id");
         if (!Number.isFinite(bytes)) throw new Error("bufferEvictFront: invalid bytes");
         this.core.evictFront(id, bytes | 0);
         return { ok: true };
       }
 
       if (cmd === "bufferKeepLast") {
-        const id = toU32(obj.id);
+        const id = toU32AllowZero(obj.id);
         const bytes = Number(obj.bytes);
-        if (!id) throw new Error("bufferKeepLast: missing id");
+        if (obj.id === undefined) throw new Error("bufferKeepLast: missing id");
         if (!Number.isFinite(bytes)) throw new Error("bufferKeepLast: invalid bytes");
         this.core.keepLast(id, bytes | 0);
         return { ok: true };
       }
 
+      // ---- D2.3 text glyph uploads ----
+      if (cmd === "ensureGlyphs") {
+        const chars = String(obj.chars ?? "");
+        if (!chars) throw new Error("ensureGlyphs: missing chars");
+        if (obj.font) this.atlas.setFont(String(obj.font));
+        this.ensureGlyphsUploaded(chars);
+        return { ok: true };
+      }
 
+      // ---- debug ----
       if (cmd === "setDebug") {
         const showBounds = obj.showBounds;
         const wireframe = obj.wireframe;
@@ -627,6 +1024,7 @@ export class EngineHost {
     }
   }
 
+  // Convenience
   createBuffer(bufferId: number) {
     this.core.ensureBuffer(bufferId);
     this.stats.activeBuffers = this.core.getActiveBufferCount();
@@ -637,7 +1035,7 @@ export class EngineHost {
     this.geometries.set(id, { kind: "vertex", id, vertexBufferId, strideBytes, format: "pos2_clip" });
   }
 
-  private createInstancedGeometry(id: number, instanceBufferId: number, instanceFormat: "rect4" | "candle6", instanceStrideBytes: number) {
+  private createInstancedGeometry(id: number, instanceBufferId: number, instanceFormat: InstancedGeometry["instanceFormat"], instanceStrideBytes: number) {
     this.createBuffer(instanceBufferId);
     this.geometries.set(id, { kind: "instanced", id, instanceBufferId, instanceFormat, instanceStrideBytes });
   }
@@ -672,7 +1070,6 @@ export class EngineHost {
 
     this.stats.activeBuffers = this.core.getActiveBufferCount();
   }
-
 
   private setDrawItemPipeline(drawItemId: number, pipeline: PipelineId) {
     const di = this.drawItems.get(drawItemId);
@@ -735,6 +1132,7 @@ export class EngineHost {
 
       const M = this.resolveTransformMat(di);
 
+      // pos2 is assumed packed at offset 0, 2 floats (even if stride > 8, we still read f32 as packed)
       for (let vi = 0; vi < triCountVerts; vi += 3) {
         const p0 = applyMat3ToPos2(M, f32[(vi + 0) * 2 + 0], f32[(vi + 0) * 2 + 1]);
         const p1 = applyMat3ToPos2(M, f32[(vi + 1) * 2 + 0], f32[(vi + 1) * 2 + 1]);
@@ -777,6 +1175,7 @@ export class EngineHost {
 
     const t0 = performance.now();
 
+    // per-frame
     this.stats.drawCalls = 0;
     this.stats.ingestedBytesThisFrame = 0;
     this.stats.uploadedBytesThisFrame = 0;
@@ -790,8 +1189,10 @@ export class EngineHost {
     while (processed < this.MAX_BATCHES_PER_FRAME && this.dataQueue.length > 0) {
       const batch = this.dataQueue.shift()!;
       const r = this.core.ingestData(batch);
+
       this.stats.ingestedBytesThisFrame += r.payloadBytes;
       this.stats.droppedBytesThisFrame += r.droppedBytes;
+
       for (const id of r.touchedBufferIds) touched.add(id);
       processed++;
     }
@@ -805,7 +1206,7 @@ export class EngineHost {
 
     gl.clear(gl.COLOR_BUFFER_BIT);
 
-    // Draw items (validate per-item; errors => no draw)
+    // Draw items
     for (const di of this.drawItems.values()) {
       const spec = PIPELINES[di.pipeline];
       if (!spec) {
@@ -825,15 +1226,19 @@ export class EngineHost {
         continue;
       }
 
-      if (di.pipeline === "triSolid@1") this.drawTriSolid(di, g as VertexGeometry);
-      else if (di.pipeline === "line2d@1") this.drawLine2d(di, g as VertexGeometry);
-      else if (di.pipeline === "points@1") this.drawPoints(di, g as VertexGeometry);
+      // dispatch
+      if (di.pipeline === "triSolid@1") this.drawPos2(di, g as VertexGeometry, "triangles");
+      else if (di.pipeline === "line2d@1") this.drawPos2(di, g as VertexGeometry, "lines");
+      else if (di.pipeline === "points@1") this.drawPos2(di, g as VertexGeometry, "points");
       else if (di.pipeline === "instancedRect@1") this.drawInstancedRect(di, g as InstancedGeometry);
       else if (di.pipeline === "instancedCandle@1") this.drawInstancedCandle(di, g as InstancedGeometry);
+      else if (di.pipeline === "textSDF@1") this.drawTextSdf(di, g as InstancedGeometry);
     }
 
+    // timing + p95
     const frameMs = performance.now() - t0;
     this.stats.frameMs = frameMs;
+
     this.frameWindow.push(frameMs);
     if (this.frameWindow.length > this.FRAME_WINDOW_MAX) this.frameWindow.shift();
     this.stats.frameMsP95 = percentile(this.frameWindow, 0.95);
@@ -850,7 +1255,8 @@ export class EngineHost {
       errors.push(err("VALIDATION_NO_TRANSFORM", "Attached transform not found", { drawItemId: di.id, transformId: di.transformId }));
     }
 
-    if (spec.draw === "triangles" || spec.draw === "lines" || spec.draw === "points") {
+    const isPos2 = (spec.id === "triSolid@1" || spec.id === "line2d@1" || spec.id === "points@1");
+    if (isPos2) {
       if (g.kind !== "vertex") {
         errors.push(err("VALIDATION_BAD_GEOMETRY_KIND", `${spec.id} requires vertex geometry`, { drawItemId: di.id, geometryId: g.id }));
         return errors;
@@ -885,6 +1291,12 @@ export class EngineHost {
         if (g.instanceStrideBytes !== 24) errors.push(err("VALIDATION_BAD_STRIDE", "instancedCandle@1 requires instanceStrideBytes=24", { got: g.instanceStrideBytes }));
       }
 
+      if (spec.id === "textSDF@1") {
+        if (g.instanceFormat !== "glyph8") errors.push(err("VALIDATION_BAD_FORMAT", "textSDF@1 requires instanceFormat=glyph8", { got: g.instanceFormat }));
+        if (g.instanceStrideBytes !== 32) errors.push(err("VALIDATION_BAD_STRIDE", "textSDF@1 requires instanceStrideBytes=32", { got: g.instanceStrideBytes }));
+        if (!this.atlasTex) errors.push(err("TEXT_NO_ATLAS", "textSDF@1 atlas texture missing"));
+      }
+
       const gb = this.gpuBuffers.get(g.instanceBufferId);
       if (!gb && this.core.getBufferBytes(g.instanceBufferId).byteLength > 0) {
         errors.push(err("VALIDATION_NO_BUFFER", "Instance buffer not uploaded on GPU", { instanceBufferId: g.instanceBufferId }));
@@ -896,13 +1308,17 @@ export class EngineHost {
     return errors;
   }
 
-  // -------------------- draw implementations (now set u_transform) --------------------
-  private drawTriSolid(di: DrawItem, g: VertexGeometry) {
+  // -------------------- draw implementations --------------------
+  private drawPos2(di: DrawItem, g: VertexGeometry, mode: "triangles" | "lines" | "points") {
     const gl = this.gl!;
     const cpu = this.core.getBufferBytes(g.vertexBufferId);
     const vcount = Math.floor(cpu.byteLength / g.strideBytes);
-    const triCount = vcount - (vcount % 3);
-    if (triCount < 3) return;
+
+    let count = vcount;
+    if (mode === "triangles") count = vcount - (vcount % 3);
+    else if (mode === "lines") count = vcount - (vcount % 2);
+
+    if (count <= 0) return;
 
     const gb = this.gpuBuffers.get(g.vertexBufferId);
     if (!gb) return;
@@ -911,63 +1327,17 @@ export class EngineHost {
     gl.useProgram(p.prog);
 
     gl.uniformMatrix3fv(p.u_transform!, false, this.resolveTransformMat(di));
-    gl.uniform1f(p.u_pointSize!, 1.0);
+    gl.uniform1f(p.u_pointSize!, mode === "points" ? 6.0 : 1.0);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, gb.gl);
     gl.enableVertexAttribArray(p.a_pos!);
     gl.vertexAttribPointer(p.a_pos!, 2, gl.FLOAT, false, g.strideBytes, 0);
     gl.vertexAttribDivisor(p.a_pos!, 0);
 
-    gl.drawArrays(gl.TRIANGLES, 0, triCount);
-    this.stats.drawCalls++;
-  }
+    if (mode === "triangles") gl.drawArrays(gl.TRIANGLES, 0, count);
+    else if (mode === "lines") gl.drawArrays(gl.LINES, 0, count);
+    else gl.drawArrays(gl.POINTS, 0, count);
 
-  private drawLine2d(di: DrawItem, g: VertexGeometry) {
-    const gl = this.gl!;
-    const cpu = this.core.getBufferBytes(g.vertexBufferId);
-    const vcount = Math.floor(cpu.byteLength / g.strideBytes);
-    const lineCount = vcount - (vcount % 2);
-    if (lineCount < 2) return;
-
-    const gb = this.gpuBuffers.get(g.vertexBufferId);
-    if (!gb) return;
-
-    const p = this.progPos2!;
-    gl.useProgram(p.prog);
-
-    gl.uniformMatrix3fv(p.u_transform!, false, this.resolveTransformMat(di));
-    gl.uniform1f(p.u_pointSize!, 1.0);
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, gb.gl);
-    gl.enableVertexAttribArray(p.a_pos!);
-    gl.vertexAttribPointer(p.a_pos!, 2, gl.FLOAT, false, g.strideBytes, 0);
-    gl.vertexAttribDivisor(p.a_pos!, 0);
-
-    gl.drawArrays(gl.LINES, 0, lineCount);
-    this.stats.drawCalls++;
-  }
-
-  private drawPoints(di: DrawItem, g: VertexGeometry) {
-    const gl = this.gl!;
-    const cpu = this.core.getBufferBytes(g.vertexBufferId);
-    const vcount = Math.floor(cpu.byteLength / g.strideBytes);
-    if (vcount < 1) return;
-
-    const gb = this.gpuBuffers.get(g.vertexBufferId);
-    if (!gb) return;
-
-    const p = this.progPos2!;
-    gl.useProgram(p.prog);
-
-    gl.uniformMatrix3fv(p.u_transform!, false, this.resolveTransformMat(di));
-    gl.uniform1f(p.u_pointSize!, 6.0);
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, gb.gl);
-    gl.enableVertexAttribArray(p.a_pos!);
-    gl.vertexAttribPointer(p.a_pos!, 2, gl.FLOAT, false, g.strideBytes, 0);
-    gl.vertexAttribDivisor(p.a_pos!, 0);
-
-    gl.drawArrays(gl.POINTS, 0, vcount);
     this.stats.drawCalls++;
   }
 
@@ -1022,6 +1392,48 @@ export class EngineHost {
     this.stats.drawCalls++;
   }
 
+  private drawTextSdf(di: DrawItem, g: InstancedGeometry) {
+    const gl = this.gl!;
+    const cpu = this.core.getBufferBytes(g.instanceBufferId);
+    const icount = Math.floor(cpu.byteLength / g.instanceStrideBytes);
+    if (icount < 1) return;
+
+    const gb = this.gpuBuffers.get(g.instanceBufferId);
+    if (!gb) return;
+
+    if (!this.atlasTex) {
+      this.lastErrors.push(err("TEXT_NO_ATLAS", "No atlas texture for textSDF@1"));
+      return;
+    }
+
+    const p = this.progTextSdf!;
+    gl.useProgram(p.prog);
+
+    gl.uniformMatrix3fv(p.u_transform!, false, this.resolveTransformMat(di));
+
+    // Bind atlas once
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.atlasTex);
+    if (p.u_atlas) gl.uniform1i(p.u_atlas, 0);
+
+    // Default color (you can extend to per-drawitem color later)
+    if (p.u_color) gl.uniform4f(p.u_color, 0.92, 0.92, 0.95, 1.0);
+    if (p.u_pxRange) gl.uniform1f(p.u_pxRange, this.atlas.sdfRange);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, gb.gl);
+
+    gl.enableVertexAttribArray(p.a_g0!);
+    gl.vertexAttribPointer(p.a_g0!, 4, gl.FLOAT, false, g.instanceStrideBytes, 0);
+    gl.vertexAttribDivisor(p.a_g0!, 1);
+
+    gl.enableVertexAttribArray(p.a_g1!);
+    gl.vertexAttribPointer(p.a_g1!, 4, gl.FLOAT, false, g.instanceStrideBytes, 16);
+    gl.vertexAttribDivisor(p.a_g1!, 1);
+
+    gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, icount);
+    this.stats.drawCalls++;
+  }
+
   // -------------------- GPU upload --------------------
   private syncGpuBufferFull(bufferId: number) {
     const gl = this.gl!;
@@ -1042,6 +1454,59 @@ export class EngineHost {
     this.stats.uploadedBytesThisFrame += cpu.byteLength;
   }
 
+  // -------------------- Text atlas upload --------------------
+  private initAtlasTexture() {
+    const gl = this.gl!;
+    const tex = gl.createTexture();
+    if (!tex) throw new Error("Failed to create atlas texture");
+    this.atlasTex = tex;
+
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    const size = this.atlas.atlasSize;
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, size, size, 0, gl.RED, gl.UNSIGNED_BYTE, null);
+  }
+
+  private ensureGlyphsUploaded(chars: string) {
+    const gl = this.gl!;
+    if (!this.atlasTex) this.initAtlasTexture();
+
+    const added = this.atlas.ensureGlyphs(chars);
+    if (added.length === 0) return;
+
+    gl.bindTexture(gl.TEXTURE_2D, this.atlasTex);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+
+    for (const a of added) {
+      // If packing failed, atlas returns nothing; but in extreme cases we can detect full atlas
+      if (a.g.ax + a.g.w > this.atlas.atlasSize || a.g.ay + a.g.h > this.atlas.atlasSize) {
+        this.lastErrors.push(err("TEXT_ATLAS_FULL", "Glyph atlas full; cannot upload glyph", { codepoint: a.g.codepoint }));
+        continue;
+      }
+
+      gl.texSubImage2D(
+        gl.TEXTURE_2D,
+        0,
+        a.g.ax,
+        a.g.ay,
+        a.g.w,
+        a.g.h,
+        gl.RED,
+        gl.UNSIGNED_BYTE,
+        a.sdfR8
+      );
+
+      // This is a texture upload, not a buffer upload; not counted in uploadedBytesThisFrame on purpose.
+      // If you want, you can add a separate stat for "uploadedTexBytesThisFrame".
+    }
+  }
+
+  // -------------------- HUD --------------------
   private updateHud(t: number) {
     this.frames++;
 
@@ -1074,9 +1539,11 @@ export class EngineHost {
 
     const prog = gl.createProgram();
     if (!prog) throw new Error("Failed to create program");
+
     gl.attachShader(prog, vs);
     gl.attachShader(prog, fs);
     gl.linkProgram(prog);
+
     gl.deleteShader(vs);
     gl.deleteShader(fs);
 
@@ -1094,15 +1561,19 @@ export class EngineHost {
       if (a === "a_rect") out.a_rect = loc;
       if (a === "a_c0") out.a_c0 = loc;
       if (a === "a_c1") out.a_c1 = loc;
+      if (a === "a_g0") out.a_g0 = loc;
+      if (a === "a_g1") out.a_g1 = loc;
     }
 
     for (const u of uniforms) {
       const loc = gl.getUniformLocation(prog, u);
       if (u === "u_transform") out.u_transform = loc;
       if (u === "u_pointSize") out.u_pointSize = loc;
+      if (u === "u_atlas") out.u_atlas = loc;
+      if (u === "u_color") out.u_color = loc;
+      if (u === "u_pxRange") out.u_pxRange = loc;
     }
 
-    // sanity: ensure required uniforms exist (if shader declares them)
     return out;
   }
 
@@ -1122,7 +1593,7 @@ export class EngineHost {
 }
 
 // -------------------- utils --------------------
-function toU32(v: any): number {
+function toU32AllowZero(v: any): number {
   const n = Number(v);
   if (!Number.isFinite(n) || n < 0) return 0;
   return n >>> 0;
@@ -1162,7 +1633,7 @@ function mat3FromParams(p: TransformParams): Float32Array {
   // [ sx  0  tx ]
   // [  0 sy  ty ]
   // [  0  0   1 ]
-  // Column-major array:
+  // Column-major array for GLSL:
   return new Float32Array([
     p.sx, 0,    0,
     0,    p.sy, 0,
@@ -1171,12 +1642,16 @@ function mat3FromParams(p: TransformParams): Float32Array {
 }
 
 function applyMat3ToPos2(M: Float32Array, x: number, y: number): { x: number; y: number } {
-  // column-major:
-  // x' = m0*x + m3*y + m6*1
-  // y' = m1*x + m4*y + m7*1
   const x2 = M[0] * x + M[3] * y + M[6];
   const y2 = M[1] * x + M[4] * y + M[7];
   return { x: x2, y: y2 };
+}
+
+function clampI(v: number, lo: number, hi: number): number {
+  if (!Number.isFinite(v)) return lo;
+  if (v < lo) return lo;
+  if (v > hi) return hi;
+  return v | 0;
 }
 
 // -------------------- picking helper --------------------
