@@ -1,9 +1,9 @@
+import type { StreamType, WorkerSubscription as ProtoWorkerSubscription } from "../protocol";
+
 export type ControlCmd = any;
 
-export type WorkerSubscription = {
-  kind: "workerStream";
-  stream: "lineSine";
-  bufferId: number;
+export type WorkerSubscription = ProtoWorkerSubscription & {
+  stream: StreamType;
 };
 
 export type RecipeBuildResult = {

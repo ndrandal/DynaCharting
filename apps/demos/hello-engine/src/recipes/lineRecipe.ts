@@ -1,4 +1,6 @@
 import type { RecipeBuildResult, RecipeConfig } from "./types";
+import type { WorkerSubscription } from "../protocol";
+
 
 export function buildLineChartRecipe(cfg: RecipeConfig): RecipeBuildResult {
   // ID allocation: stable + deterministic
@@ -27,8 +29,8 @@ export function buildLineChartRecipe(cfg: RecipeConfig): RecipeBuildResult {
     { cmd: "delete", kind: "transform", id: T_VIEW }
   ];
 
-  const subscriptions = [
-    { kind: "workerStream", stream: "lineSine" as const, bufferId: BUF_LINE }
+  const subscriptions: WorkerSubscription[] = [
+    { kind: "workerStream", stream: "lineSine", bufferId: BUF_LINE },
   ];
 
   return { commands, dispose, subscriptions };

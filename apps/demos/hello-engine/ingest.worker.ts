@@ -6,12 +6,14 @@
 // u32 offsetBytes (for updateRange; 0 for append)
 // u32 payloadBytes
 // payload
+import type { StreamType, PolicyMode } from "./src/protocol";
+
 const OP_APPEND = 1;
 const OP_UPDATE_RANGE = 2;
 
 // -------------------- Stream + policy --------------------
-type StreamType = "lineSine" | "pointsCos" | "rectBars" | "candles";
-type PolicyMode = "raw" | "agg";
+// -------------------- Stream + policy --------------------
+
 
 let policyMode: PolicyMode = "raw";
 

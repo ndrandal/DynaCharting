@@ -1,4 +1,4 @@
-import type { EngineHost } from "@repo/engine-host";
+import type { EngineHost } from "../../engine-host";
 
 export type WorkerSubscription = {
   kind: "workerStream";
