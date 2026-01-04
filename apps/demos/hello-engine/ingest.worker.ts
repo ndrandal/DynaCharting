@@ -7,7 +7,7 @@ type StreamType = "lineSine" | "pointsCos" | "rectBars" | "candles";
 
 type WorkerMsg =
   | {
-      // Back-compat (current mode): emit all 4 streams
+      // Back-compat: emit all 4 fake streams (your existing behavior)
       type: "startRecipes";
       lineBufferId: number;
       rectBufferId: number;
@@ -16,29 +16,65 @@ type WorkerMsg =
       tickMs?: number;
     }
   | {
-      // New mode (D7.1): subscriptions
+      // Recipe subscriptions (fake streams)
       type: "startStreams";
       tickMs?: number;
       streams: Array<{ stream: StreamType; bufferId: number }>;
     }
+  | {
+      // NEW: real server integration
+      type: "connectWs";
+      url: string;
+      protocols?: string | string[];
+      // optional: auth payload you want to send after open
+      auth?: any;
+      // optional: batching timer, only used for JSON record mode
+      tickMs?: number;
+    }
+  | { type: "disconnectWs" }
   | { type: "stop" };
+
+type OutMsg =
+  | { type: "batch"; buffer: ArrayBuffer }
+  | { type: "wsStatus"; state: "connecting" | "open" | "closed" | "error"; detail?: any }
+  | { type: "wsStats"; rxBytes: number; rxMsgs: number; dropped: number };
 
 let running = false;
 let timer: number | null = null;
+
+// WebSocket state
+let ws: WebSocket | null = null;
+let wsRxBytes = 0;
+let wsRxMsgs = 0;
+let wsDropped = 0;
+
+// For JSON-record mode: we accumulate records and flush to one binary batch periodically
+type JsonRecord =
+  | { op: "append"; bufferId: number; payload: Uint8Array }
+  | { op: "updateRange"; bufferId: number; offsetBytes: number; payload: Uint8Array };
+
+let jsonRecordQueue: JsonRecord[] = [];
+let jsonFlushTimer: number | null = null;
+let jsonTickMs = 16; // default flush cadence
+
+function post(msg: OutMsg, transfer?: Transferable[]) {
+  (self as any).postMessage(msg, transfer ?? []);
+}
 
 function u32(view: DataView, off: number, v: number) {
   view.setUint32(off, v >>> 0, true);
 }
 
-function writeUpdateRangeRecord(
+function writeRecord(
   out: Uint8Array,
   view: DataView,
   cursor: number,
+  op: number,
   bufferId: number,
   offsetBytes: number,
   payloadBytes: Uint8Array
 ): number {
-  out[cursor] = OP_UPDATE_RANGE;
+  out[cursor] = op;
   u32(view, cursor + 1, bufferId);
   u32(view, cursor + 5, offsetBytes);
   u32(view, cursor + 9, payloadBytes.byteLength);
@@ -46,9 +82,29 @@ function writeUpdateRangeRecord(
   return cursor + 13 + payloadBytes.byteLength;
 }
 
-// ---- stream payload builders (match your current shapes) ----
+function buildBatchFromJsonRecords(records: JsonRecord[]): ArrayBuffer | null {
+  if (records.length === 0) return null;
+
+  let total = 0;
+  for (const r of records) total += 13 + r.payload.byteLength;
+
+  const buf = new ArrayBuffer(total);
+  const out = new Uint8Array(buf);
+  const view = new DataView(buf);
+
+  let c = 0;
+  for (const r of records) {
+    const op = r.op === "append" ? OP_APPEND : OP_UPDATE_RANGE;
+    const off = r.op === "append" ? 0 : r.offsetBytes >>> 0;
+    c = writeRecord(out, view, c, op, r.bufferId >>> 0, off, r.payload);
+  }
+
+  return buf;
+}
+
+// -------------------- Fake stream payload builders --------------------
 function buildLineSineBytes(t: number): Uint8Array {
-  const lineVerts = 512; // must be even for LINES
+  const lineVerts = 512; // even for LINES
   const line = new Float32Array(lineVerts * 2);
   for (let i = 0; i < lineVerts; i++) {
     const x = -1 + (2 * i) / Math.max(1, lineVerts - 1);
@@ -113,7 +169,6 @@ function buildCandlesBytes(t: number): Uint8Array {
   return new Uint8Array(candle.buffer);
 }
 
-// ---- generic tick from subscriptions ----
 function tickStreams(streams: Array<{ stream: StreamType; bufferId: number }>) {
   const t = performance.now() * 0.001;
 
@@ -128,17 +183,17 @@ function tickStreams(streams: Array<{ stream: StreamType; bufferId: number }>) {
     else if (s.stream === "candles") payloads.push({ bufferId, bytes: buildCandlesBytes(t) });
   }
 
-  let recordBytes = 0;
-  for (const p of payloads) recordBytes += 13 + p.bytes.byteLength;
+  let total = 0;
+  for (const p of payloads) total += 13 + p.bytes.byteLength;
 
-  const outBuf = new ArrayBuffer(recordBytes);
+  const outBuf = new ArrayBuffer(total);
   const out = new Uint8Array(outBuf);
   const view = new DataView(outBuf);
 
   let c = 0;
-  for (const p of payloads) c = writeUpdateRangeRecord(out, view, c, p.bufferId, 0, p.bytes);
+  for (const p of payloads) c = writeRecord(out, view, c, OP_UPDATE_RANGE, p.bufferId, 0, p.bytes);
 
-  (self as any).postMessage({ type: "batch", buffer: outBuf }, [outBuf]);
+  post({ type: "batch", buffer: outBuf }, [outBuf]);
 }
 
 function startInterval(tickMs: number, fn: () => void) {
@@ -150,19 +205,181 @@ function startInterval(tickMs: number, fn: () => void) {
   }, tickMs) as unknown as number;
 }
 
+function stopIntervals() {
+  running = false;
+  if (timer !== null) { clearInterval(timer); timer = null; }
+  if (jsonFlushTimer !== null) { clearInterval(jsonFlushTimer); jsonFlushTimer = null; }
+}
+
+// -------------------- WebSocket integration --------------------
+
+function disconnectWs() {
+  if (ws) {
+    try { ws.close(); } catch {}
+  }
+  ws = null;
+}
+
+function startJsonFlushLoop(tickMs: number) {
+  jsonTickMs = Math.max(8, tickMs | 0);
+
+  if (jsonFlushTimer !== null) clearInterval(jsonFlushTimer);
+  jsonFlushTimer = setInterval(() => {
+    if (!ws) return; // only flush in ws mode
+    if (jsonRecordQueue.length === 0) return;
+
+    // batch all queued records into one ArrayBuffer
+    const batch = buildBatchFromJsonRecords(jsonRecordQueue);
+    jsonRecordQueue = [];
+
+    if (batch) post({ type: "batch", buffer: batch }, [batch]);
+  }, jsonTickMs) as unknown as number;
+}
+
+function handleWsMessage(data: any) {
+  // CASE 1: server sends binary ArrayBuffer that's already our batch format.
+  if (data instanceof ArrayBuffer) {
+    wsRxBytes += data.byteLength;
+    wsRxMsgs += 1;
+    post({ type: "batch", buffer: data }, [data]);
+    return;
+  }
+
+  // CASE 1b: server sends Blob (common) -> read to ArrayBuffer
+  if (typeof Blob !== "undefined" && data instanceof Blob) {
+    // Note: async; fine for worker
+    data.arrayBuffer().then((ab) => {
+      wsRxBytes += ab.byteLength;
+      wsRxMsgs += 1;
+      post({ type: "batch", buffer: ab }, [ab]);
+    }).catch(() => {
+      wsDropped += 1;
+    });
+    return;
+  }
+
+  // CASE 2: server sends JSON text; parse and queue records
+  if (typeof data === "string") {
+    wsRxBytes += data.length;
+    wsRxMsgs += 1;
+
+    let obj: any;
+    try { obj = JSON.parse(data); }
+    catch { wsDropped += 1; return; }
+
+    // Support either a single record or {records:[...]}
+    const records = Array.isArray(obj?.records) ? obj.records : [obj];
+
+    for (const r of records) {
+      const type = r?.type;
+      const bufferId = (r?.bufferId >>> 0) || 0;
+      if (!bufferId) { wsDropped += 1; continue; }
+
+      // payload may be base64 or an array of numbers (bytes)
+      let payload: Uint8Array | null = null;
+
+      if (typeof r?.payloadBase64 === "string") {
+        payload = base64ToU8(r.payloadBase64);
+      } else if (Array.isArray(r?.payloadBytes)) {
+        payload = new Uint8Array(r.payloadBytes);
+      }
+
+      if (!payload) { wsDropped += 1; continue; }
+
+      if (type === "append") {
+        jsonRecordQueue.push({ op: "append", bufferId, payload });
+      } else if (type === "updateRange") {
+        const offsetBytes = (r?.offsetBytes >>> 0) || 0;
+        jsonRecordQueue.push({ op: "updateRange", bufferId, offsetBytes, payload });
+      } else {
+        wsDropped += 1;
+      }
+    }
+
+    return;
+  }
+
+  wsDropped += 1;
+}
+
+function base64ToU8(b64: string): Uint8Array {
+  // atob exists in workers
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i) & 255;
+  return out;
+}
+
+function connectWs(url: string, protocols?: string | string[], auth?: any, tickMs?: number) {
+  // stop fake loops so we don’t double-feed
+  stopIntervals();
+  disconnectWs();
+
+  try {
+    post({ type: "wsStatus", state: "connecting", detail: url });
+    ws = protocols ? new WebSocket(url, protocols) : new WebSocket(url);
+    ws.binaryType = "arraybuffer";
+
+    ws.onopen = () => {
+      post({ type: "wsStatus", state: "open" });
+
+      if (auth !== undefined) {
+        try { ws?.send(JSON.stringify({ type: "auth", ...auth })); } catch {}
+      }
+
+      // If server is JSON record mode, we flush queue periodically.
+      // If server sends pure binary batches, this loop does almost nothing.
+      startJsonFlushLoop(tickMs ?? 16);
+    };
+
+    ws.onmessage = (ev) => {
+      handleWsMessage(ev.data);
+
+      // optional periodic stats
+      if ((wsRxMsgs % 60) === 0) {
+        post({ type: "wsStats", rxBytes: wsRxBytes, rxMsgs: wsRxMsgs, dropped: wsDropped });
+      }
+    };
+
+    ws.onerror = (e) => {
+      post({ type: "wsStatus", state: "error", detail: e });
+    };
+
+    ws.onclose = () => {
+      post({ type: "wsStatus", state: "closed" });
+      disconnectWs();
+      if (jsonFlushTimer !== null) { clearInterval(jsonFlushTimer); jsonFlushTimer = null; }
+    };
+  } catch (e) {
+    post({ type: "wsStatus", state: "error", detail: e });
+  }
+}
+
+// -------------------- message handling --------------------
 self.onmessage = (ev: MessageEvent<WorkerMsg>) => {
   const msg = ev.data;
 
   if (msg.type === "stop") {
-    running = false;
-    if (timer !== null) {
-      clearInterval(timer);
-      timer = null;
-    }
+    stopIntervals();
+    return;
+  }
+
+  if (msg.type === "disconnectWs") {
+    disconnectWs();
+    if (jsonFlushTimer !== null) { clearInterval(jsonFlushTimer); jsonFlushTimer = null; }
+    return;
+  }
+
+  if (msg.type === "connectWs") {
+    connectWs(msg.url, msg.protocols, msg.auth, msg.tickMs);
     return;
   }
 
   if (msg.type === "startRecipes") {
+    // Ensure ws is off; this is fake mode
+    disconnectWs();
+    if (jsonFlushTimer !== null) { clearInterval(jsonFlushTimer); jsonFlushTimer = null; }
+
     const streams = [
       { stream: "lineSine" as const, bufferId: msg.lineBufferId >>> 0 },
       { stream: "rectBars" as const, bufferId: msg.rectBufferId >>> 0 },
@@ -176,6 +393,10 @@ self.onmessage = (ev: MessageEvent<WorkerMsg>) => {
   }
 
   if (msg.type === "startStreams") {
+    // Ensure ws is off; this is fake mode
+    disconnectWs();
+    if (jsonFlushTimer !== null) { clearInterval(jsonFlushTimer); jsonFlushTimer = null; }
+
     const streams = (msg.streams ?? []).map((s) => ({
       stream: s.stream,
       bufferId: s.bufferId >>> 0
