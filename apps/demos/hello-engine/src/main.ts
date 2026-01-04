@@ -1,8 +1,8 @@
 import { EngineHost } from "@repo/engine-host";
 import { makeHud } from "./hud";
 
-import { buildLineChartRecipe } from "./src/recipes/lineRecipe";
-import type { RecipeBuildResult } from "./src/recipes/types";
+import { buildLineChartRecipe } from "./recipes/lineRecipe";
+import type { RecipeBuildResult } from "./recipes/types";
 
 const WORKER_URL = new URL("./ingest.worker.ts", import.meta.url);
 
