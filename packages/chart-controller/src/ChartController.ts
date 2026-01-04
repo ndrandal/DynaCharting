@@ -2,7 +2,7 @@ import type { EngineHost } from "@repo/engine-host";
 
 export type WorkerSubscription = {
   kind: "workerStream";
-  stream: string;
+  stream: string;  // "lineSine" | ...
   bufferId: number;
 };
 
@@ -14,30 +14,54 @@ export type RecipeBuildResult = {
 
 export type RecipeBuilder = (cfg: { idBase: number }) => RecipeBuildResult;
 
+export type PolicyMode = "raw" | "agg";
+
 export type ChartControllerOptions = {
-  idStride?: number;   // size of ID block reserved per mount
-  tickMs?: number;     // worker tick
+  idStride?: number;       // size of id block per mount
+  tickMs?: number;         // worker tick for fake mode
+  policyDebounceMs?: number;
+
+  // hysteresis thresholds on sx (zoom)
+  rawOnZoom?: number;      // switch to raw when sx >= this
+  aggOnZoom?: number;      // switch to agg when sx <= this
+
+  // retention caps per mode (bytes per buffer)
+  rawMaxBytes?: number;
+  aggMaxBytes?: number;
+
+  // optional: shrink immediately when switching to agg
+  shrinkOnAgg?: boolean;
 };
 
 export class ChartController {
   private current: { idBase: number; recipe: RecipeBuildResult } | null = null;
 
-  // ID management is “block-based”: each mount gets a stable idBase
   private nextBase = 10000;
-  private readonly stride: number;
+  private stride: number;
 
-  // Transform state (uniform-only). Controller owns it.
+  // View transform params (clip space)
   private tx = 0;
   private ty = 0;
   private sx = 1;
   private sy = 1;
 
-  // Drag tracking
+  // Drag state
   private dragging = false;
   private lastClientX = 0;
   private lastClientY = 0;
 
+  // Policy
+  private mode: PolicyMode = "raw";
+  private policyTimer: number | null = null;
+
+  // Options
   private tickMs: number;
+  private policyDebounceMs: number;
+  private rawOnZoom: number;
+  private aggOnZoom: number;
+  private rawMaxBytes: number;
+  private aggMaxBytes: number;
+  private shrinkOnAgg: boolean;
 
   constructor(
     private host: EngineHost,
@@ -46,11 +70,19 @@ export class ChartController {
   ) {
     this.stride = Math.max(1000, opts.idStride ?? 10000);
     this.tickMs = Math.max(16, opts.tickMs ?? 33);
+
+    this.policyDebounceMs = Math.max(0, opts.policyDebounceMs ?? 120);
+    this.rawOnZoom = opts.rawOnZoom ?? 1.25;
+    this.aggOnZoom = opts.aggOnZoom ?? 0.85;
+
+    this.rawMaxBytes = opts.rawMaxBytes ?? (4 * 1024 * 1024);
+    this.aggMaxBytes = opts.aggMaxBytes ?? (1 * 1024 * 1024);
+
+    this.shrinkOnAgg = opts.shrinkOnAgg ?? true;
   }
 
-  // -------------------- Recipe management --------------------
+  // -------------------- recipe lifecycle --------------------
   mount(builder: RecipeBuilder): void {
-    // Unmount any existing recipe first (keeps UI simple)
     if (this.current) this.unmount();
 
     const idBase = this.nextBase;
@@ -58,76 +90,96 @@ export class ChartController {
 
     const recipe = builder({ idBase });
 
-    // Apply commands
+    // Apply creation commands
     for (const c of recipe.commands) this.must(this.host.applyControl(c));
 
-    // Start worker subscriptions
+    // Start fake streams (or server can ignore it; worker decides mode)
     this.worker.postMessage({
       type: "startStreams",
       tickMs: this.tickMs,
       streams: recipe.subscriptions.map((s) => ({ stream: s.stream, bufferId: s.bufferId }))
     });
 
+    // Initial policy: raw
     this.current = { idBase, recipe };
+    this.mode = "raw";
+    this.worker.postMessage({ type: "updatePolicy", mode: "raw" });
 
-    // Reset view each mount (optional but makes behavior predictable)
+    // Initial retention caps
+    this.applyRetentionCaps(this.mode);
+
+    // Reset view and push transform
     this.setViewTransform(0, 0, 1, 1);
 
-    // If recipe created view transform in the standard slot, push it now:
-    // (By convention: view transform = idBase + 2000)
-    this.applyViewTransform();
+    // In case zoom changes rapidly right after mount
+    this.schedulePolicyUpdate();
   }
 
   unmount(): void {
     if (!this.current) return;
 
-    // Stop worker first so no more updates arrive for deleted buffers
+    this.cancelPolicyTimer();
+
+    // stop worker first
     this.worker.postMessage({ type: "stop" });
 
-    // Dispose
-    const { recipe } = this.current;
-    for (const c of recipe.dispose) this.must(this.host.applyControl(c));
+    // dispose commands
+    for (const c of this.current.recipe.dispose) this.must(this.host.applyControl(c));
 
     this.current = null;
 
-    // Reset controller state
+    // reset state
     this.dragging = false;
     this.tx = 0; this.ty = 0; this.sx = 1; this.sy = 1;
+    this.mode = "raw";
   }
 
   isMounted(): boolean {
     return !!this.current;
   }
 
-  connectServer(url: string, auth?: any) {
-    this.worker.postMessage({ type: "connectWs", url, auth, tickMs: 16 });
-  }
-
-  disconnectServer() {
-    this.worker.postMessage({ type: "disconnectWs" });
-  }
-
-
   getIdBase(): number | null {
     return this.current?.idBase ?? null;
   }
 
-  // -------------------- Pan/Zoom (transform updates only) --------------------
-  /**
-   * Directly set transform parameters (clip-space affine).
-   * In React, call this from your gesture logic.
-   */
+  // -------------------- server switching (D5.2) --------------------
+  connectServer(url: string, auth?: any, protocols?: string | string[]): void {
+    // worker will stop fake loops internally; host/core unchanged
+    this.worker.postMessage({ type: "connectWs", url, auth, protocols, tickMs: 16 });
+    // send current policy immediately
+    this.worker.postMessage({ type: "updatePolicy", mode: this.mode });
+  }
+
+  disconnectServer(): void {
+    this.worker.postMessage({ type: "disconnectWs" });
+    // optionally return to fake streams if recipe is mounted
+    if (this.current) {
+      this.worker.postMessage({
+        type: "startStreams",
+        tickMs: this.tickMs,
+        streams: this.current.recipe.subscriptions.map((s) => ({ stream: s.stream, bufferId: s.bufferId }))
+      });
+      this.worker.postMessage({ type: "updatePolicy", mode: this.mode });
+    }
+  }
+
+  // -------------------- view transform (D1.5) --------------------
   setViewTransform(tx: number, ty: number, sx: number, sy: number): void {
+    if (!this.current) return;
+
     this.tx = tx;
     this.ty = ty;
     this.sx = sx;
     this.sy = sy;
+
     this.applyViewTransform();
+    this.schedulePolicyUpdate();
   }
 
-  /**
-   * UI helper: call on pointer down.
-   */
+  resetView(): void {
+    this.setViewTransform(0, 0, 1, 1);
+  }
+
   onPointerDown(clientX: number, clientY: number): void {
     if (!this.current) return;
     this.dragging = true;
@@ -135,10 +187,6 @@ export class ChartController {
     this.lastClientY = clientY;
   }
 
-  /**
-   * UI helper: call on pointer move with canvas size (CSS pixels).
-   * dx/dy are converted to clip space and applied to tx/ty.
-   */
   onPointerMove(clientX: number, clientY: number, canvasCssWidth: number, canvasCssHeight: number): void {
     if (!this.current) return;
     if (!this.dragging) return;
@@ -157,6 +205,7 @@ export class ChartController {
     this.tx += dxClip;
     this.ty += dyClip;
 
+    // pan does not change policy, but updating transform should remain instant
     this.applyViewTransform();
   }
 
@@ -164,29 +213,18 @@ export class ChartController {
     this.dragging = false;
   }
 
-  /**
-   * UI helper: wheel zoom around center (uniform-only).
-   * If you want cursor-anchored zoom later, we’ll upgrade.
-   */
   onWheel(deltaY: number): void {
     if (!this.current) return;
+
     const zoom = Math.exp(-deltaY * 0.001);
     this.sx *= zoom;
     this.sy *= zoom;
+
     this.applyViewTransform();
+    this.schedulePolicyUpdate();
   }
 
-  resetView(): void {
-    if (!this.current) return;
-    this.tx = 0; this.ty = 0; this.sx = 1; this.sy = 1;
-    this.applyViewTransform();
-  }
-
-  // -------------------- DOM binding helper (demo only) --------------------
-  /**
-   * Not required for React, but useful for your demo app:
-   * controller.bindCanvas(canvas) wires mouse + wheel to controller methods.
-   */
+  // Convenience for demos (React should call the methods directly)
   bindCanvas(canvas: HTMLCanvasElement): () => void {
     const onDown = (e: MouseEvent) => this.onPointerDown(e.clientX, e.clientY);
     const onUp = () => this.onPointerUp();
@@ -212,9 +250,78 @@ export class ChartController {
     };
   }
 
-  // -------------------- Internals --------------------
+  // -------------------- D6.1 policy selection --------------------
+  private chooseModeFromZoom(): PolicyMode {
+    const z = this.sx;
+
+    // hysteresis: don’t flap around 1.0
+    if (this.mode === "raw") {
+      if (z <= this.aggOnZoom) return "agg";
+      return "raw";
+    } else {
+      if (z >= this.rawOnZoom) return "raw";
+      return "agg";
+    }
+  }
+
+  private schedulePolicyUpdate(): void {
+    if (!this.current) return;
+
+    this.cancelPolicyTimer();
+
+    if (this.policyDebounceMs === 0) {
+      this.applyPolicyNow();
+      return;
+    }
+
+    this.policyTimer = setTimeout(() => {
+      this.policyTimer = null;
+      this.applyPolicyNow();
+    }, this.policyDebounceMs) as unknown as number;
+  }
+
+  private cancelPolicyTimer(): void {
+    if (this.policyTimer !== null) {
+      clearTimeout(this.policyTimer);
+      this.policyTimer = null;
+    }
+  }
+
+  private applyPolicyNow(): void {
+    if (!this.current) return;
+
+    const next = this.chooseModeFromZoom();
+    if (next === this.mode) return;
+
+    this.mode = next;
+
+    // 1) tell worker (stub density OR server policy forwarding)
+    this.worker.postMessage({ type: "updatePolicy", mode: this.mode });
+
+    // 2) retention caps (core cache policy)
+    this.applyRetentionCaps(this.mode);
+  }
+
+  private applyRetentionCaps(mode: PolicyMode): void {
+    if (!this.current) return;
+
+    const maxBytes = mode === "raw" ? this.rawMaxBytes : this.aggMaxBytes;
+
+    for (const s of this.current.recipe.subscriptions) {
+      this.host.applyControl({ cmd: "bufferSetMaxBytes", id: s.bufferId, maxBytes });
+    }
+
+    if (mode === "agg" && this.shrinkOnAgg) {
+      // force shrink immediately to prevent any “tail” from raw mode lingering
+      for (const s of this.current.recipe.subscriptions) {
+        this.host.applyControl({ cmd: "bufferKeepLast", id: s.bufferId, bytes: maxBytes });
+      }
+    }
+  }
+
+  // -------------------- internals --------------------
   private viewTransformId(): number | null {
-    // Convention used by your recipe: T_VIEW = idBase + 2000
+    // Convention: view transform = idBase + 2000 (matches your recipe)
     if (!this.current) return null;
     return this.current.idBase + 2000;
   }
@@ -223,7 +330,7 @@ export class ChartController {
     const id = this.viewTransformId();
     if (id === null) return;
 
-    // Transform updates only — no buffer mutations
+    // D1.5 pass criteria: ONLY transform changes during pan/zoom
     this.host.applyControl({ cmd: "setTransform", id, tx: this.tx, ty: this.ty, sx: this.sx, sy: this.sy });
   }
 

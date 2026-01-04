@@ -19,6 +19,53 @@ export class CoreIngestStub {
 
   private buffers = new Map<number, CpuBuffer>();
 
+  private maxBytes = new Map<number, number>(); // per-buffer cap (bytes)
+
+  setMaxBytes(bufferId: number, bytes: number) {
+    const b = Math.max(0, bytes | 0);
+    this.maxBytes.set(bufferId, b);
+    this.enforceCap(bufferId);
+  }
+
+  getMaxBytes(bufferId: number): number {
+    return this.maxBytes.get(bufferId) ?? this.MAX_BUFFER_BYTES;
+  }
+
+  evictFront(bufferId: number, bytes: number) {
+    const b = this.buffers.get(bufferId);
+    if (!b) return;
+    const drop = Math.max(0, bytes | 0);
+    if (drop <= 0) return;
+    if (drop >= b.cpu.byteLength) {
+      b.cpu = new Uint8Array(0);
+      return;
+    }
+    b.cpu = b.cpu.subarray(drop); // view into old buffer; ok for now
+  }
+
+  keepLast(bufferId: number, bytes: number) {
+    const b = this.buffers.get(bufferId);
+    if (!b) return;
+    const keep = Math.max(0, bytes | 0);
+    if (keep <= 0) {
+      b.cpu = new Uint8Array(0);
+      return;
+    }
+    if (b.cpu.byteLength <= keep) return;
+    b.cpu = b.cpu.subarray(b.cpu.byteLength - keep);
+  }
+
+  private enforceCap(bufferId: number) {
+    const b = this.buffers.get(bufferId);
+    if (!b) return;
+    const cap = this.getMaxBytes(bufferId);
+    if (cap <= 0) { b.cpu = new Uint8Array(0); return; }
+    if (b.cpu.byteLength <= cap) return;
+    // rolling window: keep last cap bytes
+    b.cpu = b.cpu.subarray(b.cpu.byteLength - cap);
+  }
+
+
   getBufferBytes(bufferId: number): Uint8Array {
     const b = this.buffers.get(bufferId);
     return b ? b.cpu : new Uint8Array(0);
@@ -69,24 +116,39 @@ export class CoreIngestStub {
       const b = this.buffers.get(bufferId)!;
 
       if (op === OP_APPEND) {
-        // Hard cap: drop bytes if over limit
-        if (b.cpu.byteLength >= this.MAX_BUFFER_BYTES) {
-          droppedBytes += len;
-          continue;
-        }
-        const allowed = Math.min(len, this.MAX_BUFFER_BYTES - b.cpu.byteLength);
-        if (allowed <= 0) {
+        const cap = this.getMaxBytes(bufferId);
+        if (cap <= 0) {
           droppedBytes += len;
           continue;
         }
 
-        const oldLen = b.cpu.byteLength;
-        const next = new Uint8Array(oldLen + allowed);
+        // Always accept, but keep only the last `cap` bytes (rolling window).
+        // If incoming payload itself exceeds cap, keep only the tail.
+        const incoming = (len > cap) ? payload.subarray(len - cap) : payload;
+        const incomingLen = incoming.byteLength;
+
+        // Fast path: append without realloc if empty
+        if (b.cpu.byteLength === 0) {
+          b.cpu = new Uint8Array(incomingLen);
+          b.cpu.set(incoming, 0);
+          touched.add(bufferId);
+          continue;
+        }
+
+        // Append
+        const next = new Uint8Array(b.cpu.byteLength + incomingLen);
         next.set(b.cpu, 0);
-        next.set(payload.subarray(0, allowed), oldLen);
+        next.set(incoming, b.cpu.byteLength);
         b.cpu = next;
 
-        if (allowed < len) droppedBytes += (len - allowed);
+        // Enforce cap via rolling keep-last
+        if (b.cpu.byteLength > cap) {
+          b.cpu = b.cpu.subarray(b.cpu.byteLength - cap);
+        }
+
+        // We only count drops when input had to be truncated
+        if (len > incomingLen) droppedBytes += (len - incomingLen);
+
         touched.add(bufferId);
         continue;
       }

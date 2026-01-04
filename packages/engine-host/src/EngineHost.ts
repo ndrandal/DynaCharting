@@ -582,6 +582,35 @@ export class EngineHost {
         return { ok: true };
       }
 
+      if (cmd === "bufferSetMaxBytes") {
+        const id = toU32(obj.id);
+        const maxBytes = Number(obj.maxBytes);
+        if (!id) throw new Error("bufferSetMaxBytes: missing id");
+        if (!Number.isFinite(maxBytes)) throw new Error("bufferSetMaxBytes: invalid maxBytes");
+        this.core.ensureBuffer(id);
+        this.core.setMaxBytes(id, maxBytes | 0);
+        return { ok: true };
+      }
+
+      if (cmd === "bufferEvictFront") {
+        const id = toU32(obj.id);
+        const bytes = Number(obj.bytes);
+        if (!id) throw new Error("bufferEvictFront: missing id");
+        if (!Number.isFinite(bytes)) throw new Error("bufferEvictFront: invalid bytes");
+        this.core.evictFront(id, bytes | 0);
+        return { ok: true };
+      }
+
+      if (cmd === "bufferKeepLast") {
+        const id = toU32(obj.id);
+        const bytes = Number(obj.bytes);
+        if (!id) throw new Error("bufferKeepLast: missing id");
+        if (!Number.isFinite(bytes)) throw new Error("bufferKeepLast: invalid bytes");
+        this.core.keepLast(id, bytes | 0);
+        return { ok: true };
+      }
+
+
       if (cmd === "setDebug") {
         const showBounds = obj.showBounds;
         const wireframe = obj.wireframe;

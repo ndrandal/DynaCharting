@@ -1,13 +1,24 @@
 /// <reference lib="webworker" />
 
+// -------------------- Data plane record format --------------------
+// u8  op (1 append, 2 updateRange)
+// u32 bufferId
+// u32 offsetBytes (for updateRange; 0 for append)
+// u32 payloadBytes
+// payload
 const OP_APPEND = 1;
 const OP_UPDATE_RANGE = 2;
 
+// -------------------- Stream + policy --------------------
 type StreamType = "lineSine" | "pointsCos" | "rectBars" | "candles";
+type PolicyMode = "raw" | "agg";
 
+let policyMode: PolicyMode = "raw";
+
+// -------------------- Worker protocol --------------------
 type WorkerMsg =
   | {
-      // Back-compat: emit all 4 fake streams (your existing behavior)
+      // Back-compat: emit all 4 fake streams at once
       type: "startRecipes";
       lineBufferId: number;
       rectBufferId: number;
@@ -16,51 +27,73 @@ type WorkerMsg =
       tickMs?: number;
     }
   | {
-      // Recipe subscriptions (fake streams)
+      // D7.1/D8.1: recipe-defined subscriptions (fake mode)
       type: "startStreams";
       tickMs?: number;
       streams: Array<{ stream: StreamType; bufferId: number }>;
     }
   | {
-      // NEW: real server integration
+      // D5.2: connect to real server WS
       type: "connectWs";
       url: string;
       protocols?: string | string[];
-      // optional: auth payload you want to send after open
-      auth?: any;
-      // optional: batching timer, only used for JSON record mode
-      tickMs?: number;
+      auth?: any;      // optional auth payload, sent as JSON after open
+      tickMs?: number; // used only for JSON-record batching
     }
   | { type: "disconnectWs" }
-  | { type: "stop" };
+  | { type: "stop" }
+  | { type: "updatePolicy"; mode: PolicyMode };
 
 type OutMsg =
   | { type: "batch"; buffer: ArrayBuffer }
   | { type: "wsStatus"; state: "connecting" | "open" | "closed" | "error"; detail?: any }
   | { type: "wsStats"; rxBytes: number; rxMsgs: number; dropped: number };
 
-let running = false;
-let timer: number | null = null;
+// -------------------- timers --------------------
+let fakeRunning = false;
+let fakeTimer: number | null = null;
 
-// WebSocket state
+// WS state
 let ws: WebSocket | null = null;
 let wsRxBytes = 0;
 let wsRxMsgs = 0;
 let wsDropped = 0;
 
-// For JSON-record mode: we accumulate records and flush to one binary batch periodically
+// JSON record mode accumulation (server sends JSON records)
 type JsonRecord =
   | { op: "append"; bufferId: number; payload: Uint8Array }
   | { op: "updateRange"; bufferId: number; offsetBytes: number; payload: Uint8Array };
 
-let jsonRecordQueue: JsonRecord[] = [];
+let jsonQueue: JsonRecord[] = [];
 let jsonFlushTimer: number | null = null;
-let jsonTickMs = 16; // default flush cadence
+let jsonFlushMs = 16;
 
+// -------------------- post helpers --------------------
 function post(msg: OutMsg, transfer?: Transferable[]) {
   (self as any).postMessage(msg, transfer ?? []);
 }
 
+function stopFake() {
+  fakeRunning = false;
+  if (fakeTimer !== null) {
+    clearInterval(fakeTimer);
+    fakeTimer = null;
+  }
+}
+
+function stopJsonFlush() {
+  if (jsonFlushTimer !== null) {
+    clearInterval(jsonFlushTimer);
+    jsonFlushTimer = null;
+  }
+}
+
+function stopAll() {
+  stopFake();
+  stopJsonFlush();
+}
+
+// -------------------- record writers --------------------
 function u32(view: DataView, off: number, v: number) {
   view.setUint32(off, v >>> 0, true);
 }
@@ -72,17 +105,17 @@ function writeRecord(
   op: number,
   bufferId: number,
   offsetBytes: number,
-  payloadBytes: Uint8Array
+  payload: Uint8Array
 ): number {
   out[cursor] = op;
-  u32(view, cursor + 1, bufferId);
-  u32(view, cursor + 5, offsetBytes);
-  u32(view, cursor + 9, payloadBytes.byteLength);
-  out.set(payloadBytes, cursor + 13);
-  return cursor + 13 + payloadBytes.byteLength;
+  u32(view, cursor + 1, bufferId >>> 0);
+  u32(view, cursor + 5, offsetBytes >>> 0);
+  u32(view, cursor + 9, payload.byteLength >>> 0);
+  out.set(payload, cursor + 13);
+  return cursor + 13 + payload.byteLength;
 }
 
-function buildBatchFromJsonRecords(records: JsonRecord[]): ArrayBuffer | null {
+function buildBatchFromJson(records: JsonRecord[]): ArrayBuffer | null {
   if (records.length === 0) return null;
 
   let total = 0;
@@ -95,19 +128,42 @@ function buildBatchFromJsonRecords(records: JsonRecord[]): ArrayBuffer | null {
   let c = 0;
   for (const r of records) {
     const op = r.op === "append" ? OP_APPEND : OP_UPDATE_RANGE;
-    const off = r.op === "append" ? 0 : r.offsetBytes >>> 0;
-    c = writeRecord(out, view, c, op, r.bufferId >>> 0, off, r.payload);
+    const off = r.op === "append" ? 0 : (r.offsetBytes >>> 0);
+    c = writeRecord(out, view, c, op, r.bufferId, off, r.payload);
   }
 
   return buf;
 }
 
-// -------------------- Fake stream payload builders --------------------
-function buildLineSineBytes(t: number): Uint8Array {
-  const lineVerts = 512; // even for LINES
-  const line = new Float32Array(lineVerts * 2);
-  for (let i = 0; i < lineVerts; i++) {
-    const x = -1 + (2 * i) / Math.max(1, lineVerts - 1);
+function startJsonFlushLoop(tickMs: number) {
+  jsonFlushMs = Math.max(8, tickMs | 0);
+
+  stopJsonFlush();
+  jsonFlushTimer = setInterval(() => {
+    if (!ws) return;
+    if (jsonQueue.length === 0) return;
+
+    const batch = buildBatchFromJson(jsonQueue);
+    jsonQueue = [];
+
+    if (batch) post({ type: "batch", buffer: batch }, [batch]);
+  }, jsonFlushMs) as unknown as number;
+}
+
+// -------------------- fake streams --------------------
+function density(): { lineVerts: number; ptsCount: number; rectN: number; candleN: number } {
+  // IMPORTANT: lineVerts must be even if you render as LINES
+  if (policyMode === "agg") {
+    return { lineVerts: 128, ptsCount: 64, rectN: 40, candleN: 30 };
+  }
+  return { lineVerts: 1024, ptsCount: 512, rectN: 120, candleN: 90 };
+}
+
+function buildLineSineBytes(t: number, lineVerts: number): Uint8Array {
+  const v = (lineVerts % 2 === 0) ? lineVerts : (lineVerts + 1);
+  const line = new Float32Array(v * 2);
+  for (let i = 0; i < v; i++) {
+    const x = -1 + (2 * i) / Math.max(1, v - 1);
     const y = 0.35 * Math.sin(4 * x + t);
     line[i * 2 + 0] = x;
     line[i * 2 + 1] = y;
@@ -115,8 +171,7 @@ function buildLineSineBytes(t: number): Uint8Array {
   return new Uint8Array(line.buffer);
 }
 
-function buildPointsCosBytes(t: number): Uint8Array {
-  const ptsCount = 256;
+function buildPointsCosBytes(t: number, ptsCount: number): Uint8Array {
   const pts = new Float32Array(ptsCount * 2);
   for (let i = 0; i < ptsCount; i++) {
     const x = -1 + (2 * i) / Math.max(1, ptsCount - 1);
@@ -127,8 +182,7 @@ function buildPointsCosBytes(t: number): Uint8Array {
   return new Uint8Array(pts.buffer);
 }
 
-function buildRectBarsBytes(t: number): Uint8Array {
-  const rectN = 80;
+function buildRectBarsBytes(t: number, rectN: number): Uint8Array {
   const rect = new Float32Array(rectN * 4);
   for (let i = 0; i < rectN; i++) {
     const cx = -0.95 + (1.9 * i) / Math.max(1, rectN - 1);
@@ -146,8 +200,7 @@ function buildRectBarsBytes(t: number): Uint8Array {
   return new Uint8Array(rect.buffer);
 }
 
-function buildCandlesBytes(t: number): Uint8Array {
-  const candleN = 60;
+function buildCandlesBytes(t: number, candleN: number): Uint8Array {
   const candle = new Float32Array(candleN * 6);
   for (let i = 0; i < candleN; i++) {
     const x = -0.95 + (1.9 * i) / Math.max(1, candleN - 1);
@@ -169,18 +222,20 @@ function buildCandlesBytes(t: number): Uint8Array {
   return new Uint8Array(candle.buffer);
 }
 
-function tickStreams(streams: Array<{ stream: StreamType; bufferId: number }>) {
+function tickFake(streams: Array<{ stream: StreamType; bufferId: number }>) {
   const t = performance.now() * 0.001;
+  const d = density();
 
   const payloads: Array<{ bufferId: number; bytes: Uint8Array }> = [];
+
   for (const s of streams) {
     const bufferId = s.bufferId >>> 0;
     if (!bufferId) continue;
 
-    if (s.stream === "lineSine") payloads.push({ bufferId, bytes: buildLineSineBytes(t) });
-    else if (s.stream === "pointsCos") payloads.push({ bufferId, bytes: buildPointsCosBytes(t) });
-    else if (s.stream === "rectBars") payloads.push({ bufferId, bytes: buildRectBarsBytes(t) });
-    else if (s.stream === "candles") payloads.push({ bufferId, bytes: buildCandlesBytes(t) });
+    if (s.stream === "lineSine") payloads.push({ bufferId, bytes: buildLineSineBytes(t, d.lineVerts) });
+    else if (s.stream === "pointsCos") payloads.push({ bufferId, bytes: buildPointsCosBytes(t, d.ptsCount) });
+    else if (s.stream === "rectBars") payloads.push({ bufferId, bytes: buildRectBarsBytes(t, d.rectN) });
+    else if (s.stream === "candles") payloads.push({ bufferId, bytes: buildCandlesBytes(t, d.candleN) });
   }
 
   let total = 0;
@@ -191,28 +246,27 @@ function tickStreams(streams: Array<{ stream: StreamType; bufferId: number }>) {
   const view = new DataView(outBuf);
 
   let c = 0;
-  for (const p of payloads) c = writeRecord(out, view, c, OP_UPDATE_RANGE, p.bufferId, 0, p.bytes);
+  for (const p of payloads) {
+    c = writeRecord(out, view, c, OP_UPDATE_RANGE, p.bufferId, 0, p.bytes);
+  }
 
   post({ type: "batch", buffer: outBuf }, [outBuf]);
 }
 
-function startInterval(tickMs: number, fn: () => void) {
-  running = true;
-  if (timer !== null) clearInterval(timer);
-  timer = setInterval(() => {
-    if (!running) return;
-    fn();
-  }, tickMs) as unknown as number;
-}
+function startFake(tickMs: number, streams: Array<{ stream: StreamType; bufferId: number }>) {
+  stopAll();
+  disconnectWs(); // fake and ws modes are mutually exclusive
 
-function stopIntervals() {
-  running = false;
-  if (timer !== null) { clearInterval(timer); timer = null; }
-  if (jsonFlushTimer !== null) { clearInterval(jsonFlushTimer); jsonFlushTimer = null; }
+  fakeRunning = true;
+  const ms = Math.max(16, tickMs | 0);
+
+  fakeTimer = setInterval(() => {
+    if (!fakeRunning) return;
+    tickFake(streams);
+  }, ms) as unknown as number;
 }
 
 // -------------------- WebSocket integration --------------------
-
 function disconnectWs() {
   if (ws) {
     try { ws.close(); } catch {}
@@ -220,24 +274,8 @@ function disconnectWs() {
   ws = null;
 }
 
-function startJsonFlushLoop(tickMs: number) {
-  jsonTickMs = Math.max(8, tickMs | 0);
-
-  if (jsonFlushTimer !== null) clearInterval(jsonFlushTimer);
-  jsonFlushTimer = setInterval(() => {
-    if (!ws) return; // only flush in ws mode
-    if (jsonRecordQueue.length === 0) return;
-
-    // batch all queued records into one ArrayBuffer
-    const batch = buildBatchFromJsonRecords(jsonRecordQueue);
-    jsonRecordQueue = [];
-
-    if (batch) post({ type: "batch", buffer: batch }, [batch]);
-  }, jsonTickMs) as unknown as number;
-}
-
 function handleWsMessage(data: any) {
-  // CASE 1: server sends binary ArrayBuffer that's already our batch format.
+  // Preferred: server sends our batch as binary
   if (data instanceof ArrayBuffer) {
     wsRxBytes += data.byteLength;
     wsRxMsgs += 1;
@@ -245,20 +283,17 @@ function handleWsMessage(data: any) {
     return;
   }
 
-  // CASE 1b: server sends Blob (common) -> read to ArrayBuffer
+  // Common: Blob
   if (typeof Blob !== "undefined" && data instanceof Blob) {
-    // Note: async; fine for worker
     data.arrayBuffer().then((ab) => {
       wsRxBytes += ab.byteLength;
       wsRxMsgs += 1;
       post({ type: "batch", buffer: ab }, [ab]);
-    }).catch(() => {
-      wsDropped += 1;
-    });
+    }).catch(() => { wsDropped += 1; });
     return;
   }
 
-  // CASE 2: server sends JSON text; parse and queue records
+  // Fallback: JSON string -> queue records -> periodic flush
   if (typeof data === "string") {
     wsRxBytes += data.length;
     wsRxMsgs += 1;
@@ -267,7 +302,6 @@ function handleWsMessage(data: any) {
     try { obj = JSON.parse(data); }
     catch { wsDropped += 1; return; }
 
-    // Support either a single record or {records:[...]}
     const records = Array.isArray(obj?.records) ? obj.records : [obj];
 
     for (const r of records) {
@@ -275,7 +309,6 @@ function handleWsMessage(data: any) {
       const bufferId = (r?.bufferId >>> 0) || 0;
       if (!bufferId) { wsDropped += 1; continue; }
 
-      // payload may be base64 or an array of numbers (bytes)
       let payload: Uint8Array | null = null;
 
       if (typeof r?.payloadBase64 === "string") {
@@ -287,10 +320,10 @@ function handleWsMessage(data: any) {
       if (!payload) { wsDropped += 1; continue; }
 
       if (type === "append") {
-        jsonRecordQueue.push({ op: "append", bufferId, payload });
+        jsonQueue.push({ op: "append", bufferId, payload });
       } else if (type === "updateRange") {
         const offsetBytes = (r?.offsetBytes >>> 0) || 0;
-        jsonRecordQueue.push({ op: "updateRange", bufferId, offsetBytes, payload });
+        jsonQueue.push({ op: "updateRange", bufferId, offsetBytes, payload });
       } else {
         wsDropped += 1;
       }
@@ -303,39 +336,46 @@ function handleWsMessage(data: any) {
 }
 
 function base64ToU8(b64: string): Uint8Array {
-  // atob exists in workers
   const bin = atob(b64);
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i) & 255;
   return out;
 }
 
-function connectWs(url: string, protocols?: string | string[], auth?: any, tickMs?: number) {
-  // stop fake loops so we don’t double-feed
-  stopIntervals();
+function connectWs(url: string, protocols?: string | string[], auth?: any, flushMs?: number) {
+  stopAll();
   disconnectWs();
+
+  wsRxBytes = 0;
+  wsRxMsgs = 0;
+  wsDropped = 0;
+  jsonQueue = [];
 
   try {
     post({ type: "wsStatus", state: "connecting", detail: url });
+
     ws = protocols ? new WebSocket(url, protocols) : new WebSocket(url);
     ws.binaryType = "arraybuffer";
 
     ws.onopen = () => {
       post({ type: "wsStatus", state: "open" });
 
+      // Optional auth
       if (auth !== undefined) {
         try { ws?.send(JSON.stringify({ type: "auth", ...auth })); } catch {}
       }
 
-      // If server is JSON record mode, we flush queue periodically.
-      // If server sends pure binary batches, this loop does almost nothing.
-      startJsonFlushLoop(tickMs ?? 16);
+      // Tell server current policy mode (if it cares)
+      try { ws?.send(JSON.stringify({ type: "subscriptionPolicy", mode: policyMode })); } catch {}
+
+      // If server uses JSON-record mode, we flush to binary batches on a timer.
+      startJsonFlushLoop(flushMs ?? 16);
     };
 
     ws.onmessage = (ev) => {
       handleWsMessage(ev.data);
 
-      // optional periodic stats
+      // periodic stats
       if ((wsRxMsgs % 60) === 0) {
         post({ type: "wsStats", rxBytes: wsRxBytes, rxMsgs: wsRxMsgs, dropped: wsDropped });
       }
@@ -348,7 +388,8 @@ function connectWs(url: string, protocols?: string | string[], auth?: any, tickM
     ws.onclose = () => {
       post({ type: "wsStatus", state: "closed" });
       disconnectWs();
-      if (jsonFlushTimer !== null) { clearInterval(jsonFlushTimer); jsonFlushTimer = null; }
+      stopJsonFlush();
+      jsonQueue = [];
     };
   } catch (e) {
     post({ type: "wsStatus", state: "error", detail: e });
@@ -360,13 +401,24 @@ self.onmessage = (ev: MessageEvent<WorkerMsg>) => {
   const msg = ev.data;
 
   if (msg.type === "stop") {
-    stopIntervals();
+    stopAll();
     return;
   }
 
   if (msg.type === "disconnectWs") {
     disconnectWs();
-    if (jsonFlushTimer !== null) { clearInterval(jsonFlushTimer); jsonFlushTimer = null; }
+    stopJsonFlush();
+    jsonQueue = [];
+    return;
+  }
+
+  if (msg.type === "updatePolicy") {
+    policyMode = msg.mode === "agg" ? "agg" : "raw";
+
+    // Forward policy to server if connected
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      try { ws.send(JSON.stringify({ type: "subscriptionPolicy", mode: policyMode })); } catch {}
+    }
     return;
   }
 
@@ -376,34 +428,19 @@ self.onmessage = (ev: MessageEvent<WorkerMsg>) => {
   }
 
   if (msg.type === "startRecipes") {
-    // Ensure ws is off; this is fake mode
-    disconnectWs();
-    if (jsonFlushTimer !== null) { clearInterval(jsonFlushTimer); jsonFlushTimer = null; }
-
     const streams = [
       { stream: "lineSine" as const, bufferId: msg.lineBufferId >>> 0 },
       { stream: "rectBars" as const, bufferId: msg.rectBufferId >>> 0 },
       { stream: "candles" as const, bufferId: msg.candleBufferId >>> 0 },
       { stream: "pointsCos" as const, bufferId: msg.pointsBufferId >>> 0 }
     ];
-
-    const tickMs = Math.max(16, msg.tickMs ?? 33);
-    startInterval(tickMs, () => tickStreams(streams));
+    startFake(msg.tickMs ?? 33, streams);
     return;
   }
 
   if (msg.type === "startStreams") {
-    // Ensure ws is off; this is fake mode
-    disconnectWs();
-    if (jsonFlushTimer !== null) { clearInterval(jsonFlushTimer); jsonFlushTimer = null; }
-
-    const streams = (msg.streams ?? []).map((s) => ({
-      stream: s.stream,
-      bufferId: s.bufferId >>> 0
-    }));
-
-    const tickMs = Math.max(16, msg.tickMs ?? 33);
-    startInterval(tickMs, () => tickStreams(streams));
+    const streams = (msg.streams ?? []).map((s) => ({ stream: s.stream, bufferId: s.bufferId >>> 0 }));
+    startFake(msg.tickMs ?? 33, streams);
     return;
   }
 };
