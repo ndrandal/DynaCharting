@@ -1,8 +1,10 @@
+// apps/demos/hello-engine/src/main.ts
 import { EngineHost } from "@repo/engine-host";
 import { makeHud } from "./hud";
 
-import { buildLineChartRecipe } from "./recipes/lineRecipe";
-import type { RecipeBuildResult } from "./recipes/types";
+import { compileScene } from "./compiler/compileScene";
+import type { SceneSpecV0 } from "./compiler/SceneSpec";
+import type { CompiledPlan } from "./compiler/SceneSpec";
 
 const WORKER_URL = new URL("./ingest.worker.ts", import.meta.url);
 
@@ -21,68 +23,99 @@ const worker = new Worker(WORKER_URL, { type: "module" });
 worker.onmessage = (e: MessageEvent<any>) => {
   const msg = e.data;
   if (!msg) return;
-
   if (msg.type === "batch" && msg.buffer instanceof ArrayBuffer) {
     host.enqueueData(msg.buffer);
-    return;
   }
-};
-
-worker.onerror = (err) => {
-  console.error("Worker error:", err);
 };
 
 function must(r: { ok: true } | { ok: false; error: string }) {
   if (!r.ok) throw new Error(r.error);
 }
 
-// -------------------- Recipe mount/unmount --------------------
-let mounted: RecipeBuildResult | null = null;
+// -------------------- D2: SceneSpecV0 (spaces + views + layers) --------------------
+const spec: SceneSpecV0 = {
+  version: 0,
+  name: "d2-line+points",
+  spaces: [
+    { id: "clip", type: "clip" }
+    // You can also try:
+    // { id: "scr", type: "screen01" }
+    // { id: "dom", type: "domain2d", domain: { xMin: -1, xMax: 1, yMin: -1, yMax: 1 } }
+  ],
+  views: [
+    { id: "main", rect: { x: 0, y: 0, w: 1, h: 1, units: "relative" } }
+  ],
+  layers: [
+    {
+      id: "line",
+      viewId: "main",
+      spaceId: "clip",
+      data: { kind: "workerStream", stream: "lineSine" },
+      mark: { kind: "lineStrip", pipeline: "line2d@1" }
+    },
+    {
+      id: "points",
+      viewId: "main",
+      spaceId: "clip",
+      data: { kind: "workerStream", stream: "pointsCos" },
+      mark: { kind: "points", pipeline: "points@1", pointSize: 2 }
+    }
+  ]
+};
 
-function mountRecipe() {
+// -------------------- Plan mount/unmount --------------------
+let mounted: CompiledPlan | null = null;
+
+function mountPlan() {
   if (mounted) return;
 
-  // Stable ID range for this recipe instance
-  const recipe = buildLineChartRecipe({ idBase: 10000 });
+  const plan = compileScene(spec, { idBase: 10000 });
 
-  // Apply create commands
-  for (const c of recipe.commands) must(host.applyControl(c));
+  for (const c of plan.commands) must(host.applyControl(c));
 
-  // Start worker streams based on subscriptions
+  // One-time static batches (if any)
+  for (const b of plan.initialBatches) host.enqueueData(b);
+
+  // Start worker streams for subscriptions
   worker.postMessage({
     type: "startStreams",
     tickMs: 33,
-    streams: recipe.subscriptions.map((s) => ({ stream: s.stream, bufferId: s.bufferId }))
+    streams: plan.subscriptions.map((s) => ({ stream: s.stream, bufferId: s.bufferId }))
   });
 
-  mounted = recipe;
-  console.log("Recipe mounted: line chart");
+  mounted = plan;
+
+  // init view state (identity)
+  mounted.runtime.setView(host.applyControl.bind(host), { tx: 0, ty: 0, sx: 1, sy: 1 });
+
+  console.log("Mounted:", spec.name ?? "(unnamed)");
 }
 
-function unmountRecipe() {
+function unmountPlan() {
   if (!mounted) return;
 
-  // Stop worker first so no more updates hit deleted buffers
   worker.postMessage({ type: "stop" });
 
-  // Apply dispose commands
-  for (const c of mounted.dispose) must(host.applyControl(c));
+  for (const c of mounted.dispose) {
+    const r = host.applyControl(c);
+    if (!r.ok) console.warn("dispose warn:", r.error, c);
+  }
 
   mounted = null;
-  console.log("Recipe unmounted: IDs cleaned");
+  console.log("Unmounted");
 }
 
-// Start mounted by default
-mountRecipe();
+mountPlan();
 
-// -------------------- D1.5 interaction: drag pan (transform-only) --------------------
-// This assumes the line recipe uses T_VIEW = idBase + 2000.
+// -------------------- Interaction: drag pan in scene-view space --------------------
 let dragging = false;
 let lastX = 0;
 let lastY = 0;
-let tx = 0, ty = 0, sx = 1, sy = 1;
 
-const T_VIEW = 10000 + 2000;
+let viewTx = 0;
+let viewTy = 0;
+let viewSx = 1;
+let viewSy = 1;
 
 canvas.addEventListener("mousedown", (e) => {
   dragging = true;
@@ -90,11 +123,10 @@ canvas.addEventListener("mousedown", (e) => {
   lastY = e.clientY;
 });
 
-window.addEventListener("mouseup", () => { dragging = false; });
+window.addEventListener("mouseup", () => (dragging = false));
 
 window.addEventListener("mousemove", (e) => {
-  if (!dragging) return;
-  if (!mounted) return;
+  if (!dragging || !mounted) return;
 
   const rect = canvas.getBoundingClientRect();
   const dxPx = e.clientX - lastX;
@@ -102,43 +134,30 @@ window.addEventListener("mousemove", (e) => {
   lastX = e.clientX;
   lastY = e.clientY;
 
+  // px -> clip delta
   const dxClip = (dxPx / Math.max(1, rect.width)) * 2;
   const dyClip = -(dyPx / Math.max(1, rect.height)) * 2;
 
-  tx += dxClip;
-  ty += dyClip;
+  viewTx += dxClip;
+  viewTy += dyClip;
 
-  host.applyControl({ cmd: "setTransform", id: T_VIEW, tx, ty, sx, sy });
-});
-
-// -------------------- Pick hook (kept) --------------------
-canvas.addEventListener("click", (e) => {
-  const rect = canvas.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
-
-  const hit = host.pick(x, y);
-  const id = hit ? hit.drawItemId : null;
-  (hud as any).setPick?.(id);
-  console.log("pick:", hit);
+  mounted.runtime.setView(host.applyControl.bind(host), { tx: viewTx, ty: viewTy, sx: viewSx, sy: viewSy });
 });
 
 // -------------------- Hotkeys --------------------
-// M toggles mount/unmount (pass criteria proof)
 window.addEventListener("keydown", (e) => {
   if (e.key === "m" || e.key === "M") {
-    if (mounted) unmountRecipe();
-    else mountRecipe();
+    if (mounted) unmountPlan();
+    else mountPlan();
   }
 
   if (e.key === "r" || e.key === "R") {
-    tx = 0; ty = 0; sx = 1; sy = 1;
-    if (mounted) host.applyControl({ cmd: "setTransform", id: T_VIEW, tx, ty, sx, sy });
+    viewTx = 0; viewTy = 0; viewSx = 1; viewSy = 1;
+    if (mounted) mounted.runtime.setView(host.applyControl.bind(host), { tx: viewTx, ty: viewTy, sx: viewSx, sy: viewSy });
   }
 });
 
-// Dev hooks
 (globalThis as any).__host = host;
 (globalThis as any).__worker = worker;
 
-console.log("D7.1 running: recipes only (press M to mount/unmount)");
+console.log("D2 complete: spaces/views/layers compiler. Press M to mount/unmount, drag to pan.");
