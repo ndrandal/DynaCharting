@@ -28,15 +28,28 @@ function must(r: { ok: true } | { ok: false; error: string }) {
   if (!r.ok) throw new Error(r.error);
 }
 
-// -------------------- D2 spec (example) --------------------
+// -------------------- D5 spec: domain space + axis overlay --------------------
 const spec: SceneSpecV0 = {
   version: 0,
-  name: "d3-stable",
-  spaces: [{ id: "clip", type: "clip" }],
-  views: [{ id: "main", rect: { x: 0, y: 0, w: 1, h: 1, units: "relative" } }],
+  name: "d5-domain+axes",
+
+  spaces: [
+    { id: "domain", type: "domain2d", domain: { xMin: 0, xMax: 100, yMin: -1.2, yMax: 1.2 } },
+    { id: "screen", type: "screen01" }
+  ],
+
+  views: [
+    { id: "main", rect: { x: 0.06, y: 0.06, w: 0.90, h: 0.88, units: "relative" } }
+  ],
+
   layers: [
-    { id: "line", viewId: "main", spaceId: "clip", data: { kind: "workerStream", stream: "lineSine" }, mark: { kind: "lineStrip" } },
-    { id: "pts",  viewId: "main", spaceId: "clip", data: { kind: "workerStream", stream: "pointsCos" }, mark: { kind: "points" } }
+    // Data in domain coords
+    { id: "line", viewId: "main", spaceId: "domain", data: { kind: "workerStream", stream: "lineSine" },  mark: { kind: "lineStrip" } },
+    { id: "pts",  viewId: "main", spaceId: "domain", data: { kind: "workerStream", stream: "pointsCos" }, mark: { kind: "points" } },
+
+    // Axes overlay in screen space (0..1)
+    { id: "xAxis", viewId: "main", spaceId: "screen", data: { kind: "none" }, mark: { kind: "axis2d", axis: { side: "bottom", ticks: 7, tickLen: 0.035, inset: 0.02 } } },
+    { id: "yAxis", viewId: "main", spaceId: "screen", data: { kind: "none" }, mark: { kind: "axis2d", axis: { side: "left",   ticks: 7, tickLen: 0.035, inset: 0.02 } } },
   ]
 };
 
@@ -47,12 +60,12 @@ type Mounted = {
 
 let mounted: Mounted | null = null;
 
-// View state
+// View state (sceneView transform)
 let dragging = false;
 let lastX = 0, lastY = 0;
 let viewTx = 0, viewTy = 0, viewSx = 1, viewSy = 1;
 
-// Handlers (so we can remove them)
+// -------------------- interaction --------------------
 const onMouseDown = (e: MouseEvent) => {
   dragging = true;
   lastX = e.clientX;
@@ -79,14 +92,40 @@ const onMouseMove = (e: MouseEvent) => {
   mounted.runtime.setView(host.applyControl.bind(host), { tx: viewTx, ty: viewTy, sx: viewSx, sy: viewSy });
 };
 
+const onWheel = (e: WheelEvent) => {
+  if (!mounted) return;
+  e.preventDefault();
+
+  const zoom = Math.exp(-e.deltaY * 0.001);
+  viewSx *= zoom;
+  viewSy *= zoom;
+
+  mounted.runtime.setView(host.applyControl.bind(host), { tx: viewTx, ty: viewTy, sx: viewSx, sy: viewSy });
+};
+
 const onKeyDown = (e: KeyboardEvent) => {
   if (e.key === "m" || e.key === "M") {
     if (mounted) unmount();
     else mount();
   }
+
   if (e.key === "r" || e.key === "R") {
     viewTx = 0; viewTy = 0; viewSx = 1; viewSy = 1;
     mounted?.runtime.setView(host.applyControl.bind(host), { tx: viewTx, ty: viewTy, sx: viewSx, sy: viewSy });
+  }
+
+  // D5 demo: change domain at runtime
+  if (e.key === "1") {
+    mounted?.runtime.setDomain(host.applyControl.bind(host), "domain", { xMin: 0, xMax: 100, yMin: -1.2, yMax: 1.2 });
+    console.log("Domain preset 1");
+  }
+  if (e.key === "2") {
+    mounted?.runtime.setDomain(host.applyControl.bind(host), "domain", { xMin: 0, xMax: 50, yMin: -0.6, yMax: 0.6 });
+    console.log("Domain preset 2");
+  }
+  if (e.key === "3") {
+    mounted?.runtime.setDomain(host.applyControl.bind(host), "domain", { xMin: 25, xMax: 75, yMin: -1.0, yMax: 1.0 });
+    console.log("Domain preset 3");
   }
 };
 
@@ -99,7 +138,7 @@ function mount() {
   const r = compiled.plan.mount(host.applyControl.bind(host));
   must(r);
 
-  // One-time static data
+  // One-time static data (axes are generated here too)
   for (const b of compiled.plan.initialBatches) host.enqueueData(b);
 
   // Start worker streams
@@ -109,8 +148,9 @@ function mount() {
     streams: compiled.plan.subscriptions.map((s) => ({ stream: s.stream, bufferId: s.bufferId }))
   });
 
-  // Init view
+  // Init view + domain
   compiled.runtime.setView(host.applyControl.bind(host), { tx: viewTx, ty: viewTy, sx: viewSx, sy: viewSy });
+  compiled.runtime.setDomain(host.applyControl.bind(host), "domain", { xMin: 0, xMax: 100, yMin: -1.2, yMax: 1.2 });
 
   mounted = { plan: compiled.plan, runtime: compiled.runtime };
   console.log("Mounted plan:", spec.name ?? "(unnamed)");
@@ -124,32 +164,33 @@ function unmount() {
 
   // dispose engine objects safely
   mounted.plan.unmount(host.applyControl.bind(host));
-
   mounted = null;
+
   console.log("Unmounted");
 }
 
-// Attach listeners once (and remove on cleanup)
+// Attach listeners once
 canvas.addEventListener("mousedown", onMouseDown);
 window.addEventListener("mouseup", onMouseUp);
 window.addEventListener("mousemove", onMouseMove);
+canvas.addEventListener("wheel", onWheel, { passive: false });
 window.addEventListener("keydown", onKeyDown);
 
 // Auto-mount at start
 mount();
 
-// Final cleanup hook (dev and future service embedding)
+// Final cleanup hook
 function cleanup() {
   try { unmount(); } catch {}
   canvas.removeEventListener("mousedown", onMouseDown);
   window.removeEventListener("mouseup", onMouseUp);
   window.removeEventListener("mousemove", onMouseMove);
+  canvas.removeEventListener("wheel", onWheel as any);
   window.removeEventListener("keydown", onKeyDown);
 
-  // If you want to be strict about worker lifetime in dev:
   try { worker.terminate(); } catch {}
-
   try { host.shutdown(); } catch {}
+
   (globalThis as any).__host = null;
   (globalThis as any).__worker = null;
 }
@@ -157,9 +198,8 @@ function cleanup() {
 (globalThis as any).__host = host;
 (globalThis as any).__worker = worker;
 
-// Vite HMR safe cleanup (prevents stacked listeners/workers)
 if (import.meta.hot) {
   import.meta.hot.dispose(() => cleanup());
 }
 
-console.log("D3: PlanHandle mount/unmount + clean teardown. Press M to toggle.");
+console.log("D5: domain2d + screen01 axes overlay + runtime setDomain(). Keys: M toggle, R reset, 1/2/3 change domain.");

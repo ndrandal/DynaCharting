@@ -163,26 +163,44 @@ function density(): { lineVerts: number; ptsCount: number; rectN: number; candle
 
 function buildLineSineBytes(t: number, lineVerts: number): Uint8Array {
   const v = (lineVerts % 2 === 0) ? lineVerts : (lineVerts + 1);
+
+  // domain space: x in [0..100]
+  const x0 = 0;
+  const x1 = 100;
+
   const line = new Float32Array(v * 2);
   for (let i = 0; i < v; i++) {
-    const x = -1 + (2 * i) / Math.max(1, v - 1);
-    const y = 0.35 * Math.sin(4 * x + t);
+    const u = i / Math.max(1, v - 1);
+    const x = x0 + (x1 - x0) * u;
+
+    // domain y in [-1..1]
+    const y = 0.8 * Math.sin(0.12 * x + t);
+
     line[i * 2 + 0] = x;
     line[i * 2 + 1] = y;
   }
+
   return new Uint8Array(line.buffer);
 }
 
+
 function buildPointsCosBytes(t: number, ptsCount: number): Uint8Array {
+  const x0 = 0;
+  const x1 = 100;
+
   const pts = new Float32Array(ptsCount * 2);
   for (let i = 0; i < ptsCount; i++) {
-    const x = -1 + (2 * i) / Math.max(1, ptsCount - 1);
-    const y = 0.15 * Math.cos(8 * x - t);
+    const u = i / Math.max(1, ptsCount - 1);
+    const x = x0 + (x1 - x0) * u;
+
+    const y = 0.35 * Math.cos(0.22 * x - t);
+
     pts[i * 2 + 0] = x;
     pts[i * 2 + 1] = y;
   }
   return new Uint8Array(pts.buffer);
 }
+
 
 function buildRectBarsBytes(t: number, rectN: number): Uint8Array {
   const rect = new Float32Array(rectN * 4);

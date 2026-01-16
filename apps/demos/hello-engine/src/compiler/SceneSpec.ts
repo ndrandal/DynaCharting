@@ -35,6 +35,14 @@ export type ViewSpecV0 = {
   rect: { x: number; y: number; w: number; h: number; units: "relative" };
 };
 
+export type AxisSpecV0 = {
+  // simple visual axes (no labels yet; labels come once text uv querying is formalized)
+  side: "bottom" | "top" | "left" | "right";
+  ticks?: number;        // default 6
+  tickLen?: number;      // in screen01 units (default 0.03)
+  inset?: number;        // padding from edge in screen01 units (default 0.02)
+};
+
 export type LayerSpecV0 = {
   id: string;
   viewId: string;
@@ -45,19 +53,19 @@ export type LayerSpecV0 = {
     | {
         kind: "staticAppend";
         // raw bytes that will be appended once to the layer buffer
-        // (typically Float32Array bytes)
         bytes: Uint8Array;
+      }
+    | {
+        kind: "none";
+        // no data feed (compiler will generate static bytes)
       };
 
   mark:
     | { kind: "lineStrip"; pipeline?: "line2d@1" }
     | { kind: "points"; pipeline?: "points@1"; pointSize?: number }
     | { kind: "instancedRect"; pipeline?: "instancedRect@1" }
-    // textSDF requires glyph8 instances with UVs. We support the mark shape here,
-    // but for now your static builder must provide glyph8 instances (x0,y0,x1,y1,u0,v0,u1,v1).
-    | { kind: "textSDF"; pipeline?: "textSDF@1"; color?: [number, number, number, number]; pxRange?: number };
+    | { kind: "axis2d"; axis: AxisSpecV0; pipeline?: "line2d@1" };
 
-  // optional colors (engine supports uniforms; we’ll wire these next sprint if you want)
   style?: Record<string, unknown>;
 };
 
@@ -70,10 +78,17 @@ export type CompiledPlan = {
   dispose: any[];
 
   runtime: {
-    // call this when pan/zoom changes; recomputes all layer transforms deterministically
+    // recomputes all layer transforms deterministically
     setView: (
       hostApply: (cmd: any) => { ok: true } | { ok: false; error: string },
       t: ViewTransform
+    ) => void;
+
+    // updates a domain2d space by id, then recomputes transforms for layers that use it
+    setDomain: (
+      hostApply: (cmd: any) => { ok: true } | { ok: false; error: string },
+      spaceId: string,
+      domain: { xMin: number; xMax: number; yMin: number; yMax: number }
     ) => void;
   };
 };
