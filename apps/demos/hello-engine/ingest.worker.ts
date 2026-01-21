@@ -6,7 +6,7 @@
 // u32 offsetBytes (for updateRange; 0 for append)
 // u32 payloadBytes
 // payload
-import type { StreamType, PolicyMode } from "./src/protocol";
+import type { StreamType, PolicyMode } from "@repo/protocol"
 
 const OP_APPEND = 1;
 const OP_UPDATE_RANGE = 2;

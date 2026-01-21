@@ -1,5 +1,5 @@
 // apps/demos/hello-engine/src/compiler/SceneSpec.ts
-import type { StreamType, WorkerSubscription } from "../protocol";
+import type { StreamType, WorkerSubscription } from "@repo/protocol";
 
 export type SceneSpecV0 = {
   version: 0;

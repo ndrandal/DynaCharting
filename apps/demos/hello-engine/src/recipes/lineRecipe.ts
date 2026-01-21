@@ -1,5 +1,5 @@
 import type { RecipeBuildResult, RecipeConfig } from "./types";
-import type { WorkerSubscription } from "../protocol";
+import type { WorkerSubscription } from "@repo/protocol";
 
 
 export function buildLineChartRecipe(cfg: RecipeConfig): RecipeBuildResult {

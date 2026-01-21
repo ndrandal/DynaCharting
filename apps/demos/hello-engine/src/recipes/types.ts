@@ -1,4 +1,4 @@
-import type { StreamType, WorkerSubscription as ProtoWorkerSubscription } from "../protocol";
+import type { StreamType, WorkerSubscription as ProtoWorkerSubscription } from "@repo/protocol";
 
 export type ControlCmd = any;
 

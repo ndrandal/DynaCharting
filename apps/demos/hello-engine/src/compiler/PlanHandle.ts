@@ -1,5 +1,5 @@
 // apps/demos/hello-engine/src/compiler/PlanHandle.ts
-import type { WorkerSubscription } from "../protocol";
+import type { WorkerSubscription } from "@repo/protocol";
 
 export type ApplyResult = { ok: true } | { ok: false; error: string };
 
