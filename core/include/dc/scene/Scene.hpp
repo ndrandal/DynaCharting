@@ -27,6 +27,7 @@ public:
   // Mutable access
   DrawItem* getDrawItemMutable(Id id);
   Buffer* getBufferMutable(Id id);
+  Geometry* getGeometryMutable(Id id);
 
   // Create
   void addPane(Pane p);

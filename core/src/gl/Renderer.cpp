@@ -1,4 +1,5 @@
 #include "dc/gl/Renderer.hpp"
+#include "dc/text/GlyphAtlas.hpp"
 #include "dc/scene/Geometry.hpp"
 #include "dc/pipelines/PipelineCatalog.hpp"
 #include <cstdio>
@@ -121,12 +122,60 @@ void main() {
 }
 )GLSL";
 
+// ---- textSDF@1 shader ----
+
+static const char* kTextSdfVert = R"GLSL(
+#version 330 core
+in vec4 a_g0;
+in vec4 a_g1;
+uniform mat3 u_transform;
+out vec2 v_uv;
+void main() {
+    int vid = gl_VertexID % 6;
+    vec2 uv;
+    if (vid == 0)      uv = vec2(0.0, 0.0);
+    else if (vid == 1) uv = vec2(1.0, 0.0);
+    else if (vid == 2) uv = vec2(0.0, 1.0);
+    else if (vid == 3) uv = vec2(0.0, 1.0);
+    else if (vid == 4) uv = vec2(1.0, 0.0);
+    else               uv = vec2(1.0, 1.0);
+    float x = mix(a_g0.x, a_g0.z, uv.x);
+    float y = mix(a_g0.y, a_g0.w, uv.y);
+    v_uv = vec2(mix(a_g1.x, a_g1.z, uv.x), mix(a_g1.y, a_g1.w, uv.y));
+    vec3 p = u_transform * vec3(x, y, 1.0);
+    gl_Position = vec4(p.xy, 0.0, 1.0);
+}
+)GLSL";
+
+static const char* kTextSdfFrag = R"GLSL(
+#version 330 core
+uniform sampler2D u_atlas;
+uniform vec4 u_color;
+uniform float u_pxRange;
+in vec2 v_uv;
+out vec4 outColor;
+void main() {
+    float sdf = texture(u_atlas, v_uv).r;
+    float dist = sdf - 0.5;
+    float w = fwidth(dist) * u_pxRange;
+    float a = smoothstep(-w, w, dist);
+    outColor = vec4(u_color.rgb, u_color.a * a);
+}
+)GLSL";
+
 // ---- Renderer implementation ----
 
 Renderer::~Renderer() {
   if (vao_) {
     glDeleteVertexArrays(1, &vao_);
   }
+  if (atlasTexture_) {
+    glDeleteTextures(1, &atlasTexture_);
+  }
+}
+
+void Renderer::setGlyphAtlas(GlyphAtlas* atlas) {
+  atlas_ = atlas;
 }
 
 bool Renderer::init() {
@@ -142,8 +191,13 @@ bool Renderer::init() {
     std::fprintf(stderr, "Renderer::init: failed to build instCandle shader\n");
     return false;
   }
+  if (!textSdfProg_.build(kTextSdfVert, kTextSdfFrag)) {
+    std::fprintf(stderr, "Renderer::init: failed to build textSdf shader\n");
+    return false;
+  }
 
   glGenVertexArrays(1, &vao_);
+  glGenTextures(1, &atlasTexture_);
   glEnable(GL_PROGRAM_POINT_SIZE);
   inited_ = true;
   return true;
@@ -244,14 +298,83 @@ void Renderer::drawInstancedCandle(const DrawItem& di, const Scene& scene,
   glDisableVertexAttribArray(static_cast<GLuint>(aC1));
 }
 
+void Renderer::uploadAtlasIfDirty() {
+  if (!atlas_ || !atlas_->isDirty()) return;
+
+  glBindTexture(GL_TEXTURE_2D, atlasTexture_);
+  GLsizei sz = static_cast<GLsizei>(atlas_->atlasSize());
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, sz, sz, 0,
+               GL_RED, GL_UNSIGNED_BYTE, atlas_->atlasData());
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  glBindTexture(GL_TEXTURE_2D, 0);
+  atlas_->clearDirty();
+}
+
+void Renderer::drawTextSdf(const DrawItem& di, const Scene& scene,
+                            GpuBufferManager& gpuBufs, Stats& stats) {
+  if (!atlas_) return;
+  const Geometry* geo = scene.getGeometry(di.geometryId);
+  if (!geo) return;
+  GLuint vbo = gpuBufs.getGlBuffer(geo->vertexBufferId);
+  if (!vbo) return;
+
+  textSdfProg_.use();
+
+  const float* xform = resolveTransform(di, scene);
+  textSdfProg_.setUniformMat3(textSdfProg_.uniformLocation("u_transform"), xform);
+  textSdfProg_.setUniformVec4(textSdfProg_.uniformLocation("u_color"),
+                               1.0f, 1.0f, 1.0f, 1.0f);
+  textSdfProg_.setUniformFloat(textSdfProg_.uniformLocation("u_pxRange"), 12.0f);
+
+  // Bind atlas texture
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, atlasTexture_);
+  glUniform1i(textSdfProg_.uniformLocation("u_atlas"), 0);
+
+  glBindBuffer(GL_ARRAY_BUFFER, vbo);
+
+  GLsizei stride = static_cast<GLsizei>(strideOf(VertexFormat::Glyph8));
+
+  GLint aG0 = textSdfProg_.attribLocation("a_g0");
+  glEnableVertexAttribArray(static_cast<GLuint>(aG0));
+  glVertexAttribPointer(static_cast<GLuint>(aG0), 4, GL_FLOAT, GL_FALSE,
+                        stride, nullptr);
+  glVertexAttribDivisor(static_cast<GLuint>(aG0), 1);
+
+  GLint aG1 = textSdfProg_.attribLocation("a_g1");
+  glEnableVertexAttribArray(static_cast<GLuint>(aG1));
+  glVertexAttribPointer(static_cast<GLuint>(aG1), 4, GL_FLOAT, GL_FALSE,
+                        stride, reinterpret_cast<const void*>(16));
+  glVertexAttribDivisor(static_cast<GLuint>(aG1), 1);
+
+  GLsizei instanceCount = static_cast<GLsizei>(geo->vertexCount);
+  glDrawArraysInstanced(GL_TRIANGLES, 0, 6, instanceCount);
+  stats.drawCalls++;
+
+  glVertexAttribDivisor(static_cast<GLuint>(aG0), 0);
+  glVertexAttribDivisor(static_cast<GLuint>(aG1), 0);
+  glDisableVertexAttribArray(static_cast<GLuint>(aG0));
+  glDisableVertexAttribArray(static_cast<GLuint>(aG1));
+  glBindTexture(GL_TEXTURE_2D, 0);
+}
+
 Stats Renderer::render(const Scene& scene, GpuBufferManager& gpuBufs,
                        int viewW, int viewH) {
   Stats stats{};
   if (!inited_) return stats;
 
+  uploadAtlasIfDirty();
+
   glViewport(0, 0, viewW, viewH);
   glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
   glClear(GL_COLOR_BUFFER_BIT);
+
+  // Enable blending for SDF text
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
   glBindVertexArray(vao_);
 
@@ -276,12 +399,15 @@ Stats Renderer::render(const Scene& scene, GpuBufferManager& gpuBufs,
           drawInstancedRect(*di, scene, gpuBufs, stats);
         } else if (di->pipeline == "instancedCandle@1") {
           drawInstancedCandle(*di, scene, gpuBufs, stats);
+        } else if (di->pipeline == "textSDF@1") {
+          drawTextSdf(*di, scene, gpuBufs, stats);
         }
       }
     }
   }
 
   glBindVertexArray(0);
+  glDisable(GL_BLEND);
   glFlush();
   return stats;
 }

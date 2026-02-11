@@ -46,6 +46,10 @@ Buffer* Scene::getBufferMutable(Id id) {
   auto it = buffers_.find(id);
   return it == buffers_.end() ? nullptr : &it->second;
 }
+Geometry* Scene::getGeometryMutable(Id id) {
+  auto it = geometries_.find(id);
+  return it == geometries_.end() ? nullptr : &it->second;
+}
 
 
 void Scene::addPane(Pane p)         { panes_[p.id] = std::move(p); }

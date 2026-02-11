@@ -1,4 +1,6 @@
 #include "dc/commands/CommandProcessor.hpp"
+#include "dc/ingest/IngestProcessor.hpp"
+#include "dc/text/GlyphAtlas.hpp"
 
 #include "dc/pipelines/PipelineCatalog.hpp"
 #include "dc/scene/Geometry.hpp"
@@ -15,6 +17,14 @@ namespace dc {
 CommandProcessor::CommandProcessor(Scene& scene, ResourceRegistry& registry)
   : activeScene_(scene)
   , activeReg_(registry) {}
+
+void CommandProcessor::setIngestProcessor(IngestProcessor* ingest) {
+  ingest_ = ingest;
+}
+
+void CommandProcessor::setGlyphAtlas(GlyphAtlas* atlas) {
+  atlas_ = atlas;
+}
 
 CmdResult CommandProcessor::fail(const std::string& code,
                                  const std::string& message,
@@ -129,6 +139,12 @@ CmdResult CommandProcessor::applyJson(const rapidjson::Value& obj) {
   else if (cmd == "createTransform") r = cmdCreateTransform(obj);
   else if (cmd == "setTransform") r = cmdSetTransform(obj);
   else if (cmd == "attachTransform") r = cmdAttachTransform(obj);
+  else if (cmd == "bufferSetMaxBytes") r = cmdBufferSetMaxBytes(obj);
+  else if (cmd == "bufferEvictFront") r = cmdBufferEvictFront(obj);
+  else if (cmd == "bufferKeepLast") r = cmdBufferKeepLast(obj);
+  else if (cmd == "setDrawItemPipeline") r = cmdSetDrawItemPipeline(obj);
+  else if (cmd == "setGeometryVertexCount") r = cmdSetGeometryVertexCount(obj);
+  else if (cmd == "ensureGlyphs") r = cmdEnsureGlyphs(obj);
   else {
     r = fail("UNKNOWN_COMMAND",
              "Unknown cmd",
@@ -411,6 +427,7 @@ CmdResult CommandProcessor::cmdCreateGeometry(const rapidjson::Value& obj) {
     if (s == "pos2_clip")     fmt = VertexFormat::Pos2_Clip;
     else if (s == "rect4")    fmt = VertexFormat::Rect4;
     else if (s == "candle6")  fmt = VertexFormat::Candle6;
+    else if (s == "glyph8")   fmt = VertexFormat::Glyph8;
     else {
       return fail("UNSUPPORTED_VERTEX_FORMAT",
                   "createGeometry: unknown format",
@@ -625,6 +642,148 @@ CmdResult CommandProcessor::cmdAttachTransform(const rapidjson::Value& obj) {
   CmdResult r;
   r.ok = true;
   r.createdId = 0;
+  return r;
+}
+
+// -------------------- Buffer cache commands --------------------
+
+CmdResult CommandProcessor::cmdBufferSetMaxBytes(const rapidjson::Value& obj) {
+  if (!ingest_) {
+    return fail("NO_INGEST", "bufferSetMaxBytes: no IngestProcessor attached");
+  }
+  const Id bufferId = getIdOrZero(obj, "bufferId");
+  if (bufferId == 0) {
+    return fail("BAD_COMMAND", "bufferSetMaxBytes: missing/invalid bufferId");
+  }
+  const auto* mb = getMember(obj, "maxBytes");
+  if (!mb || !mb->IsUint()) {
+    return fail("BAD_COMMAND", "bufferSetMaxBytes: missing uint maxBytes");
+  }
+  ingest_->setMaxBytes(bufferId, mb->GetUint());
+  CmdResult r;
+  r.ok = true;
+  return r;
+}
+
+CmdResult CommandProcessor::cmdBufferEvictFront(const rapidjson::Value& obj) {
+  if (!ingest_) {
+    return fail("NO_INGEST", "bufferEvictFront: no IngestProcessor attached");
+  }
+  const Id bufferId = getIdOrZero(obj, "bufferId");
+  if (bufferId == 0) {
+    return fail("BAD_COMMAND", "bufferEvictFront: missing/invalid bufferId");
+  }
+  const auto* b = getMember(obj, "bytes");
+  if (!b || !b->IsUint()) {
+    return fail("BAD_COMMAND", "bufferEvictFront: missing uint bytes");
+  }
+  ingest_->evictFront(bufferId, b->GetUint());
+  CmdResult r;
+  r.ok = true;
+  return r;
+}
+
+CmdResult CommandProcessor::cmdBufferKeepLast(const rapidjson::Value& obj) {
+  if (!ingest_) {
+    return fail("NO_INGEST", "bufferKeepLast: no IngestProcessor attached");
+  }
+  const Id bufferId = getIdOrZero(obj, "bufferId");
+  if (bufferId == 0) {
+    return fail("BAD_COMMAND", "bufferKeepLast: missing/invalid bufferId");
+  }
+  const auto* b = getMember(obj, "bytes");
+  if (!b || !b->IsUint()) {
+    return fail("BAD_COMMAND", "bufferKeepLast: missing uint bytes");
+  }
+  ingest_->keepLast(bufferId, b->GetUint());
+  CmdResult r;
+  r.ok = true;
+  return r;
+}
+
+// -------------------- Draw item mutation --------------------
+
+CmdResult CommandProcessor::cmdSetDrawItemPipeline(const rapidjson::Value& obj) {
+  Scene& scene = curScene();
+
+  const Id drawItemId = getIdOrZero(obj, "drawItemId");
+  if (drawItemId == 0) {
+    return fail("BAD_COMMAND", "setDrawItemPipeline: missing/invalid drawItemId");
+  }
+
+  DrawItem* di = scene.getDrawItemMutable(drawItemId);
+  if (!di) {
+    return fail("MISSING_DRAWITEM", "setDrawItemPipeline: drawItemId not found",
+                std::string(R"({"drawItemId":)") + std::to_string(drawItemId) + "}");
+  }
+
+  const std::string pipeline = getStringOrEmpty(obj, "pipeline");
+  if (!pipeline.empty()) {
+    di->pipeline = pipeline;
+  }
+
+  const Id geomId = getIdOrZero(obj, "geometryId");
+  if (geomId != 0) {
+    di->geometryId = geomId;
+  }
+
+  if (!di->pipeline.empty() && di->geometryId != 0) {
+    return validateDrawItem(*di);
+  }
+
+  CmdResult r;
+  r.ok = true;
+  return r;
+}
+
+CmdResult CommandProcessor::cmdSetGeometryVertexCount(const rapidjson::Value& obj) {
+  Scene& scene = curScene();
+
+  const Id geomId = getIdOrZero(obj, "geometryId");
+  if (geomId == 0) {
+    return fail("BAD_COMMAND", "setGeometryVertexCount: missing/invalid geometryId");
+  }
+
+  Geometry* g = scene.getGeometryMutable(geomId);
+  if (!g) {
+    return fail("NOT_FOUND", "setGeometryVertexCount: geometryId not found",
+                std::string(R"({"geometryId":)") + std::to_string(geomId) + "}");
+  }
+
+  const auto* vc = getMember(obj, "vertexCount");
+  if (!vc || !vc->IsUint()) {
+    return fail("BAD_COMMAND", "setGeometryVertexCount: missing uint vertexCount");
+  }
+
+  g->vertexCount = vc->GetUint();
+
+  CmdResult r;
+  r.ok = true;
+  return r;
+}
+
+// -------------------- Glyph atlas commands --------------------
+
+CmdResult CommandProcessor::cmdEnsureGlyphs(const rapidjson::Value& obj) {
+  if (!atlas_) {
+    return fail("NO_ATLAS", "ensureGlyphs: no GlyphAtlas attached");
+  }
+
+  const std::string text = getStringOrEmpty(obj, "text");
+  if (text.empty()) {
+    return fail("BAD_COMMAND", "ensureGlyphs: missing/empty text field");
+  }
+
+  // Extract unique codepoints (ASCII for now)
+  std::vector<std::uint32_t> cps;
+  for (unsigned char ch : text) {
+    cps.push_back(static_cast<std::uint32_t>(ch));
+  }
+
+  atlas_->ensureGlyphs(cps.data(), static_cast<std::uint32_t>(cps.size()));
+
+  CmdResult r;
+  r.ok = true;
   return r;
 }
 

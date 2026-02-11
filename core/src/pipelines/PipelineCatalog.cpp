@@ -18,6 +18,7 @@ PipelineCatalog::PipelineCatalog() {
   reg("points",          1, VertexFormat::Pos2_Clip, DrawMode::Points,             0);
   reg("instancedRect",   1, VertexFormat::Rect4,    DrawMode::InstancedTriangles,  6);
   reg("instancedCandle", 1, VertexFormat::Candle6,  DrawMode::InstancedTriangles, 12);
+  reg("textSDF",         1, VertexFormat::Glyph8,  DrawMode::InstancedTriangles,  6);
 }
 
 const PipelineSpec* PipelineCatalog::find(const std::string& key) const {

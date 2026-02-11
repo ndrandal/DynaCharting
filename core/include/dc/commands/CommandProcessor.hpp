@@ -10,6 +10,8 @@
 
 #include <rapidjson/document.h>
 
+namespace dc { class IngestProcessor; class GlyphAtlas; }
+
 namespace dc {
 
 struct CmdError {
@@ -27,6 +29,12 @@ struct CmdResult {
 class CommandProcessor {
 public:
   CommandProcessor(Scene& scene, ResourceRegistry& registry);
+
+  // Optional: wire up IngestProcessor for cache-policy commands.
+  void setIngestProcessor(IngestProcessor* ingest);
+
+  // Optional: wire up GlyphAtlas for ensureGlyphs command.
+  void setGlyphAtlas(GlyphAtlas* atlas);
 
   // Apply a single JSON command object.
   CmdResult applyJson(const rapidjson::Value& obj);
@@ -71,7 +79,16 @@ private:
   CmdResult cmdSetTransform(const rapidjson::Value& obj);
   CmdResult cmdAttachTransform(const rapidjson::Value& obj);
 
+  CmdResult cmdBufferSetMaxBytes(const rapidjson::Value& obj);
+  CmdResult cmdBufferEvictFront(const rapidjson::Value& obj);
+  CmdResult cmdBufferKeepLast(const rapidjson::Value& obj);
+  CmdResult cmdSetDrawItemPipeline(const rapidjson::Value& obj);
+  CmdResult cmdSetGeometryVertexCount(const rapidjson::Value& obj);
+  CmdResult cmdEnsureGlyphs(const rapidjson::Value& obj);
+
   PipelineCatalog catalog_;
+  IngestProcessor* ingest_{nullptr};
+  GlyphAtlas* atlas_{nullptr};
 
   // helpers
   static const rapidjson::Value* getMember(const rapidjson::Value& obj, const char* key);

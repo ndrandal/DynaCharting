@@ -70,6 +70,7 @@ file(GLOB_RECURSE DC_PUBLIC_HEADERS
 
 add_library(dc STATIC ${DC_SOURCES} ${DC_PUBLIC_HEADERS})
 target_include_directories(dc PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_include_directories(dc PRIVATE "${THIRD_PARTY_ROOT}/stb")
 target_link_libraries(dc PUBLIC Threads::Threads RapidJSON::rapidjson)
 
 # Warnings
@@ -166,6 +167,15 @@ if (DC_HAS_GLAD AND (DC_HAS_OSMESA OR DC_HAS_GLFW))
   # D2.7 demo
   add_executable(dc_d2_7_demo "${CMAKE_CURRENT_SOURCE_DIR}/demos/d2_7_candle_demo.cpp")
   target_link_libraries(dc_d2_7_demo PRIVATE dc_gl)
+
+  # D3.5 recipe demo
+  add_executable(dc_d3_5_recipe_demo "${CMAKE_CURRENT_SOURCE_DIR}/demos/d3_5_recipe_demo.cpp")
+  target_link_libraries(dc_d3_5_recipe_demo PRIVATE dc_gl)
+  if (EXISTS "${THIRD_PARTY_ROOT}/test_font.ttf")
+    target_compile_definitions(dc_d3_5_recipe_demo PRIVATE
+      FONT_PATH="${THIRD_PARTY_ROOT}/test_font.ttf"
+    )
+  endif()
 else()
   message(STATUS "Skipping dc_gl (requires GLAD + at least one of OSMesa/GLFW)")
 endif()
@@ -195,6 +205,25 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_d2_5_cache PRIVATE dc)
   add_test(NAME dc_d2_5_cache COMMAND dc_d2_5_cache)
 
+  add_executable(dc_d3_4_recipes
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/d3_4_recipes.cpp"
+  )
+  target_link_libraries(dc_d3_4_recipes PRIVATE dc)
+  add_test(NAME dc_d3_4_recipes COMMAND dc_d3_4_recipes)
+
+  # D3.2 glyph atlas test (needs font file)
+  set(DC_TEST_FONT "${THIRD_PARTY_ROOT}/test_font.ttf")
+  if (EXISTS "${DC_TEST_FONT}")
+    add_executable(dc_d3_2_glyph_atlas
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/d3_2_glyph_atlas.cpp"
+    )
+    target_link_libraries(dc_d3_2_glyph_atlas PRIVATE dc)
+    target_compile_definitions(dc_d3_2_glyph_atlas PRIVATE
+      FONT_PATH="${DC_TEST_FONT}"
+    )
+    add_test(NAME dc_d3_2_glyph_atlas COMMAND dc_d3_2_glyph_atlas)
+  endif()
+
   # GL-dependent tests (only if dc_gl with OSMesa is available)
   if (DC_HAS_GLAD AND DC_HAS_OSMESA)
     add_executable(dc_d2_1_first_render
@@ -220,5 +249,16 @@ if (DC_BUILD_TESTS)
     )
     target_link_libraries(dc_d2_4_ingest PRIVATE dc_gl)
     add_test(NAME dc_d2_4_ingest COMMAND dc_d2_4_ingest)
+
+    if (EXISTS "${DC_TEST_FONT}")
+      add_executable(dc_d3_3_text_sdf
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/d3_3_text_sdf.cpp"
+      )
+      target_link_libraries(dc_d3_3_text_sdf PRIVATE dc_gl)
+      target_compile_definitions(dc_d3_3_text_sdf PRIVATE
+        FONT_PATH="${DC_TEST_FONT}"
+      )
+      add_test(NAME dc_d3_3_text_sdf COMMAND dc_d3_3_text_sdf)
+    endif()
   endif()
 endif()
