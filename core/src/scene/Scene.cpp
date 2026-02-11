@@ -8,6 +8,7 @@ bool Scene::hasLayer(Id id) const    { return layers_.find(id) != layers_.end();
 bool Scene::hasDrawItem(Id id) const { return drawItems_.find(id) != drawItems_.end(); }
 bool Scene::hasBuffer(Id id) const   { return buffers_.find(id) != buffers_.end(); }
 bool Scene::hasGeometry(Id id) const { return geometries_.find(id) != geometries_.end(); }
+bool Scene::hasTransform(Id id) const { return transforms_.find(id) != transforms_.end(); }
 
 const Pane* Scene::getPane(Id id) const {
   auto it = panes_.find(id);
@@ -29,9 +30,21 @@ const Geometry* Scene::getGeometry(Id id) const {
   auto it = geometries_.find(id);
   return it == geometries_.end() ? nullptr : &it->second;
 }
+const Transform* Scene::getTransform(Id id) const {
+  auto it = transforms_.find(id);
+  return it == transforms_.end() ? nullptr : &it->second;
+}
+Transform* Scene::getTransformMutable(Id id) {
+  auto it = transforms_.find(id);
+  return it == transforms_.end() ? nullptr : &it->second;
+}
 DrawItem* Scene::getDrawItemMutable(Id id) {
   auto it = drawItems_.find(id);
   return it == drawItems_.end() ? nullptr : &it->second;
+}
+Buffer* Scene::getBufferMutable(Id id) {
+  auto it = buffers_.find(id);
+  return it == buffers_.end() ? nullptr : &it->second;
 }
 
 
@@ -40,6 +53,7 @@ void Scene::addLayer(Layer l)       { layers_[l.id] = std::move(l); }
 void Scene::addDrawItem(DrawItem d) { drawItems_[d.id] = std::move(d); }
 void Scene::addBuffer(Buffer b)      { buffers_[b.id] = std::move(b); }
 void Scene::addGeometry(Geometry g)  { geometries_[g.id] = std::move(g); }
+void Scene::addTransform(Transform t) { transforms_[t.id] = std::move(t); }
 
 std::vector<Id> Scene::deleteDrawItem(Id drawItemId) {
   auto it = drawItems_.find(drawItemId);
@@ -110,6 +124,13 @@ std::vector<Id> Scene::deleteGeometry(Id geometryId) {
   return {geometryId};
 }
 
+std::vector<Id> Scene::deleteTransform(Id transformId) {
+  auto it = transforms_.find(transformId);
+  if (it == transforms_.end()) return {};
+  transforms_.erase(it);
+  return {transformId};
+}
+
 
 
 std::vector<Id> Scene::paneIds() const {
@@ -140,6 +161,13 @@ std::vector<Id> Scene::geometryIds() const {
   std::vector<Id> out;
   out.reserve(geometries_.size());
   for (auto& kv : geometries_) out.push_back(kv.first);
+  return out;
+}
+
+std::vector<Id> Scene::transformIds() const {
+  std::vector<Id> out;
+  out.reserve(transforms_.size());
+  for (auto& kv : transforms_) out.push_back(kv.first);
   return out;
 }
 

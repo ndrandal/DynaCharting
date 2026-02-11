@@ -67,6 +67,10 @@ private:
   CmdResult cmdCreateGeometry(const rapidjson::Value& obj);
   CmdResult cmdBindDrawItem(const rapidjson::Value& obj);
 
+  CmdResult cmdCreateTransform(const rapidjson::Value& obj);
+  CmdResult cmdSetTransform(const rapidjson::Value& obj);
+  CmdResult cmdAttachTransform(const rapidjson::Value& obj);
+
   PipelineCatalog catalog_;
 
   // helpers
@@ -74,6 +78,7 @@ private:
   static std::string getStringOrEmpty(const rapidjson::Value& obj, const char* key);
   static Id getIdOrZero(const rapidjson::Value& obj, const char* key);
   static std::uint64_t getU64OrZero(const rapidjson::Value& obj, const char* key);
+  static float getFloatOr(const rapidjson::Value& obj, const char* key, float def);
 
   static CmdResult fail(const std::string& code,
                         const std::string& message,

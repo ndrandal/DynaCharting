@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(dc_core LANGUAGES CXX)
+project(dc_core LANGUAGES C CXX)
 
 # ---- Options ----
 option(DC_BUILD_TESTS "Build core tests in core/tests/" ON)
@@ -53,11 +53,13 @@ target_include_directories(RapidJSON::rapidjson INTERFACE "${RAPIDJSON_INCLUDE_D
 message(STATUS "RapidJSON include dir: ${RAPIDJSON_INCLUDE_DIR}")
 
 # =======================
-# Core library
+# Core library (no GL deps)
 # =======================
 file(GLOB_RECURSE DC_SOURCES
   "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
 )
+# Exclude gl/ sources — those belong to dc_gl.
+list(FILTER DC_SOURCES EXCLUDE REGEX ".*/gl/.*")
 
 file(GLOB_RECURSE DC_PUBLIC_HEADERS
   "${CMAKE_CURRENT_SOURCE_DIR}/include/**/*.hpp"
@@ -84,7 +86,92 @@ else()
 endif()
 
 # =======================
-# D1.1 verification (smoke)
+# GLAD (GL loader)
+# =======================
+set(GLAD_DIR "${THIRD_PARTY_ROOT}/glad")
+if (EXISTS "${GLAD_DIR}/src/gl.c")
+  add_library(glad STATIC "${GLAD_DIR}/src/gl.c")
+  target_include_directories(glad PUBLIC "${GLAD_DIR}/include")
+  set(DC_HAS_GLAD TRUE)
+else()
+  set(DC_HAS_GLAD FALSE)
+  message(STATUS "GLAD not found at ${GLAD_DIR} — dc_gl will not be built")
+endif()
+
+# =======================
+# OSMesa (headless GL)
+# =======================
+find_path(OSMESA_INCLUDE_DIR GL/osmesa.h)
+find_library(OSMESA_LIBRARY NAMES OSMesa)
+
+if (OSMESA_INCLUDE_DIR AND OSMESA_LIBRARY)
+  set(DC_HAS_OSMESA TRUE)
+  message(STATUS "OSMesa found: ${OSMESA_LIBRARY}")
+else()
+  set(DC_HAS_OSMESA FALSE)
+  message(STATUS "OSMesa not found")
+endif()
+
+# =======================
+# GLFW (windowed GL)
+# =======================
+find_package(glfw3 3.3 QUIET)
+if (glfw3_FOUND)
+  set(DC_HAS_GLFW TRUE)
+  message(STATUS "GLFW found")
+else()
+  set(DC_HAS_GLFW FALSE)
+  message(STATUS "GLFW not found")
+endif()
+
+# =======================
+# dc_gl library (GL rendering backend)
+# =======================
+if (DC_HAS_GLAD AND (DC_HAS_OSMESA OR DC_HAS_GLFW))
+  # Collect all gl sources
+  file(GLOB DC_GL_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/gl/*.cpp")
+
+  # Conditionally exclude context files based on availability
+  if (NOT DC_HAS_OSMESA)
+    list(FILTER DC_GL_SOURCES EXCLUDE REGEX ".*OsMesaContext\\.cpp$")
+  endif()
+  if (NOT DC_HAS_GLFW)
+    list(FILTER DC_GL_SOURCES EXCLUDE REGEX ".*GlfwContext\\.cpp$")
+  endif()
+
+  add_library(dc_gl STATIC ${DC_GL_SOURCES})
+  target_include_directories(dc_gl PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  )
+  target_link_libraries(dc_gl PUBLIC dc glad)
+
+  if (DC_HAS_OSMESA)
+    target_include_directories(dc_gl PUBLIC "${OSMESA_INCLUDE_DIR}")
+    target_link_libraries(dc_gl PUBLIC ${OSMESA_LIBRARY})
+    target_compile_definitions(dc_gl PUBLIC DC_HAS_OSMESA=1)
+  endif()
+
+  if (DC_HAS_GLFW)
+    target_link_libraries(dc_gl PUBLIC glfw)
+    target_compile_definitions(dc_gl PUBLIC DC_HAS_GLFW=1)
+  endif()
+
+  if (NOT MSVC)
+    target_compile_options(dc_gl PRIVATE -Wall -Wextra -Wpedantic)
+    if (DC_WARNINGS_AS_ERRORS)
+      target_compile_options(dc_gl PRIVATE -Werror)
+    endif()
+  endif()
+
+  # D2.7 demo
+  add_executable(dc_d2_7_demo "${CMAKE_CURRENT_SOURCE_DIR}/demos/d2_7_candle_demo.cpp")
+  target_link_libraries(dc_d2_7_demo PRIVATE dc_gl)
+else()
+  message(STATUS "Skipping dc_gl (requires GLAD + at least one of OSMesa/GLFW)")
+endif()
+
+# =======================
+# Tests
 # =======================
 if (DC_BUILD_TESTS)
   enable_testing()
@@ -101,4 +188,37 @@ if (DC_BUILD_TESTS)
   )
   target_link_libraries(dc_d1_3_atomic_frame PRIVATE dc)
   add_test(NAME dc_d1_3_atomic_frame COMMAND dc_d1_3_atomic_frame)
+
+  add_executable(dc_d2_5_cache
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/d2_5_cache.cpp"
+  )
+  target_link_libraries(dc_d2_5_cache PRIVATE dc)
+  add_test(NAME dc_d2_5_cache COMMAND dc_d2_5_cache)
+
+  # GL-dependent tests (only if dc_gl with OSMesa is available)
+  if (DC_HAS_GLAD AND DC_HAS_OSMESA)
+    add_executable(dc_d2_1_first_render
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/d2_1_first_render.cpp"
+    )
+    target_link_libraries(dc_d2_1_first_render PRIVATE dc_gl)
+    add_test(NAME dc_d2_1_first_render COMMAND dc_d2_1_first_render)
+
+    add_executable(dc_d2_2_transforms
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/d2_2_transforms.cpp"
+    )
+    target_link_libraries(dc_d2_2_transforms PRIVATE dc_gl)
+    add_test(NAME dc_d2_2_transforms COMMAND dc_d2_2_transforms)
+
+    add_executable(dc_d2_3_pipelines
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/d2_3_pipelines.cpp"
+    )
+    target_link_libraries(dc_d2_3_pipelines PRIVATE dc_gl)
+    add_test(NAME dc_d2_3_pipelines COMMAND dc_d2_3_pipelines)
+
+    add_executable(dc_d2_4_ingest
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/d2_4_ingest.cpp"
+    )
+    target_link_libraries(dc_d2_4_ingest PRIVATE dc_gl)
+    add_test(NAME dc_d2_4_ingest COMMAND dc_d2_4_ingest)
+  endif()
 endif()

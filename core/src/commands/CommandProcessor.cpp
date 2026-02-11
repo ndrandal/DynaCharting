@@ -126,6 +126,9 @@ CmdResult CommandProcessor::applyJson(const rapidjson::Value& obj) {
   else if (cmd == "createBuffer") r = cmdCreateBuffer(obj);
   else if (cmd == "createGeometry") r = cmdCreateGeometry(obj);
   else if (cmd == "bindDrawItem") r = cmdBindDrawItem(obj);
+  else if (cmd == "createTransform") r = cmdCreateTransform(obj);
+  else if (cmd == "setTransform") r = cmdSetTransform(obj);
+  else if (cmd == "attachTransform") r = cmdAttachTransform(obj);
   else {
     r = fail("UNKNOWN_COMMAND",
              "Unknown cmd",
@@ -331,6 +334,9 @@ CmdResult CommandProcessor::cmdDelete(const rapidjson::Value& obj) {
     case ResourceKind::Geometry:
       deleted = scene.deleteGeometry(id);
       break;
+    case ResourceKind::Transform:
+      deleted = scene.deleteTransform(id);
+      break;
     default:
       deleted.clear();
       break;
@@ -399,14 +405,16 @@ CmdResult CommandProcessor::cmdCreateGeometry(const rapidjson::Value& obj) {
     return fail("BAD_COMMAND", "createGeometry: missing uint vertexCount");
   }
 
-  // v1 supports only pos2_clip (vec2 in clip space)
   VertexFormat fmt = VertexFormat::Pos2_Clip;
   if (const auto* f = getMember(obj, "format"); f && f->IsString()) {
     const std::string s = f->GetString();
-    if (s != "pos2_clip") {
+    if (s == "pos2_clip")     fmt = VertexFormat::Pos2_Clip;
+    else if (s == "rect4")    fmt = VertexFormat::Rect4;
+    else if (s == "candle6")  fmt = VertexFormat::Candle6;
+    else {
       return fail("UNSUPPORTED_VERTEX_FORMAT",
-                  "createGeometry: only format=pos2_clip supported",
-                  R"({"supported":["pos2_clip"]})");
+                  "createGeometry: unknown format",
+                  std::string(R"({"format":")") + s + R"("})");
     }
   }
 
@@ -500,11 +508,119 @@ CmdResult CommandProcessor::validateDrawItem(const DrawItem& di) const {
                   R"(","got":")" + toString(g->format) + R"("})");
   }
 
-  if ((g->vertexCount % 3u) != 0u) {
-    return fail("VALIDATION_BAD_VERTEX_COUNT",
-                "triSolid@1 requires vertexCount multiple of 3",
+  // Pipeline-aware vertex count validation
+  bool vcOk = true;
+  std::string vcMsg;
+  switch (spec->drawMode) {
+    case DrawMode::Triangles:
+      vcOk = (g->vertexCount % 3u) == 0u;
+      vcMsg = "vertexCount must be multiple of 3 for triangle pipelines";
+      break;
+    case DrawMode::Lines:
+      vcOk = (g->vertexCount % 2u) == 0u;
+      vcMsg = "vertexCount must be multiple of 2 for line pipelines";
+      break;
+    case DrawMode::Points:
+    case DrawMode::InstancedTriangles:
+      vcOk = g->vertexCount >= 1u;
+      vcMsg = "vertexCount must be >= 1";
+      break;
+  }
+  if (!vcOk) {
+    return fail("VALIDATION_BAD_VERTEX_COUNT", vcMsg,
                 std::string(R"({"vertexCount":)") + std::to_string(g->vertexCount) + "}");
   }
+
+  CmdResult r;
+  r.ok = true;
+  r.createdId = 0;
+  return r;
+}
+
+// -------------------- Transforms --------------------
+
+float CommandProcessor::getFloatOr(const rapidjson::Value& obj, const char* key, float def) {
+  const auto* v = getMember(obj, key);
+  if (!v) return def;
+  if (v->IsFloat() || v->IsDouble()) return static_cast<float>(v->GetDouble());
+  if (v->IsInt()) return static_cast<float>(v->GetInt());
+  return def;
+}
+
+CmdResult CommandProcessor::cmdCreateTransform(const rapidjson::Value& obj) {
+  Scene& scene = curScene();
+  ResourceRegistry& reg = curReg();
+
+  Id id = getIdOrZero(obj, "id");
+  if (id != 0) {
+    if (!reg.reserve(id, ResourceKind::Transform)) {
+      return fail("ID_TAKEN", "createTransform: id already exists");
+    }
+  } else {
+    id = reg.allocate(ResourceKind::Transform);
+  }
+
+  Transform t;
+  t.id = id;
+  // identity params by default
+  recomputeMat3(t);
+  scene.addTransform(std::move(t));
+
+  CmdResult r;
+  r.ok = true;
+  r.createdId = id;
+  return r;
+}
+
+CmdResult CommandProcessor::cmdSetTransform(const rapidjson::Value& obj) {
+  Scene& scene = curScene();
+
+  const Id id = getIdOrZero(obj, "id");
+  if (id == 0) {
+    return fail("BAD_COMMAND", "setTransform: missing/invalid id");
+  }
+
+  Transform* t = scene.getTransformMutable(id);
+  if (!t) {
+    return fail("NOT_FOUND", "setTransform: transform not found",
+                std::string(R"({"id":)") + std::to_string(id) + "}");
+  }
+
+  // Merge only provided fields
+  t->params.tx = getFloatOr(obj, "tx", t->params.tx);
+  t->params.ty = getFloatOr(obj, "ty", t->params.ty);
+  t->params.sx = getFloatOr(obj, "sx", t->params.sx);
+  t->params.sy = getFloatOr(obj, "sy", t->params.sy);
+  recomputeMat3(*t);
+
+  CmdResult r;
+  r.ok = true;
+  r.createdId = 0;
+  return r;
+}
+
+CmdResult CommandProcessor::cmdAttachTransform(const rapidjson::Value& obj) {
+  Scene& scene = curScene();
+
+  const Id drawItemId = getIdOrZero(obj, "drawItemId");
+  if (drawItemId == 0) {
+    return fail("BAD_COMMAND", "attachTransform: missing/invalid drawItemId");
+  }
+
+  DrawItem* di = scene.getDrawItemMutable(drawItemId);
+  if (!di) {
+    return fail("MISSING_DRAWITEM", "attachTransform: drawItemId not found",
+                std::string(R"({"drawItemId":)") + std::to_string(drawItemId) + "}");
+  }
+
+  const Id transformId = getIdOrZero(obj, "transformId");
+  // 0 = detach
+  if (transformId != 0 && !scene.hasTransform(transformId)) {
+    return fail("NOT_FOUND", "attachTransform: transformId not found",
+                std::string(R"({"transformId":)") + std::to_string(transformId) + "}");
+  }
+
+  di->transformId = transformId;
 
   CmdResult r;
   r.ok = true;
@@ -544,6 +660,11 @@ std::string CommandProcessor::listResourcesJson() const {
   w.Key("geometries");
   w.StartArray();
   for (Id id : activeReg_.list(ResourceKind::Geometry)) w.Uint64(id);
+  w.EndArray();
+
+  w.Key("transforms");
+  w.StartArray();
+  for (Id id : activeReg_.list(ResourceKind::Transform)) w.Uint64(id);
   w.EndArray();
 
   w.Key("activeFrameId");
