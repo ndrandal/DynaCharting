@@ -176,6 +176,15 @@ if (DC_HAS_GLAD AND (DC_HAS_OSMESA OR DC_HAS_GLFW))
       FONT_PATH="${THIRD_PARTY_ROOT}/test_font.ttf"
     )
   endif()
+
+  # D4.6 full demo
+  add_executable(dc_d4_6_full_demo "${CMAKE_CURRENT_SOURCE_DIR}/demos/d4_6_full_demo.cpp")
+  target_link_libraries(dc_d4_6_full_demo PRIVATE dc_gl)
+  if (EXISTS "${THIRD_PARTY_ROOT}/test_font.ttf")
+    target_compile_definitions(dc_d4_6_full_demo PRIVATE
+      FONT_PATH="${THIRD_PARTY_ROOT}/test_font.ttf"
+    )
+  endif()
 else()
   message(STATUS "Skipping dc_gl (requires GLAD + at least one of OSMesa/GLFW)")
 endif()
@@ -210,6 +219,34 @@ if (DC_BUILD_TESTS)
   )
   target_link_libraries(dc_d3_4_recipes PRIVATE dc)
   add_test(NAME dc_d3_4_recipes COMMAND dc_d3_4_recipes)
+
+  # D4.2 SMA (pure C++)
+  add_executable(dc_d4_2_sma
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/d4_2_sma.cpp"
+  )
+  target_link_libraries(dc_d4_2_sma PRIVATE dc)
+  add_test(NAME dc_d4_2_sma COMMAND dc_d4_2_sma)
+
+  # D4.3 Axis (pure C++)
+  add_executable(dc_d4_3_axis
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/d4_3_axis.cpp"
+  )
+  target_link_libraries(dc_d4_3_axis PRIVATE dc)
+  add_test(NAME dc_d4_3_axis COMMAND dc_d4_3_axis)
+
+  # D4.4 Bollinger (pure C++)
+  add_executable(dc_d4_4_bollinger
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/d4_4_bollinger.cpp"
+  )
+  target_link_libraries(dc_d4_4_bollinger PRIVATE dc)
+  add_test(NAME dc_d4_4_bollinger COMMAND dc_d4_4_bollinger)
+
+  # D4.5 MACD (pure C++)
+  add_executable(dc_d4_5_macd
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/d4_5_macd.cpp"
+  )
+  target_link_libraries(dc_d4_5_macd PRIVATE dc)
+  add_test(NAME dc_d4_5_macd COMMAND dc_d4_5_macd)
 
   # D3.2 glyph atlas test (needs font file)
   set(DC_TEST_FONT "${THIRD_PARTY_ROOT}/test_font.ttf")
@@ -260,5 +297,19 @@ if (DC_BUILD_TESTS)
       )
       add_test(NAME dc_d3_3_text_sdf COMMAND dc_d3_3_text_sdf)
     endif()
+
+    # D4.1 Area (GL test)
+    add_executable(dc_d4_1_area
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/d4_1_area.cpp"
+    )
+    target_link_libraries(dc_d4_1_area PRIVATE dc_gl)
+    add_test(NAME dc_d4_1_area COMMAND dc_d4_1_area)
+
+    # D4.6 Demo integration test (GL)
+    add_executable(dc_d4_6_demo
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/d4_6_demo.cpp"
+    )
+    target_link_libraries(dc_d4_6_demo PRIVATE dc_gl)
+    add_test(NAME dc_d4_6_demo COMMAND dc_d4_6_demo)
   endif()
 endif()

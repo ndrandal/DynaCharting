@@ -145,6 +145,7 @@ CmdResult CommandProcessor::applyJson(const rapidjson::Value& obj) {
   else if (cmd == "setDrawItemPipeline") r = cmdSetDrawItemPipeline(obj);
   else if (cmd == "setGeometryVertexCount") r = cmdSetGeometryVertexCount(obj);
   else if (cmd == "ensureGlyphs") r = cmdEnsureGlyphs(obj);
+  else if (cmd == "setDrawItemColor") r = cmdSetDrawItemColor(obj);
   else {
     r = fail("UNKNOWN_COMMAND",
              "Unknown cmd",
@@ -781,6 +782,32 @@ CmdResult CommandProcessor::cmdEnsureGlyphs(const rapidjson::Value& obj) {
   }
 
   atlas_->ensureGlyphs(cps.data(), static_cast<std::uint32_t>(cps.size()));
+
+  CmdResult r;
+  r.ok = true;
+  return r;
+}
+
+// -------------------- Draw item color --------------------
+
+CmdResult CommandProcessor::cmdSetDrawItemColor(const rapidjson::Value& obj) {
+  Scene& scene = curScene();
+
+  const Id drawItemId = getIdOrZero(obj, "drawItemId");
+  if (drawItemId == 0) {
+    return fail("BAD_COMMAND", "setDrawItemColor: missing/invalid drawItemId");
+  }
+
+  DrawItem* di = scene.getDrawItemMutable(drawItemId);
+  if (!di) {
+    return fail("MISSING_DRAWITEM", "setDrawItemColor: drawItemId not found",
+                std::string(R"({"drawItemId":)") + std::to_string(drawItemId) + "}");
+  }
+
+  di->color[0] = getFloatOr(obj, "r", di->color[0]);
+  di->color[1] = getFloatOr(obj, "g", di->color[1]);
+  di->color[2] = getFloatOr(obj, "b", di->color[2]);
+  di->color[3] = getFloatOr(obj, "a", di->color[3]);
 
   CmdResult r;
   r.ok = true;

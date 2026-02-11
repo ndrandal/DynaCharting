@@ -58,6 +58,10 @@ int main() {
   requireOk(cp.applyJsonText(
     R"({"cmd":"bindDrawItem","drawItemId":5,"pipeline":"triSolid@1","geometryId":4})"),
     "bindDrawItem");
+  // set color to red (was hardcoded in renderer before per-DrawItem color)
+  requireOk(cp.applyJsonText(
+    R"({"cmd":"setDrawItemColor","drawItemId":5,"r":1.0,"g":0.0,"b":0.0,"a":1.0})"),
+    "setDrawItemColor");
 
   std::printf("Scene built: pane=1, layer=2, buffer=3, geom=4, drawItem=5\n");
 

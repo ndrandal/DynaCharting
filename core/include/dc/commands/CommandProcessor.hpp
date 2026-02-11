@@ -85,6 +85,7 @@ private:
   CmdResult cmdSetDrawItemPipeline(const rapidjson::Value& obj);
   CmdResult cmdSetGeometryVertexCount(const rapidjson::Value& obj);
   CmdResult cmdEnsureGlyphs(const rapidjson::Value& obj);
+  CmdResult cmdSetDrawItemColor(const rapidjson::Value& obj);
 
   PipelineCatalog catalog_;
   IngestProcessor* ingest_{nullptr};

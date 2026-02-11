@@ -214,7 +214,8 @@ void Renderer::drawPos2(const DrawItem& di, const Scene& scene,
 
   const float* xform = resolveTransform(di, scene);
   pos2Prog_.setUniformMat3(pos2Prog_.uniformLocation("u_transform"), xform);
-  pos2Prog_.setUniformVec4(pos2Prog_.uniformLocation("u_color"), 1.0f, 0.0f, 0.0f, 1.0f);
+  pos2Prog_.setUniformVec4(pos2Prog_.uniformLocation("u_color"),
+                           di.color[0], di.color[1], di.color[2], di.color[3]);
   pos2Prog_.setUniformFloat(pos2Prog_.uniformLocation("u_pointSize"), 4.0f);
 
   glBindBuffer(GL_ARRAY_BUFFER, vbo);
@@ -239,7 +240,8 @@ void Renderer::drawInstancedRect(const DrawItem& di, const Scene& scene,
 
   const float* xform = resolveTransform(di, scene);
   instRectProg_.setUniformMat3(instRectProg_.uniformLocation("u_transform"), xform);
-  instRectProg_.setUniformVec4(instRectProg_.uniformLocation("u_color"), 1.0f, 0.0f, 0.0f, 1.0f);
+  instRectProg_.setUniformVec4(instRectProg_.uniformLocation("u_color"),
+                               di.color[0], di.color[1], di.color[2], di.color[3]);
 
   glBindBuffer(GL_ARRAY_BUFFER, vbo);
   GLint aRect = instRectProg_.attribLocation("a_rect");
@@ -302,6 +304,7 @@ void Renderer::uploadAtlasIfDirty() {
   if (!atlas_ || !atlas_->isDirty()) return;
 
   glBindTexture(GL_TEXTURE_2D, atlasTexture_);
+  glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
   GLsizei sz = static_cast<GLsizei>(atlas_->atlasSize());
   glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, sz, sz, 0,
                GL_RED, GL_UNSIGNED_BYTE, atlas_->atlasData());
@@ -326,7 +329,7 @@ void Renderer::drawTextSdf(const DrawItem& di, const Scene& scene,
   const float* xform = resolveTransform(di, scene);
   textSdfProg_.setUniformMat3(textSdfProg_.uniformLocation("u_transform"), xform);
   textSdfProg_.setUniformVec4(textSdfProg_.uniformLocation("u_color"),
-                               1.0f, 1.0f, 1.0f, 1.0f);
+                               di.color[0], di.color[1], di.color[2], di.color[3]);
   textSdfProg_.setUniformFloat(textSdfProg_.uniformLocation("u_pxRange"), 12.0f);
 
   // Bind atlas texture

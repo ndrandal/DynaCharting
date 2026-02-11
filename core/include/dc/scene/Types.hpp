@@ -61,6 +61,8 @@ struct DrawItem {
   std::string pipeline;  // e.g. "triSolid@1"
   Id geometryId{0};      // must refer to a Geometry resource
   Id transformId{0};     // optional; 0 = identity
+
+  float color[4] = {1.0f, 1.0f, 1.0f, 1.0f}; // RGBA, default white
 };
 
 
