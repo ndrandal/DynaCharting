@@ -24,6 +24,7 @@ public:
   LineRecipe(Id idBase, const LineRecipeConfig& config);
 
   RecipeBuildResult build() const override;
+  std::vector<Id> drawItemIds() const override { return {drawItemId()}; }
 
   // Accessors for the deterministic IDs
   Id bufferId() const    { return rid(0); }

@@ -26,6 +26,7 @@ public:
   SmaRecipe(Id idBase, const SmaRecipeConfig& config);
 
   RecipeBuildResult build() const override;
+  std::vector<Id> drawItemIds() const override { return {drawItemId()}; }
 
   Id bufferId() const    { return rid(0); }
   Id geometryId() const  { return rid(1); }

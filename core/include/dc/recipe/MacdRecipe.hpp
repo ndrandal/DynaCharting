@@ -30,6 +30,10 @@ public:
   MacdRecipe(Id idBase, const MacdRecipeConfig& config);
 
   RecipeBuildResult build() const override;
+  std::vector<Id> drawItemIds() const override {
+    return {macdLineDrawItemId(), signalLineDrawItemId(),
+            posHistDrawItemId(), negHistDrawItemId()};
+  }
 
   Id macdLineBufferId() const    { return rid(0); }
   Id macdLineGeomId() const      { return rid(1); }

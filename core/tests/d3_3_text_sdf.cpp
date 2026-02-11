@@ -104,9 +104,9 @@ int main() {
 
     float scale = fontSize / 48.0f;
     float x0 = cursorX + g->bearingX * scale;
-    float y0 = baselineY - g->bearingY * scale;
+    float y1 = baselineY + g->bearingY * scale;  // top of glyph
+    float y0 = y1 - g->h * scale;                // bottom of glyph
     float x1 = x0 + g->w * scale;
-    float y1 = y0 + g->h * scale;
 
     instances.push_back(x0);
     instances.push_back(y0);

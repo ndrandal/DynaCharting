@@ -29,6 +29,9 @@ public:
   AxisRecipe(Id idBase, const AxisRecipeConfig& config);
 
   RecipeBuildResult build() const override;
+  std::vector<Id> drawItemIds() const override {
+    return {yTickDrawItemId(), xTickDrawItemId(), labelDrawItemId()};
+  }
 
   Id yTickBufferId() const   { return rid(0); }
   Id yTickGeomId() const     { return rid(1); }

@@ -36,6 +36,9 @@ RecipeBuildResult CandleRecipe::build() const {
       R"(,"transformId":)" + idStr(transformId()) + "}");
   }
 
+  // Subscriptions
+  result.subscriptions.push_back({bufferId(), geometryId(), VertexFormat::Candle6});
+
   // Dispose (reverse)
   if (config_.createTransform) {
     result.disposeCommands.push_back(

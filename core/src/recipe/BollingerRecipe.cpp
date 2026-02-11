@@ -58,6 +58,12 @@ RecipeBuildResult BollingerRecipe::build() const {
     R"({"cmd":"bindDrawItem","drawItemId":)" + idStr(fillDrawItemId()) +
     R"(,"pipeline":"triSolid@1","geometryId":)" + idStr(fillGeomId()) + "}");
 
+  // Subscriptions
+  result.subscriptions.push_back({middleBufferId(), middleGeomId(), VertexFormat::Pos2_Clip});
+  result.subscriptions.push_back({upperBufferId(), upperGeomId(), VertexFormat::Pos2_Clip});
+  result.subscriptions.push_back({lowerBufferId(), lowerGeomId(), VertexFormat::Pos2_Clip});
+  result.subscriptions.push_back({fillBufferId(), fillGeomId(), VertexFormat::Pos2_Clip});
+
   // Shared transform
   if (config_.createTransform) {
     result.createCommands.push_back(

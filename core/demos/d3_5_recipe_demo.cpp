@@ -130,9 +130,9 @@ static void buildTextInstances(const dc::GlyphAtlas& atlas, const char* text,
       continue;
     }
     float x0 = cursorX + g->bearingX * scale;
-    float y0 = baselineY - g->bearingY * scale;
+    float y1 = baselineY + g->bearingY * scale;  // top of glyph (above baseline)
+    float y0 = y1 - g->h * scale;                // bottom of glyph
     float x1 = x0 + g->w * scale;
-    float y1 = y0 + g->h * scale;
     out.push_back(x0); out.push_back(y0); out.push_back(x1); out.push_back(y1);
     out.push_back(g->u0); out.push_back(g->v0); out.push_back(g->u1); out.push_back(g->v1);
     glyphCount++;

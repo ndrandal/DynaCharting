@@ -121,9 +121,14 @@ bool GlyphAtlas::ensureGlyphs(const std::uint32_t* codepoints, std::uint32_t cou
     GlyphInfo info;
     info.codepoint = cp;
     info.u0 = static_cast<float>(ax + pad_) * invAtlas;
-    info.v0 = static_cast<float>(ay + pad_) * invAtlas;
     info.u1 = static_cast<float>(ax + pad_ + sdfW) * invAtlas;
-    info.v1 = static_cast<float>(ay + pad_ + sdfH) * invAtlas;
+    // V coordinates: OpenGL row 0 = bottom (V=0), but our atlas row 0 = top.
+    // Swap so v0 = bottom of glyph (larger atlas row → larger V) and
+    // v1 = top of glyph (smaller atlas row → smaller V).
+    // The shader maps uv.y 0→1 (bottom→top of quad) to v0→v1, giving
+    // correct orientation.
+    info.v0 = static_cast<float>(ay + pad_ + sdfH) * invAtlas;
+    info.v1 = static_cast<float>(ay + pad_) * invAtlas;
     info.advance = static_cast<float>(advW) * scale;
     info.bearingX = static_cast<float>(ix0);
     info.bearingY = static_cast<float>(-iy0);

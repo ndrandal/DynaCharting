@@ -28,6 +28,9 @@ public:
   BollingerRecipe(Id idBase, const BollingerRecipeConfig& config);
 
   RecipeBuildResult build() const override;
+  std::vector<Id> drawItemIds() const override {
+    return {middleDrawItemId(), upperDrawItemId(), lowerDrawItemId(), fillDrawItemId()};
+  }
 
   Id middleBufferId() const   { return rid(0); }
   Id middleGeomId() const     { return rid(1); }

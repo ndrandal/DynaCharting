@@ -76,6 +76,11 @@ RecipeBuildResult AxisRecipe::build() const {
       R"(,"transformId":)" + idStr(config_.dataTransformId) + "}");
   }
 
+  // Subscriptions
+  result.subscriptions.push_back({yTickBufferId(), yTickGeomId(), VertexFormat::Pos2_Clip});
+  result.subscriptions.push_back({xTickBufferId(), xTickGeomId(), VertexFormat::Pos2_Clip});
+  result.subscriptions.push_back({labelBufferId(), labelGeomId(), VertexFormat::Glyph8});
+
   // Dispose (reverse order)
   result.disposeCommands.push_back(
     R"({"cmd":"delete","id":)" + idStr(labelTransformId()) + "}");

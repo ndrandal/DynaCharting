@@ -4,6 +4,7 @@ project(dc_core LANGUAGES C CXX)
 # ---- Options ----
 option(DC_BUILD_TESTS "Build core tests in core/tests/" ON)
 option(DC_WARNINGS_AS_ERRORS "Treat warnings as errors" OFF)
+option(DC_HAS_WEBSOCKET "Build WebSocket data source (requires easywsclient)" OFF)
 
 # ---- C++ standard ----
 set(CMAKE_CXX_STANDARD 17)
@@ -60,6 +61,8 @@ file(GLOB_RECURSE DC_SOURCES
 )
 # Exclude gl/ sources — those belong to dc_gl.
 list(FILTER DC_SOURCES EXCLUDE REGEX ".*/gl/.*")
+# Exclude WebSocketDataSource — belongs to dc_ws (conditional).
+list(FILTER DC_SOURCES EXCLUDE REGEX ".*WebSocketDataSource\\.cpp$")
 
 file(GLOB_RECURSE DC_PUBLIC_HEADERS
   "${CMAKE_CURRENT_SOURCE_DIR}/include/**/*.hpp"
@@ -126,6 +129,33 @@ else()
 endif()
 
 # =======================
+# dc_ws library (WebSocket data source, conditional)
+# =======================
+set(EASYWSCLIENT_DIR "${THIRD_PARTY_ROOT}/easywsclient")
+if (DC_HAS_WEBSOCKET AND EXISTS "${EASYWSCLIENT_DIR}/easywsclient.cpp")
+  add_library(dc_ws STATIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/data/WebSocketDataSource.cpp"
+    "${EASYWSCLIENT_DIR}/easywsclient.cpp"
+  )
+  target_include_directories(dc_ws PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    "${THIRD_PARTY_ROOT}"
+  )
+  target_link_libraries(dc_ws PUBLIC dc)
+  target_compile_definitions(dc_ws PUBLIC DC_HAS_WEBSOCKET=1)
+  if (NOT MSVC)
+    target_compile_options(dc_ws PRIVATE -Wall -Wextra -Wno-sign-compare)
+  endif()
+  message(STATUS "dc_ws (WebSocket) enabled")
+else()
+  if (DC_HAS_WEBSOCKET)
+    message(STATUS "DC_HAS_WEBSOCKET=ON but easywsclient not found at ${EASYWSCLIENT_DIR}")
+  else()
+    message(STATUS "dc_ws disabled (DC_HAS_WEBSOCKET=OFF)")
+  endif()
+endif()
+
+# =======================
 # dc_gl library (GL rendering backend)
 # =======================
 if (DC_HAS_GLAD AND (DC_HAS_OSMESA OR DC_HAS_GLFW))
@@ -182,6 +212,27 @@ if (DC_HAS_GLAD AND (DC_HAS_OSMESA OR DC_HAS_GLFW))
   target_link_libraries(dc_d4_6_full_demo PRIVATE dc_gl)
   if (EXISTS "${THIRD_PARTY_ROOT}/test_font.ttf")
     target_compile_definitions(dc_d4_6_full_demo PRIVATE
+      FONT_PATH="${THIRD_PARTY_ROOT}/test_font.ttf"
+    )
+  endif()
+
+  # D5.7 interactive demo
+  add_executable(dc_d5_7_interactive_demo "${CMAKE_CURRENT_SOURCE_DIR}/demos/d5_7_interactive_demo.cpp")
+  target_link_libraries(dc_d5_7_interactive_demo PRIVATE dc_gl)
+  if (EXISTS "${THIRD_PARTY_ROOT}/test_font.ttf")
+    target_compile_definitions(dc_d5_7_interactive_demo PRIVATE
+      FONT_PATH="${THIRD_PARTY_ROOT}/test_font.ttf"
+    )
+  endif()
+
+  # D6.3 live streaming demo
+  add_executable(dc_d6_3_live_demo "${CMAKE_CURRENT_SOURCE_DIR}/demos/d6_3_live_demo.cpp")
+  target_link_libraries(dc_d6_3_live_demo PRIVATE dc_gl)
+  if (DC_HAS_WEBSOCKET AND TARGET dc_ws)
+    target_link_libraries(dc_d6_3_live_demo PRIVATE dc_ws)
+  endif()
+  if (EXISTS "${THIRD_PARTY_ROOT}/test_font.ttf")
+    target_compile_definitions(dc_d6_3_live_demo PRIVATE
       FONT_PATH="${THIRD_PARTY_ROOT}/test_font.ttf"
     )
   endif()
@@ -248,6 +299,34 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_d4_5_macd PRIVATE dc)
   add_test(NAME dc_d4_5_macd COMMAND dc_d4_5_macd)
 
+  # D5.1 Viewport (pure C++)
+  add_executable(dc_d5_1_viewport
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/d5_1_viewport.cpp"
+  )
+  target_link_libraries(dc_d5_1_viewport PRIVATE dc)
+  add_test(NAME dc_d5_1_viewport COMMAND dc_d5_1_viewport)
+
+  # D6.1 Live ingest (pure C++)
+  add_executable(dc_d6_1_live_ingest
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/d6_1_live_ingest.cpp"
+  )
+  target_link_libraries(dc_d6_1_live_ingest PRIVATE dc)
+  add_test(NAME dc_d6_1_live_ingest COMMAND dc_d6_1_live_ingest)
+
+  # D7.1 Subscriptions metadata (pure C++)
+  add_executable(dc_d7_1_subscriptions
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/d7_1_subscriptions.cpp"
+  )
+  target_link_libraries(dc_d7_1_subscriptions PRIVATE dc)
+  add_test(NAME dc_d7_1_subscriptions COMMAND dc_d7_1_subscriptions)
+
+  # D7.2 ChartSession lifecycle (pure C++)
+  add_executable(dc_d7_2_session
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/d7_2_session.cpp"
+  )
+  target_link_libraries(dc_d7_2_session PRIVATE dc)
+  add_test(NAME dc_d7_2_session COMMAND dc_d7_2_session)
+
   # D3.2 glyph atlas test (needs font file)
   set(DC_TEST_FONT "${THIRD_PARTY_ROOT}/test_font.ttf")
   if (EXISTS "${DC_TEST_FONT}")
@@ -259,6 +338,16 @@ if (DC_BUILD_TESTS)
       FONT_PATH="${DC_TEST_FONT}"
     )
     add_test(NAME dc_d3_2_glyph_atlas COMMAND dc_d3_2_glyph_atlas)
+
+    # D5.3 Crosshair (pure C++, needs font)
+    add_executable(dc_d5_3_crosshair
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/d5_3_crosshair.cpp"
+    )
+    target_link_libraries(dc_d5_3_crosshair PRIVATE dc)
+    target_compile_definitions(dc_d5_3_crosshair PRIVATE
+      FONT_PATH="${DC_TEST_FONT}"
+    )
+    add_test(NAME dc_d5_3_crosshair COMMAND dc_d5_3_crosshair)
   endif()
 
   # GL-dependent tests (only if dc_gl with OSMesa is available)
@@ -311,5 +400,31 @@ if (DC_BUILD_TESTS)
     )
     target_link_libraries(dc_d4_6_demo PRIVATE dc_gl)
     add_test(NAME dc_d4_6_demo COMMAND dc_d4_6_demo)
+
+    # D5.7 Interactive integration test (GL)
+    add_executable(dc_d5_7_interactive
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/d5_7_interactive.cpp"
+    )
+    target_link_libraries(dc_d5_7_interactive PRIVATE dc_gl)
+    if (EXISTS "${DC_TEST_FONT}")
+      target_compile_definitions(dc_d5_7_interactive PRIVATE
+        FONT_PATH="${DC_TEST_FONT}"
+      )
+    endif()
+    add_test(NAME dc_d5_7_interactive COMMAND dc_d5_7_interactive)
+
+    # D6.3 Live streaming integration test (GL)
+    add_executable(dc_d6_3_live
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/d6_3_live.cpp"
+    )
+    target_link_libraries(dc_d6_3_live PRIVATE dc_gl)
+    add_test(NAME dc_d6_3_live COMMAND dc_d6_3_live)
+
+    # D7.4 ChartSession live integration test (GL)
+    add_executable(dc_d7_4_session_live
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/d7_4_session_live.cpp"
+    )
+    target_link_libraries(dc_d7_4_session_live PRIVATE dc_gl)
+    add_test(NAME dc_d7_4_session_live COMMAND dc_d7_4_session_live)
   endif()
 endif()

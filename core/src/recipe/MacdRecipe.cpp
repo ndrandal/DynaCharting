@@ -75,6 +75,12 @@ RecipeBuildResult MacdRecipe::build() const {
     R"({"cmd":"bindDrawItem","drawItemId":)" + idStr(negHistDrawItemId()) +
     R"(,"pipeline":"instancedRect@1","geometryId":)" + idStr(negHistGeomId()) + "}");
 
+  // Subscriptions
+  result.subscriptions.push_back({macdLineBufferId(), macdLineGeomId(), VertexFormat::Pos2_Clip});
+  result.subscriptions.push_back({signalLineBufferId(), signalLineGeomId(), VertexFormat::Pos2_Clip});
+  result.subscriptions.push_back({posHistBufferId(), posHistGeomId(), VertexFormat::Rect4});
+  result.subscriptions.push_back({negHistBufferId(), negHistGeomId(), VertexFormat::Rect4});
+
   // Shared transform
   if (config_.createTransform) {
     result.createCommands.push_back(

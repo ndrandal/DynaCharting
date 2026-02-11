@@ -1,5 +1,6 @@
 #pragma once
 #include "dc/gl/GlContext.hpp"
+#include "dc/viewport/InputState.hpp"
 
 #ifdef DC_HAS_GLFW
 
@@ -8,10 +9,18 @@ struct GLFWwindow;
 namespace dc {
 
 struct InputState {
+  double cursorX{0};
+  double cursorY{0};
   double panDx{0};
   double panDy{0};
   double zoomDelta{0};
+  bool dragging{false};
   bool shouldClose{false};
+
+  // Convert to generic ViewportInputState
+  ViewportInputState toViewportInput() const {
+    return {cursorX, cursorY, panDx, panDy, zoomDelta, dragging};
+  }
 };
 
 class GlfwContext : public GlContext {

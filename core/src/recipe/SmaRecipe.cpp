@@ -37,6 +37,9 @@ RecipeBuildResult SmaRecipe::build() const {
       R"(,"transformId":)" + idStr(transformId()) + "}");
   }
 
+  // Subscriptions
+  result.subscriptions.push_back({bufferId(), geometryId(), VertexFormat::Pos2_Clip});
+
   if (config_.createTransform) {
     result.disposeCommands.push_back(
       R"({"cmd":"delete","id":)" + idStr(transformId()) + "}");

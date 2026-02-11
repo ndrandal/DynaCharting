@@ -37,6 +37,9 @@ RecipeBuildResult LineRecipe::build() const {
       R"(,"transformId":)" + idStr(transformId()) + "}");
   }
 
+  // Subscriptions
+  result.subscriptions.push_back({bufferId(), geometryId(), VertexFormat::Pos2_Clip});
+
   // Dispose commands (reverse order)
   if (config_.createTransform) {
     result.disposeCommands.push_back(

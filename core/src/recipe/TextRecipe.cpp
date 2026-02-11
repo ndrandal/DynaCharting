@@ -36,6 +36,9 @@ RecipeBuildResult TextRecipe::build() const {
       R"(,"transformId":)" + idStr(transformId()) + "}");
   }
 
+  // Subscriptions
+  result.subscriptions.push_back({bufferId(), geometryId(), VertexFormat::Glyph8});
+
   // Dispose (reverse)
   if (config_.createTransform) {
     result.disposeCommands.push_back(

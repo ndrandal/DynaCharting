@@ -36,7 +36,7 @@ int main() {
   requireTrue(gA->h > 0, "glyph 'A' has positive height");
   requireTrue(gA->u0 >= 0 && gA->u1 <= 1.0f, "glyph 'A' UVs in range");
   requireTrue(gA->u1 > gA->u0, "glyph 'A' u1 > u0");
-  requireTrue(gA->v1 > gA->v0, "glyph 'A' v1 > v0");
+  requireTrue(gA->v0 > gA->v1, "glyph 'A' v0 > v1 (GL-flipped V)");
   std::printf("Glyph 'A': advance=%.1f w=%.0f h=%.0f UV=(%.3f,%.3f)-(%.3f,%.3f)\n",
               gA->advance, gA->w, gA->h, gA->u0, gA->v0, gA->u1, gA->v1);
 
@@ -48,12 +48,13 @@ int main() {
   std::printf("Space glyph: advance=%.1f\n", gSpc->advance);
 
   // Test 5: Atlas data — check 'I' which has solid center
+  // Note: v1 is the smaller V (top of glyph in atlas array), v0 is the larger V (bottom).
   const dc::GlyphInfo* gI = atlas.getGlyph('I');
   requireTrue(gI != nullptr, "glyph 'I' found");
   std::uint32_t atlasSize = atlas.atlasSize();
   const std::uint8_t* data = atlas.atlasData();
   std::uint32_t ix = static_cast<std::uint32_t>(gI->u0 * static_cast<float>(atlasSize));
-  std::uint32_t iy = static_cast<std::uint32_t>(gI->v0 * static_cast<float>(atlasSize));
+  std::uint32_t iy = static_cast<std::uint32_t>(gI->v1 * static_cast<float>(atlasSize)); // v1 = top row
   std::uint32_t midX = ix + static_cast<std::uint32_t>(gI->w / 2);
   std::uint32_t midY = iy + static_cast<std::uint32_t>(gI->h / 2);
   std::uint8_t centerVal = data[midY * atlasSize + midX];
@@ -63,7 +64,7 @@ int main() {
   // Also verify some pixels in 'A' glyph are inside (not all are in the hole)
   int insideCount = 0;
   std::uint32_t ax = static_cast<std::uint32_t>(gA->u0 * static_cast<float>(atlasSize));
-  std::uint32_t ay = static_cast<std::uint32_t>(gA->v0 * static_cast<float>(atlasSize));
+  std::uint32_t ay = static_cast<std::uint32_t>(gA->v1 * static_cast<float>(atlasSize)); // v1 = top row
   for (std::uint32_t r = 0; r < static_cast<std::uint32_t>(gA->h); r++) {
     for (std::uint32_t c = 0; c < static_cast<std::uint32_t>(gA->w); c++) {
       if (data[(ay + r) * atlasSize + ax + c] > 128) insideCount++;

@@ -86,9 +86,12 @@ InputState GlfwContext::pollInput() {
 
   InputState state;
   state.shouldClose = shouldClose();
+  state.cursorX = lastCursorX_;
+  state.cursorY = lastCursorY_;
   state.zoomDelta = scrollAccum_;
   state.panDx = dragDx_;
   state.panDy = dragDy_;
+  state.dragging = dragging_;
 
   // Reset accumulators
   scrollAccum_ = 0;
