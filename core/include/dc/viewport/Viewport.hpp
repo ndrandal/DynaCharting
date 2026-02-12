@@ -28,6 +28,11 @@ public:
   TransformParams computeTransformParams() const;
   bool containsPixel(double px, double py) const;
 
+  // Zoom metrics (D8.1)
+  double visibleDataWidth() const;
+  double pixelsPerDataUnitX() const;
+  double pixelsPerDataUnitY() const;
+
   const DataRange& dataRange() const { return data_; }
   const PaneRegion& clipRegion() const { return clip_; }
   int fbWidth() const { return fbW_; }

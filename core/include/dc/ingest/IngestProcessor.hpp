@@ -22,6 +22,7 @@ public:
   std::uint32_t getBufferSize(Id id) const;
 
   void ensureBuffer(Id id);
+  void setBufferData(Id id, const std::uint8_t* data, std::uint32_t len);
   void syncBufferLengths(Scene& scene) const;
 
   // Cache / eviction (D2.5)

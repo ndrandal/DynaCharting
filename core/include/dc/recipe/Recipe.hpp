@@ -15,6 +15,7 @@ struct DataSubscription {
   Id bufferId;
   Id geometryId;
   VertexFormat format;
+  Id drawItemId{0};  // D8.5: for aggregation rebinding
 };
 
 // Result of building a recipe — the commands to create/dispose it.

@@ -426,5 +426,47 @@ if (DC_BUILD_TESTS)
     )
     target_link_libraries(dc_d7_4_session_live PRIVATE dc_gl)
     add_test(NAME dc_d7_4_session_live COMMAND dc_d7_4_session_live)
+
+    # D8.6 Aggregation GL integration test
+    add_executable(dc_d8_6_agg_live
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/d8_6_agg_live.cpp"
+    )
+    target_link_libraries(dc_d8_6_agg_live PRIVATE dc_gl)
+    add_test(NAME dc_d8_6_agg_live COMMAND dc_d8_6_agg_live)
   endif()
+
+  # D8.1 Zoom metrics (pure C++)
+  add_executable(dc_d8_1_zoom_metrics
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/d8_1_zoom_metrics.cpp"
+  )
+  target_link_libraries(dc_d8_1_zoom_metrics PRIVATE dc)
+  add_test(NAME dc_d8_1_zoom_metrics COMMAND dc_d8_1_zoom_metrics)
+
+  # D8.2 Candle aggregator (pure C++)
+  add_executable(dc_d8_2_aggregator
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/d8_2_aggregator.cpp"
+  )
+  target_link_libraries(dc_d8_2_aggregator PRIVATE dc)
+  add_test(NAME dc_d8_2_aggregator COMMAND dc_d8_2_aggregator)
+
+  # D8.3 Resolution policy (pure C++)
+  add_executable(dc_d8_3_resolution_policy
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/d8_3_resolution_policy.cpp"
+  )
+  target_link_libraries(dc_d8_3_resolution_policy PRIVATE dc)
+  add_test(NAME dc_d8_3_resolution_policy COMMAND dc_d8_3_resolution_policy)
+
+  # D8.4 Aggregation manager (pure C++)
+  add_executable(dc_d8_4_aggregation
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/d8_4_aggregation.cpp"
+  )
+  target_link_libraries(dc_d8_4_aggregation PRIVATE dc)
+  add_test(NAME dc_d8_4_aggregation COMMAND dc_d8_4_aggregation)
+
+  # D8.5 ChartSession aggregation integration (pure C++)
+  add_executable(dc_d8_5_session_agg
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/d8_5_session_agg.cpp"
+  )
+  target_link_libraries(dc_d8_5_session_agg PRIVATE dc)
+  add_test(NAME dc_d8_5_session_agg COMMAND dc_d8_5_session_agg)
 endif()

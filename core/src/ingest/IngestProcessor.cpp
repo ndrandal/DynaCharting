@@ -69,6 +69,12 @@ std::uint32_t IngestProcessor::getBufferSize(Id id) const {
   return static_cast<std::uint32_t>(it->second.data.size());
 }
 
+void IngestProcessor::setBufferData(Id id, const std::uint8_t* data, std::uint32_t len) {
+  ensureBuffer(id);
+  CpuBuffer& buf = buffers_[id];
+  buf.data.assign(data, data + len);
+}
+
 void IngestProcessor::ensureBuffer(Id id) {
   if (buffers_.find(id) == buffers_.end()) {
     CpuBuffer b;

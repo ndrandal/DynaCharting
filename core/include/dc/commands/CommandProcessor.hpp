@@ -84,6 +84,7 @@ private:
   CmdResult cmdBufferKeepLast(const rapidjson::Value& obj);
   CmdResult cmdSetDrawItemPipeline(const rapidjson::Value& obj);
   CmdResult cmdSetGeometryVertexCount(const rapidjson::Value& obj);
+  CmdResult cmdSetGeometryBuffer(const rapidjson::Value& obj);
   CmdResult cmdEnsureGlyphs(const rapidjson::Value& obj);
   CmdResult cmdSetDrawItemColor(const rapidjson::Value& obj);
 

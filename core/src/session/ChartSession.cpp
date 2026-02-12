@@ -16,6 +16,9 @@ ChartSession::ChartSession(CommandProcessor& cp, IngestProcessor& ingest)
 
 void ChartSession::setConfig(const ChartSessionConfig& cfg) {
   config_ = cfg;
+  if (config_.enableAggregation) {
+    aggManager_.setConfig(config_.aggregation);
+  }
 }
 
 void ChartSession::setViewport(Viewport* vp) {
@@ -52,13 +55,35 @@ RecipeHandle ChartSession::mount(std::unique_ptr<Recipe> recipe,
     ingest_.setMaxBytes(sub.bufferId, config_.retention.maxBytesPerBuffer);
   }
 
+  // 5. Setup aggregation bindings (D8.5)
+  if (config_.enableAggregation) {
+    setupAggregation(slot);
+  }
+
   slot.recipe = std::move(recipe);
   slots_.emplace(handle, std::move(slot));
 
-  // 5. Rebuild all LiveIngestLoop bindings
+  // 6. Rebuild all LiveIngestLoop bindings
   rebuildBindings();
 
   return handle;
+}
+
+void ChartSession::setupAggregation(const MountedSlot& slot) {
+  for (const auto& sub : slot.buildResult.subscriptions) {
+    if (sub.format != VertexFormat::Candle6) continue;
+
+    Id aggBufId = sub.bufferId + config_.aggregation.aggBufferIdOffset;
+
+    // Create the agg buffer in scene
+    cp_.applyJsonText(
+      R"({"cmd":"createBuffer","id":)" + std::to_string(aggBufId) +
+      R"(,"byteLength":0})");
+
+    ingest_.ensureBuffer(aggBufId);
+
+    aggManager_.addBinding({sub.bufferId, aggBufId, sub.geometryId});
+  }
 }
 
 void ChartSession::unmount(RecipeHandle handle) {
@@ -72,14 +97,25 @@ void ChartSession::unmount(RecipeHandle handle) {
     cp_.applyJsonText(cmd);
   }
 
-  // 2. Remove compute dependencies for this handle
+  // 2. Clean up aggregation buffers
+  if (config_.enableAggregation) {
+    for (const auto& sub : slot.buildResult.subscriptions) {
+      if (sub.format != VertexFormat::Candle6) continue;
+      Id aggBufId = sub.bufferId + config_.aggregation.aggBufferIdOffset;
+      cp_.applyJsonText(R"({"cmd":"delete","id":)" + std::to_string(aggBufId) + "}");
+    }
+    // Rebuild aggregation bindings from remaining slots
+    aggManager_.clearBindings();
+  }
+
+  // 3. Remove compute dependencies for this handle
   for (auto& [bufId, handles] : computeDeps_) {
     handles.erase(
       std::remove(handles.begin(), handles.end(), handle),
       handles.end());
   }
 
-  // 3. Check if the shared transform is still used by another slot
+  // 4. Check if the shared transform is still used by another slot
   if (slot.sharedTransformId != 0) {
     bool stillUsed = false;
     for (const auto& [h, s] : slots_) {
@@ -93,10 +129,21 @@ void ChartSession::unmount(RecipeHandle handle) {
     }
   }
 
-  // 4. Erase slot
+  // 5. Erase slot
   slots_.erase(it);
 
-  // 5. Rebuild bindings from remaining mounted recipes
+  // 6. Rebuild aggregation bindings from remaining slots
+  if (config_.enableAggregation) {
+    for (const auto& [h, s] : slots_) {
+      for (const auto& sub : s.buildResult.subscriptions) {
+        if (sub.format != VertexFormat::Candle6) continue;
+        Id aggBufId = sub.bufferId + config_.aggregation.aggBufferIdOffset;
+        aggManager_.addBinding({sub.bufferId, aggBufId, sub.geometryId});
+      }
+    }
+  }
+
+  // 7. Rebuild bindings from remaining mounted recipes
   rebuildBindings();
 }
 
@@ -170,6 +217,14 @@ FrameResult ChartSession::update(DataSource& source) {
       }
     }
 
+    // 2b. Aggregation: recompute agg buffers for touched raw data (D8.5)
+    if (config_.enableAggregation) {
+      auto aggTouched = aggManager_.onRawDataChanged(touched, ingest_);
+      for (Id id : aggTouched) {
+        touchedSet.insert(id);
+      }
+    }
+
     result.touchedBufferIds.assign(touchedSet.begin(), touchedSet.end());
   }
 
@@ -179,6 +234,39 @@ FrameResult ChartSession::update(DataSource& source) {
       syncTransform(xfId);
     }
     result.viewportChanged = true;
+  }
+
+  // 4. Aggregation: respond to viewport changes (D8.5)
+  if (config_.enableAggregation && viewport_) {
+    double ppdu = viewport_->pixelsPerDataUnitX();
+    auto aggVpTouched = aggManager_.onViewportChanged(ppdu, ingest_, cp_);
+    if (!aggVpTouched.empty()) {
+      result.resolutionChanged = true;
+      for (Id id : aggVpTouched) {
+        // Add to touched set
+        bool found = false;
+        for (Id existing : result.touchedBufferIds) {
+          if (existing == id) { found = true; break; }
+        }
+        if (!found) result.touchedBufferIds.push_back(id);
+      }
+    }
+  }
+
+  // 5. Smart retention: dynamically adjust maxBytes (D8.5)
+  if (config_.enableSmartRetention && viewport_) {
+    double visW = viewport_->visibleDataWidth();
+    for (const auto& [handle, slot] : slots_) {
+      for (const auto& sub : slot.buildResult.subscriptions) {
+        std::uint32_t stride = strideOf(sub.format);
+        double records = visW; // 1 record per data unit (approximation)
+        double bytes = records * stride * config_.smartRetention.retentionMultiplier;
+        auto clamped = static_cast<std::uint32_t>(
+          std::max(static_cast<double>(config_.smartRetention.minRetention),
+            std::min(bytes, static_cast<double>(config_.smartRetention.maxRetention))));
+        ingest_.setMaxBytes(sub.bufferId, clamped);
+      }
+    }
   }
 
   return result;

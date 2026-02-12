@@ -95,6 +95,28 @@ TransformParams Viewport::computeTransformParams() const {
   return TransformParams{tx, ty, sx, sy};
 }
 
+// ---- Zoom metrics (D8.1) ----
+
+double Viewport::visibleDataWidth() const {
+  return data_.xMax - data_.xMin;
+}
+
+double Viewport::pixelsPerDataUnitX() const {
+  double dataW = data_.xMax - data_.xMin;
+  if (dataW <= 0.0) return 0.0;
+  double clipW = static_cast<double>(clip_.clipXMax) - static_cast<double>(clip_.clipXMin);
+  double pixelW = clipW / 2.0 * static_cast<double>(fbW_);
+  return pixelW / dataW;
+}
+
+double Viewport::pixelsPerDataUnitY() const {
+  double dataH = data_.yMax - data_.yMin;
+  if (dataH <= 0.0) return 0.0;
+  double clipH = static_cast<double>(clip_.clipYMax) - static_cast<double>(clip_.clipYMin);
+  double pixelH = clipH / 2.0 * static_cast<double>(fbH_);
+  return pixelH / dataH;
+}
+
 bool Viewport::containsPixel(double px, double py) const {
   double cx, cy;
   pixelToClip(px, py, cx, cy);

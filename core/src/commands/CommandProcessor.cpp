@@ -144,6 +144,7 @@ CmdResult CommandProcessor::applyJson(const rapidjson::Value& obj) {
   else if (cmd == "bufferKeepLast") r = cmdBufferKeepLast(obj);
   else if (cmd == "setDrawItemPipeline") r = cmdSetDrawItemPipeline(obj);
   else if (cmd == "setGeometryVertexCount") r = cmdSetGeometryVertexCount(obj);
+  else if (cmd == "setGeometryBuffer") r = cmdSetGeometryBuffer(obj);
   else if (cmd == "ensureGlyphs") r = cmdEnsureGlyphs(obj);
   else if (cmd == "setDrawItemColor") r = cmdSetDrawItemColor(obj);
   else {
@@ -757,6 +758,33 @@ CmdResult CommandProcessor::cmdSetGeometryVertexCount(const rapidjson::Value& ob
   }
 
   g->vertexCount = vc->GetUint();
+
+  CmdResult r;
+  r.ok = true;
+  return r;
+}
+
+CmdResult CommandProcessor::cmdSetGeometryBuffer(const rapidjson::Value& obj) {
+  Scene& scene = curScene();
+
+  const Id geomId = getIdOrZero(obj, "geometryId");
+  if (geomId == 0) {
+    return fail("BAD_COMMAND", "setGeometryBuffer: missing/invalid geometryId");
+  }
+
+  Geometry* g = scene.getGeometryMutable(geomId);
+  if (!g) {
+    return fail("NOT_FOUND", "setGeometryBuffer: geometryId not found",
+                std::string(R"({"geometryId":)") + std::to_string(geomId) + "}");
+  }
+
+  const Id vb = getIdOrZero(obj, "vertexBufferId");
+  if (vb == 0 || !scene.hasBuffer(vb)) {
+    return fail("MISSING_BUFFER", "setGeometryBuffer: invalid vertexBufferId",
+                std::string(R"({"vertexBufferId":)") + std::to_string(vb) + "}");
+  }
+
+  g->vertexBufferId = vb;
 
   CmdResult r;
   r.ok = true;

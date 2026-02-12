@@ -2,6 +2,7 @@
 #include "dc/ids/Id.hpp"
 #include "dc/recipe/Recipe.hpp"
 #include "dc/data/LiveIngestLoop.hpp"
+#include "dc/data/AggregationManager.hpp"
 #include "dc/scene/Geometry.hpp"
 
 #include <cstdint>
@@ -25,14 +26,25 @@ struct RetentionPolicy {
   std::uint32_t maxBytesPerBuffer{4 * 1024 * 1024};
 };
 
+struct SmartRetentionConfig {
+  float retentionMultiplier{3.0f};     // keep 3× visible data worth of bytes
+  std::uint32_t minRetention{64 * 1024};    // floor: 64KB
+  std::uint32_t maxRetention{8 * 1024 * 1024}; // ceiling: 8MB
+};
+
 struct ChartSessionConfig {
   RetentionPolicy retention;
+  AggregationManagerConfig aggregation;
+  SmartRetentionConfig smartRetention;
+  bool enableAggregation{false};
+  bool enableSmartRetention{false};
 };
 
 struct FrameResult {
   std::vector<Id> touchedBufferIds;
   bool dataChanged{false};
   bool viewportChanged{false};
+  bool resolutionChanged{false};
 };
 
 class ChartSession {
@@ -78,9 +90,12 @@ private:
 
   void rebuildBindings();
 
+  void setupAggregation(const MountedSlot& slot);
+
   CommandProcessor& cp_;
   IngestProcessor& ingest_;
   LiveIngestLoop loop_;
+  AggregationManager aggManager_;
   Viewport* viewport_{nullptr};
   ChartSessionConfig config_;
 
