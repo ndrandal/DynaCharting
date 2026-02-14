@@ -1,5 +1,6 @@
 #pragma once
 #include "dc/ids/Id.hpp"
+#include "dc/layout/PaneLayout.hpp"
 #include <string>
 
 namespace dc {
@@ -44,6 +45,9 @@ inline void recomputeMat3(Transform& t) {
 struct Pane {
   Id id{0};
   std::string name;
+  PaneRegion region{-1.0f, 1.0f, -1.0f, 1.0f};
+  float clearColor[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+  bool hasClearColor{false};
 };
 
 struct Layer {
@@ -63,6 +67,14 @@ struct DrawItem {
   Id transformId{0};     // optional; 0 = identity
 
   float color[4] = {1.0f, 1.0f, 1.0f, 1.0f}; // RGBA, default white
+
+  // Style fields (D10.1)
+  float colorUp[4]   = {0.0f, 0.8f, 0.0f, 1.0f};  // candle up color (green)
+  float colorDown[4] = {0.8f, 0.0f, 0.0f, 1.0f};  // candle down color (red)
+  float pointSize{4.0f};
+  float lineWidth{1.0f};
+
+  bool visible{true};  // D14.2: visibility toggle
 };
 
 

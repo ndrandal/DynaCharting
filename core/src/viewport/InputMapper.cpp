@@ -14,6 +14,9 @@ bool InputMapper::processInput(const ViewportInputState& input) {
   lastCursorX_ = input.cursorX;
   lastCursorY_ = input.cursorY;
 
+  // Reset one-shot click state
+  hasClick_ = false;
+
   // Find which viewport contains the cursor
   active_ = nullptr;
   for (auto* vp : viewports_) {
@@ -24,6 +27,13 @@ bool InputMapper::processInput(const ViewportInputState& input) {
   }
 
   if (!active_) return false;
+
+  // Detect click (D11.1)
+  if (input.clicked) {
+    hasClick_ = true;
+    clickPx_ = input.cursorX;
+    clickPy_ = input.cursorY;
+  }
 
   bool changed = false;
 
@@ -79,6 +89,23 @@ bool InputMapper::cursorClip(double& cx, double& cy) const {
 bool InputMapper::cursorData(double& dx, double& dy) const {
   if (!active_) return false;
   active_->pixelToData(lastCursorX_, lastCursorY_, dx, dy);
+  return true;
+}
+
+bool InputMapper::hasClick() const {
+  return hasClick_;
+}
+
+bool InputMapper::clickData(double& dx, double& dy) const {
+  if (!hasClick_ || !active_) return false;
+  active_->pixelToData(clickPx_, clickPy_, dx, dy);
+  return true;
+}
+
+bool InputMapper::clickPixel(double& px, double& py) const {
+  if (!hasClick_) return false;
+  px = clickPx_;
+  py = clickPy_;
   return true;
 }
 

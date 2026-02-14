@@ -25,6 +25,7 @@ public:
   Transform* getTransformMutable(Id id);
 
   // Mutable access
+  Pane* getPaneMutable(Id id);
   DrawItem* getDrawItemMutable(Id id);
   Buffer* getBufferMutable(Id id);
   Geometry* getGeometryMutable(Id id);

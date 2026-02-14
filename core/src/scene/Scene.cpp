@@ -38,6 +38,10 @@ Transform* Scene::getTransformMutable(Id id) {
   auto it = transforms_.find(id);
   return it == transforms_.end() ? nullptr : &it->second;
 }
+Pane* Scene::getPaneMutable(Id id) {
+  auto it = panes_.find(id);
+  return it == panes_.end() ? nullptr : &it->second;
+}
 DrawItem* Scene::getDrawItemMutable(Id id) {
   auto it = drawItems_.find(id);
   return it == drawItems_.end() ? nullptr : &it->second;

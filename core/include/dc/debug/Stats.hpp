@@ -14,6 +14,7 @@ struct Stats {
 
   // Rendering
   std::uint32_t drawCalls = 0;
+  std::uint32_t culledDrawCalls = 0;
 
   // Upload activity (host-side typically)
   std::uint64_t uploadedBytesThisFrame = 0;

@@ -51,11 +51,17 @@ public:
   void setSdfRange(std::uint32_t r) { sdfRange_ = r; }
   void setAtlasSize(std::uint32_t s);
 
+  // When false, stores raw rasterized alpha instead of SDF.
+  // Gives pixel-perfect text quality at the rasterized size.
+  void setUseSdf(bool v) { useSdf_ = v; }
+  bool useSdf() const { return useSdf_; }
+
 private:
   std::uint32_t atlasSize_{1024};
   std::uint32_t glyphPx_{48};
   std::uint32_t sdfRange_{12};
   std::uint32_t pad_{2};
+  bool useSdf_{true};
 
   std::vector<std::uint8_t> atlas_;    // R8 atlas (atlasSize_ x atlasSize_)
   std::vector<std::uint8_t> fontData_; // retained font file bytes

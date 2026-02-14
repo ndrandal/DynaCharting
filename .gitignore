@@ -71,6 +71,11 @@ CTestTestfile.cmake
 *.temp
 
 ########################################
+# Third-party vendored repos (have their own .git)
+########################################
+third_party/rapidjson/
+
+########################################
 # Optional local overrides
 ########################################
 .env

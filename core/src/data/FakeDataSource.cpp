@@ -96,8 +96,11 @@ void FakeDataSource::emitAppend() {
   }
 
   // candle6 format: {x, open, high, low, close, halfWidth}
-  float halfWidth = 0.4f;
-  float candle[6] = {static_cast<float>(idx), currentOpen_, currentHigh_,
+  float x = config_.useTimestamps
+    ? config_.startTimestamp + static_cast<float>(idx) * config_.candleIntervalSec
+    : static_cast<float>(idx);
+  float halfWidth = config_.useTimestamps ? config_.candleIntervalSec * 0.4f : 0.4f;
+  float candle[6] = {x, currentOpen_, currentHigh_,
                      currentLow_, currentClose_, halfWidth};
 
   std::vector<std::uint8_t> batch;
@@ -107,7 +110,7 @@ void FakeDataSource::emitAppend() {
 
   // Also append a close-price line point (pos2_clip: {x, y})
   if (config_.lineBufferId != 0) {
-    float linePoint[2] = {static_cast<float>(idx), currentClose_};
+    float linePoint[2] = {x, currentClose_};
     appendRecord(batch, 1, static_cast<std::uint32_t>(config_.lineBufferId),
                  0, linePoint, sizeof(linePoint));
   }
@@ -137,8 +140,12 @@ void FakeDataSource::emitUpdate() {
   }
 
   // Update last candle via OP_UPDATE_RANGE
-  float candle[6] = {static_cast<float>(idx), currentOpen_, currentHigh_,
-                     currentLow_, currentClose_, 0.4f};
+  float x = config_.useTimestamps
+    ? config_.startTimestamp + static_cast<float>(idx) * config_.candleIntervalSec
+    : static_cast<float>(idx);
+  float halfWidth = config_.useTimestamps ? config_.candleIntervalSec * 0.4f : 0.4f;
+  float candle[6] = {x, currentOpen_, currentHigh_,
+                     currentLow_, currentClose_, halfWidth};
   std::uint32_t offset = idx * static_cast<std::uint32_t>(sizeof(candle));
 
   std::vector<std::uint8_t> batch;
@@ -148,7 +155,7 @@ void FakeDataSource::emitUpdate() {
 
   // Update last line point
   if (config_.lineBufferId != 0) {
-    float linePoint[2] = {static_cast<float>(idx), currentClose_};
+    float linePoint[2] = {x, currentClose_};
     std::uint32_t lineOffset = idx * static_cast<std::uint32_t>(sizeof(linePoint));
     appendRecord(batch, 2, static_cast<std::uint32_t>(config_.lineBufferId),
                  lineOffset, linePoint, sizeof(linePoint));

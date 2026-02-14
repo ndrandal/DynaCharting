@@ -21,11 +21,18 @@ public:
   bool cursorClip(double& cx, double& cy) const;
   bool cursorData(double& dx, double& dy) const;
 
+  // Click detection (D11.1)
+  bool hasClick() const;
+  bool clickData(double& dx, double& dy) const;
+  bool clickPixel(double& px, double& py) const;
+
 private:
   InputMapperConfig config_;
   std::vector<Viewport*> viewports_;
   Viewport* active_{nullptr};
   double lastCursorX_{0}, lastCursorY_{0};
+  bool hasClick_{false};
+  double clickPx_{0}, clickPy_{0};
 };
 
 } // namespace dc

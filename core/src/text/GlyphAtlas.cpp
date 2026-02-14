@@ -93,11 +93,17 @@ bool GlyphAtlas::ensureGlyphs(const std::uint32_t* codepoints, std::uint32_t cou
     std::vector<std::uint8_t> bitmap(static_cast<std::size_t>(gw) * gh, 0);
     stbtt_MakeGlyphBitmap(&font, bitmap.data(), gw, gh, gw, scale, scale, glyphIdx);
 
-    // Build SDF from rasterized bitmap
     std::uint32_t sdfW = static_cast<std::uint32_t>(gw);
     std::uint32_t sdfH = static_cast<std::uint32_t>(gh);
-    std::vector<std::uint8_t> sdf(static_cast<std::size_t>(sdfW) * sdfH);
-    buildSdfR8(bitmap.data(), sdfW, sdfH, sdfRange_, sdf.data());
+
+    // Either build SDF or use raw rasterized alpha
+    const std::uint8_t* atlasSource = bitmap.data();
+    std::vector<std::uint8_t> sdf;
+    if (useSdf_) {
+      sdf.resize(static_cast<std::size_t>(sdfW) * sdfH);
+      buildSdfR8(bitmap.data(), sdfW, sdfH, sdfRange_, sdf.data());
+      atlasSource = sdf.data();
+    }
 
     // Pack into atlas
     std::uint32_t cellW = sdfW + pad_ * 2;
@@ -108,12 +114,12 @@ bool GlyphAtlas::ensureGlyphs(const std::uint32_t* codepoints, std::uint32_t cou
       continue;
     }
 
-    // Copy SDF into atlas at (ax+pad, ay+pad)
+    // Copy glyph data into atlas at (ax+pad, ay+pad)
     for (std::uint32_t row = 0; row < sdfH; row++) {
       std::uint32_t dstY = ay + pad_ + row;
       std::uint32_t dstX = ax + pad_;
       std::memcpy(&atlas_[dstY * atlasSize_ + dstX],
-                   &sdf[row * sdfW],
+                   &atlasSource[row * sdfW],
                    sdfW);
     }
 

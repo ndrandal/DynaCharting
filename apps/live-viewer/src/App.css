@@ -1,0 +1,68 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #1a1a1e;
+  color: #ccc;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;
+}
+
+.viewer-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+.status-bar {
+  position: absolute;
+  top: 8px;
+  left: 12px;
+  font-size: 13px;
+  display: flex;
+  gap: 16px;
+  z-index: 10;
+  user-select: none;
+}
+
+.status-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.status-dot.connecting {
+  background: #f0ad4e;
+}
+
+.status-dot.connected {
+  background: #5cb85c;
+}
+
+.status-dot.disconnected {
+  background: #d9534f;
+}
+
+.fps-counter {
+  color: #888;
+}
+
+canvas {
+  cursor: crosshair;
+  image-rendering: pixelated;
+}

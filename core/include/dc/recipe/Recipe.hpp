@@ -3,6 +3,7 @@
 #include "dc/scene/Geometry.hpp"
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace dc {
@@ -25,6 +26,14 @@ struct RecipeBuildResult {
   std::vector<DataSubscription> subscriptions;
 };
 
+// D14.3: Series metadata for legend display + visibility control.
+struct SeriesInfo {
+  std::string name;
+  float colorHint[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+  bool defaultVisible{true};
+  std::vector<Id> drawItemIds;  // DrawItems to toggle for visibility
+};
+
 // Base class for all recipes. A recipe translates a declarative description
 // into engine commands using deterministic ID allocation (idBase + offset).
 class Recipe {
@@ -39,6 +48,9 @@ public:
 
   // Return IDs of all DrawItems created by this recipe.
   virtual std::vector<Id> drawItemIds() const { return {}; }
+
+  // D14.3: Return series metadata for legend display.
+  virtual std::vector<SeriesInfo> seriesInfoList() const { return {}; }
 
 protected:
   Id idBase_;

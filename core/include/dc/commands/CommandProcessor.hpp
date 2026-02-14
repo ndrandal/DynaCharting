@@ -87,6 +87,11 @@ private:
   CmdResult cmdSetGeometryBuffer(const rapidjson::Value& obj);
   CmdResult cmdEnsureGlyphs(const rapidjson::Value& obj);
   CmdResult cmdSetDrawItemColor(const rapidjson::Value& obj);
+  CmdResult cmdSetDrawItemStyle(const rapidjson::Value& obj);
+  CmdResult cmdSetPaneRegion(const rapidjson::Value& obj);
+  CmdResult cmdSetPaneClearColor(const rapidjson::Value& obj);
+  CmdResult cmdSetGeometryBounds(const rapidjson::Value& obj);
+  CmdResult cmdSetDrawItemVisible(const rapidjson::Value& obj);
 
   PipelineCatalog catalog_;
   IngestProcessor* ingest_{nullptr};

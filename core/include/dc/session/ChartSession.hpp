@@ -47,12 +47,25 @@ struct FrameResult {
   bool resolutionChanged{false};
 };
 
+struct PaneViewport {
+  Id paneId;
+  Viewport* viewport;
+  Id transformId;
+};
+
 class ChartSession {
 public:
   ChartSession(CommandProcessor& cp, IngestProcessor& ingest);
 
   void setConfig(const ChartSessionConfig& cfg);
   void setViewport(Viewport* vp);
+
+  // Multi-viewport: per-pane viewport management
+  void addPaneViewport(Id paneId, Viewport* vp, Id transformId);
+  void removePaneViewport(Id paneId);
+  void clearPaneViewports();
+  void setLinkXAxis(bool link);
+  const std::vector<PaneViewport>& paneViewports() const { return paneViewports_; }
 
   // Mount: applies createCommands, sets up LiveIngestLoop bindings,
   // attaches shared transform to all drawItemIds, applies retention caps.
@@ -70,12 +83,14 @@ public:
   void setComputeCallback(RecipeHandle handle,
                           std::function<std::vector<Id>()> cb);
   void addComputeDependency(RecipeHandle handle, Id upstreamBufferId);
+  void setRecomputeOnViewportChange(RecipeHandle handle, bool enable);
 
   // Per-frame update: drains data, runs compute callbacks, syncs transforms.
   FrameResult update(DataSource& source);
 
   // Issue setTransform command for a managed transform.
   void syncTransform(Id transformId);
+  void syncTransformFromViewport(Id transformId, Viewport* vp);
 
   // Access the internal loop (for tests / advanced callers).
   LiveIngestLoop& loop() { return loop_; }
@@ -86,6 +101,7 @@ private:
     RecipeBuildResult buildResult;
     Id sharedTransformId{0};
     std::function<std::vector<Id>()> computeCallback;
+    bool recomputeOnViewportChange{false};
   };
 
   void rebuildBindings();
@@ -107,6 +123,10 @@ private:
 
   // All managed transform IDs (from sharedTransformId on mount)
   std::unordered_set<Id> managedTransforms_;
+
+  // Multi-viewport state
+  std::vector<PaneViewport> paneViewports_;
+  bool linkXAxis_{false};
 };
 
 } // namespace dc

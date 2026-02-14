@@ -17,6 +17,8 @@ struct CandleRecipeConfig {
   Id layerId{0};
   std::string name;
   bool createTransform{true};
+  float colorUp[4]   = {0.0f, 0.8f, 0.0f, 1.0f};
+  float colorDown[4] = {0.8f, 0.0f, 0.0f, 1.0f};
 };
 
 class CandleRecipe : public Recipe {
@@ -25,6 +27,7 @@ public:
 
   RecipeBuildResult build() const override;
   std::vector<Id> drawItemIds() const override { return {drawItemId()}; }
+  std::vector<SeriesInfo> seriesInfoList() const override;
 
   Id bufferId() const    { return rid(0); }
   Id geometryId() const  { return rid(1); }

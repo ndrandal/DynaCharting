@@ -28,6 +28,8 @@ private:
   ShaderProgram instRectProg_;    // instancedRect@1
   ShaderProgram instCandleProg_;  // instancedCandle@1
   ShaderProgram textSdfProg_;     // textSDF@1
+  ShaderProgram lineAAProg_;      // lineAA@1
+  ShaderProgram triAAProg_;       // triAA@1
   GLuint vao_{0};
   GLuint atlasTexture_{0};
   bool inited_{false};
@@ -39,9 +41,13 @@ private:
   void drawInstancedRect(const DrawItem& di, const Scene& scene,
                          GpuBufferManager& gpuBufs, Stats& stats);
   void drawInstancedCandle(const DrawItem& di, const Scene& scene,
-                           GpuBufferManager& gpuBufs, Stats& stats);
+                           GpuBufferManager& gpuBufs, int viewW, int viewH, Stats& stats);
   void drawTextSdf(const DrawItem& di, const Scene& scene,
                    GpuBufferManager& gpuBufs, Stats& stats);
+  void drawLineAA(const DrawItem& di, const Scene& scene,
+                  GpuBufferManager& gpuBufs, int viewW, Stats& stats);
+  void drawTriAA(const DrawItem& di, const Scene& scene,
+                 GpuBufferManager& gpuBufs, Stats& stats);
 
   void uploadAtlasIfDirty();
 };

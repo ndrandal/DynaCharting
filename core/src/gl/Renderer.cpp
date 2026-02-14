@@ -2,6 +2,7 @@
 #include "dc/text/GlyphAtlas.hpp"
 #include "dc/scene/Geometry.hpp"
 #include "dc/pipelines/PipelineCatalog.hpp"
+#include <cmath>
 #include <cstdio>
 
 namespace dc {
@@ -75,6 +76,7 @@ static const char* kInstCandleVert = R"GLSL(
 in vec4 a_c0;
 in vec2 a_c1;
 uniform mat3 u_transform;
+uniform vec2 u_viewportSize;
 flat out float v_isUp;
 void main() {
     float cx    = a_c0.x;
@@ -86,7 +88,6 @@ void main() {
 
     float body0 = min(open, close);
     float body1 = max(open, close);
-    float wickW = hw * 0.25;
 
     int vid = gl_VertexID % 12;
     bool isWick = (vid >= 6);
@@ -100,13 +101,19 @@ void main() {
     else if (lid == 4) uv = vec2(1.0, 0.0);
     else               uv = vec2(1.0, 1.0);
 
-    float x0 = isWick ? (cx - wickW) : (cx - hw);
-    float x1 = isWick ? (cx + wickW) : (cx + hw);
-    float y0 = isWick ? low  : body0;
-    float y1 = isWick ? high : body1;
-
-    vec3 p = u_transform * vec3(mix(x0, x1, uv.x), mix(y0, y1, uv.y), 1.0);
-    gl_Position = vec4(p.xy, 0.0, 1.0);
+    if (isWick) {
+        // Fixed-pixel wick: transform center, then offset in clip space
+        float y = mix(low, high, uv.y);
+        vec3 center = u_transform * vec3(cx, y, 1.0);
+        float wickClipHW = 1.0 / u_viewportSize.x; // 1 pixel half-width
+        gl_Position = vec4(center.x + mix(-wickClipHW, wickClipHW, uv.x),
+                           center.y, 0.0, 1.0);
+    } else {
+        float x0 = cx - hw;
+        float x1 = cx + hw;
+        vec3 p = u_transform * vec3(mix(x0, x1, uv.x), mix(body0, body1, uv.y), 1.0);
+        gl_Position = vec4(p.xy, 0.0, 1.0);
+    }
     v_isUp = (close >= open) ? 1.0 : 0.0;
 }
 )GLSL";
@@ -155,11 +162,89 @@ uniform float u_pxRange;
 in vec2 v_uv;
 out vec4 outColor;
 void main() {
-    float sdf = texture(u_atlas, v_uv).r;
-    float dist = sdf - 0.5;
-    float w = fwidth(dist) * u_pxRange;
-    float a = smoothstep(-w, w, dist);
+    float val = texture(u_atlas, v_uv).r;
+    // u_pxRange < 0 signals raw-alpha mode (no SDF reconstruction)
+    float a = (u_pxRange < 0.0) ? val : smoothstep(0.45, 0.55, val);
     outColor = vec4(u_color.rgb, u_color.a * a);
+}
+)GLSL";
+
+// ---- lineAA@1 shader ----
+
+static const char* kLineAAVert = R"GLSL(
+#version 330 core
+in vec4 a_rect;
+uniform mat3 u_transform;
+uniform float u_lineWidth;
+uniform float u_aaWidth;
+out float v_dist;
+void main() {
+    vec2 p0 = a_rect.xy;
+    vec2 p1 = a_rect.zw;
+
+    vec3 c0 = u_transform * vec3(p0, 1.0);
+    vec3 c1 = u_transform * vec3(p1, 1.0);
+
+    vec2 dir = c1.xy - c0.xy;
+    float len = length(dir);
+    vec2 d = (len > 0.0001) ? dir / len : vec2(1.0, 0.0);
+    vec2 perp = vec2(-d.y, d.x);
+
+    float hw = u_lineWidth * 0.5;
+    float totalHW = hw + u_aaWidth;
+
+    int vid = gl_VertexID % 6;
+    vec2 uv;
+    if (vid == 0)      uv = vec2(0.0, -1.0);
+    else if (vid == 1) uv = vec2(1.0, -1.0);
+    else if (vid == 2) uv = vec2(0.0,  1.0);
+    else if (vid == 3) uv = vec2(0.0,  1.0);
+    else if (vid == 4) uv = vec2(1.0, -1.0);
+    else               uv = vec2(1.0,  1.0);
+
+    vec2 pos = mix(c0.xy, c1.xy, uv.x) + perp * (uv.y * totalHW);
+    gl_Position = vec4(pos, 0.0, 1.0);
+    // v_dist: 0 at center, 1.0 at nominal edge, >1.0 in AA fringe
+    v_dist = uv.y * totalHW / max(hw, 0.0001);
+}
+)GLSL";
+
+static const char* kLineAAFrag = R"GLSL(
+#version 330 core
+uniform vec4 u_color;
+uniform float u_fringeEdge;
+in float v_dist;
+out vec4 outColor;
+void main() {
+    float d = abs(v_dist);
+    // d <= 1.0: inside nominal line (full alpha)
+    // d 1.0 → u_fringeEdge: AA fringe (smooth fade to 0)
+    float a = 1.0 - smoothstep(1.0, u_fringeEdge, d);
+    outColor = vec4(u_color.rgb, u_color.a * a);
+}
+)GLSL";
+
+// ---- triAA@1 shader (per-vertex alpha for edge-fringe AA) ----
+
+static const char* kTriAAVert = R"GLSL(
+#version 330 core
+in vec3 a_pos_alpha;
+uniform mat3 u_transform;
+out float v_alpha;
+void main() {
+    vec3 p = u_transform * vec3(a_pos_alpha.xy, 1.0);
+    gl_Position = vec4(p.xy, 0.0, 1.0);
+    v_alpha = a_pos_alpha.z;
+}
+)GLSL";
+
+static const char* kTriAAFrag = R"GLSL(
+#version 330 core
+uniform vec4 u_color;
+in float v_alpha;
+out vec4 outColor;
+void main() {
+    outColor = vec4(u_color.rgb, u_color.a * v_alpha);
 }
 )GLSL";
 
@@ -195,6 +280,14 @@ bool Renderer::init() {
     std::fprintf(stderr, "Renderer::init: failed to build textSdf shader\n");
     return false;
   }
+  if (!lineAAProg_.build(kLineAAVert, kLineAAFrag)) {
+    std::fprintf(stderr, "Renderer::init: failed to build lineAA shader\n");
+    return false;
+  }
+  if (!triAAProg_.build(kTriAAVert, kTriAAFrag)) {
+    std::fprintf(stderr, "Renderer::init: failed to build triAA shader\n");
+    return false;
+  }
 
   glGenVertexArrays(1, &vao_);
   glGenTextures(1, &atlasTexture_);
@@ -216,13 +309,14 @@ void Renderer::drawPos2(const DrawItem& di, const Scene& scene,
   pos2Prog_.setUniformMat3(pos2Prog_.uniformLocation("u_transform"), xform);
   pos2Prog_.setUniformVec4(pos2Prog_.uniformLocation("u_color"),
                            di.color[0], di.color[1], di.color[2], di.color[3]);
-  pos2Prog_.setUniformFloat(pos2Prog_.uniformLocation("u_pointSize"), 4.0f);
+  pos2Prog_.setUniformFloat(pos2Prog_.uniformLocation("u_pointSize"), di.pointSize);
 
   glBindBuffer(GL_ARRAY_BUFFER, vbo);
   GLint aPos = pos2Prog_.attribLocation("a_pos");
   glEnableVertexAttribArray(static_cast<GLuint>(aPos));
   glVertexAttribPointer(static_cast<GLuint>(aPos), 2, GL_FLOAT, GL_FALSE, 0, nullptr);
 
+  if (mode == GL_LINES) glLineWidth(di.lineWidth);
   glDrawArrays(mode, 0, static_cast<GLsizei>(geo->vertexCount));
   stats.drawCalls++;
 
@@ -259,7 +353,7 @@ void Renderer::drawInstancedRect(const DrawItem& di, const Scene& scene,
 }
 
 void Renderer::drawInstancedCandle(const DrawItem& di, const Scene& scene,
-                                   GpuBufferManager& gpuBufs, Stats& stats) {
+                                   GpuBufferManager& gpuBufs, int viewW, int viewH, Stats& stats) {
   const Geometry* geo = scene.getGeometry(di.geometryId);
   if (!geo) return;
   GLuint vbo = gpuBufs.getGlBuffer(geo->vertexBufferId);
@@ -269,10 +363,12 @@ void Renderer::drawInstancedCandle(const DrawItem& di, const Scene& scene,
 
   const float* xform = resolveTransform(di, scene);
   instCandleProg_.setUniformMat3(instCandleProg_.uniformLocation("u_transform"), xform);
+  glUniform2f(instCandleProg_.uniformLocation("u_viewportSize"),
+              static_cast<float>(viewW), static_cast<float>(viewH));
   instCandleProg_.setUniformVec4(instCandleProg_.uniformLocation("u_colorUp"),
-                                  0.0f, 0.8f, 0.0f, 1.0f);
+                                  di.colorUp[0], di.colorUp[1], di.colorUp[2], di.colorUp[3]);
   instCandleProg_.setUniformVec4(instCandleProg_.uniformLocation("u_colorDown"),
-                                  0.8f, 0.0f, 0.0f, 1.0f);
+                                  di.colorDown[0], di.colorDown[1], di.colorDown[2], di.colorDown[3]);
 
   glBindBuffer(GL_ARRAY_BUFFER, vbo);
 
@@ -330,7 +426,8 @@ void Renderer::drawTextSdf(const DrawItem& di, const Scene& scene,
   textSdfProg_.setUniformMat3(textSdfProg_.uniformLocation("u_transform"), xform);
   textSdfProg_.setUniformVec4(textSdfProg_.uniformLocation("u_color"),
                                di.color[0], di.color[1], di.color[2], di.color[3]);
-  textSdfProg_.setUniformFloat(textSdfProg_.uniformLocation("u_pxRange"), 12.0f);
+  float pxRange = (atlas_ && !atlas_->useSdf()) ? -1.0f : 12.0f;
+  textSdfProg_.setUniformFloat(textSdfProg_.uniformLocation("u_pxRange"), pxRange);
 
   // Bind atlas texture
   glActiveTexture(GL_TEXTURE0);
@@ -364,6 +461,71 @@ void Renderer::drawTextSdf(const DrawItem& di, const Scene& scene,
   glBindTexture(GL_TEXTURE_2D, 0);
 }
 
+void Renderer::drawLineAA(const DrawItem& di, const Scene& scene,
+                          GpuBufferManager& gpuBufs, int viewW, Stats& stats) {
+  const Geometry* geo = scene.getGeometry(di.geometryId);
+  if (!geo) return;
+  GLuint vbo = gpuBufs.getGlBuffer(geo->vertexBufferId);
+  if (!vbo) return;
+
+  lineAAProg_.use();
+
+  const float* xform = resolveTransform(di, scene);
+  lineAAProg_.setUniformMat3(lineAAProg_.uniformLocation("u_transform"), xform);
+  lineAAProg_.setUniformVec4(lineAAProg_.uniformLocation("u_color"),
+                              di.color[0], di.color[1], di.color[2], di.color[3]);
+
+  // Convert lineWidth from pixels to clip units
+  float lineWidthClip = (viewW > 0) ? (di.lineWidth / static_cast<float>(viewW) * 2.0f) : 0.01f;
+  lineAAProg_.setUniformFloat(lineAAProg_.uniformLocation("u_lineWidth"), lineWidthClip);
+  // AA fringe: 1.5 pixels beyond nominal line edge
+  float aaWidthClip = (viewW > 0) ? (1.5f / static_cast<float>(viewW) * 2.0f) : 0.005f;
+  lineAAProg_.setUniformFloat(lineAAProg_.uniformLocation("u_aaWidth"), aaWidthClip);
+  // Fringe edge in v_dist space: (hw + aaWidth) / hw
+  float hw = lineWidthClip * 0.5f;
+  float fringeEdge = (hw > 0.0001f) ? ((hw + aaWidthClip) / hw) : 2.0f;
+  lineAAProg_.setUniformFloat(lineAAProg_.uniformLocation("u_fringeEdge"), fringeEdge);
+
+  glBindBuffer(GL_ARRAY_BUFFER, vbo);
+  GLint aRect = lineAAProg_.attribLocation("a_rect");
+  glEnableVertexAttribArray(static_cast<GLuint>(aRect));
+  glVertexAttribPointer(static_cast<GLuint>(aRect), 4, GL_FLOAT, GL_FALSE,
+                        static_cast<GLsizei>(strideOf(VertexFormat::Rect4)), nullptr);
+  glVertexAttribDivisor(static_cast<GLuint>(aRect), 1);
+
+  GLsizei instanceCount = static_cast<GLsizei>(geo->vertexCount);
+  glDrawArraysInstanced(GL_TRIANGLES, 0, 6, instanceCount);
+  stats.drawCalls++;
+
+  glVertexAttribDivisor(static_cast<GLuint>(aRect), 0);
+  glDisableVertexAttribArray(static_cast<GLuint>(aRect));
+}
+
+void Renderer::drawTriAA(const DrawItem& di, const Scene& scene,
+                         GpuBufferManager& gpuBufs, Stats& stats) {
+  const Geometry* geo = scene.getGeometry(di.geometryId);
+  if (!geo) return;
+  GLuint vbo = gpuBufs.getGlBuffer(geo->vertexBufferId);
+  if (!vbo) return;
+
+  triAAProg_.use();
+
+  const float* xform = resolveTransform(di, scene);
+  triAAProg_.setUniformMat3(triAAProg_.uniformLocation("u_transform"), xform);
+  triAAProg_.setUniformVec4(triAAProg_.uniformLocation("u_color"),
+                            di.color[0], di.color[1], di.color[2], di.color[3]);
+
+  glBindBuffer(GL_ARRAY_BUFFER, vbo);
+  GLint aPos = triAAProg_.attribLocation("a_pos_alpha");
+  glEnableVertexAttribArray(static_cast<GLuint>(aPos));
+  glVertexAttribPointer(static_cast<GLuint>(aPos), 3, GL_FLOAT, GL_FALSE, 12, nullptr);
+
+  glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(geo->vertexCount));
+  stats.drawCalls++;
+
+  glDisableVertexAttribArray(static_cast<GLuint>(aPos));
+}
+
 Stats Renderer::render(const Scene& scene, GpuBufferManager& gpuBufs,
                        int viewW, int viewH) {
   Stats stats{};
@@ -382,7 +544,26 @@ Stats Renderer::render(const Scene& scene, GpuBufferManager& gpuBufs,
   glBindVertexArray(vao_);
 
   // Walk all draw items (pane → layer → drawItem).
+  glEnable(GL_SCISSOR_TEST);
+
   for (Id paneId : scene.paneIds()) {
+    const Pane* pane = scene.getPane(paneId);
+    if (!pane) continue;
+
+    // Convert pane clip region to pixel scissor rect
+    int sx = static_cast<int>(std::round((pane->region.clipXMin + 1.0f) / 2.0f * viewW));
+    int sy = static_cast<int>(std::round((pane->region.clipYMin + 1.0f) / 2.0f * viewH));
+    int sx2 = static_cast<int>(std::round((pane->region.clipXMax + 1.0f) / 2.0f * viewW));
+    int sy2 = static_cast<int>(std::round((pane->region.clipYMax + 1.0f) / 2.0f * viewH));
+    glScissor(sx, sy, sx2 - sx, sy2 - sy);
+
+    // Per-pane clear color (D10.4)
+    if (pane->hasClearColor) {
+      glClearColor(pane->clearColor[0], pane->clearColor[1],
+                   pane->clearColor[2], pane->clearColor[3]);
+      glClear(GL_COLOR_BUFFER_BIT);
+    }
+
     for (Id layerId : scene.layerIds()) {
       const Layer* layer = scene.getLayer(layerId);
       if (!layer || layer->paneId != paneId) continue;
@@ -391,6 +572,24 @@ Stats Renderer::render(const Scene& scene, GpuBufferManager& gpuBufs,
         const DrawItem* di = scene.getDrawItem(diId);
         if (!di || di->layerId != layerId) continue;
         if (di->pipeline.empty()) continue;
+        if (!di->visible) continue;  // D14.2: skip invisible DrawItems
+
+        // Frustum culling (D10.5)
+        const Geometry* cullGeo = scene.getGeometry(di->geometryId);
+        if (cullGeo && cullGeo->boundsValid && di->transformId != 0) {
+          const Transform* xf = scene.getTransform(di->transformId);
+          if (xf) {
+            float cMinX = xf->mat3[0] * cullGeo->boundsMin[0] + xf->mat3[6];
+            float cMinY = xf->mat3[4] * cullGeo->boundsMin[1] + xf->mat3[7];
+            float cMaxX = xf->mat3[0] * cullGeo->boundsMax[0] + xf->mat3[6];
+            float cMaxY = xf->mat3[4] * cullGeo->boundsMax[1] + xf->mat3[7];
+            if (cMaxX < pane->region.clipXMin || cMinX > pane->region.clipXMax ||
+                cMaxY < pane->region.clipYMin || cMinY > pane->region.clipYMax) {
+              stats.culledDrawCalls++;
+              continue;
+            }
+          }
+        }
 
         if (di->pipeline == "triSolid@1") {
           drawPos2(*di, scene, gpuBufs, GL_TRIANGLES, stats);
@@ -401,13 +600,19 @@ Stats Renderer::render(const Scene& scene, GpuBufferManager& gpuBufs,
         } else if (di->pipeline == "instancedRect@1") {
           drawInstancedRect(*di, scene, gpuBufs, stats);
         } else if (di->pipeline == "instancedCandle@1") {
-          drawInstancedCandle(*di, scene, gpuBufs, stats);
+          drawInstancedCandle(*di, scene, gpuBufs, viewW, viewH, stats);
         } else if (di->pipeline == "textSDF@1") {
           drawTextSdf(*di, scene, gpuBufs, stats);
+        } else if (di->pipeline == "lineAA@1") {
+          drawLineAA(*di, scene, gpuBufs, viewW, stats);
+        } else if (di->pipeline == "triAA@1") {
+          drawTriAA(*di, scene, gpuBufs, stats);
         }
       }
     }
   }
+
+  glDisable(GL_SCISSOR_TEST);
 
   glBindVertexArray(0);
   glDisable(GL_BLEND);

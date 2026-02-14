@@ -19,6 +19,9 @@ struct FakeDataSourceConfig {
   float startPrice{100.0f};
   float volatility{0.5f};
   std::size_t maxCandles{200};
+  bool useTimestamps{false};
+  float startTimestamp{1700000000.0f};   // Nov 14, 2023 14:13:20 UTC
+  float candleIntervalSec{300.0f};       // 5-minute candles
 };
 
 class FakeDataSource : public DataSource {

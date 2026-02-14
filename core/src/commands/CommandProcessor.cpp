@@ -147,6 +147,11 @@ CmdResult CommandProcessor::applyJson(const rapidjson::Value& obj) {
   else if (cmd == "setGeometryBuffer") r = cmdSetGeometryBuffer(obj);
   else if (cmd == "ensureGlyphs") r = cmdEnsureGlyphs(obj);
   else if (cmd == "setDrawItemColor") r = cmdSetDrawItemColor(obj);
+  else if (cmd == "setDrawItemStyle") r = cmdSetDrawItemStyle(obj);
+  else if (cmd == "setPaneRegion") r = cmdSetPaneRegion(obj);
+  else if (cmd == "setPaneClearColor") r = cmdSetPaneClearColor(obj);
+  else if (cmd == "setGeometryBounds") r = cmdSetGeometryBounds(obj);
+  else if (cmd == "setDrawItemVisible") r = cmdSetDrawItemVisible(obj);
   else {
     r = fail("UNKNOWN_COMMAND",
              "Unknown cmd",
@@ -430,6 +435,7 @@ CmdResult CommandProcessor::cmdCreateGeometry(const rapidjson::Value& obj) {
     else if (s == "rect4")    fmt = VertexFormat::Rect4;
     else if (s == "candle6")  fmt = VertexFormat::Candle6;
     else if (s == "glyph8")   fmt = VertexFormat::Glyph8;
+    else if (s == "pos2_alpha") fmt = VertexFormat::Pos2Alpha;
     else {
       return fail("UNSUPPORTED_VERTEX_FORMAT",
                   "createGeometry: unknown format",
@@ -836,6 +842,154 @@ CmdResult CommandProcessor::cmdSetDrawItemColor(const rapidjson::Value& obj) {
   di->color[1] = getFloatOr(obj, "g", di->color[1]);
   di->color[2] = getFloatOr(obj, "b", di->color[2]);
   di->color[3] = getFloatOr(obj, "a", di->color[3]);
+
+  CmdResult r;
+  r.ok = true;
+  return r;
+}
+
+// -------------------- Pane region --------------------
+
+CmdResult CommandProcessor::cmdSetPaneRegion(const rapidjson::Value& obj) {
+  Scene& scene = curScene();
+
+  const Id id = getIdOrZero(obj, "id");
+  if (id == 0) {
+    return fail("BAD_COMMAND", "setPaneRegion: missing/invalid id");
+  }
+
+  Pane* pane = scene.getPaneMutable(id);
+  if (!pane) {
+    return fail("NOT_FOUND", "setPaneRegion: pane not found",
+                std::string(R"({"id":)") + std::to_string(id) + "}");
+  }
+
+  pane->region.clipYMin = getFloatOr(obj, "clipYMin", pane->region.clipYMin);
+  pane->region.clipYMax = getFloatOr(obj, "clipYMax", pane->region.clipYMax);
+  pane->region.clipXMin = getFloatOr(obj, "clipXMin", pane->region.clipXMin);
+  pane->region.clipXMax = getFloatOr(obj, "clipXMax", pane->region.clipXMax);
+
+  CmdResult r;
+  r.ok = true;
+  return r;
+}
+
+// -------------------- Draw item style (D10.1) --------------------
+
+CmdResult CommandProcessor::cmdSetDrawItemStyle(const rapidjson::Value& obj) {
+  Scene& scene = curScene();
+
+  const Id drawItemId = getIdOrZero(obj, "drawItemId");
+  if (drawItemId == 0) {
+    return fail("BAD_COMMAND", "setDrawItemStyle: missing/invalid drawItemId");
+  }
+
+  DrawItem* di = scene.getDrawItemMutable(drawItemId);
+  if (!di) {
+    return fail("MISSING_DRAWITEM", "setDrawItemStyle: drawItemId not found",
+                std::string(R"({"drawItemId":)") + std::to_string(drawItemId) + "}");
+  }
+
+  // Merge only provided fields
+  di->color[0] = getFloatOr(obj, "r", di->color[0]);
+  di->color[1] = getFloatOr(obj, "g", di->color[1]);
+  di->color[2] = getFloatOr(obj, "b", di->color[2]);
+  di->color[3] = getFloatOr(obj, "a", di->color[3]);
+
+  di->colorUp[0] = getFloatOr(obj, "colorUpR", di->colorUp[0]);
+  di->colorUp[1] = getFloatOr(obj, "colorUpG", di->colorUp[1]);
+  di->colorUp[2] = getFloatOr(obj, "colorUpB", di->colorUp[2]);
+  di->colorUp[3] = getFloatOr(obj, "colorUpA", di->colorUp[3]);
+
+  di->colorDown[0] = getFloatOr(obj, "colorDownR", di->colorDown[0]);
+  di->colorDown[1] = getFloatOr(obj, "colorDownG", di->colorDown[1]);
+  di->colorDown[2] = getFloatOr(obj, "colorDownB", di->colorDown[2]);
+  di->colorDown[3] = getFloatOr(obj, "colorDownA", di->colorDown[3]);
+
+  di->pointSize = getFloatOr(obj, "pointSize", di->pointSize);
+  di->lineWidth = getFloatOr(obj, "lineWidth", di->lineWidth);
+
+  CmdResult r;
+  r.ok = true;
+  return r;
+}
+
+// -------------------- Pane clear color (D10.4) --------------------
+
+CmdResult CommandProcessor::cmdSetPaneClearColor(const rapidjson::Value& obj) {
+  Scene& scene = curScene();
+
+  const Id id = getIdOrZero(obj, "id");
+  if (id == 0) {
+    return fail("BAD_COMMAND", "setPaneClearColor: missing/invalid id");
+  }
+
+  Pane* pane = scene.getPaneMutable(id);
+  if (!pane) {
+    return fail("NOT_FOUND", "setPaneClearColor: pane not found",
+                std::string(R"({"id":)") + std::to_string(id) + "}");
+  }
+
+  pane->clearColor[0] = getFloatOr(obj, "r", pane->clearColor[0]);
+  pane->clearColor[1] = getFloatOr(obj, "g", pane->clearColor[1]);
+  pane->clearColor[2] = getFloatOr(obj, "b", pane->clearColor[2]);
+  pane->clearColor[3] = getFloatOr(obj, "a", pane->clearColor[3]);
+  pane->hasClearColor = true;
+
+  CmdResult r;
+  r.ok = true;
+  return r;
+}
+
+// -------------------- Geometry bounds (D10.5) --------------------
+
+CmdResult CommandProcessor::cmdSetGeometryBounds(const rapidjson::Value& obj) {
+  Scene& scene = curScene();
+
+  const Id geomId = getIdOrZero(obj, "geometryId");
+  if (geomId == 0) {
+    return fail("BAD_COMMAND", "setGeometryBounds: missing/invalid geometryId");
+  }
+
+  Geometry* g = scene.getGeometryMutable(geomId);
+  if (!g) {
+    return fail("NOT_FOUND", "setGeometryBounds: geometryId not found",
+                std::string(R"({"geometryId":)") + std::to_string(geomId) + "}");
+  }
+
+  g->boundsMin[0] = getFloatOr(obj, "minX", g->boundsMin[0]);
+  g->boundsMin[1] = getFloatOr(obj, "minY", g->boundsMin[1]);
+  g->boundsMax[0] = getFloatOr(obj, "maxX", g->boundsMax[0]);
+  g->boundsMax[1] = getFloatOr(obj, "maxY", g->boundsMax[1]);
+  g->boundsValid = true;
+
+  CmdResult r;
+  r.ok = true;
+  return r;
+}
+
+// -------------------- DrawItem visibility (D14.2) --------------------
+
+CmdResult CommandProcessor::cmdSetDrawItemVisible(const rapidjson::Value& obj) {
+  Scene& scene = curScene();
+
+  const Id drawItemId = getIdOrZero(obj, "drawItemId");
+  if (drawItemId == 0) {
+    return fail("BAD_COMMAND", "setDrawItemVisible: missing/invalid drawItemId");
+  }
+
+  DrawItem* di = scene.getDrawItemMutable(drawItemId);
+  if (!di) {
+    return fail("MISSING_DRAWITEM", "setDrawItemVisible: drawItemId not found",
+                std::string(R"({"drawItemId":)") + std::to_string(drawItemId) + "}");
+  }
+
+  const auto* v = getMember(obj, "visible");
+  if (!v || !v->IsBool()) {
+    return fail("BAD_COMMAND", "setDrawItemVisible: missing bool visible");
+  }
+
+  di->visible = v->GetBool();
 
   CmdResult r;
   r.ok = true;

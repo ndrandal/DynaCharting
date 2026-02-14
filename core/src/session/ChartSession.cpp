@@ -26,6 +26,55 @@ void ChartSession::setViewport(Viewport* vp) {
   loop_.setViewport(vp);
 }
 
+void ChartSession::addPaneViewport(Id paneId, Viewport* vp, Id transformId) {
+  // Replace if paneId already exists
+  for (auto& pv : paneViewports_) {
+    if (pv.paneId == paneId) {
+      pv.viewport = vp;
+      pv.transformId = transformId;
+      return;
+    }
+  }
+  paneViewports_.push_back({paneId, vp, transformId});
+
+  // Use first pane viewport for auto-scroll if no legacy viewport set
+  if (!viewport_ && !paneViewports_.empty()) {
+    loop_.setViewport(paneViewports_[0].viewport);
+  }
+
+  managedTransforms_.insert(transformId);
+}
+
+void ChartSession::removePaneViewport(Id paneId) {
+  for (auto it = paneViewports_.begin(); it != paneViewports_.end(); ++it) {
+    if (it->paneId == paneId) {
+      // Check if transform is still used by another pane viewport
+      Id xfId = it->transformId;
+      paneViewports_.erase(it);
+      bool stillUsed = false;
+      for (const auto& pv : paneViewports_) {
+        if (pv.transformId == xfId) { stillUsed = true; break; }
+      }
+      // Also check mounted slots
+      if (!stillUsed) {
+        for (const auto& [h, s] : slots_) {
+          if (s.sharedTransformId == xfId) { stillUsed = true; break; }
+        }
+      }
+      if (!stillUsed) managedTransforms_.erase(xfId);
+      break;
+    }
+  }
+}
+
+void ChartSession::clearPaneViewports() {
+  paneViewports_.clear();
+}
+
+void ChartSession::setLinkXAxis(bool link) {
+  linkXAxis_ = link;
+}
+
 RecipeHandle ChartSession::mount(std::unique_ptr<Recipe> recipe,
                                   Id sharedTransformId) {
   RecipeHandle handle = nextHandle_++;
@@ -181,6 +230,13 @@ void ChartSession::addComputeDependency(RecipeHandle handle,
   computeDeps_[upstreamBufferId].push_back(handle);
 }
 
+void ChartSession::setRecomputeOnViewportChange(RecipeHandle handle, bool enable) {
+  auto it = slots_.find(handle);
+  if (it != slots_.end()) {
+    it->second.recomputeOnViewportChange = enable;
+  }
+}
+
 FrameResult ChartSession::update(DataSource& source) {
   FrameResult result;
 
@@ -229,16 +285,60 @@ FrameResult ChartSession::update(DataSource& source) {
   }
 
   // 3. Sync managed transforms
-  if (viewport_ && !managedTransforms_.empty()) {
+  if (!paneViewports_.empty()) {
+    // Multi-viewport mode: each pane viewport syncs its own transform
+    for (const auto& pv : paneViewports_) {
+      if (pv.viewport && pv.transformId != 0) {
+        syncTransformFromViewport(pv.transformId, pv.viewport);
+      }
+    }
+
+    // X-axis linking: propagate primary viewport X range to all others
+    if (linkXAxis_ && paneViewports_.size() > 1) {
+      const auto& primary = paneViewports_[0];
+      if (primary.viewport) {
+        const auto& pdr = primary.viewport->dataRange();
+        for (std::size_t i = 1; i < paneViewports_.size(); i++) {
+          if (paneViewports_[i].viewport) {
+            const auto& dr = paneViewports_[i].viewport->dataRange();
+            paneViewports_[i].viewport->setDataRange(pdr.xMin, pdr.xMax, dr.yMin, dr.yMax);
+          }
+        }
+      }
+    }
+
+    result.viewportChanged = true;
+  } else if (viewport_ && !managedTransforms_.empty()) {
+    // Legacy single-viewport mode
     for (Id xfId : managedTransforms_) {
       syncTransform(xfId);
     }
     result.viewportChanged = true;
   }
 
+  // 3b. Viewport-triggered recompute (D10.3)
+  if (result.viewportChanged) {
+    for (auto& [h, slot] : slots_) {
+      if (slot.recomputeOnViewportChange && slot.computeCallback) {
+        auto computedIds = slot.computeCallback();
+        for (Id id : computedIds) {
+          bool found = false;
+          for (Id existing : result.touchedBufferIds) {
+            if (existing == id) { found = true; break; }
+          }
+          if (!found) result.touchedBufferIds.push_back(id);
+        }
+      }
+    }
+  }
+
   // 4. Aggregation: respond to viewport changes (D8.5)
-  if (config_.enableAggregation && viewport_) {
-    double ppdu = viewport_->pixelsPerDataUnitX();
+  Viewport* primaryVp = viewport_;
+  if (!primaryVp && !paneViewports_.empty()) {
+    primaryVp = paneViewports_[0].viewport;
+  }
+  if (config_.enableAggregation && primaryVp) {
+    double ppdu = primaryVp->pixelsPerDataUnitX();
     auto aggVpTouched = aggManager_.onViewportChanged(ppdu, ingest_, cp_);
     if (!aggVpTouched.empty()) {
       result.resolutionChanged = true;
@@ -254,8 +354,8 @@ FrameResult ChartSession::update(DataSource& source) {
   }
 
   // 5. Smart retention: dynamically adjust maxBytes (D8.5)
-  if (config_.enableSmartRetention && viewport_) {
-    double visW = viewport_->visibleDataWidth();
+  if (config_.enableSmartRetention && primaryVp) {
+    double visW = primaryVp->visibleDataWidth();
     for (const auto& [handle, slot] : slots_) {
       for (const auto& sub : slot.buildResult.subscriptions) {
         std::uint32_t stride = strideOf(sub.format);
@@ -275,6 +375,18 @@ FrameResult ChartSession::update(DataSource& source) {
 void ChartSession::syncTransform(Id transformId) {
   if (!viewport_) return;
   auto tp = viewport_->computeTransformParams();
+  char buf[512];
+  std::snprintf(buf, sizeof(buf),
+    R"({"cmd":"setTransform","id":%llu,"tx":%.9g,"ty":%.9g,"sx":%.9g,"sy":%.9g})",
+    static_cast<unsigned long long>(transformId),
+    static_cast<double>(tp.tx), static_cast<double>(tp.ty),
+    static_cast<double>(tp.sx), static_cast<double>(tp.sy));
+  cp_.applyJsonText(buf);
+}
+
+void ChartSession::syncTransformFromViewport(Id transformId, Viewport* vp) {
+  if (!vp) return;
+  auto tp = vp->computeTransformParams();
   char buf[512];
   std::snprintf(buf, sizeof(buf),
     R"({"cmd":"setTransform","id":%llu,"tx":%.9g,"ty":%.9g,"sx":%.9g,"sy":%.9g})",
