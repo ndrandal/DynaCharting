@@ -13,8 +13,12 @@ GpuBufferManager::~GpuBufferManager() {
 
 void GpuBufferManager::setCpuData(Id bufferId, const void* data, std::uint32_t bytes) {
   auto& e = entries_[bufferId];
-  e.cpuData.resize(bytes);
-  std::memcpy(e.cpuData.data(), data, bytes);
+  if (data && bytes > 0) {
+    e.cpuData.resize(bytes);
+    std::memcpy(e.cpuData.data(), data, bytes);
+  } else {
+    e.cpuData.clear();
+  }
   e.dirty = true;
 }
 
@@ -41,6 +45,18 @@ GLuint GpuBufferManager::getGlBuffer(Id bufferId) const {
   auto it = entries_.find(bufferId);
   if (it == entries_.end()) return 0;
   return it->second.vbo;
+}
+
+const std::uint8_t* GpuBufferManager::getCpuData(Id bufferId) const {
+  auto it = entries_.find(bufferId);
+  if (it == entries_.end() || it->second.cpuData.empty()) return nullptr;
+  return it->second.cpuData.data();
+}
+
+std::uint32_t GpuBufferManager::getCpuDataSize(Id bufferId) const {
+  auto it = entries_.find(bufferId);
+  if (it == entries_.end()) return 0;
+  return static_cast<std::uint32_t>(it->second.cpuData.size());
 }
 
 } // namespace dc

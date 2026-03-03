@@ -10,7 +10,7 @@
 
 #include <rapidjson/document.h>
 
-namespace dc { class IngestProcessor; class GlyphAtlas; }
+namespace dc { class IngestProcessor; class GlyphAtlas; class AnnotationStore; class EventBus; }
 
 namespace dc {
 
@@ -35,6 +35,12 @@ public:
 
   // Optional: wire up GlyphAtlas for ensureGlyphs command.
   void setGlyphAtlas(GlyphAtlas* atlas);
+
+  // Optional: wire up AnnotationStore for annotation commands (D40).
+  void setAnnotationStore(AnnotationStore* store);
+
+  // D42: wire up EventBus for event emission.
+  void setEventBus(EventBus* bus);
 
   // Apply a single JSON command object.
   CmdResult applyJson(const rapidjson::Value& obj);
@@ -92,10 +98,24 @@ private:
   CmdResult cmdSetPaneClearColor(const rapidjson::Value& obj);
   CmdResult cmdSetGeometryBounds(const rapidjson::Value& obj);
   CmdResult cmdSetDrawItemVisible(const rapidjson::Value& obj);
+  CmdResult cmdSetGeometryIndexBuffer(const rapidjson::Value& obj);
+  CmdResult cmdSetGeometryIndexCount(const rapidjson::Value& obj);
+
+  // D36: texture
+  CmdResult cmdSetDrawItemTexture(const rapidjson::Value& obj);
+  // D37: anchor
+  CmdResult cmdSetDrawItemAnchor(const rapidjson::Value& obj);
+  // D40: annotations
+  CmdResult cmdSetAnnotation(const rapidjson::Value& obj);
+  CmdResult cmdRemoveAnnotation(const rapidjson::Value& obj);
+  // D46: gradient fill
+  CmdResult cmdSetDrawItemGradient(const rapidjson::Value& obj);
 
   PipelineCatalog catalog_;
   IngestProcessor* ingest_{nullptr};
   GlyphAtlas* atlas_{nullptr};
+  AnnotationStore* annotationStore_{nullptr};
+  EventBus* eventBus_{nullptr};
 
   // helpers
   static const rapidjson::Value* getMember(const rapidjson::Value& obj, const char* key);

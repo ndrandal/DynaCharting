@@ -45,6 +45,10 @@ struct AxisRecipeConfig {
   float labelColor[4] {0.8f, 0.8f, 0.8f, 1.0f};
   float gridLineWidth{1.0f};
   float tickLineWidth{1.0f};
+  // D78: grid dash pattern + opacity
+  float gridDashLength{0.0f};  // pixels, 0 = solid
+  float gridGapLength{0.0f};   // pixels
+  float gridOpacity{1.0f};     // 0-1, multiplied into gridColor alpha
 };
 
 class AxisRecipe : public Recipe {

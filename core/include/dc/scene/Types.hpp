@@ -56,6 +56,14 @@ struct Layer {
   std::string name;
 };
 
+// D29.1: per-DrawItem blend mode
+enum class BlendMode : std::uint8_t {
+  Normal   = 0,
+  Additive = 1,
+  Multiply = 2,
+  Screen   = 3
+};
+
 struct DrawItem {
   Id id{0};
   Id layerId{0};
@@ -74,7 +82,38 @@ struct DrawItem {
   float pointSize{4.0f};
   float lineWidth{1.0f};
 
+  // D28.1: dash pattern for lineAA@1 (0 = solid, no dash)
+  float dashLength{0.0f};   // pixels
+  float gapLength{0.0f};    // pixels
+
+  // D28.2: rounded corner radius for instancedRect@1 (0 = sharp corners)
+  float cornerRadius{0.0f}; // pixels
+
+  // D29.1: blend mode
+  BlendMode blendMode{BlendMode::Normal};
+
+  // D29.2: stencil-based clipping masks
+  bool isClipSource{false};  // writes to stencil, no color output
+  bool useClipMask{false};   // only renders where stencil == 1
+
+  // D36: texture binding
+  std::uint32_t textureId{0};
+
+  // D37: anchoring
+  std::uint8_t anchorPoint{0};  // 0=TopLeft..8=BottomRight (matches AnchorPoint enum)
+  float anchorOffsetX{0};       // pixels
+  float anchorOffsetY{0};       // pixels
+  bool hasAnchor{false};
+
   bool visible{true};  // D14.2: visibility toggle
+
+  // D46: gradient fill
+  std::uint8_t gradientType{0};  // 0=None, 1=Linear, 2=Radial
+  float gradientAngle{0.0f};     // radians, for linear
+  float gradientColor0[4] = {1,1,1,1};
+  float gradientColor1[4] = {0,0,0,1};
+  float gradientCenter[2] = {0.5f, 0.5f};  // normalized 0-1
+  float gradientRadius{0.5f};
 };
 
 

@@ -4,7 +4,8 @@
 namespace dc {
 
 enum class KeyCode : std::uint8_t {
-  None = 0, Left, Right, Up, Down, Home, End
+  None = 0, Left, Right, Up, Down, Home, End,
+  Tab = 7, Escape = 8, Enter = 9, Space = 10
 };
 
 // Generic input snapshot — NOT GLFW-specific

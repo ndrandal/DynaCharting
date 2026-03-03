@@ -224,6 +224,26 @@ function buildCandlesBytes(t: number, candleN: number): Uint8Array {
   return new Uint8Array(candle.buffer);
 }
 
+function buildVolumeBytes(t: number, candleN: number): Uint8Array {
+  const rect = new Float32Array(candleN * 4);
+  for (let i = 0; i < candleN; i++) {
+    const x = -0.95 + (1.9 * i) / Math.max(1, candleN - 1);
+    const hw = 0.012;
+    // Volume height correlates with candle body size |close - open|
+    const base = -0.15 + 0.35 * Math.sin(t * 0.7 + i * 0.2);
+    const open = base + 0.08 * Math.sin(t + i * 0.6);
+    const close = base + 0.08 * Math.cos(t * 1.1 + i * 0.5);
+    const bodySize = Math.abs(close - open);
+    const h = 0.05 + bodySize * 2.5;
+
+    rect[i * 4 + 0] = x - hw;   // x0
+    rect[i * 4 + 1] = -1.0;     // y0 (bottom)
+    rect[i * 4 + 2] = x + hw;   // x1
+    rect[i * 4 + 3] = -1.0 + h; // y1
+  }
+  return new Uint8Array(rect.buffer);
+}
+
 function tickFake(streams: Array<{ stream: StreamType; bufferId: number }>) {
   const t = performance.now() * 0.001;
   const d = density();
@@ -238,6 +258,7 @@ function tickFake(streams: Array<{ stream: StreamType; bufferId: number }>) {
     else if (s.stream === "pointsCos") payloads.push({ bufferId, bytes: buildPointsCosBytes(t, d.ptsCount) });
     else if (s.stream === "rectBars") payloads.push({ bufferId, bytes: buildRectBarsBytes(t, d.rectN) });
     else if (s.stream === "candles") payloads.push({ bufferId, bytes: buildCandlesBytes(t, d.candleN) });
+    else if (s.stream === "volume") payloads.push({ bufferId, bytes: buildVolumeBytes(t, d.candleN) });
   }
 
   let total = 0;

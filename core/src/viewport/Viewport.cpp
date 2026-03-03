@@ -14,8 +14,8 @@ void Viewport::setClipRegion(const PaneRegion& region) {
 }
 
 void Viewport::setPixelViewport(int fbWidth, int fbHeight) {
-  fbW_ = fbWidth;
-  fbH_ = fbHeight;
+  fbW_ = (fbWidth > 0) ? fbWidth : 1;
+  fbH_ = (fbHeight > 0) ? fbHeight : 1;
 }
 
 void Viewport::pixelToClip(double px, double py, double& cx, double& cy) const {
@@ -27,6 +27,8 @@ void Viewport::clipToData(double cx, double cy, double& dx, double& dy) const {
   double clipW = static_cast<double>(clip_.clipXMax) - static_cast<double>(clip_.clipXMin);
   double clipH = static_cast<double>(clip_.clipYMax) - static_cast<double>(clip_.clipYMin);
 
+  if (clipW == 0.0 || clipH == 0.0) { dx = data_.xMin; dy = data_.yMin; return; }
+
   double tx = (cx - static_cast<double>(clip_.clipXMin)) / clipW;
   double ty = (cy - static_cast<double>(clip_.clipYMin)) / clipH;
 
@@ -35,8 +37,17 @@ void Viewport::clipToData(double cx, double cy, double& dx, double& dy) const {
 }
 
 void Viewport::dataToClip(double dx, double dy, double& cx, double& cy) const {
-  double tx = (dx - data_.xMin) / (data_.xMax - data_.xMin);
-  double ty = (dy - data_.yMin) / (data_.yMax - data_.yMin);
+  double dataW = data_.xMax - data_.xMin;
+  double dataH = data_.yMax - data_.yMin;
+
+  if (dataW == 0.0 || dataH == 0.0) {
+    cx = static_cast<double>(clip_.clipXMin);
+    cy = static_cast<double>(clip_.clipYMin);
+    return;
+  }
+
+  double tx = (dx - data_.xMin) / dataW;
+  double ty = (dy - data_.yMin) / dataH;
 
   cx = static_cast<double>(clip_.clipXMin) + tx * (static_cast<double>(clip_.clipXMax) - static_cast<double>(clip_.clipXMin));
   cy = static_cast<double>(clip_.clipYMin) + ty * (static_cast<double>(clip_.clipYMax) - static_cast<double>(clip_.clipYMin));
@@ -56,6 +67,8 @@ void Viewport::pan(double dxPixels, double dyPixels) {
   // Convert clip delta to data delta
   double clipW = static_cast<double>(clip_.clipXMax) - static_cast<double>(clip_.clipXMin);
   double clipH = static_cast<double>(clip_.clipYMax) - static_cast<double>(clip_.clipYMin);
+
+  if (clipW == 0.0 || clipH == 0.0) return;
 
   double dataDx = clipDx / clipW * (data_.xMax - data_.xMin);
   double dataDy = clipDy / clipH * (data_.yMax - data_.yMin);
@@ -86,6 +99,9 @@ TransformParams Viewport::computeTransformParams() const {
   double clipH = static_cast<double>(clip_.clipYMax) - static_cast<double>(clip_.clipYMin);
   double dataW = data_.xMax - data_.xMin;
   double dataH = data_.yMax - data_.yMin;
+
+  if (dataW == 0.0) dataW = 1.0;
+  if (dataH == 0.0) dataH = 1.0;
 
   float sx = static_cast<float>(clipW / dataW);
   float sy = static_cast<float>(clipH / dataH);

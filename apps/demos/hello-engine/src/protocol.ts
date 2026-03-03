@@ -1,6 +1,6 @@
 // apps/demos/hello-engine/src/protocol.ts
 
-export type StreamType = "lineSine" | "pointsCos" | "rectBars" | "candles";
+export type StreamType = "lineSine" | "pointsCos" | "rectBars" | "candles" | "volume";
 export type PolicyMode = "raw" | "agg";
 
 export type WorkerSubscription = {

@@ -1,6 +1,8 @@
 #include "dc/commands/CommandProcessor.hpp"
 #include "dc/ingest/IngestProcessor.hpp"
 #include "dc/text/GlyphAtlas.hpp"
+#include "dc/metadata/AnnotationStore.hpp"
+#include "dc/event/EventBus.hpp"
 
 #include "dc/pipelines/PipelineCatalog.hpp"
 #include "dc/scene/Geometry.hpp"
@@ -24,6 +26,14 @@ void CommandProcessor::setIngestProcessor(IngestProcessor* ingest) {
 
 void CommandProcessor::setGlyphAtlas(GlyphAtlas* atlas) {
   atlas_ = atlas;
+}
+
+void CommandProcessor::setAnnotationStore(AnnotationStore* store) {
+  annotationStore_ = store;
+}
+
+void CommandProcessor::setEventBus(EventBus* bus) {
+  eventBus_ = bus;
 }
 
 CmdResult CommandProcessor::fail(const std::string& code,
@@ -152,6 +162,13 @@ CmdResult CommandProcessor::applyJson(const rapidjson::Value& obj) {
   else if (cmd == "setPaneClearColor") r = cmdSetPaneClearColor(obj);
   else if (cmd == "setGeometryBounds") r = cmdSetGeometryBounds(obj);
   else if (cmd == "setDrawItemVisible") r = cmdSetDrawItemVisible(obj);
+  else if (cmd == "setGeometryIndexBuffer") r = cmdSetGeometryIndexBuffer(obj);
+  else if (cmd == "setGeometryIndexCount") r = cmdSetGeometryIndexCount(obj);
+  else if (cmd == "setDrawItemTexture") r = cmdSetDrawItemTexture(obj);
+  else if (cmd == "setDrawItemAnchor") r = cmdSetDrawItemAnchor(obj);
+  else if (cmd == "setAnnotation") r = cmdSetAnnotation(obj);
+  else if (cmd == "removeAnnotation") r = cmdRemoveAnnotation(obj);
+  else if (cmd == "setDrawItemGradient") r = cmdSetDrawItemGradient(obj);
   else {
     r = fail("UNKNOWN_COMMAND",
              "Unknown cmd",
@@ -228,6 +245,14 @@ CmdResult CommandProcessor::cmdCommitFrame(const rapidjson::Value& obj) {
   activeFrameId_ = pendingFrameId_;
 
   inFrame_ = false;
+
+  // D42: emit FrameCommitted
+  if (eventBus_) {
+    EventData ev;
+    ev.type = EventType::FrameCommitted;
+    ev.payload[0] = static_cast<double>(activeFrameId_);
+    eventBus_->emit(ev);
+  }
 
   CmdResult r;
   r.ok = true;
@@ -435,7 +460,9 @@ CmdResult CommandProcessor::cmdCreateGeometry(const rapidjson::Value& obj) {
     else if (s == "rect4")    fmt = VertexFormat::Rect4;
     else if (s == "candle6")  fmt = VertexFormat::Candle6;
     else if (s == "glyph8")   fmt = VertexFormat::Glyph8;
-    else if (s == "pos2_alpha") fmt = VertexFormat::Pos2Alpha;
+    else if (s == "pos2_alpha")  fmt = VertexFormat::Pos2Alpha;
+    else if (s == "pos2_color4") fmt = VertexFormat::Pos2Color4;
+    else if (s == "pos2_uv4")   fmt = VertexFormat::Pos2Uv4;
     else {
       return fail("UNSUPPORTED_VERTEX_FORMAT",
                   "createGeometry: unknown format",
@@ -457,6 +484,21 @@ CmdResult CommandProcessor::cmdCreateGeometry(const rapidjson::Value& obj) {
   g.vertexBufferId = vb;
   g.format = fmt;
   g.vertexCount = vc->GetUint();
+
+  // Optional index buffer (D26)
+  Id ib = getIdOrZero(obj, "indexBufferId");
+  if (ib != 0) {
+    if (!scene.hasBuffer(ib)) {
+      return fail("MISSING_BUFFER",
+                  "createGeometry: invalid indexBufferId",
+                  std::string(R"({"field":"indexBufferId","indexBufferId":)") + std::to_string(ib) + "}");
+    }
+    g.indexBufferId = ib;
+  }
+  if (const auto* ic = getMember(obj, "indexCount"); ic && ic->IsUint()) {
+    g.indexCount = ic->GetUint();
+  }
+
   scene.addGeometry(std::move(g));
 
   CmdResult r;
@@ -668,6 +710,15 @@ CmdResult CommandProcessor::cmdBufferSetMaxBytes(const rapidjson::Value& obj) {
     return fail("BAD_COMMAND", "bufferSetMaxBytes: missing uint maxBytes");
   }
   ingest_->setMaxBytes(bufferId, mb->GetUint());
+
+  // D42: emit DataChanged
+  if (eventBus_) {
+    EventData ev;
+    ev.type = EventType::DataChanged;
+    ev.targetId = bufferId;
+    eventBus_->emit(ev);
+  }
+
   CmdResult r;
   r.ok = true;
   return r;
@@ -686,6 +737,15 @@ CmdResult CommandProcessor::cmdBufferEvictFront(const rapidjson::Value& obj) {
     return fail("BAD_COMMAND", "bufferEvictFront: missing uint bytes");
   }
   ingest_->evictFront(bufferId, b->GetUint());
+
+  // D42: emit DataChanged
+  if (eventBus_) {
+    EventData ev;
+    ev.type = EventType::DataChanged;
+    ev.targetId = bufferId;
+    eventBus_->emit(ev);
+  }
+
   CmdResult r;
   r.ok = true;
   return r;
@@ -704,6 +764,15 @@ CmdResult CommandProcessor::cmdBufferKeepLast(const rapidjson::Value& obj) {
     return fail("BAD_COMMAND", "bufferKeepLast: missing uint bytes");
   }
   ingest_->keepLast(bufferId, b->GetUint());
+
+  // D42: emit DataChanged
+  if (eventBus_) {
+    EventData ev;
+    ev.type = EventType::DataChanged;
+    ev.targetId = bufferId;
+    eventBus_->emit(ev);
+  }
+
   CmdResult r;
   r.ok = true;
   return r;
@@ -909,6 +978,28 @@ CmdResult CommandProcessor::cmdSetDrawItemStyle(const rapidjson::Value& obj) {
   di->pointSize = getFloatOr(obj, "pointSize", di->pointSize);
   di->lineWidth = getFloatOr(obj, "lineWidth", di->lineWidth);
 
+  // D28 visual primitives
+  di->dashLength   = getFloatOr(obj, "dashLength",   di->dashLength);
+  di->gapLength    = getFloatOr(obj, "gapLength",    di->gapLength);
+  di->cornerRadius = getFloatOr(obj, "cornerRadius", di->cornerRadius);
+
+  // D29.1: blend mode
+  if (const auto* bm = getMember(obj, "blendMode"); bm && bm->IsString()) {
+    const std::string s = bm->GetString();
+    if (s == "normal")        di->blendMode = BlendMode::Normal;
+    else if (s == "additive") di->blendMode = BlendMode::Additive;
+    else if (s == "multiply") di->blendMode = BlendMode::Multiply;
+    else if (s == "screen")   di->blendMode = BlendMode::Screen;
+  }
+
+  // D29.2: clipping masks
+  if (const auto* cs = getMember(obj, "isClipSource"); cs && cs->IsBool()) {
+    di->isClipSource = cs->GetBool();
+  }
+  if (const auto* cm = getMember(obj, "useClipMask"); cm && cm->IsBool()) {
+    di->useClipMask = cm->GetBool();
+  }
+
   CmdResult r;
   r.ok = true;
   return r;
@@ -930,11 +1021,16 @@ CmdResult CommandProcessor::cmdSetPaneClearColor(const rapidjson::Value& obj) {
                 std::string(R"({"id":)") + std::to_string(id) + "}");
   }
 
-  pane->clearColor[0] = getFloatOr(obj, "r", pane->clearColor[0]);
-  pane->clearColor[1] = getFloatOr(obj, "g", pane->clearColor[1]);
-  pane->clearColor[2] = getFloatOr(obj, "b", pane->clearColor[2]);
-  pane->clearColor[3] = getFloatOr(obj, "a", pane->clearColor[3]);
-  pane->hasClearColor = true;
+  // D77: optional "enabled" field to disable clear color
+  if (const auto* en = getMember(obj, "enabled"); en && en->IsBool() && !en->GetBool()) {
+    pane->hasClearColor = false;
+  } else {
+    pane->clearColor[0] = getFloatOr(obj, "r", pane->clearColor[0]);
+    pane->clearColor[1] = getFloatOr(obj, "g", pane->clearColor[1]);
+    pane->clearColor[2] = getFloatOr(obj, "b", pane->clearColor[2]);
+    pane->clearColor[3] = getFloatOr(obj, "a", pane->clearColor[3]);
+    pane->hasClearColor = true;
+  }
 
   CmdResult r;
   r.ok = true;
@@ -990,6 +1086,234 @@ CmdResult CommandProcessor::cmdSetDrawItemVisible(const rapidjson::Value& obj) {
   }
 
   di->visible = v->GetBool();
+
+  // D42: emit DrawItemVisibilityChanged
+  if (eventBus_) {
+    EventData ev;
+    ev.type = EventType::DrawItemVisibilityChanged;
+    ev.targetId = drawItemId;
+    ev.payload[0] = di->visible ? 1.0 : 0.0;
+    eventBus_->emit(ev);
+  }
+
+  CmdResult r;
+  r.ok = true;
+  return r;
+}
+
+// -------------------- Geometry index buffer (D26) --------------------
+
+CmdResult CommandProcessor::cmdSetGeometryIndexBuffer(const rapidjson::Value& obj) {
+  Scene& scene = curScene();
+
+  const Id geomId = getIdOrZero(obj, "geometryId");
+  if (geomId == 0) {
+    return fail("BAD_COMMAND", "setGeometryIndexBuffer: missing/invalid geometryId");
+  }
+
+  Geometry* g = scene.getGeometryMutable(geomId);
+  if (!g) {
+    return fail("NOT_FOUND", "setGeometryIndexBuffer: geometryId not found",
+                std::string(R"({"geometryId":)") + std::to_string(geomId) + "}");
+  }
+
+  const Id ib = getIdOrZero(obj, "indexBufferId");
+  if (ib != 0 && !scene.hasBuffer(ib)) {
+    return fail("MISSING_BUFFER", "setGeometryIndexBuffer: invalid indexBufferId",
+                std::string(R"({"indexBufferId":)") + std::to_string(ib) + "}");
+  }
+
+  g->indexBufferId = ib; // 0 = detach
+
+  CmdResult r;
+  r.ok = true;
+  return r;
+}
+
+CmdResult CommandProcessor::cmdSetGeometryIndexCount(const rapidjson::Value& obj) {
+  Scene& scene = curScene();
+
+  const Id geomId = getIdOrZero(obj, "geometryId");
+  if (geomId == 0) {
+    return fail("BAD_COMMAND", "setGeometryIndexCount: missing/invalid geometryId");
+  }
+
+  Geometry* g = scene.getGeometryMutable(geomId);
+  if (!g) {
+    return fail("NOT_FOUND", "setGeometryIndexCount: geometryId not found",
+                std::string(R"({"geometryId":)") + std::to_string(geomId) + "}");
+  }
+
+  const auto* ic = getMember(obj, "indexCount");
+  if (!ic || !ic->IsUint()) {
+    return fail("BAD_COMMAND", "setGeometryIndexCount: missing uint indexCount");
+  }
+
+  g->indexCount = ic->GetUint();
+
+  CmdResult r;
+  r.ok = true;
+  return r;
+}
+
+// -------------------- Draw item texture (D36) --------------------
+
+CmdResult CommandProcessor::cmdSetDrawItemTexture(const rapidjson::Value& obj) {
+  Scene& scene = curScene();
+
+  const Id drawItemId = getIdOrZero(obj, "drawItemId");
+  if (drawItemId == 0) {
+    return fail("BAD_COMMAND", "setDrawItemTexture: missing/invalid drawItemId");
+  }
+
+  DrawItem* di = scene.getDrawItemMutable(drawItemId);
+  if (!di) {
+    return fail("MISSING_DRAWITEM", "setDrawItemTexture: drawItemId not found",
+                std::string(R"({"drawItemId":)") + std::to_string(drawItemId) + "}");
+  }
+
+  const auto* tid = getMember(obj, "textureId");
+  if (!tid || !tid->IsUint()) {
+    return fail("BAD_COMMAND", "setDrawItemTexture: missing uint textureId");
+  }
+
+  di->textureId = tid->GetUint();
+
+  CmdResult r;
+  r.ok = true;
+  return r;
+}
+
+// -------------------- Draw item anchor (D37) --------------------
+
+CmdResult CommandProcessor::cmdSetDrawItemAnchor(const rapidjson::Value& obj) {
+  Scene& scene = curScene();
+
+  const Id drawItemId = getIdOrZero(obj, "drawItemId");
+  if (drawItemId == 0) {
+    return fail("BAD_COMMAND", "setDrawItemAnchor: missing/invalid drawItemId");
+  }
+
+  DrawItem* di = scene.getDrawItemMutable(drawItemId);
+  if (!di) {
+    return fail("MISSING_DRAWITEM", "setDrawItemAnchor: drawItemId not found",
+                std::string(R"({"drawItemId":)") + std::to_string(drawItemId) + "}");
+  }
+
+  // Parse anchor point string
+  const std::string anchor = getStringOrEmpty(obj, "anchor");
+  if (!anchor.empty()) {
+    std::uint8_t ap = 0;
+    if (anchor == "topLeft")           ap = 0;
+    else if (anchor == "topCenter")    ap = 1;
+    else if (anchor == "topRight")     ap = 2;
+    else if (anchor == "middleLeft")   ap = 3;
+    else if (anchor == "center")       ap = 4;
+    else if (anchor == "middleRight")  ap = 5;
+    else if (anchor == "bottomLeft")   ap = 6;
+    else if (anchor == "bottomCenter") ap = 7;
+    else if (anchor == "bottomRight")  ap = 8;
+    di->anchorPoint = ap;
+    di->hasAnchor = true;
+  }
+
+  di->anchorOffsetX = getFloatOr(obj, "offsetX", di->anchorOffsetX);
+  di->anchorOffsetY = getFloatOr(obj, "offsetY", di->anchorOffsetY);
+
+  CmdResult r;
+  r.ok = true;
+  return r;
+}
+
+// -------------------- Annotations (D40) --------------------
+
+CmdResult CommandProcessor::cmdSetAnnotation(const rapidjson::Value& obj) {
+  if (!annotationStore_) {
+    return fail("NO_ANNOTATION_STORE", "setAnnotation: no AnnotationStore attached");
+  }
+
+  const Id drawItemId = getIdOrZero(obj, "drawItemId");
+  if (drawItemId == 0) {
+    return fail("BAD_COMMAND", "setAnnotation: missing/invalid drawItemId");
+  }
+
+  const std::string role = getStringOrEmpty(obj, "role");
+  const std::string label = getStringOrEmpty(obj, "label");
+  const std::string value = getStringOrEmpty(obj, "value");
+
+  annotationStore_->set(drawItemId, role, label, value);
+
+  CmdResult r;
+  r.ok = true;
+  return r;
+}
+
+CmdResult CommandProcessor::cmdRemoveAnnotation(const rapidjson::Value& obj) {
+  if (!annotationStore_) {
+    return fail("NO_ANNOTATION_STORE", "removeAnnotation: no AnnotationStore attached");
+  }
+
+  const Id drawItemId = getIdOrZero(obj, "drawItemId");
+  if (drawItemId == 0) {
+    return fail("BAD_COMMAND", "removeAnnotation: missing/invalid drawItemId");
+  }
+
+  annotationStore_->remove(drawItemId);
+
+  CmdResult r;
+  r.ok = true;
+  return r;
+}
+
+// -------------------- Draw item gradient (D46) --------------------
+
+CmdResult CommandProcessor::cmdSetDrawItemGradient(const rapidjson::Value& obj) {
+  Scene& scene = curScene();
+
+  const Id drawItemId = getIdOrZero(obj, "drawItemId");
+  if (drawItemId == 0) {
+    return fail("BAD_COMMAND", "setDrawItemGradient: missing/invalid drawItemId");
+  }
+
+  DrawItem* di = scene.getDrawItemMutable(drawItemId);
+  if (!di) {
+    return fail("MISSING_DRAWITEM", "setDrawItemGradient: drawItemId not found",
+                std::string(R"({"drawItemId":)") + std::to_string(drawItemId) + "}");
+  }
+
+  // Parse gradient type
+  const std::string typeStr = getStringOrEmpty(obj, "type");
+  if (!typeStr.empty()) {
+    if (typeStr == "none")         di->gradientType = 0;
+    else if (typeStr == "linear")  di->gradientType = 1;
+    else if (typeStr == "radial")  di->gradientType = 2;
+  }
+
+  di->gradientAngle = getFloatOr(obj, "angle", di->gradientAngle);
+
+  // Parse color0
+  if (const auto* c0 = getMember(obj, "color0"); c0 && c0->IsObject()) {
+    di->gradientColor0[0] = getFloatOr(*c0, "r", di->gradientColor0[0]);
+    di->gradientColor0[1] = getFloatOr(*c0, "g", di->gradientColor0[1]);
+    di->gradientColor0[2] = getFloatOr(*c0, "b", di->gradientColor0[2]);
+    di->gradientColor0[3] = getFloatOr(*c0, "a", di->gradientColor0[3]);
+  }
+
+  // Parse color1
+  if (const auto* c1 = getMember(obj, "color1"); c1 && c1->IsObject()) {
+    di->gradientColor1[0] = getFloatOr(*c1, "r", di->gradientColor1[0]);
+    di->gradientColor1[1] = getFloatOr(*c1, "g", di->gradientColor1[1]);
+    di->gradientColor1[2] = getFloatOr(*c1, "b", di->gradientColor1[2]);
+    di->gradientColor1[3] = getFloatOr(*c1, "a", di->gradientColor1[3]);
+  }
+
+  // Parse center
+  if (const auto* ctr = getMember(obj, "center"); ctr && ctr->IsObject()) {
+    di->gradientCenter[0] = getFloatOr(*ctr, "x", di->gradientCenter[0]);
+    di->gradientCenter[1] = getFloatOr(*ctr, "y", di->gradientCenter[1]);
+  }
+
+  di->gradientRadius = getFloatOr(obj, "radius", di->gradientRadius);
 
   CmdResult r;
   r.ok = true;

@@ -203,18 +203,18 @@ int main() {
   {
     dc::Theme theme = dc::darkTheme();
     dc::ThemeTarget target;
-    // 6 overlays: should cycle through 4 colors, wrapping at index 4 and 5
-    target.overlayDrawItemIds = {300, 301, 302, 303, 304, 305};
+    // 10 overlays: should cycle through 8 colors, wrapping at index 8 and 9
+    target.overlayDrawItemIds = {300, 301, 302, 303, 304, 305, 306, 307, 308, 309};
 
     std::vector<std::string> cmds = dc::generateThemeCommands(theme, target);
-    requireTrue(cmds.size() == 6, "6 overlay commands");
+    requireTrue(cmds.size() == 10, "10 overlay commands");
 
-    // cmd[0] and cmd[4] should both use overlayColors[0] (blue)
+    // cmd[0] and cmd[8] should both use overlayColors[0] (blue)
     // Just check they both contain the same blue R value
     char needle[64];
     std::snprintf(needle, sizeof(needle), "\"r\":%.9g", theme.overlayColors[0][0]);
     requireTrue(cmds[0].find(needle) != std::string::npos, "cmd[0] has overlay[0] R");
-    requireTrue(cmds[4].find(needle) != std::string::npos, "cmd[4] has overlay[0] R (wrap)");
+    requireTrue(cmds[8].find(needle) != std::string::npos, "cmd[8] has overlay[0] R (wrap)");
 
     // cmd[1] should use overlayColors[1] (orange R=1.0)
     std::snprintf(needle, sizeof(needle), "\"r\":%.9g", theme.overlayColors[1][0]);

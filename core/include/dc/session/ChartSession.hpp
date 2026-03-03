@@ -19,6 +19,7 @@ class CommandProcessor;
 class IngestProcessor;
 class Viewport;
 class DataSource;
+class EventBus;
 
 using RecipeHandle = std::uint32_t;
 
@@ -45,6 +46,7 @@ struct FrameResult {
   bool dataChanged{false};
   bool viewportChanged{false};
   bool resolutionChanged{false};
+  bool selectionChanged{false};
 };
 
 struct PaneViewport {
@@ -59,6 +61,7 @@ public:
 
   void setConfig(const ChartSessionConfig& cfg);
   void setViewport(Viewport* vp);
+  void setEventBus(EventBus* bus);
 
   // Multi-viewport: per-pane viewport management
   void addPaneViewport(Id paneId, Viewport* vp, Id transformId);
@@ -84,6 +87,10 @@ public:
                           std::function<std::vector<Id>()> cb);
   void addComputeDependency(RecipeHandle handle, Id upstreamBufferId);
   void setRecomputeOnViewportChange(RecipeHandle handle, bool enable);
+  void setRecomputeOnSelectionChange(RecipeHandle handle, bool enable);
+
+  // Selection-change trigger (D26): fires dependent compute callbacks.
+  void notifySelectionChanged();
 
   // Per-frame update: drains data, runs compute callbacks, syncs transforms.
   FrameResult update(DataSource& source);
@@ -102,6 +109,7 @@ private:
     Id sharedTransformId{0};
     std::function<std::vector<Id>()> computeCallback;
     bool recomputeOnViewportChange{false};
+    bool recomputeOnSelectionChange{false};
   };
 
   void rebuildBindings();
@@ -113,6 +121,7 @@ private:
   LiveIngestLoop loop_;
   AggregationManager aggManager_;
   Viewport* viewport_{nullptr};
+  EventBus* eventBus_{nullptr};
   ChartSessionConfig config_;
 
   RecipeHandle nextHandle_{1};
@@ -127,6 +136,9 @@ private:
   // Multi-viewport state
   std::vector<PaneViewport> paneViewports_;
   bool linkXAxis_{false};
+
+  // Selection-change trigger (D26)
+  bool selectionDirty_{false};
 };
 
 } // namespace dc

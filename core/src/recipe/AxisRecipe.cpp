@@ -40,6 +40,17 @@ static std::string makeColorStyleCmd(Id drawItemId, const float color[4]) {
   return buf;
 }
 
+// Helper: emit setDrawItemStyle for dash pattern
+static std::string makeDashStyleCmd(Id drawItemId, float dashLen, float gapLen) {
+  auto diStr = std::to_string(drawItemId);
+  char buf[256];
+  std::snprintf(buf, sizeof(buf),
+    R"({"cmd":"setDrawItemStyle","drawItemId":%s,"dashLength":%.9g,"gapLength":%.9g})",
+    diStr.c_str(),
+    static_cast<double>(dashLen), static_cast<double>(gapLen));
+  return buf;
+}
+
 // Helper to create a buf/geom/di group for lineAA@1 rect4
 static void buildLineAAGroup(RecipeBuildResult& result,
                               Id bufId, Id geomId, Id diId,
@@ -151,8 +162,16 @@ RecipeBuildResult AxisRecipe::build() const {
                      gridLayer, config_.name + "_hGrid");
     buildLineAAGroup(result, vGridBufferId(), vGridGeomId(), vGridDrawItemId(),
                      gridLayer, config_.name + "_vGrid");
-    result.createCommands.push_back(makeStyleCmd(hGridDrawItemId(), config_.gridColor, config_.gridLineWidth));
-    result.createCommands.push_back(makeStyleCmd(vGridDrawItemId(), config_.gridColor, config_.gridLineWidth));
+    // D78: apply grid opacity to alpha channel
+    float gc[4] = {config_.gridColor[0], config_.gridColor[1],
+                   config_.gridColor[2], config_.gridColor[3] * config_.gridOpacity};
+    result.createCommands.push_back(makeStyleCmd(hGridDrawItemId(), gc, config_.gridLineWidth));
+    result.createCommands.push_back(makeStyleCmd(vGridDrawItemId(), gc, config_.gridLineWidth));
+    // D78: dash pattern
+    if (config_.gridDashLength > 0.0f) {
+      result.createCommands.push_back(makeDashStyleCmd(hGridDrawItemId(), config_.gridDashLength, config_.gridGapLength));
+      result.createCommands.push_back(makeDashStyleCmd(vGridDrawItemId(), config_.gridDashLength, config_.gridGapLength));
+    }
   }
 
   // ---- D12: Optional AA tick lines (slots 16-21) ----

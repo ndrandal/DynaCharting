@@ -68,6 +68,10 @@ type DrawItem = {
   geometryId: number;
   pipeline: PipelineId;
   transformId: number | null; // D1.5
+  color: Float32Array;     // [r,g,b,a] per draw item
+  colorUp: Float32Array;   // candle bullish color
+  colorDown: Float32Array; // candle bearish color
+  clipRect: Float32Array | null; // [ndcX0, ndcY0, ndcX1, ndcY1] scissor in NDC
 };
 
 // -------------------- D1.5 Transform resources --------------------
@@ -127,6 +131,8 @@ type ProgramBundle = {
   // uniforms
   u_transform?: WebGLUniformLocation | null;
   u_pointSize?: WebGLUniformLocation | null;
+  u_colorUp?: WebGLUniformLocation | null;
+  u_colorDown?: WebGLUniformLocation | null;
 
   // text uniforms
   u_atlas?: WebGLUniformLocation | null;
@@ -224,7 +230,7 @@ export class EngineHost {
   private droppedBatches = 0;
 
   private readonly MAX_QUEUE = 512;
-  private readonly MAX_BATCHES_PER_FRAME = 64;
+  private readonly MAX_BATCHES_PER_FRAME = 4;
 
   // Core ingest stub
   private core = new CoreIngestStub();
@@ -239,6 +245,9 @@ export class EngineHost {
   // D1.5 transforms
   private transforms = new Map<number, TransformResource>();
   private readonly IDENTITY_MAT3 = new Float32Array([1,0,0, 0,1,0, 0,0,1]);
+
+  // Dirty tracking — skip rendering when nothing changed
+  private frameDirty = true;
 
   // Errors
   private lastErrors: EngineError[] = [];
@@ -289,7 +298,8 @@ export class EngineHost {
     this.gl = gl;
 
     gl.disable(gl.DEPTH_TEST);
-    gl.disable(gl.BLEND);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.clearColor(0.02, 0.07, 0.10, 1.0);
 
     this.hud?.setGl(gl.getParameter(gl.VERSION) as string);
@@ -308,10 +318,11 @@ export class EngineHost {
        }`,
       `#version 300 es
        precision highp float;
+       uniform vec4 u_color;
        out vec4 outColor;
-       void main() { outColor = vec4(0.85, 0.15, 0.20, 1.0); }`,
+       void main() { outColor = u_color; }`,
       ["a_pos"],
-      ["u_transform", "u_pointSize"]
+      ["u_transform", "u_pointSize", "u_color"]
     );
 
     // ---- instanced rect ----
@@ -339,10 +350,11 @@ export class EngineHost {
        }`,
       `#version 300 es
        precision highp float;
+       uniform vec4 u_color;
        out vec4 outColor;
-       void main() { outColor = vec4(0.15, 0.75, 0.25, 1.0); }`,
+       void main() { outColor = u_color; }`,
       ["a_rect"],
-      ["u_transform"]
+      ["u_transform", "u_color"]
     );
 
     // ---- instanced candle ----
@@ -354,6 +366,8 @@ export class EngineHost {
        in vec2 a_c1; // close, halfWidth
        uniform mat3 u_transform;
 
+       flat out float v_isBullish;
+
        void main() {
          float x = a_c0.x;
          float open = a_c0.y;
@@ -361,6 +375,8 @@ export class EngineHost {
          float low  = a_c0.w;
          float close = a_c1.x;
          float hw = a_c1.y;
+
+         v_isBullish = (close >= open) ? 1.0 : 0.0;
 
          float body0 = min(open, close);
          float body1 = max(open, close);
@@ -393,10 +409,13 @@ export class EngineHost {
        }`,
       `#version 300 es
        precision highp float;
+       uniform vec4 u_colorUp;
+       uniform vec4 u_colorDown;
+       flat in float v_isBullish;
        out vec4 outColor;
-       void main() { outColor = vec4(0.20, 0.55, 0.95, 1.0); }`,
+       void main() { outColor = (v_isBullish > 0.5) ? u_colorUp : u_colorDown; }`,
       ["a_c0", "a_c1"],
-      ["u_transform"]
+      ["u_transform", "u_colorUp", "u_colorDown"]
     );
 
     // ---- textSDF@1 ----
@@ -511,6 +530,7 @@ export class EngineHost {
       return;
     }
     this.dataQueue.push(batch);
+    this.frameDirty = true;
   }
 
   applyDataBatch(batch: ArrayBuffer) {
@@ -591,6 +611,8 @@ export class EngineHost {
     if (typeof cmd !== "string") return { ok: false, error: "Control: missing cmd" };
 
     try {
+      this.frameDirty = true;
+
       if (cmd === "createBuffer") {
         const id = toU32AllowZero(obj.id);
         if (obj.id === undefined) throw new Error("createBuffer: missing id");
@@ -728,6 +750,40 @@ export class EngineHost {
         return { ok: true };
       }
 
+      // ---- per-draw-item color ----
+      if (cmd === "setDrawItemColor") {
+        const id = toU32AllowZero(obj.id);
+        if (obj.id === undefined) throw new Error("setDrawItemColor: missing id");
+        const di = this.drawItems.get(id);
+        if (!di) throw new Error("setDrawItemColor: drawItem not found");
+        if (Array.isArray(obj.color) && obj.color.length >= 4) di.color = new Float32Array(obj.color);
+        if (Array.isArray(obj.colorUp) && obj.colorUp.length >= 4) di.colorUp = new Float32Array(obj.colorUp);
+        if (Array.isArray(obj.colorDown) && obj.colorDown.length >= 4) di.colorDown = new Float32Array(obj.colorDown);
+        return { ok: true };
+      }
+
+      // ---- per-draw-item clip rect (NDC scissor) ----
+      if (cmd === "setDrawItemClipRect") {
+        const id = toU32AllowZero(obj.id);
+        if (obj.id === undefined) throw new Error("setDrawItemClipRect: missing id");
+        const di = this.drawItems.get(id);
+        if (!di) throw new Error("setDrawItemClipRect: drawItem not found");
+        if (Array.isArray(obj.rect) && obj.rect.length >= 4) {
+          di.clipRect = new Float32Array(obj.rect); // [ndcX0, ndcY0, ndcX1, ndcY1]
+        } else {
+          di.clipRect = null; // clear clip
+        }
+        return { ok: true };
+      }
+
+      // ---- clear color ----
+      if (cmd === "setClearColor") {
+        if (!this.gl) throw new Error("setClearColor: no GL context");
+        const r = Number(obj.r ?? 0), g = Number(obj.g ?? 0), b = Number(obj.b ?? 0), a = Number(obj.a ?? 1);
+        this.gl.clearColor(r, g, b, a);
+        return { ok: true };
+      }
+
       // ---- debug ----
       if (cmd === "setDebug") {
         const showBounds = obj.showBounds;
@@ -744,6 +800,9 @@ export class EngineHost {
       return { ok: false, error: e?.message ?? String(e) };
     }
   }
+
+  /** Mark the frame as needing a re-render (call after external interaction like pan/zoom). */
+  markDirty() { this.frameDirty = true; }
 
   // Convenience
   createBuffer(bufferId: number) {
@@ -764,7 +823,15 @@ export class EngineHost {
   private createDrawItem(id: number, geometryId: number, pipeline: PipelineId) {
     if (!this.geometries.has(geometryId)) throw new Error("createDrawItem: geometry not found");
     if (!PIPELINES[pipeline]) throw new Error(`createDrawItem: unknown pipeline '${pipeline}'`);
-    this.drawItems.set(id, { id, geometryId, pipeline, transformId: null });
+    // Default colors match previous hardcoded values
+    const color = pipeline === "instancedRect@1"
+      ? new Float32Array([0.15, 0.75, 0.25, 1.0])
+      : pipeline === "instancedCandle@1"
+        ? new Float32Array([0.20, 0.55, 0.95, 1.0])
+        : new Float32Array([0.85, 0.15, 0.20, 1.0]); // triSolid/line2d/points
+    const colorUp = new Float32Array([0.20, 0.55, 0.95, 1.0]);
+    const colorDown = new Float32Array([0.20, 0.55, 0.95, 1.0]);
+    this.drawItems.set(id, { id, geometryId, pipeline, transformId: null, color, colorUp, colorDown, clipRect: null });
   }
 
   deleteDrawItem(id: number) {
@@ -797,6 +864,11 @@ export class EngineHost {
     if (!di) throw new Error("setDrawItemPipeline: drawItem not found");
     if (!PIPELINES[pipeline]) throw new Error(`setDrawItemPipeline: unknown pipeline '${pipeline}'`);
     di.pipeline = pipeline;
+  }
+
+  /** Expose raw CPU buffer bytes (e.g. for OHLC data lookup from main thread). */
+  getBufferBytes(bufferId: number): Uint8Array {
+    return this.core.getBufferBytes(bufferId);
   }
 
   // -------------------- stats/debug --------------------
@@ -869,7 +941,10 @@ export class EngineHost {
   // -------------------- loop --------------------
   private readonly tick = (t: number) => {
     if (!this.running) return;
-    this.renderOnce();
+    if (this.frameDirty) {
+      this.frameDirty = false;
+      this.renderOnce();
+    }
     this.updateHud(t);
     this.raf = requestAnimationFrame(this.tick);
   };
@@ -887,6 +962,7 @@ export class EngineHost {
       this.canvas.width = w;
       this.canvas.height = h;
       this.gl.viewport(0, 0, w, h);
+      this.frameDirty = true;
     }
   };
 
@@ -947,6 +1023,17 @@ export class EngineHost {
         continue;
       }
 
+      // scissor clip rect (NDC → pixel)
+      if (di.clipRect) {
+        const cr = di.clipRect;
+        const px = ((cr[0] + 1) / 2) * gl.drawingBufferWidth;
+        const py = ((cr[1] + 1) / 2) * gl.drawingBufferHeight;
+        const pw = ((cr[2] - cr[0]) / 2) * gl.drawingBufferWidth;
+        const ph = ((cr[3] - cr[1]) / 2) * gl.drawingBufferHeight;
+        gl.enable(gl.SCISSOR_TEST);
+        gl.scissor(px | 0, py | 0, Math.max(1, pw | 0), Math.max(1, ph | 0));
+      }
+
       // dispatch
       if (di.pipeline === "triSolid@1") this.drawPos2(di, g as VertexGeometry, "triangles");
       else if (di.pipeline === "line2d@1") this.drawPos2(di, g as VertexGeometry, "lines");
@@ -954,6 +1041,11 @@ export class EngineHost {
       else if (di.pipeline === "instancedRect@1") this.drawInstancedRect(di, g as InstancedGeometry);
       else if (di.pipeline === "instancedCandle@1") this.drawInstancedCandle(di, g as InstancedGeometry);
       else if (di.pipeline === "textSDF@1") this.drawTextSdf(di, g as InstancedGeometry);
+
+      // restore scissor
+      if (di.clipRect) {
+        gl.disable(gl.SCISSOR_TEST);
+      }
     }
 
     // timing + p95
@@ -1049,6 +1141,7 @@ export class EngineHost {
 
     gl.uniformMatrix3fv(p.u_transform!, false, this.resolveTransformMat(di));
     gl.uniform1f(p.u_pointSize!, mode === "points" ? 6.0 : 1.0);
+    if (p.u_color) gl.uniform4fv(p.u_color, di.color);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, gb.gl);
     gl.enableVertexAttribArray(p.a_pos!);
@@ -1075,6 +1168,7 @@ export class EngineHost {
     gl.useProgram(p.prog);
 
     gl.uniformMatrix3fv(p.u_transform!, false, this.resolveTransformMat(di));
+    if (p.u_color) gl.uniform4fv(p.u_color, di.color);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, gb.gl);
     gl.enableVertexAttribArray(p.a_rect!);
@@ -1098,6 +1192,8 @@ export class EngineHost {
     gl.useProgram(p.prog);
 
     gl.uniformMatrix3fv(p.u_transform!, false, this.resolveTransformMat(di));
+    if (p.u_colorUp) gl.uniform4fv(p.u_colorUp, di.colorUp);
+    if (p.u_colorDown) gl.uniform4fv(p.u_colorDown, di.colorDown);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, gb.gl);
 
@@ -1159,6 +1255,7 @@ export class EngineHost {
   private syncGpuBufferFull(bufferId: number) {
     const gl = this.gl!;
     const cpu = this.core.getBufferBytes(bufferId);
+    if (cpu.byteLength === 0) return;
 
     let gb = this.gpuBuffers.get(bufferId);
     if (!gb) {
@@ -1169,7 +1266,14 @@ export class EngineHost {
     }
 
     gl.bindBuffer(gl.ARRAY_BUFFER, gb.gl);
-    gl.bufferData(gl.ARRAY_BUFFER, cpu, gl.DYNAMIC_DRAW);
+
+    if (cpu.byteLength === gb.gpuByteLength) {
+      // Same size — sub-update avoids GPU reallocation
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, cpu);
+    } else {
+      // Size changed — must reallocate
+      gl.bufferData(gl.ARRAY_BUFFER, cpu, gl.DYNAMIC_DRAW);
+    }
 
     gb.gpuByteLength = cpu.byteLength;
     this.stats.uploadedBytesThisFrame += cpu.byteLength;
@@ -1292,6 +1396,8 @@ export class EngineHost {
       if (u === "u_pointSize") out.u_pointSize = loc;
       if (u === "u_atlas") out.u_atlas = loc;
       if (u === "u_color") out.u_color = loc;
+      if (u === "u_colorUp") out.u_colorUp = loc;
+      if (u === "u_colorDown") out.u_colorDown = loc;
       if (u === "u_pxRange") out.u_pxRange = loc;
     }
 

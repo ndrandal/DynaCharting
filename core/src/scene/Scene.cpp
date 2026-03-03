@@ -145,18 +145,21 @@ std::vector<Id> Scene::paneIds() const {
   std::vector<Id> out;
   out.reserve(panes_.size());
   for (auto& kv : panes_) out.push_back(kv.first);
+  std::sort(out.begin(), out.end());
   return out;
 }
 std::vector<Id> Scene::layerIds() const {
   std::vector<Id> out;
   out.reserve(layers_.size());
   for (auto& kv : layers_) out.push_back(kv.first);
+  std::sort(out.begin(), out.end());
   return out;
 }
 std::vector<Id> Scene::drawItemIds() const {
   std::vector<Id> out;
   out.reserve(drawItems_.size());
   for (auto& kv : drawItems_) out.push_back(kv.first);
+  std::sort(out.begin(), out.end());
   return out;
 }
 std::vector<Id> Scene::bufferIds() const {

@@ -20,7 +20,9 @@ PipelineCatalog::PipelineCatalog() {
   reg("instancedCandle", 1, VertexFormat::Candle6,  DrawMode::InstancedTriangles, 12);
   reg("textSDF",         1, VertexFormat::Glyph8,  DrawMode::InstancedTriangles,  6);
   reg("lineAA",          1, VertexFormat::Rect4,  DrawMode::InstancedTriangles,  6);
-  reg("triAA",           1, VertexFormat::Pos2Alpha, DrawMode::Triangles,        0);
+  reg("triAA",           1, VertexFormat::Pos2Alpha,  DrawMode::Triangles,        0);
+  reg("triGradient",     1, VertexFormat::Pos2Color4, DrawMode::Triangles,        0);
+  reg("texturedQuad",    1, VertexFormat::Pos2Uv4,   DrawMode::InstancedTriangles, 6);
 }
 
 const PipelineSpec* PipelineCatalog::find(const std::string& key) const {

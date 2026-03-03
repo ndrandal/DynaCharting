@@ -20,6 +20,10 @@ public:
   // Get the GL buffer name for a given ID (0 if not uploaded yet).
   GLuint getGlBuffer(Id bufferId) const;
 
+  // CPU-side data access (D26: for indexed instanced gather).
+  const std::uint8_t* getCpuData(Id bufferId) const;
+  std::uint32_t getCpuDataSize(Id bufferId) const;
+
 private:
   struct Entry {
     std::vector<std::uint8_t> cpuData;

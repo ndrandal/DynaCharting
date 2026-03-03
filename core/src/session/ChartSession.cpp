@@ -3,6 +3,7 @@
 #include "dc/ingest/IngestProcessor.hpp"
 #include "dc/data/DataSource.hpp"
 #include "dc/viewport/Viewport.hpp"
+#include "dc/event/EventBus.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -24,6 +25,10 @@ void ChartSession::setConfig(const ChartSessionConfig& cfg) {
 void ChartSession::setViewport(Viewport* vp) {
   viewport_ = vp;
   loop_.setViewport(vp);
+}
+
+void ChartSession::setEventBus(EventBus* bus) {
+  eventBus_ = bus;
 }
 
 void ChartSession::addPaneViewport(Id paneId, Viewport* vp, Id transformId) {
@@ -68,6 +73,17 @@ void ChartSession::removePaneViewport(Id paneId) {
 }
 
 void ChartSession::clearPaneViewports() {
+  // Clean up managed transforms that are only used by pane viewports
+  for (const auto& pv : paneViewports_) {
+    if (pv.transformId == 0) continue;
+    bool usedBySlot = false;
+    for (const auto& [h, s] : slots_) {
+      if (s.sharedTransformId == pv.transformId) { usedBySlot = true; break; }
+    }
+    if (!usedBySlot) {
+      managedTransforms_.erase(pv.transformId);
+    }
+  }
   paneViewports_.clear();
 }
 
@@ -237,6 +253,17 @@ void ChartSession::setRecomputeOnViewportChange(RecipeHandle handle, bool enable
   }
 }
 
+void ChartSession::setRecomputeOnSelectionChange(RecipeHandle handle, bool enable) {
+  auto it = slots_.find(handle);
+  if (it != slots_.end()) {
+    it->second.recomputeOnSelectionChange = enable;
+  }
+}
+
+void ChartSession::notifySelectionChanged() {
+  selectionDirty_ = true;
+}
+
 FrameResult ChartSession::update(DataSource& source) {
   FrameResult result;
 
@@ -245,6 +272,11 @@ FrameResult ChartSession::update(DataSource& source) {
 
   if (!touched.empty()) {
     result.dataChanged = true;
+    if (eventBus_) {
+      EventData ev;
+      ev.type = EventType::DataChanged;
+      eventBus_->emit(ev);
+    }
 
     // 2. Run compute callbacks for dependent recipes
     std::unordered_set<Id> touchedSet(touched.begin(), touched.end());
@@ -308,27 +340,57 @@ FrameResult ChartSession::update(DataSource& source) {
     }
 
     result.viewportChanged = true;
+    if (eventBus_) {
+      EventData ev;
+      ev.type = EventType::ViewportChanged;
+      eventBus_->emit(ev);
+    }
   } else if (viewport_ && !managedTransforms_.empty()) {
     // Legacy single-viewport mode
     for (Id xfId : managedTransforms_) {
       syncTransform(xfId);
     }
     result.viewportChanged = true;
+    if (eventBus_) {
+      EventData ev;
+      ev.type = EventType::ViewportChanged;
+      eventBus_->emit(ev);
+    }
   }
+
+  // Helper: deduplicated insert into touchedBufferIds
+  auto addUnique = [&result](const std::vector<Id>& ids) {
+    std::unordered_set<Id> existing(result.touchedBufferIds.begin(),
+                                     result.touchedBufferIds.end());
+    for (Id id : ids) {
+      if (existing.insert(id).second) {
+        result.touchedBufferIds.push_back(id);
+      }
+    }
+  };
 
   // 3b. Viewport-triggered recompute (D10.3)
   if (result.viewportChanged) {
     for (auto& [h, slot] : slots_) {
       if (slot.recomputeOnViewportChange && slot.computeCallback) {
-        auto computedIds = slot.computeCallback();
-        for (Id id : computedIds) {
-          bool found = false;
-          for (Id existing : result.touchedBufferIds) {
-            if (existing == id) { found = true; break; }
-          }
-          if (!found) result.touchedBufferIds.push_back(id);
-        }
+        addUnique(slot.computeCallback());
       }
+    }
+  }
+
+  // 3c. Selection-change trigger (D26)
+  if (selectionDirty_) {
+    for (auto& [h, slot] : slots_) {
+      if (slot.recomputeOnSelectionChange && slot.computeCallback) {
+        addUnique(slot.computeCallback());
+      }
+    }
+    result.selectionChanged = true;
+    selectionDirty_ = false;
+    if (eventBus_) {
+      EventData ev;
+      ev.type = EventType::SelectionChanged;
+      eventBus_->emit(ev);
     }
   }
 
@@ -342,14 +404,7 @@ FrameResult ChartSession::update(DataSource& source) {
     auto aggVpTouched = aggManager_.onViewportChanged(ppdu, ingest_, cp_);
     if (!aggVpTouched.empty()) {
       result.resolutionChanged = true;
-      for (Id id : aggVpTouched) {
-        // Add to touched set
-        bool found = false;
-        for (Id existing : result.touchedBufferIds) {
-          if (existing == id) { found = true; break; }
-        }
-        if (!found) result.touchedBufferIds.push_back(id);
-      }
+      addUnique(aggVpTouched);
     }
   }
 
@@ -376,24 +431,26 @@ void ChartSession::syncTransform(Id transformId) {
   if (!viewport_) return;
   auto tp = viewport_->computeTransformParams();
   char buf[512];
-  std::snprintf(buf, sizeof(buf),
+  int n = std::snprintf(buf, sizeof(buf),
     R"({"cmd":"setTransform","id":%llu,"tx":%.9g,"ty":%.9g,"sx":%.9g,"sy":%.9g})",
     static_cast<unsigned long long>(transformId),
     static_cast<double>(tp.tx), static_cast<double>(tp.ty),
     static_cast<double>(tp.sx), static_cast<double>(tp.sy));
-  cp_.applyJsonText(buf);
+  if (n > 0 && n < static_cast<int>(sizeof(buf)))
+    cp_.applyJsonText(buf);
 }
 
 void ChartSession::syncTransformFromViewport(Id transformId, Viewport* vp) {
   if (!vp) return;
   auto tp = vp->computeTransformParams();
   char buf[512];
-  std::snprintf(buf, sizeof(buf),
+  int n = std::snprintf(buf, sizeof(buf),
     R"({"cmd":"setTransform","id":%llu,"tx":%.9g,"ty":%.9g,"sx":%.9g,"sy":%.9g})",
     static_cast<unsigned long long>(transformId),
     static_cast<double>(tp.tx), static_cast<double>(tp.ty),
     static_cast<double>(tp.sx), static_cast<double>(tp.sy));
-  cp_.applyJsonText(buf);
+  if (n > 0 && n < static_cast<int>(sizeof(buf)))
+    cp_.applyJsonText(buf);
 }
 
 void ChartSession::rebuildBindings() {

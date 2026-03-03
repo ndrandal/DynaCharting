@@ -58,7 +58,9 @@ std::vector<Id> LiveIngestLoop::consumeAndUpdate(DataSource& source,
       if (sz < 24) continue;
 
       std::uint32_t numCandles = sz / 24;
+      if (numCandles == 0) continue;
       const auto* data = ingest.getBufferData(b.bufferId);
+      if (!data) continue;
 
       if (config_.autoScrollX) {
         float lastX;

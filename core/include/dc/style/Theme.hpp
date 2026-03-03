@@ -23,15 +23,25 @@ struct Theme {
   float gridLineWidth{1.0f};
   float tickLineWidth{1.0f};
 
+  // D78: Grid dash pattern (0 = solid)
+  float gridDashLength{0.0f};
+  float gridGapLength{0.0f};
+  float gridOpacity{1.0f};  // multiplied into gridColor alpha
+
   // Crosshair / interactive
   float crosshairColor[4] = {0.8f, 0.8f, 0.85f, 0.7f};
 
-  // Line overlays (SMA, Bollinger, etc.)
-  float overlayColors[4][4] = {
+  // Line overlays (SMA, Bollinger, etc.) — 8 slots
+  static constexpr int kMaxOverlayColors = 8;
+  float overlayColors[kMaxOverlayColors][4] = {
     {0.3f, 0.5f, 1.0f, 1.0f},  // blue
     {1.0f, 0.6f, 0.0f, 1.0f},  // orange
     {0.0f, 0.8f, 0.8f, 1.0f},  // cyan
-    {1.0f, 0.3f, 0.7f, 1.0f}   // pink
+    {1.0f, 0.3f, 0.7f, 1.0f},  // pink
+    {0.5f, 1.0f, 0.3f, 1.0f},  // lime
+    {0.9f, 0.4f, 0.9f, 1.0f},  // violet
+    {1.0f, 0.85f, 0.2f, 1.0f}, // gold
+    {0.3f, 0.9f, 0.7f, 1.0f}   // mint
   };
 
   // Volume
@@ -46,11 +56,23 @@ struct Theme {
 
   // Drawing tools
   float drawingColor[4] = {1.0f, 1.0f, 0.0f, 1.0f};
+
+  // D78: Pane borders
+  float paneBorderColor[4] = {0.3f, 0.3f, 0.35f, 1.0f};
+  float paneBorderWidth{0.0f};  // pixels, 0 = no border
+
+  // D78: Pane separators
+  float separatorColor[4] = {0.25f, 0.25f, 0.3f, 1.0f};
+  float separatorWidth{0.0f};  // pixels, 0 = no separator
 };
 
 // Built-in presets
 Theme darkTheme();
 Theme lightTheme();
+Theme midnightTheme();
+Theme neonTheme();
+Theme pastelTheme();
+Theme bloombergTheme();
 
 // ---------- ThemeApplier ----------
 

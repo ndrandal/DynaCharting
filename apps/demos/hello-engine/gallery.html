@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>DynaCharting - Exotic Chart Gallery</title>
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      html, body { height: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+      body { display: flex; flex-direction: column; background: var(--bg, #060810); transition: background 0.4s; overflow: hidden; }
+
+      /* ---- Top bar ---- */
+      #topbar {
+        display: flex; align-items: center; gap: 8px;
+        padding: 8px 14px;
+        background: rgba(0,0,0,0.45); backdrop-filter: blur(14px);
+        border-bottom: 1px solid rgba(255,255,255,0.06);
+        z-index: 10; flex-shrink: 0;
+      }
+      .brand { font-size: 13px; font-weight: 700; letter-spacing: 0.5px; color: var(--fg, #e8e8f0); }
+      .subtitle { font-size: 11px; color: var(--fg-muted, rgba(200,200,208,0.45)); margin-left: 4px; }
+      .sep { width: 1px; height: 18px; background: rgba(255,255,255,0.1); margin: 0 4px; }
+
+      .tb {
+        font: 11px/1 inherit; padding: 5px 12px;
+        background: rgba(255,255,255,0.05); color: var(--fg, #c8c8d0);
+        border: 1px solid rgba(255,255,255,0.07); border-radius: 5px;
+        cursor: pointer; transition: all 0.2s; user-select: none;
+      }
+      .tb:hover { background: rgba(255,255,255,0.1); }
+      .tb.active {
+        background: var(--accent, rgba(59,130,246,0.35));
+        border-color: var(--accent-border, rgba(59,130,246,0.55));
+        color: #fff;
+      }
+
+      #info { margin-left: auto; font-size: 10px; color: var(--fg-muted, rgba(200,200,208,0.4)); }
+
+      /* ---- Canvas ---- */
+      #canvas-wrap { flex: 1; position: relative; }
+      canvas { width: 100%; height: 100%; display: block; }
+
+      /* ---- Panel labels ---- */
+      .plbl {
+        position: absolute;
+        font: bold 11px/1 inherit;
+        color: var(--fg-muted, rgba(200,200,208,0.35));
+        user-select: none; pointer-events: none; transition: color 0.4s;
+        text-transform: uppercase; letter-spacing: 1px;
+      }
+      #lbl-tl { top: 10px; left: 14px; }
+      #lbl-tr { top: 10px; right: 14px; text-align: right; }
+      #lbl-bl { bottom: 10px; left: 14px; }
+      #lbl-br { bottom: 10px; right: 14px; text-align: right; }
+      #lbl-ml { top: 50%; left: 14px; transform: translateY(-50%); }
+      #lbl-mr { top: 50%; right: 14px; transform: translateY(-50%); text-align: right; }
+
+      .plbl .sub {
+        display: block; font-weight: 400; font-size: 9px; margin-top: 2px;
+        opacity: 0.6; letter-spacing: 0; text-transform: none;
+      }
+
+      /* ---- HUD ---- */
+      #hud {
+        position: absolute; right: 14px; bottom: 40px;
+        font: 10px/1.5 inherit; color: var(--fg-muted, rgba(200,200,208,0.4));
+        pointer-events: none;
+      }
+
+      /* ---- Hint ---- */
+      #hint {
+        position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
+        font: 10px/1 inherit; color: var(--fg-muted, rgba(200,200,208,0.3));
+        pointer-events: none; white-space: nowrap;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="topbar">
+      <span class="brand">DynaCharting</span>
+      <span class="subtitle">Exotic Chart Gallery</span>
+      <div class="sep"></div>
+      <button class="tb active" data-theme="midnight">Midnight</button>
+      <button class="tb" data-theme="neon">Neon</button>
+      <button class="tb" data-theme="bloomberg">Bloomberg</button>
+      <button class="tb" data-theme="pastel">Pastel</button>
+      <button class="tb" data-theme="dark">Dark</button>
+      <button class="tb" data-theme="light">Light</button>
+      <span id="info">FPS <span id="fps">0</span> | Draw <span id="draws">0</span></span>
+    </div>
+
+    <div id="canvas-wrap">
+      <canvas id="c"></canvas>
+
+      <div class="plbl" id="lbl-tl">Heikin-Ashi<span class="sub">instancedCandle@1 &middot; smoothed bodies</span></div>
+      <div class="plbl" id="lbl-tr">Renko<span class="sub">instancedRect@1 &middot; reversal bricks</span></div>
+      <div class="plbl" id="lbl-ml">Kagi<span class="sub">line2d@1 &middot; trend reversals</span></div>
+      <div class="plbl" id="lbl-mr">Order Book<span class="sub">triSolid@1 &middot; depth visualization</span></div>
+      <div class="plbl" id="lbl-bl">Correlation<span class="sub">points@1 &middot; cross-asset scatter</span></div>
+      <div class="plbl" id="lbl-br">Equivolume<span class="sub">instancedRect@1 &middot; width = volume</span></div>
+
+      <div id="hud"></div>
+      <div id="hint">1-6: themes &middot; scroll: zoom &middot; drag: pan &middot; dbl-click: reset</div>
+    </div>
+
+    <script type="module" src="/src/main-gallery.ts"></script>
+  </body>
+</html>
