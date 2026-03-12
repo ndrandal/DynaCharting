@@ -1,0 +1,652 @@
+{
+  "version": 1,
+  "viewport": {
+    "width": 1200,
+    "height": 700
+  },
+  "buffers": {
+    "100": {
+      "data": [
+        0.05,
+        3.05,
+        0.95,
+        3.95
+      ]
+    },
+    "103": {
+      "data": [
+        0.05,
+        2.05,
+        0.95,
+        2.95,
+        0.05,
+        1.05,
+        0.95,
+        1.95,
+        0.05,
+        0.05,
+        0.95,
+        0.95
+      ]
+    },
+    "106": {
+      "data": [
+        1.05,
+        2.05,
+        1.95,
+        2.95,
+        1.05,
+        1.05,
+        1.95,
+        1.95,
+        1.05,
+        0.05,
+        1.95,
+        0.95
+      ]
+    },
+    "109": {
+      "data": [
+        2.05,
+        0.05,
+        2.95,
+        0.95,
+        3.05,
+        0.05,
+        3.95,
+        0.95,
+        4.05,
+        0.05,
+        4.95,
+        0.95,
+        5.05,
+        0.05,
+        5.95,
+        0.95,
+        6.05,
+        0.05,
+        6.95,
+        0.95,
+        7.05,
+        0.05,
+        7.95,
+        0.95,
+        8.05,
+        0.05,
+        8.95,
+        0.95,
+        9.05,
+        0.05,
+        9.95,
+        0.95,
+        10.05,
+        0.05,
+        10.95,
+        0.95,
+        11.05,
+        0.05,
+        11.95,
+        0.95
+      ]
+    },
+    "112": {
+      "data": [
+        12.05,
+        1.05,
+        12.95,
+        1.95,
+        12.05,
+        0.05,
+        12.95,
+        0.95,
+        13.05,
+        0.05,
+        13.95,
+        0.95
+      ]
+    },
+    "115": {
+      "data": [
+        12.05,
+        2.05,
+        12.95,
+        2.95,
+        13.05,
+        2.05,
+        13.95,
+        2.95,
+        14.05,
+        2.05,
+        14.95,
+        2.95,
+        15.05,
+        2.05,
+        15.95,
+        2.95,
+        16.05,
+        2.05,
+        16.95,
+        2.95,
+        13.05,
+        1.05,
+        13.95,
+        1.95,
+        14.05,
+        1.05,
+        14.95,
+        1.95,
+        15.05,
+        1.05,
+        15.95,
+        1.95,
+        16.05,
+        1.05,
+        16.95,
+        1.95,
+        14.05,
+        0.05,
+        14.95,
+        0.95,
+        15.05,
+        0.05,
+        15.95,
+        0.95,
+        16.05,
+        0.05,
+        16.95,
+        0.95
+      ]
+    },
+    "118": {
+      "data": [
+        17.05,
+        3.05,
+        17.95,
+        3.95,
+        17.05,
+        2.05,
+        17.95,
+        2.95,
+        17.05,
+        1.05,
+        17.95,
+        1.95,
+        17.05,
+        0.05,
+        17.95,
+        0.95
+      ]
+    }
+  },
+  "transforms": {
+    "50": {
+      "sx": 0.105555556,
+      "sy": 0.475,
+      "tx": -0.95,
+      "ty": -0.95
+    }
+  },
+  "panes": {
+    "1": {
+      "name": "PeriodicTable",
+      "region": {
+        "clipYMin": -0.99,
+        "clipYMax": 0.99,
+        "clipXMin": -0.99,
+        "clipXMax": 0.99
+      },
+      "hasClearColor": true,
+      "clearColor": [
+        0.059,
+        0.09,
+        0.165,
+        1.0
+      ]
+    }
+  },
+  "layers": {
+    "10": {
+      "paneId": 1,
+      "name": "Rects"
+    }
+  },
+  "geometries": {
+    "101": {
+      "vertexBufferId": 100,
+      "format": "rect4",
+      "vertexCount": 1
+    },
+    "104": {
+      "vertexBufferId": 103,
+      "format": "rect4",
+      "vertexCount": 3
+    },
+    "107": {
+      "vertexBufferId": 106,
+      "format": "rect4",
+      "vertexCount": 3
+    },
+    "110": {
+      "vertexBufferId": 109,
+      "format": "rect4",
+      "vertexCount": 10
+    },
+    "113": {
+      "vertexBufferId": 112,
+      "format": "rect4",
+      "vertexCount": 3
+    },
+    "116": {
+      "vertexBufferId": 115,
+      "format": "rect4",
+      "vertexCount": 12
+    },
+    "119": {
+      "vertexBufferId": 118,
+      "format": "rect4",
+      "vertexCount": 4
+    }
+  },
+  "drawItems": {
+    "102": {
+      "layerId": 10,
+      "name": "Hydrogen",
+      "pipeline": "instancedRect@1",
+      "geometryId": 101,
+      "transformId": 50,
+      "color": [
+        0.961,
+        0.62,
+        0.043,
+        0.85
+      ],
+      "cornerRadius": 4.0
+    },
+    "105": {
+      "layerId": 10,
+      "name": "Alkali",
+      "pipeline": "instancedRect@1",
+      "geometryId": 104,
+      "transformId": 50,
+      "color": [
+        0.937,
+        0.267,
+        0.267,
+        0.85
+      ],
+      "cornerRadius": 4.0
+    },
+    "108": {
+      "layerId": 10,
+      "name": "AlkalineEarth",
+      "pipeline": "instancedRect@1",
+      "geometryId": 107,
+      "transformId": 50,
+      "color": [
+        0.976,
+        0.451,
+        0.086,
+        0.85
+      ],
+      "cornerRadius": 4.0
+    },
+    "111": {
+      "layerId": 10,
+      "name": "Transition",
+      "pipeline": "instancedRect@1",
+      "geometryId": 110,
+      "transformId": 50,
+      "color": [
+        0.231,
+        0.51,
+        0.965,
+        0.85
+      ],
+      "cornerRadius": 4.0
+    },
+    "114": {
+      "layerId": 10,
+      "name": "OtherMetals",
+      "pipeline": "instancedRect@1",
+      "geometryId": 113,
+      "transformId": 50,
+      "color": [
+        0.024,
+        0.714,
+        0.831,
+        0.85
+      ],
+      "cornerRadius": 4.0
+    },
+    "117": {
+      "layerId": 10,
+      "name": "Nonmetals",
+      "pipeline": "instancedRect@1",
+      "geometryId": 116,
+      "transformId": 50,
+      "color": [
+        0.063,
+        0.725,
+        0.506,
+        0.85
+      ],
+      "cornerRadius": 4.0
+    },
+    "120": {
+      "layerId": 10,
+      "name": "NobleGases",
+      "pipeline": "instancedRect@1",
+      "geometryId": 119,
+      "transformId": 50,
+      "color": [
+        0.659,
+        0.333,
+        0.969,
+        0.85
+      ],
+      "cornerRadius": 4.0
+    }
+  },
+  "textOverlay": {
+    "fontSize": 11,
+    "color": "#ffffff",
+    "labels": [
+      {
+        "clipX": -0.897222,
+        "clipY": 0.7125,
+        "text": "H",
+        "align": "c",
+        "color": "#ffffff",
+        "fontSize": 11
+      },
+      {
+        "clipX": 0.897222,
+        "clipY": 0.7125,
+        "text": "He",
+        "align": "c",
+        "color": "#ffffff",
+        "fontSize": 11
+      },
+      {
+        "clipX": -0.897222,
+        "clipY": 0.2375,
+        "text": "Li",
+        "align": "c",
+        "color": "#ffffff",
+        "fontSize": 11
+      },
+      {
+        "clipX": -0.791667,
+        "clipY": 0.2375,
+        "text": "Be",
+        "align": "c",
+        "color": "#ffffff",
+        "fontSize": 11
+      },
+      {
+        "clipX": 0.369444,
+        "clipY": 0.2375,
+        "text": "B",
+        "align": "c",
+        "color": "#ffffff",
+        "fontSize": 11
+      },
+      {
+        "clipX": 0.475,
+        "clipY": 0.2375,
+        "text": "C",
+        "align": "c",
+        "color": "#ffffff",
+        "fontSize": 11
+      },
+      {
+        "clipX": 0.580556,
+        "clipY": 0.2375,
+        "text": "N",
+        "align": "c",
+        "color": "#ffffff",
+        "fontSize": 11
+      },
+      {
+        "clipX": 0.686111,
+        "clipY": 0.2375,
+        "text": "O",
+        "align": "c",
+        "color": "#ffffff",
+        "fontSize": 11
+      },
+      {
+        "clipX": 0.791667,
+        "clipY": 0.2375,
+        "text": "F",
+        "align": "c",
+        "color": "#ffffff",
+        "fontSize": 11
+      },
+      {
+        "clipX": 0.897222,
+        "clipY": 0.2375,
+        "text": "Ne",
+        "align": "c",
+        "color": "#ffffff",
+        "fontSize": 11
+      },
+      {
+        "clipX": -0.897222,
+        "clipY": -0.2375,
+        "text": "Na",
+        "align": "c",
+        "color": "#ffffff",
+        "fontSize": 11
+      },
+      {
+        "clipX": -0.791667,
+        "clipY": -0.2375,
+        "text": "Mg",
+        "align": "c",
+        "color": "#ffffff",
+        "fontSize": 11
+      },
+      {
+        "clipX": 0.369444,
+        "clipY": -0.2375,
+        "text": "Al",
+        "align": "c",
+        "color": "#ffffff",
+        "fontSize": 11
+      },
+      {
+        "clipX": 0.475,
+        "clipY": -0.2375,
+        "text": "Si",
+        "align": "c",
+        "color": "#ffffff",
+        "fontSize": 11
+      },
+      {
+        "clipX": 0.580556,
+        "clipY": -0.2375,
+        "text": "P",
+        "align": "c",
+        "color": "#ffffff",
+        "fontSize": 11
+      },
+      {
+        "clipX": 0.686111,
+        "clipY": -0.2375,
+        "text": "S",
+        "align": "c",
+        "color": "#ffffff",
+        "fontSize": 11
+      },
+      {
+        "clipX": 0.791667,
+        "clipY": -0.2375,
+        "text": "Cl",
+        "align": "c",
+        "color": "#ffffff",
+        "fontSize": 11
+      },
+      {
+        "clipX": 0.897222,
+        "clipY": -0.2375,
+        "text": "Ar",
+        "align": "c",
+        "color": "#ffffff",
+        "fontSize": 11
+      },
+      {
+        "clipX": -0.897222,
+        "clipY": -0.7125,
+        "text": "K",
+        "align": "c",
+        "color": "#ffffff",
+        "fontSize": 11
+      },
+      {
+        "clipX": -0.791667,
+        "clipY": -0.7125,
+        "text": "Ca",
+        "align": "c",
+        "color": "#ffffff",
+        "fontSize": 11
+      },
+      {
+        "clipX": -0.686111,
+        "clipY": -0.7125,
+        "text": "Sc",
+        "align": "c",
+        "color": "#ffffff",
+        "fontSize": 11
+      },
+      {
+        "clipX": -0.580556,
+        "clipY": -0.7125,
+        "text": "Ti",
+        "align": "c",
+        "color": "#ffffff",
+        "fontSize": 11
+      },
+      {
+        "clipX": -0.475,
+        "clipY": -0.7125,
+        "text": "V",
+        "align": "c",
+        "color": "#ffffff",
+        "fontSize": 11
+      },
+      {
+        "clipX": -0.369444,
+        "clipY": -0.7125,
+        "text": "Cr",
+        "align": "c",
+        "color": "#ffffff",
+        "fontSize": 11
+      },
+      {
+        "clipX": -0.263889,
+        "clipY": -0.7125,
+        "text": "Mn",
+        "align": "c",
+        "color": "#ffffff",
+        "fontSize": 11
+      },
+      {
+        "clipX": -0.158333,
+        "clipY": -0.7125,
+        "text": "Fe",
+        "align": "c",
+        "color": "#ffffff",
+        "fontSize": 11
+      },
+      {
+        "clipX": -0.052778,
+        "clipY": -0.7125,
+        "text": "Co",
+        "align": "c",
+        "color": "#ffffff",
+        "fontSize": 11
+      },
+      {
+        "clipX": 0.052778,
+        "clipY": -0.7125,
+        "text": "Ni",
+        "align": "c",
+        "color": "#ffffff",
+        "fontSize": 11
+      },
+      {
+        "clipX": 0.158333,
+        "clipY": -0.7125,
+        "text": "Cu",
+        "align": "c",
+        "color": "#ffffff",
+        "fontSize": 11
+      },
+      {
+        "clipX": 0.263889,
+        "clipY": -0.7125,
+        "text": "Zn",
+        "align": "c",
+        "color": "#ffffff",
+        "fontSize": 11
+      },
+      {
+        "clipX": 0.369444,
+        "clipY": -0.7125,
+        "text": "Ga",
+        "align": "c",
+        "color": "#ffffff",
+        "fontSize": 11
+      },
+      {
+        "clipX": 0.475,
+        "clipY": -0.7125,
+        "text": "Ge",
+        "align": "c",
+        "color": "#ffffff",
+        "fontSize": 11
+      },
+      {
+        "clipX": 0.580556,
+        "clipY": -0.7125,
+        "text": "As",
+        "align": "c",
+        "color": "#ffffff",
+        "fontSize": 11
+      },
+      {
+        "clipX": 0.686111,
+        "clipY": -0.7125,
+        "text": "Se",
+        "align": "c",
+        "color": "#ffffff",
+        "fontSize": 11
+      },
+      {
+        "clipX": 0.791667,
+        "clipY": -0.7125,
+        "text": "Br",
+        "align": "c",
+        "color": "#ffffff",
+        "fontSize": 11
+      },
+      {
+        "clipX": 0.897222,
+        "clipY": -0.7125,
+        "text": "Kr",
+        "align": "c",
+        "color": "#ffffff",
+        "fontSize": 11
+      },
+      {
+        "clipX": 0.0,
+        "clipY": 0.98,
+        "text": "Periodic Table (H-Kr)",
+        "align": "c",
+        "color": "#e2e8f0",
+        "fontSize": 16
+      }
+    ]
+  }
+}
