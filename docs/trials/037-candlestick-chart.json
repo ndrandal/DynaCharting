@@ -1,0 +1,234 @@
+{
+  "version": 1,
+  "viewport": { "width": 1000, "height": 700 },
+  "buffers": {
+    "100": {
+      "_comment": "30 OHLC candles: [x, open, high, low, close, halfWidth=0.4]",
+      "data": [
+        1, 150.00, 152.50, 149.00, 151.80, 0.4,
+        2, 151.80, 153.20, 150.50, 152.40, 0.4,
+        3, 152.40, 154.80, 151.90, 154.30, 0.4,
+        4, 154.30, 155.50, 153.00, 153.80, 0.4,
+        5, 153.80, 154.90, 152.20, 154.50, 0.4,
+        6, 154.50, 157.00, 154.00, 156.70, 0.4,
+        7, 156.70, 158.20, 155.80, 157.50, 0.4,
+        8, 157.50, 158.00, 155.50, 156.00, 0.4,
+        9, 156.00, 156.80, 153.50, 154.20, 0.4,
+        10, 154.20, 155.50, 153.00, 155.30, 0.4,
+        11, 155.30, 157.80, 155.00, 157.20, 0.4,
+        12, 157.20, 159.00, 156.50, 158.40, 0.4,
+        13, 158.40, 160.50, 157.80, 160.10, 0.4,
+        14, 160.10, 161.20, 158.50, 159.00, 0.4,
+        15, 159.00, 159.80, 157.00, 157.50, 0.4,
+        16, 157.50, 158.50, 156.00, 158.20, 0.4,
+        17, 158.20, 160.00, 157.50, 159.80, 0.4,
+        18, 159.80, 162.00, 159.00, 161.50, 0.4,
+        19, 161.50, 163.50, 160.80, 163.00, 0.4,
+        20, 163.00, 164.00, 161.50, 162.00, 0.4,
+        21, 162.00, 163.20, 160.50, 161.20, 0.4,
+        22, 161.20, 162.80, 160.00, 162.50, 0.4,
+        23, 162.50, 165.00, 162.00, 164.80, 0.4,
+        24, 164.80, 166.50, 164.00, 166.00, 0.4,
+        25, 166.00, 167.20, 164.50, 165.00, 0.4,
+        26, 165.00, 166.00, 163.50, 164.20, 0.4,
+        27, 164.20, 166.80, 163.80, 166.50, 0.4,
+        28, 166.50, 168.00, 165.50, 167.80, 0.4,
+        29, 167.80, 170.00, 167.00, 169.50, 0.4,
+        30, 169.50, 170.50, 168.00, 170.00, 0.4
+      ]
+    },
+    "110": {
+      "_comment": "Price grid: 5 horizontal lines at Y=150,155,160,165,170 [x0,y0,x1,y1]",
+      "data": [
+        0, 150, 31, 150,
+        0, 155, 31, 155,
+        0, 160, 31, 160,
+        0, 165, 31, 165,
+        0, 170, 31, 170
+      ]
+    },
+    "120": {
+      "_comment": "Volume up bars (21 bars, close>=open): [x-0.4, 0, x+0.4, volume]",
+      "data": [
+        0.6, 0, 1.4, 12.5,
+        1.6, 0, 2.4, 10.8,
+        2.6, 0, 3.4, 14.2,
+        4.6, 0, 5.4, 9.7,
+        5.6, 0, 6.4, 16.8,
+        6.6, 0, 7.4, 13.5,
+        9.6, 0, 10.4, 10.2,
+        10.6, 0, 11.4, 14.7,
+        11.6, 0, 12.4, 17.3,
+        12.6, 0, 13.4, 19.1,
+        15.6, 0, 16.4, 11.6,
+        16.6, 0, 17.4, 13.2,
+        17.6, 0, 18.4, 18.5,
+        18.6, 0, 19.4, 20.3,
+        21.6, 0, 22.4, 11.7,
+        22.6, 0, 23.4, 16.4,
+        23.6, 0, 24.4, 18.9,
+        26.6, 0, 27.4, 15.8,
+        27.6, 0, 28.4, 17.6,
+        28.6, 0, 29.4, 21.5,
+        29.6, 0, 30.4, 16.3
+      ]
+    },
+    "121": {
+      "_comment": "Volume down bars (9 bars, close<open): [x-0.4, 0, x+0.4, volume]",
+      "data": [
+        3.6, 0, 4.4, 11.3,
+        7.6, 0, 8.4, 12.1,
+        8.6, 0, 9.4, 15.6,
+        13.6, 0, 14.4, 13.8,
+        14.6, 0, 15.4, 12.4,
+        19.6, 0, 20.4, 14.6,
+        20.6, 0, 21.4, 12.9,
+        24.6, 0, 25.4, 14.2,
+        25.6, 0, 26.4, 13.5
+      ]
+    },
+    "130": {
+      "_comment": "Volume grid: 4 horizontal lines at Y=5,10,15,20 [x0,y0,x1,y1]",
+      "data": [
+        0, 5, 31, 5,
+        0, 10, 31, 10,
+        0, 15, 31, 15,
+        0, 20, 31, 20
+      ]
+    }
+  },
+  "transforms": {
+    "50": {
+      "_comment": "Price: X=[0,31]->clipX[-0.95,0.95], Y=[145,175]->clipY[-0.36,0.95]",
+      "sx": 0.0612903226,
+      "sy": 0.0436666667,
+      "tx": -0.95,
+      "ty": -6.69166667
+    },
+    "51": {
+      "_comment": "Volume: X=[0,31]->clipX[-0.95,0.95], Y=[0,25]->clipY[-0.95,-0.39]",
+      "sx": 0.0612903226,
+      "sy": 0.0224,
+      "tx": -0.95,
+      "ty": -0.95
+    }
+  },
+  "panes": {
+    "1": {
+      "name": "Price",
+      "region": {
+        "clipYMin": -0.36,
+        "clipYMax": 0.95,
+        "clipXMin": -0.95,
+        "clipXMax": 0.95
+      },
+      "hasClearColor": true,
+      "clearColor": [0.0588, 0.0902, 0.1647, 1.0]
+    },
+    "2": {
+      "name": "Volume",
+      "region": {
+        "clipYMin": -0.95,
+        "clipYMax": -0.39,
+        "clipXMin": -0.95,
+        "clipXMax": 0.95
+      },
+      "hasClearColor": true,
+      "clearColor": [0.0588, 0.0902, 0.1647, 1.0]
+    }
+  },
+  "layers": {
+    "10": { "paneId": 1, "name": "PriceGrid" },
+    "11": { "paneId": 1, "name": "PriceCandles" },
+    "20": { "paneId": 2, "name": "VolumeGrid" },
+    "21": { "paneId": 2, "name": "VolumeBars" }
+  },
+  "geometries": {
+    "200": { "vertexBufferId": 100, "format": "candle6", "vertexCount": 30 },
+    "210": { "vertexBufferId": 110, "format": "rect4", "vertexCount": 5 },
+    "220": { "vertexBufferId": 120, "format": "rect4", "vertexCount": 21 },
+    "221": { "vertexBufferId": 121, "format": "rect4", "vertexCount": 9 },
+    "230": { "vertexBufferId": 130, "format": "rect4", "vertexCount": 4 }
+  },
+  "drawItems": {
+    "300": {
+      "layerId": 10,
+      "name": "PriceGridLines",
+      "pipeline": "lineAA@1",
+      "geometryId": 210,
+      "transformId": 50,
+      "color": [1.0, 1.0, 1.0, 0.06],
+      "lineWidth": 1.0
+    },
+    "301": {
+      "layerId": 11,
+      "name": "Candles",
+      "pipeline": "instancedCandle@1",
+      "geometryId": 200,
+      "transformId": 50,
+      "colorUp": [0.133, 0.773, 0.369, 1.0],
+      "colorDown": [0.937, 0.267, 0.267, 1.0]
+    },
+    "320": {
+      "layerId": 20,
+      "name": "VolumeGridLines",
+      "pipeline": "lineAA@1",
+      "geometryId": 230,
+      "transformId": 51,
+      "color": [1.0, 1.0, 1.0, 0.06],
+      "lineWidth": 1.0
+    },
+    "321": {
+      "layerId": 21,
+      "name": "VolumeUpBars",
+      "pipeline": "instancedRect@1",
+      "geometryId": 220,
+      "transformId": 51,
+      "color": [0.133, 0.773, 0.369, 0.6]
+    },
+    "322": {
+      "layerId": 21,
+      "name": "VolumeDownBars",
+      "pipeline": "instancedRect@1",
+      "geometryId": 221,
+      "transformId": 51,
+      "color": [0.937, 0.267, 0.267, 0.6]
+    }
+  },
+  "viewports": {
+    "price": {
+      "transformId": 50,
+      "paneId": 1,
+      "xMin": 0,
+      "xMax": 31,
+      "yMin": 145,
+      "yMax": 175,
+      "linkGroup": "time"
+    },
+    "volume": {
+      "transformId": 51,
+      "paneId": 2,
+      "xMin": 0,
+      "xMax": 31,
+      "yMin": 0,
+      "yMax": 25,
+      "linkGroup": "time",
+      "panY": false,
+      "zoomY": false
+    }
+  },
+  "textOverlay": {
+    "fontSize": 14,
+    "color": "#8a8d93",
+    "labels": [
+      { "clipX": 0.0, "clipY": 0.92, "text": "STOCK · Daily · 30 Days", "align": "c", "color": "#b2b5bc", "fontSize": 16 },
+      { "clipX": -0.92, "clipY": 0.85, "text": "$170", "align": "l", "color": "#555" },
+      { "clipX": -0.92, "clipY": 0.50, "text": "$160", "align": "l", "color": "#555" },
+      { "clipX": -0.92, "clipY": 0.15, "text": "$150", "align": "l", "color": "#555" },
+      { "clipX": -0.92, "clipY": -0.42, "text": "Volume (M)", "align": "l", "color": "#666", "fontSize": 12 },
+      { "clipX": -0.92, "clipY": -0.53, "text": "20M", "align": "l", "color": "#555", "fontSize": 11 },
+      { "clipX": -0.92, "clipY": -0.68, "text": "10M", "align": "l", "color": "#555", "fontSize": 11 },
+      { "clipX": -0.92, "clipY": -0.86, "text": "0M", "align": "l", "color": "#555", "fontSize": 11 }
+    ]
+  }
+}
