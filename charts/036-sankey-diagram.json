@@ -1,0 +1,228 @@
+{
+  "version": 1,
+  "viewport": { "width": 1100, "height": 600 },
+  "buffers": {
+    "100": {
+      "data": [
+        5, 0, 95, 0, 95, 23.5,
+        5, 0, 95, 23.5, 5, 23.5,
+        5, 23.5, 95, 67.8, 95, 75.633,
+        5, 23.5, 95, 75.633, 5, 31.333
+      ]
+    },
+    "101": {
+      "data": [
+        5, 33.333, 95, 23.5, 95, 36.033,
+        5, 33.333, 95, 36.033, 5, 45.867,
+        5, 45.867, 95, 83.9, 95, 93.3,
+        5, 45.867, 95, 93.3, 5, 55.267,
+        5, 55.267, 95, 75.633, 95, 81.9,
+        5, 55.267, 95, 81.9, 5, 61.533
+      ]
+    },
+    "102": {
+      "data": [
+        5, 63.533, 95, 36.033, 95, 54.833,
+        5, 63.533, 95, 54.833, 5, 82.333
+      ]
+    },
+    "103": {
+      "data": [
+        5, 84.333, 95, 54.833, 95, 65.8,
+        5, 84.333, 95, 65.8, 5, 95.3,
+        5, 95.3, 95, 95.3, 95, 100.0,
+        5, 95.3, 95, 100.0, 5, 100.0
+      ]
+    },
+    "104": { "data": [0, 0, 5, 31.333] },
+    "105": { "data": [0, 33.333, 5, 61.533] },
+    "106": { "data": [0, 63.533, 5, 82.333] },
+    "107": { "data": [0, 84.333, 5, 100.0] },
+    "108": { "data": [95, 0, 100, 65.8] },
+    "109": { "data": [95, 67.8, 100, 81.9] },
+    "110": { "data": [95, 83.9, 100, 93.3] },
+    "111": { "data": [95, 95.3, 100, 100.0] }
+  },
+  "transforms": {
+    "2": { "sx": 0.019, "sy": 0.019, "tx": -0.95, "ty": -0.95 }
+  },
+  "panes": {
+    "1": {
+      "name": "Sankey",
+      "region": { "clipYMin": -0.95, "clipYMax": 0.95, "clipXMin": -0.95, "clipXMax": 0.95 },
+      "hasClearColor": true,
+      "clearColor": [0.059, 0.09, 0.165, 1.0]
+    }
+  },
+  "layers": {
+    "10": { "paneId": 1, "name": "CoalBands" },
+    "11": { "paneId": 1, "name": "GasBands" },
+    "12": { "paneId": 1, "name": "NuclearBands" },
+    "13": { "paneId": 1, "name": "RenewablesBands" },
+    "14": { "paneId": 1, "name": "CoalSrcNode" },
+    "15": { "paneId": 1, "name": "GasSrcNode" },
+    "16": { "paneId": 1, "name": "NuclearSrcNode" },
+    "17": { "paneId": 1, "name": "RenewablesSrcNode" },
+    "18": { "paneId": 1, "name": "ElecDestNode" },
+    "19": { "paneId": 1, "name": "IndustryDestNode" },
+    "20": { "paneId": 1, "name": "HeatingDestNode" },
+    "21": { "paneId": 1, "name": "TransportDestNode" }
+  },
+  "geometries": {
+    "200": { "vertexBufferId": 100, "format": "pos2_clip", "vertexCount": 12 },
+    "201": { "vertexBufferId": 101, "format": "pos2_clip", "vertexCount": 18 },
+    "202": { "vertexBufferId": 102, "format": "pos2_clip", "vertexCount": 6 },
+    "203": { "vertexBufferId": 103, "format": "pos2_clip", "vertexCount": 12 },
+    "204": { "vertexBufferId": 104, "format": "rect4", "vertexCount": 1 },
+    "205": { "vertexBufferId": 105, "format": "rect4", "vertexCount": 1 },
+    "206": { "vertexBufferId": 106, "format": "rect4", "vertexCount": 1 },
+    "207": { "vertexBufferId": 107, "format": "rect4", "vertexCount": 1 },
+    "208": { "vertexBufferId": 108, "format": "rect4", "vertexCount": 1 },
+    "209": { "vertexBufferId": 109, "format": "rect4", "vertexCount": 1 },
+    "210": { "vertexBufferId": 110, "format": "rect4", "vertexCount": 1 },
+    "211": { "vertexBufferId": 111, "format": "rect4", "vertexCount": 1 }
+  },
+  "drawItems": {
+    "300": {
+      "layerId": 10,
+      "name": "CoalBands",
+      "pipeline": "triSolid@1",
+      "geometryId": 200,
+      "transformId": 2,
+      "color": [0.392, 0.455, 0.545, 0.4]
+    },
+    "301": {
+      "layerId": 11,
+      "name": "GasBands",
+      "pipeline": "triSolid@1",
+      "geometryId": 201,
+      "transformId": 2,
+      "color": [0.976, 0.451, 0.086, 0.4]
+    },
+    "302": {
+      "layerId": 12,
+      "name": "NuclearBands",
+      "pipeline": "triSolid@1",
+      "geometryId": 202,
+      "transformId": 2,
+      "color": [0.545, 0.361, 0.965, 0.4]
+    },
+    "303": {
+      "layerId": 13,
+      "name": "RenewablesBands",
+      "pipeline": "triSolid@1",
+      "geometryId": 203,
+      "transformId": 2,
+      "color": [0.063, 0.725, 0.506, 0.4]
+    },
+    "304": {
+      "layerId": 14,
+      "name": "CoalSrcNode",
+      "pipeline": "instancedRect@1",
+      "geometryId": 204,
+      "transformId": 2,
+      "color": [0.392, 0.455, 0.545, 0.9]
+    },
+    "305": {
+      "layerId": 15,
+      "name": "GasSrcNode",
+      "pipeline": "instancedRect@1",
+      "geometryId": 205,
+      "transformId": 2,
+      "color": [0.976, 0.451, 0.086, 0.9]
+    },
+    "306": {
+      "layerId": 16,
+      "name": "NuclearSrcNode",
+      "pipeline": "instancedRect@1",
+      "geometryId": 206,
+      "transformId": 2,
+      "color": [0.545, 0.361, 0.965, 0.9]
+    },
+    "307": {
+      "layerId": 17,
+      "name": "RenewablesSrcNode",
+      "pipeline": "instancedRect@1",
+      "geometryId": 207,
+      "transformId": 2,
+      "color": [0.063, 0.725, 0.506, 0.9]
+    },
+    "308": {
+      "layerId": 18,
+      "name": "ElecDestNode",
+      "pipeline": "instancedRect@1",
+      "geometryId": 208,
+      "transformId": 2,
+      "color": [0.392, 0.455, 0.545, 0.9]
+    },
+    "309": {
+      "layerId": 19,
+      "name": "IndustryDestNode",
+      "pipeline": "instancedRect@1",
+      "geometryId": 209,
+      "transformId": 2,
+      "color": [0.392, 0.455, 0.545, 0.9]
+    },
+    "310": {
+      "layerId": 20,
+      "name": "HeatingDestNode",
+      "pipeline": "instancedRect@1",
+      "geometryId": 210,
+      "transformId": 2,
+      "color": [0.976, 0.451, 0.086, 0.9]
+    },
+    "311": {
+      "layerId": 21,
+      "name": "TransportDestNode",
+      "pipeline": "instancedRect@1",
+      "geometryId": 211,
+      "transformId": 2,
+      "color": [0.063, 0.725, 0.506, 0.9]
+    }
+  },
+  "viewports": {
+    "main": {
+      "transformId": 2,
+      "paneId": 1,
+      "xMin": 0, "xMax": 100,
+      "yMin": 0, "yMax": 100,
+      "panX": false, "panY": false,
+      "zoomX": false, "zoomY": false
+    }
+  },
+  "textOverlay": {
+    "fontSize": 13,
+    "color": "#b2b5bc",
+    "labels": [
+      { "clipX": 0.0, "clipY": 0.93, "text": "Energy Flow Sankey Diagram", "align": "c", "color": "#ffffff", "fontSize": 18 },
+      { "clipX": 0.0, "clipY": 0.87, "text": "Sources (left) to End Uses (right) — units: TWh", "align": "c", "color": "#666666", "fontSize": 11 },
+
+      { "clipX": -0.93, "clipY": -0.652, "text": "Coal", "align": "c", "color": "#64748b", "fontSize": 12 },
+      { "clipX": -0.93, "clipY": -0.60, "text": "200 TWh", "align": "c", "color": "#64748b", "fontSize": 10 },
+      { "clipX": -0.93, "clipY": -0.049, "text": "Natural Gas", "align": "c", "color": "#f97316", "fontSize": 12 },
+      { "clipX": -0.93, "clipY": 0.003, "text": "180 TWh", "align": "c", "color": "#f97316", "fontSize": 10 },
+      { "clipX": -0.93, "clipY": 0.436, "text": "Nuclear", "align": "c", "color": "#8b5cf6", "fontSize": 12 },
+      { "clipX": -0.93, "clipY": 0.488, "text": "120 TWh", "align": "c", "color": "#8b5cf6", "fontSize": 10 },
+      { "clipX": -0.93, "clipY": 0.801, "text": "Renewables", "align": "c", "color": "#10b981", "fontSize": 12 },
+      { "clipX": -0.93, "clipY": 0.853, "text": "100 TWh", "align": "c", "color": "#10b981", "fontSize": 10 },
+
+      { "clipX": 0.93, "clipY": -0.325, "text": "Electricity", "align": "c", "color": "#64748b", "fontSize": 12 },
+      { "clipX": 0.93, "clipY": -0.273, "text": "420 TWh", "align": "c", "color": "#64748b", "fontSize": 10 },
+      { "clipX": 0.93, "clipY": 0.472, "text": "Industry", "align": "c", "color": "#64748b", "fontSize": 12 },
+      { "clipX": 0.93, "clipY": 0.524, "text": "90 TWh", "align": "c", "color": "#64748b", "fontSize": 10 },
+      { "clipX": 0.93, "clipY": 0.733, "text": "Heating", "align": "c", "color": "#f97316", "fontSize": 12 },
+      { "clipX": 0.93, "clipY": 0.785, "text": "60 TWh", "align": "c", "color": "#f97316", "fontSize": 10 },
+      { "clipX": 0.93, "clipY": 0.905, "text": "Transport", "align": "c", "color": "#10b981", "fontSize": 11 },
+      { "clipX": 0.93, "clipY": 0.945, "text": "30 TWh", "align": "c", "color": "#10b981", "fontSize": 9 },
+
+      { "clipX": -0.05, "clipY": -0.725, "text": "150", "align": "c", "color": "#8899aa", "fontSize": 9 },
+      { "clipX": -0.05, "clipY": -0.1, "text": "80", "align": "c", "color": "#cc7722", "fontSize": 9 },
+      { "clipX": 0.05, "clipY": 0.44, "text": "120", "align": "c", "color": "#9977dd", "fontSize": 9 },
+      { "clipX": 0.05, "clipY": 0.75, "text": "70", "align": "c", "color": "#22aa77", "fontSize": 9 },
+      { "clipX": 0.3, "clipY": 0.06, "text": "50", "align": "c", "color": "#8899aa", "fontSize": 9 },
+      { "clipX": 0.2, "clipY": 0.55, "text": "40", "align": "c", "color": "#cc7722", "fontSize": 9 },
+      { "clipX": 0.15, "clipY": 0.38, "text": "60", "align": "c", "color": "#cc7722", "fontSize": 9 },
+      { "clipX": 0.2, "clipY": 0.89, "text": "30", "align": "c", "color": "#22aa77", "fontSize": 9 }
+    ]
+  }
+}
