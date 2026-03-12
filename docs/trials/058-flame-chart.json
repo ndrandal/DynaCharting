@@ -1,0 +1,184 @@
+{
+  "version": 1,
+  "viewport": { "width": 1000, "height": 500 },
+  "buffers": {
+    "100": {
+      "data": [
+        20, 0, 20, 5.8,
+        40, 0, 40, 5.8,
+        60, 0, 60, 5.8,
+        80, 0, 80, 5.8,
+        100, 0, 100, 5.8,
+        0, 0, 100, 0
+      ]
+    },
+    "101": {
+      "data": [
+        0, 0.0, 100, 1.0
+      ]
+    },
+    "102": {
+      "data": [
+        0, 1.2, 15, 2.2,
+        15, 1.2, 85, 2.2,
+        85, 1.2, 100, 2.2
+      ]
+    },
+    "103": {
+      "data": [
+        0, 2.4, 8, 3.4,
+        8, 2.4, 15, 3.4,
+        15, 2.4, 35, 3.4,
+        35, 2.4, 65, 3.4,
+        65, 2.4, 85, 3.4,
+        85, 2.4, 95, 3.4,
+        95, 2.4, 100, 3.4
+      ]
+    },
+    "104": {
+      "data": [
+        0, 3.6, 5, 4.6,
+        5, 3.6, 8, 4.6,
+        8, 3.6, 12, 4.6,
+        12, 3.6, 15, 4.6,
+        15, 3.6, 25, 4.6,
+        25, 3.6, 35, 4.6,
+        35, 3.6, 45, 4.6,
+        45, 3.6, 55, 4.6,
+        55, 3.6, 65, 4.6,
+        65, 3.6, 75, 4.6,
+        75, 3.6, 85, 4.6,
+        85, 3.6, 92, 4.6,
+        95, 3.6, 98, 4.6
+      ]
+    },
+    "105": {
+      "data": [
+        0, 4.8, 3, 5.8,
+        3, 4.8, 5, 5.8,
+        5, 4.8, 7, 5.8,
+        8, 4.8, 10, 5.8,
+        15, 4.8, 20, 5.8,
+        20, 4.8, 25, 5.8,
+        25, 4.8, 30, 5.8,
+        30, 4.8, 35, 5.8,
+        35, 4.8, 40, 5.8,
+        40, 4.8, 45, 5.8,
+        45, 4.8, 50, 5.8,
+        50, 4.8, 55, 5.8,
+        55, 4.8, 60, 5.8,
+        60, 4.8, 65, 5.8,
+        65, 4.8, 70, 5.8,
+        75, 4.8, 80, 5.8,
+        80, 4.8, 85, 5.8,
+        85, 4.8, 90, 5.8
+      ]
+    }
+  },
+  "transforms": {
+    "50": {
+      "sx": 0.019,
+      "sy": 0.327586207,
+      "tx": -0.95,
+      "ty": -0.95
+    }
+  },
+  "panes": {
+    "1": {
+      "name": "FlameChart",
+      "region": {
+        "clipYMin": -0.98,
+        "clipYMax": 0.98,
+        "clipXMin": -0.98,
+        "clipXMax": 0.98
+      },
+      "hasClearColor": true,
+      "clearColor": [0.058824, 0.090196, 0.164706, 1.0]
+    }
+  },
+  "layers": {
+    "10": { "paneId": 1, "name": "Grid" },
+    "11": { "paneId": 1, "name": "Depth0" },
+    "12": { "paneId": 1, "name": "Depth1" },
+    "13": { "paneId": 1, "name": "Depth2" },
+    "14": { "paneId": 1, "name": "Depth3" },
+    "15": { "paneId": 1, "name": "Depth4" }
+  },
+  "geometries": {
+    "200": { "vertexBufferId": 100, "format": "rect4", "vertexCount": 6 },
+    "201": { "vertexBufferId": 101, "format": "rect4", "vertexCount": 1 },
+    "202": { "vertexBufferId": 102, "format": "rect4", "vertexCount": 3 },
+    "203": { "vertexBufferId": 103, "format": "rect4", "vertexCount": 7 },
+    "204": { "vertexBufferId": 104, "format": "rect4", "vertexCount": 13 },
+    "205": { "vertexBufferId": 105, "format": "rect4", "vertexCount": 18 }
+  },
+  "drawItems": {
+    "300": {
+      "layerId": 10,
+      "name": "GridLines",
+      "pipeline": "lineAA@1",
+      "geometryId": 200,
+      "transformId": 50,
+      "color": [1.0, 1.0, 1.0, 0.06],
+      "lineWidth": 1.0
+    },
+    "301": {
+      "layerId": 11,
+      "name": "Depth0Bars",
+      "pipeline": "instancedRect@1",
+      "geometryId": 201,
+      "transformId": 50,
+      "color": [0.498039, 0.113725, 0.113725, 0.9]
+    },
+    "302": {
+      "layerId": 12,
+      "name": "Depth1Bars",
+      "pipeline": "instancedRect@1",
+      "geometryId": 202,
+      "transformId": 50,
+      "color": [0.725490, 0.109804, 0.109804, 0.9]
+    },
+    "303": {
+      "layerId": 13,
+      "name": "Depth2Bars",
+      "pipeline": "instancedRect@1",
+      "geometryId": 203,
+      "transformId": 50,
+      "color": [0.862745, 0.149020, 0.149020, 0.9]
+    },
+    "304": {
+      "layerId": 14,
+      "name": "Depth3Bars",
+      "pipeline": "instancedRect@1",
+      "geometryId": 204,
+      "transformId": 50,
+      "color": [0.976471, 0.450980, 0.086275, 0.9]
+    },
+    "305": {
+      "layerId": 15,
+      "name": "Depth4Bars",
+      "pipeline": "instancedRect@1",
+      "geometryId": 205,
+      "transformId": 50,
+      "color": [0.984314, 0.749020, 0.141176, 0.9]
+    }
+  },
+  "textOverlay": {
+    "fontSize": 11,
+    "color": "#b2b5bc",
+    "labels": [
+      { "clipX": 0.0, "clipY": 0.95, "text": "Flame Chart — Call Stack Profiler", "align": "c", "fontSize": 14 },
+      { "clipX": -0.93, "clipY": -0.88, "text": "main()", "align": "l", "fontSize": 10, "color": "#a88" },
+      { "clipX": -0.93, "clipY": -0.50, "text": "init() | process() | cleanup()", "align": "l", "fontSize": 10, "color": "#c88" },
+      { "clipX": -0.93, "clipY": -0.14, "text": "Depth 2", "align": "l", "fontSize": 10, "color": "#e55" },
+      { "clipX": -0.93, "clipY": 0.22, "text": "Depth 3", "align": "l", "fontSize": 10, "color": "#f93" },
+      { "clipX": -0.93, "clipY": 0.58, "text": "Depth 4", "align": "l", "fontSize": 10, "color": "#fb4" },
+      { "clipX": -0.93, "clipY": -0.96, "text": "0", "align": "l", "fontSize": 9, "color": "#666" },
+      { "clipX": -0.57, "clipY": -0.96, "text": "20", "align": "c", "fontSize": 9, "color": "#666" },
+      { "clipX": -0.19, "clipY": -0.96, "text": "40", "align": "c", "fontSize": 9, "color": "#666" },
+      { "clipX": 0.19, "clipY": -0.96, "text": "60", "align": "c", "fontSize": 9, "color": "#666" },
+      { "clipX": 0.57, "clipY": -0.96, "text": "80", "align": "c", "fontSize": 9, "color": "#666" },
+      { "clipX": 0.95, "clipY": -0.96, "text": "100", "align": "r", "fontSize": 9, "color": "#666" }
+    ]
+  }
+}
