@@ -1,0 +1,168 @@
+{
+  "version": 1,
+  "viewport": { "width": 1000, "height": 600 },
+  "buffers": {
+    "100": {
+      "data": [
+        1, 29, 3, 29,
+        3, 29, 3, 35,
+        3, 35, 5, 35,
+        5, 35, 5, 39,
+        5, 39, 8, 39,
+        8, 39, 8, 29,
+        8, 29, 10, 29,
+        10, 29, 10, 35,
+        10, 35, 12, 35,
+        12, 35, 12, 45,
+        12, 45, 15, 45,
+        15, 45, 15, 49,
+        15, 49, 18, 49,
+        18, 49, 18, 39,
+        18, 39, 20, 39,
+        20, 39, 20, 45,
+        20, 45, 22, 45,
+        22, 45, 22, 55,
+        22, 55, 24, 55
+      ]
+    },
+    "101": {
+      "data": [0, 25, 25, 35]
+    },
+    "102": {
+      "data": [0, 35, 25, 45]
+    },
+    "103": {
+      "data": [0, 45, 25, 55]
+    },
+    "104": {
+      "data": [0, 40, 25, 40]
+    },
+    "105": {
+      "data": [
+        0, 20, 25, 20,
+        0, 30, 25, 30,
+        0, 40, 25, 40,
+        0, 50, 25, 50
+      ]
+    },
+    "106": {
+      "data": [
+        5, 0, 5, 60,
+        10, 0, 10, 60,
+        15, 0, 15, 60,
+        20, 0, 20, 60,
+        24, 0, 24, 60
+      ]
+    }
+  },
+  "transforms": {
+    "50": { "sx": 0.076, "sy": 0.031667, "tx": -0.95, "ty": -0.95 }
+  },
+  "panes": {
+    "1": {
+      "name": "Main",
+      "region": { "clipYMin": -0.95, "clipYMax": 0.95, "clipXMin": -0.95, "clipXMax": 0.95 },
+      "hasClearColor": true,
+      "clearColor": [0.059, 0.09, 0.165, 1.0]
+    }
+  },
+  "layers": {
+    "10": { "paneId": 1, "name": "Grid" },
+    "11": { "paneId": 1, "name": "Bands" },
+    "12": { "paneId": 1, "name": "Reference" },
+    "13": { "paneId": 1, "name": "StepLine" }
+  },
+  "geometries": {
+    "200": { "vertexBufferId": 100, "format": "rect4", "vertexCount": 19 },
+    "201": { "vertexBufferId": 101, "format": "rect4", "vertexCount": 1 },
+    "202": { "vertexBufferId": 102, "format": "rect4", "vertexCount": 1 },
+    "203": { "vertexBufferId": 103, "format": "rect4", "vertexCount": 1 },
+    "204": { "vertexBufferId": 104, "format": "rect4", "vertexCount": 1 },
+    "205": { "vertexBufferId": 105, "format": "rect4", "vertexCount": 4 },
+    "206": { "vertexBufferId": 106, "format": "rect4", "vertexCount": 5 }
+  },
+  "drawItems": {
+    "300": {
+      "layerId": 13,
+      "name": "StepLine",
+      "pipeline": "lineAA@1",
+      "geometryId": 200,
+      "transformId": 50,
+      "color": [0.231, 0.510, 0.965, 1.0],
+      "lineWidth": 2.0
+    },
+    "301": {
+      "layerId": 11,
+      "name": "BudgetBand",
+      "pipeline": "instancedRect@1",
+      "geometryId": 201,
+      "transformId": 50,
+      "color": [0.063, 0.725, 0.506, 0.08]
+    },
+    "302": {
+      "layerId": 11,
+      "name": "StandardBand",
+      "pipeline": "instancedRect@1",
+      "geometryId": 202,
+      "transformId": 50,
+      "color": [0.961, 0.620, 0.043, 0.08]
+    },
+    "303": {
+      "layerId": 11,
+      "name": "PremiumBand",
+      "pipeline": "instancedRect@1",
+      "geometryId": 203,
+      "transformId": 50,
+      "color": [0.925, 0.282, 0.600, 0.08]
+    },
+    "304": {
+      "layerId": 12,
+      "name": "ReferenceLine",
+      "pipeline": "lineAA@1",
+      "geometryId": 204,
+      "transformId": 50,
+      "color": [1.0, 1.0, 1.0, 0.25],
+      "lineWidth": 1.0
+    },
+    "305": {
+      "layerId": 10,
+      "name": "HGrid",
+      "pipeline": "lineAA@1",
+      "geometryId": 205,
+      "transformId": 50,
+      "color": [1.0, 1.0, 1.0, 0.06],
+      "lineWidth": 1.0
+    },
+    "306": {
+      "layerId": 10,
+      "name": "VGrid",
+      "pipeline": "lineAA@1",
+      "geometryId": 206,
+      "transformId": 50,
+      "color": [1.0, 1.0, 1.0, 0.06],
+      "lineWidth": 1.0
+    }
+  },
+  "textOverlay": {
+    "fontSize": 13,
+    "color": "#94a3b8",
+    "labels": [
+      { "clipX": 0.0, "clipY": 0.92, "text": "Subscription Pricing \u2014 Step Chart", "align": "c", "fontSize": 16, "color": "#e2e8f0" },
+      { "clipX": -0.92, "clipY": -0.314, "text": "$20", "align": "r" },
+      { "clipX": -0.92, "clipY": 0.003, "text": "$30", "align": "r" },
+      { "clipX": -0.92, "clipY": 0.32, "text": "$40", "align": "r" },
+      { "clipX": -0.92, "clipY": 0.637, "text": "$50", "align": "r" },
+      { "clipX": -0.57, "clipY": -0.92, "text": "5", "align": "c" },
+      { "clipX": -0.19, "clipY": -0.92, "text": "10", "align": "c" },
+      { "clipX": 0.19, "clipY": -0.92, "text": "15", "align": "c" },
+      { "clipX": 0.57, "clipY": -0.92, "text": "20", "align": "c" },
+      { "clipX": 0.874, "clipY": -0.92, "text": "24", "align": "c" },
+      { "clipX": 0.0, "clipY": -0.98, "text": "Month", "align": "c", "color": "#64748b" },
+      { "clipX": -0.98, "clipY": 0.15, "text": "Price ($)", "align": "c", "color": "#64748b" },
+      { "clipX": 0.5, "clipY": -0.0, "text": "Budget Zone", "align": "c", "fontSize": 11, "color": "#10b981" },
+      { "clipX": 0.5, "clipY": 0.317, "text": "Standard Zone", "align": "c", "fontSize": 11, "color": "#f59e0b" },
+      { "clipX": 0.5, "clipY": 0.634, "text": "Premium Zone", "align": "c", "fontSize": 11, "color": "#ec4899" },
+      { "clipX": 0.75, "clipY": 0.335, "text": "Avg Price", "align": "l", "fontSize": 10, "color": "#ffffff80" }
+    ]
+  }
+}
