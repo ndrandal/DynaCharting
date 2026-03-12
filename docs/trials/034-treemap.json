@@ -1,0 +1,201 @@
+{
+  "version": 1,
+  "viewport": { "width": 1000, "height": 700 },
+  "buffers": {
+    "100": { "data": [0, 0, 56.287425149700596, 38.297872340425535] },
+    "103": { "data": [0, 38.297872340425535, 56.287425149700596, 63.829787234042556] },
+    "106": { "data": [56.287425149700596, 0, 80.23952095808383, 47.5] },
+    "109": { "data": [80.23952095808383, 0, 100, 51.515151515151516] },
+    "112": { "data": [0, 63.829787234042556, 56.287425149700596, 79.787234042553195] },
+    "115": { "data": [80.23952095808383, 51.515151515151516, 100, 90.909090909090907] },
+    "118": { "data": [0, 79.787234042553195, 56.287425149700596, 91.489361702127667] },
+    "121": { "data": [56.287425149700596, 47.5, 80.23952095808383, 70] },
+    "124": { "data": [0, 91.489361702127667, 56.287425149700596, 100] },
+    "127": { "data": [56.287425149700596, 70, 80.23952095808383, 87.5] },
+    "130": { "data": [56.287425149700596, 87.5, 80.23952095808383, 100] },
+    "133": { "data": [80.23952095808383, 90.909090909090907, 100, 100] },
+    "136": { "data": [56.287425149700596, 0, 56.287425149700596, 100, 80.23952095808383, 0, 80.23952095808383, 100] }
+  },
+  "transforms": {
+    "50": { "sx": 0.019, "sy": 0.019, "tx": -0.95, "ty": -0.95 }
+  },
+  "panes": {
+    "1": {
+      "name": "Treemap",
+      "region": { "clipYMin": -0.95, "clipYMax": 0.95, "clipXMin": -0.95, "clipXMax": 0.95 },
+      "hasClearColor": true,
+      "clearColor": [0.058824, 0.090196, 0.164706, 1.0]
+    }
+  },
+  "layers": {
+    "10": { "paneId": 1, "name": "Videos" },
+    "11": { "paneId": 1, "name": "Photos" },
+    "12": { "paneId": 1, "name": "System" },
+    "13": { "paneId": 1, "name": "Games" },
+    "14": { "paneId": 1, "name": "Documents" },
+    "15": { "paneId": 1, "name": "AppsItem" },
+    "16": { "paneId": 1, "name": "Music" },
+    "17": { "paneId": 1, "name": "Cache" },
+    "18": { "paneId": 1, "name": "Downloads" },
+    "19": { "paneId": 1, "name": "Backups" },
+    "20": { "paneId": 1, "name": "Logs" },
+    "21": { "paneId": 1, "name": "Temp" },
+    "22": { "paneId": 1, "name": "Separators" }
+  },
+  "geometries": {
+    "101": { "vertexBufferId": 100, "format": "rect4", "vertexCount": 1 },
+    "104": { "vertexBufferId": 103, "format": "rect4", "vertexCount": 1 },
+    "107": { "vertexBufferId": 106, "format": "rect4", "vertexCount": 1 },
+    "110": { "vertexBufferId": 109, "format": "rect4", "vertexCount": 1 },
+    "113": { "vertexBufferId": 112, "format": "rect4", "vertexCount": 1 },
+    "116": { "vertexBufferId": 115, "format": "rect4", "vertexCount": 1 },
+    "119": { "vertexBufferId": 118, "format": "rect4", "vertexCount": 1 },
+    "122": { "vertexBufferId": 121, "format": "rect4", "vertexCount": 1 },
+    "125": { "vertexBufferId": 124, "format": "rect4", "vertexCount": 1 },
+    "128": { "vertexBufferId": 127, "format": "rect4", "vertexCount": 1 },
+    "131": { "vertexBufferId": 130, "format": "rect4", "vertexCount": 1 },
+    "134": { "vertexBufferId": 133, "format": "rect4", "vertexCount": 1 },
+    "137": { "vertexBufferId": 136, "format": "rect4", "vertexCount": 2 }
+  },
+  "drawItems": {
+    "102": {
+      "layerId": 10,
+      "name": "Videos",
+      "pipeline": "instancedRect@1",
+      "geometryId": 101,
+      "transformId": 50,
+      "color": [0.231373, 0.509804, 0.964706, 1.0]
+    },
+    "105": {
+      "layerId": 11,
+      "name": "Photos",
+      "pipeline": "instancedRect@1",
+      "geometryId": 104,
+      "transformId": 50,
+      "color": [0.376471, 0.647059, 0.980392, 1.0]
+    },
+    "108": {
+      "layerId": 12,
+      "name": "System",
+      "pipeline": "instancedRect@1",
+      "geometryId": 107,
+      "transformId": 50,
+      "color": [0.976471, 0.450980, 0.086275, 1.0]
+    },
+    "111": {
+      "layerId": 13,
+      "name": "Games",
+      "pipeline": "instancedRect@1",
+      "geometryId": 110,
+      "transformId": 50,
+      "color": [0.062745, 0.725490, 0.505882, 1.0]
+    },
+    "114": {
+      "layerId": 14,
+      "name": "Documents",
+      "pipeline": "instancedRect@1",
+      "geometryId": 113,
+      "transformId": 50,
+      "color": [0.576471, 0.772549, 0.992157, 1.0]
+    },
+    "117": {
+      "layerId": 15,
+      "name": "AppsItem",
+      "pipeline": "instancedRect@1",
+      "geometryId": 116,
+      "transformId": 50,
+      "color": [0.203922, 0.827451, 0.600000, 1.0]
+    },
+    "120": {
+      "layerId": 16,
+      "name": "Music",
+      "pipeline": "instancedRect@1",
+      "geometryId": 119,
+      "transformId": 50,
+      "color": [0.749020, 0.858824, 0.996078, 1.0]
+    },
+    "123": {
+      "layerId": 17,
+      "name": "Cache",
+      "pipeline": "instancedRect@1",
+      "geometryId": 122,
+      "transformId": 50,
+      "color": [0.984314, 0.572549, 0.235294, 1.0]
+    },
+    "126": {
+      "layerId": 18,
+      "name": "Downloads",
+      "pipeline": "instancedRect@1",
+      "geometryId": 125,
+      "transformId": 50,
+      "color": [0.858824, 0.917647, 0.996078, 1.0]
+    },
+    "129": {
+      "layerId": 19,
+      "name": "Backups",
+      "pipeline": "instancedRect@1",
+      "geometryId": 128,
+      "transformId": 50,
+      "color": [0.992157, 0.729412, 0.454902, 1.0]
+    },
+    "132": {
+      "layerId": 20,
+      "name": "Logs",
+      "pipeline": "instancedRect@1",
+      "geometryId": 131,
+      "transformId": 50,
+      "color": [0.996078, 0.843137, 0.666667, 1.0]
+    },
+    "135": {
+      "layerId": 21,
+      "name": "Temp",
+      "pipeline": "instancedRect@1",
+      "geometryId": 134,
+      "transformId": 50,
+      "color": [0.431373, 0.905882, 0.717647, 1.0]
+    },
+    "138": {
+      "layerId": 22,
+      "name": "Separators",
+      "pipeline": "lineAA@1",
+      "geometryId": 137,
+      "transformId": 50,
+      "color": [1.0, 1.0, 1.0, 0.3],
+      "lineWidth": 1.0
+    }
+  },
+  "textOverlay": {
+    "fontSize": 13,
+    "color": "#ffffff",
+    "labels": [
+      { "clipX": 0.0, "clipY": 0.98, "text": "Disk Usage by Category", "align": "c", "fontSize": 18, "color": "#e2e8f0" },
+      { "clipX": -0.415, "clipY": 0.96, "text": "Media (470 GB)", "align": "c", "fontSize": 14, "color": "#93c5fd" },
+      { "clipX": 0.347, "clipY": 0.96, "text": "System (200 GB)", "align": "c", "fontSize": 14, "color": "#fdba74" },
+      { "clipX": 0.762, "clipY": 0.96, "text": "Apps (165 GB)", "align": "c", "fontSize": 14, "color": "#6ee7b7" },
+      { "clipX": -0.415, "clipY": -0.586, "text": "Videos", "align": "c", "fontSize": 15, "color": "#ffffff" },
+      { "clipX": -0.415, "clipY": -0.626, "text": "180 GB", "align": "c", "fontSize": 11, "color": "#cbd5e1" },
+      { "clipX": -0.415, "clipY": 0.020, "text": "Photos", "align": "c", "fontSize": 14, "color": "#ffffff" },
+      { "clipX": -0.415, "clipY": -0.020, "text": "120 GB", "align": "c", "fontSize": 11, "color": "#cbd5e1" },
+      { "clipX": -0.415, "clipY": 0.414, "text": "Documents", "align": "c", "fontSize": 12, "color": "#ffffff" },
+      { "clipX": -0.415, "clipY": 0.374, "text": "75 GB", "align": "c", "fontSize": 10, "color": "#cbd5e1" },
+      { "clipX": -0.415, "clipY": 0.677, "text": "Music", "align": "c", "fontSize": 11, "color": "#1e293b" },
+      { "clipX": -0.415, "clipY": 0.717, "text": "55 GB", "align": "c", "fontSize": 10, "color": "#334155" },
+      { "clipX": -0.415, "clipY": 0.869, "text": "Downloads", "align": "c", "fontSize": 10, "color": "#1e293b" },
+      { "clipX": -0.415, "clipY": 0.899, "text": "40 GB", "align": "c", "fontSize": 9, "color": "#334155" },
+      { "clipX": 0.347, "clipY": -0.499, "text": "System", "align": "c", "fontSize": 14, "color": "#ffffff" },
+      { "clipX": 0.347, "clipY": -0.539, "text": "95 GB", "align": "c", "fontSize": 11, "color": "#cbd5e1" },
+      { "clipX": 0.347, "clipY": 0.166, "text": "Cache", "align": "c", "fontSize": 12, "color": "#ffffff" },
+      { "clipX": 0.347, "clipY": 0.126, "text": "45 GB", "align": "c", "fontSize": 10, "color": "#cbd5e1" },
+      { "clipX": 0.347, "clipY": 0.546, "text": "Backups", "align": "c", "fontSize": 11, "color": "#ffffff" },
+      { "clipX": 0.347, "clipY": 0.506, "text": "35 GB", "align": "c", "fontSize": 10, "color": "#cbd5e1" },
+      { "clipX": 0.347, "clipY": 0.831, "text": "Logs", "align": "c", "fontSize": 10, "color": "#ffffff" },
+      { "clipX": 0.347, "clipY": 0.791, "text": "25 GB", "align": "c", "fontSize": 9, "color": "#cbd5e1" },
+      { "clipX": 0.762, "clipY": -0.461, "text": "Games", "align": "c", "fontSize": 14, "color": "#ffffff" },
+      { "clipX": 0.762, "clipY": -0.501, "text": "85 GB", "align": "c", "fontSize": 11, "color": "#cbd5e1" },
+      { "clipX": 0.762, "clipY": 0.403, "text": "Apps", "align": "c", "fontSize": 13, "color": "#ffffff" },
+      { "clipX": 0.762, "clipY": 0.363, "text": "65 GB", "align": "c", "fontSize": 11, "color": "#cbd5e1" },
+      { "clipX": 0.762, "clipY": 0.864, "text": "Temp", "align": "c", "fontSize": 9, "color": "#ffffff" },
+      { "clipX": 0.762, "clipY": 0.894, "text": "15 GB", "align": "c", "fontSize": 8, "color": "#cbd5e1" }
+    ]
+  }
+}
