@@ -1,0 +1,184 @@
+{
+  "version": 1,
+  "viewport": { "width": 1000, "height": 650 },
+  "buffers": {
+    "100": {
+      "data": [
+        -0.5, 0, 8.5, 0,
+        -0.5, 50, 8.5, 50,
+        -0.5, 100, 8.5, 100,
+        -0.5, 150, 8.5, 150,
+        -0.5, 200, 8.5, 200
+      ]
+    },
+    "103": {
+      "data": [
+        0.65, 0, 1.35, 12,
+        1.65, 0, 2.35, 14,
+        2.65, 0, 3.35, 15,
+        3.65, 0, 4.35, 16,
+        4.65, 0, 5.35, 18,
+        5.65, 0, 6.35, 20,
+        6.65, 0, 7.35, 22,
+        7.65, 0, 8.35, 24
+      ]
+    },
+    "106": {
+      "data": [
+        0.65, 12, 1.35, 30,
+        1.65, 14, 2.35, 34,
+        2.65, 15, 3.35, 37,
+        3.65, 16, 4.35, 40,
+        4.65, 18, 5.35, 44,
+        5.65, 20, 6.35, 48,
+        6.65, 22, 7.35, 52,
+        7.65, 24, 8.35, 56
+      ]
+    },
+    "109": {
+      "data": [
+        0.65, 30, 1.35, 58,
+        1.65, 34, 2.35, 64,
+        2.65, 37, 3.35, 69,
+        3.65, 40, 4.35, 75,
+        4.65, 44, 5.35, 77,
+        5.65, 48, 6.35, 84,
+        6.65, 52, 7.35, 90,
+        7.65, 56, 8.35, 96
+      ]
+    },
+    "112": {
+      "data": [
+        0.65, 58, 1.35, 100,
+        1.65, 64, 2.35, 112,
+        2.65, 69, 3.35, 124,
+        3.65, 75, 4.35, 137,
+        4.65, 77, 5.35, 145,
+        5.65, 84, 6.35, 159,
+        6.65, 90, 7.35, 172,
+        7.65, 96, 8.35, 186
+      ]
+    }
+  },
+  "transforms": {
+    "50": {
+      "sx": 0.2,
+      "sy": 0.008461538,
+      "tx": -0.78,
+      "ty": -0.876923
+    }
+  },
+  "panes": {
+    "1": {
+      "name": "StackedBars",
+      "region": {
+        "clipYMin": -0.876923,
+        "clipYMax": 0.815385,
+        "clipXMin": -0.88,
+        "clipXMax": 0.92
+      },
+      "hasClearColor": true,
+      "clearColor": [0.078, 0.078, 0.133, 1.0]
+    }
+  },
+  "layers": {
+    "10": { "paneId": 1, "name": "Grid" },
+    "20": { "paneId": 1, "name": "Bars" }
+  },
+  "geometries": {
+    "101": { "vertexBufferId": 100, "format": "rect4", "vertexCount": 5 },
+    "104": { "vertexBufferId": 103, "format": "rect4", "vertexCount": 8 },
+    "107": { "vertexBufferId": 106, "format": "rect4", "vertexCount": 8 },
+    "110": { "vertexBufferId": 109, "format": "rect4", "vertexCount": 8 },
+    "113": { "vertexBufferId": 112, "format": "rect4", "vertexCount": 8 }
+  },
+  "drawItems": {
+    "102": {
+      "layerId": 10,
+      "name": "GridLines",
+      "pipeline": "lineAA@1",
+      "geometryId": 101,
+      "transformId": 50,
+      "color": [1.0, 1.0, 1.0, 0.1],
+      "lineWidth": 1.0
+    },
+    "105": {
+      "layerId": 20,
+      "name": "Services",
+      "pipeline": "instancedRect@1",
+      "geometryId": 104,
+      "transformId": 50,
+      "color": [0.961, 0.620, 0.043, 0.9],
+      "cornerRadius": 3.0
+    },
+    "108": {
+      "layerId": 20,
+      "name": "Consumer",
+      "pipeline": "instancedRect@1",
+      "geometryId": 107,
+      "transformId": 50,
+      "color": [0.063, 0.725, 0.506, 0.9],
+      "cornerRadius": 3.0
+    },
+    "111": {
+      "layerId": 20,
+      "name": "Enterprise",
+      "pipeline": "instancedRect@1",
+      "geometryId": 110,
+      "transformId": 50,
+      "color": [0.545, 0.361, 0.965, 0.9],
+      "cornerRadius": 3.0
+    },
+    "114": {
+      "layerId": 20,
+      "name": "Cloud",
+      "pipeline": "instancedRect@1",
+      "geometryId": 113,
+      "transformId": 50,
+      "color": [0.231, 0.510, 0.965, 0.9],
+      "cornerRadius": 3.0
+    }
+  },
+  "viewports": {
+    "main": {
+      "transformId": 50,
+      "paneId": 1,
+      "xMin": -0.5,
+      "xMax": 8.5,
+      "yMin": 0,
+      "yMax": 200,
+      "panX": false,
+      "panY": false,
+      "zoomX": false,
+      "zoomY": false
+    }
+  },
+  "textOverlay": {
+    "fontSize": 13,
+    "color": "#b2b5bc",
+    "labels": [
+      { "clipX": 0.02, "clipY": 0.95, "text": "Quarterly Revenue by Product Line", "align": "c", "color": "#ffffff", "fontSize": 17 },
+      { "clipX": 0.02, "clipY": 0.89, "text": "Revenue in $M", "align": "c", "color": "#888888", "fontSize": 12 },
+
+      { "clipX": -0.58, "clipY": -0.93, "text": "Q1'23", "align": "c", "fontSize": 10 },
+      { "clipX": -0.38, "clipY": -0.93, "text": "Q2'23", "align": "c", "fontSize": 10 },
+      { "clipX": -0.18, "clipY": -0.93, "text": "Q3'23", "align": "c", "fontSize": 10 },
+      { "clipX": 0.02, "clipY": -0.93, "text": "Q4'23", "align": "c", "fontSize": 10 },
+      { "clipX": 0.22, "clipY": -0.93, "text": "Q1'24", "align": "c", "fontSize": 10 },
+      { "clipX": 0.42, "clipY": -0.93, "text": "Q2'24", "align": "c", "fontSize": 10 },
+      { "clipX": 0.62, "clipY": -0.93, "text": "Q3'24", "align": "c", "fontSize": 10 },
+      { "clipX": 0.82, "clipY": -0.93, "text": "Q4'24", "align": "c", "fontSize": 10 },
+
+      { "clipX": -0.94, "clipY": -0.877, "text": "$0", "align": "r", "fontSize": 10 },
+      { "clipX": -0.94, "clipY": -0.454, "text": "$50M", "align": "r", "fontSize": 10 },
+      { "clipX": -0.94, "clipY": -0.031, "text": "$100M", "align": "r", "fontSize": 10 },
+      { "clipX": -0.94, "clipY": 0.392, "text": "$150M", "align": "r", "fontSize": 10 },
+      { "clipX": -0.94, "clipY": 0.815, "text": "$200M", "align": "r", "fontSize": 10 },
+
+      { "clipX": -0.35, "clipY": -0.99, "text": "\u25cf Cloud", "align": "c", "color": "#3b82f6", "fontSize": 11 },
+      { "clipX": -0.05, "clipY": -0.99, "text": "\u25cf Enterprise", "align": "c", "color": "#8b5cf6", "fontSize": 11 },
+      { "clipX": 0.30, "clipY": -0.99, "text": "\u25cf Consumer", "align": "c", "color": "#10b981", "fontSize": 11 },
+      { "clipX": 0.62, "clipY": -0.99, "text": "\u25cf Services", "align": "c", "color": "#f59e0b", "fontSize": 11 }
+    ]
+  }
+}

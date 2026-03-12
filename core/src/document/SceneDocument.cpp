@@ -110,7 +110,20 @@ bool parseSceneDocument(const std::string& json, SceneDocument& out) {
       if (id == 0 || !it->value.IsObject()) continue;
       DocBuffer b;
       b.byteLength = getUint(it->value, "byteLength", 0);
-      out.buffers[id] = b;
+      // Inline float data
+      auto dit = it->value.FindMember("data");
+      if (dit != it->value.MemberEnd() && dit->value.IsArray()) {
+        const auto& arr = dit->value.GetArray();
+        b.data.reserve(arr.Size());
+        for (rapidjson::SizeType i = 0; i < arr.Size(); i++) {
+          if (arr[i].IsNumber()) b.data.push_back(static_cast<float>(arr[i].GetDouble()));
+        }
+        // Derive byteLength from data if not explicitly set
+        if (b.byteLength == 0 && !b.data.empty()) {
+          b.byteLength = static_cast<std::uint32_t>(b.data.size() * sizeof(float));
+        }
+      }
+      out.buffers[id] = std::move(b);
     }
   }
 
@@ -221,6 +234,50 @@ bool parseSceneDocument(const std::string& json, SceneDocument& out) {
     }
   }
 
+  // viewports
+  if (doc.HasMember("viewports") && doc["viewports"].IsObject()) {
+    for (auto it = doc["viewports"].MemberBegin(); it != doc["viewports"].MemberEnd(); ++it) {
+      if (!it->value.IsObject()) continue;
+      std::string name = it->name.GetString();
+      DocViewport vp;
+      vp.transformId = getId(it->value, "transformId");
+      vp.paneId = getId(it->value, "paneId");
+      vp.xMin = static_cast<double>(getFloat(it->value, "xMin", 0));
+      vp.xMax = static_cast<double>(getFloat(it->value, "xMax", 1));
+      vp.yMin = static_cast<double>(getFloat(it->value, "yMin", 0));
+      vp.yMax = static_cast<double>(getFloat(it->value, "yMax", 1));
+      vp.linkGroup = getString(it->value, "linkGroup");
+      vp.panX = getBool(it->value, "panX", true);
+      vp.panY = getBool(it->value, "panY", true);
+      vp.zoomX = getBool(it->value, "zoomX", true);
+      vp.zoomY = getBool(it->value, "zoomY", true);
+      out.viewports[name] = vp;
+    }
+  }
+
+  // textOverlay
+  if (doc.HasMember("textOverlay") && doc["textOverlay"].IsObject()) {
+    const auto& ov = doc["textOverlay"];
+    out.textOverlay.fontSize = static_cast<int>(getUint(ov, "fontSize", 12));
+    out.textOverlay.color = getString(ov, "color", "#b2b5bc");
+    auto lit = ov.FindMember("labels");
+    if (lit != ov.MemberEnd() && lit->value.IsArray()) {
+      const auto& arr = lit->value.GetArray();
+      out.textOverlay.labels.reserve(arr.Size());
+      for (rapidjson::SizeType i = 0; i < arr.Size(); i++) {
+        if (!arr[i].IsObject()) continue;
+        DocTextLabel lbl;
+        lbl.clipX = getFloat(arr[i], "clipX", 0);
+        lbl.clipY = getFloat(arr[i], "clipY", 0);
+        lbl.text = getString(arr[i], "text");
+        lbl.align = getString(arr[i], "align", "l");
+        lbl.color = getString(arr[i], "color");
+        lbl.fontSize = static_cast<int>(getUint(arr[i], "fontSize", 0));
+        out.textOverlay.labels.push_back(std::move(lbl));
+      }
+    }
+  }
+
   return true;
 }
 
@@ -279,7 +336,15 @@ std::string serializeSceneDocument(const SceneDocument& doc, bool compact) {
     for (const auto& [id, b] : doc.buffers) {
       w.Key(std::to_string(id).c_str());
       w.StartObject();
-      w.Key("byteLength"); w.Uint(b.byteLength);
+      if (!b.data.empty()) {
+        w.Key("data");
+        w.StartArray();
+        for (float f : b.data) w.Double(static_cast<double>(f));
+        w.EndArray();
+      }
+      if (!compact || b.data.empty()) {
+        w.Key("byteLength"); w.Uint(b.byteLength);
+      }
       w.EndObject();
     }
     w.EndObject();
@@ -425,6 +490,58 @@ std::string serializeSceneDocument(const SceneDocument& doc, bool compact) {
       }
 
       w.EndObject();
+    }
+    w.EndObject();
+  }
+
+  // viewports
+  if (!compact || !doc.viewports.empty()) {
+    w.Key("viewports");
+    w.StartObject();
+    for (const auto& [name, vp] : doc.viewports) {
+      w.Key(name.c_str());
+      w.StartObject();
+      w.Key("transformId"); w.Uint64(vp.transformId);
+      w.Key("paneId"); w.Uint64(vp.paneId);
+      w.Key("xMin"); w.Double(vp.xMin);
+      w.Key("xMax"); w.Double(vp.xMax);
+      w.Key("yMin"); w.Double(vp.yMin);
+      w.Key("yMax"); w.Double(vp.yMax);
+      if (!compact || !vp.linkGroup.empty()) { w.Key("linkGroup"); w.String(vp.linkGroup.c_str()); }
+      if (!compact || !vp.panX)  { w.Key("panX"); w.Bool(vp.panX); }
+      if (!compact || !vp.panY)  { w.Key("panY"); w.Bool(vp.panY); }
+      if (!compact || !vp.zoomX) { w.Key("zoomX"); w.Bool(vp.zoomX); }
+      if (!compact || !vp.zoomY) { w.Key("zoomY"); w.Bool(vp.zoomY); }
+      w.EndObject();
+    }
+    w.EndObject();
+  }
+
+  // textOverlay
+  const DocTextOverlay defOv;
+  bool overlayNonDefault = doc.textOverlay.fontSize != defOv.fontSize ||
+                           doc.textOverlay.color != defOv.color ||
+                           !doc.textOverlay.labels.empty();
+  if (!compact || overlayNonDefault) {
+    w.Key("textOverlay");
+    w.StartObject();
+    w.Key("fontSize"); w.Int(doc.textOverlay.fontSize);
+    w.Key("color"); w.String(doc.textOverlay.color.c_str());
+    if (!compact || !doc.textOverlay.labels.empty()) {
+      w.Key("labels");
+      w.StartArray();
+      const DocTextLabel defLbl;
+      for (const auto& lbl : doc.textOverlay.labels) {
+        w.StartObject();
+        w.Key("clipX"); w.Double(static_cast<double>(lbl.clipX));
+        w.Key("clipY"); w.Double(static_cast<double>(lbl.clipY));
+        w.Key("text"); w.String(lbl.text.c_str());
+        if (!compact || lbl.align != defLbl.align) { w.Key("align"); w.String(lbl.align.c_str()); }
+        if (!compact || !lbl.color.empty()) { w.Key("color"); w.String(lbl.color.c_str()); }
+        if (!compact || lbl.fontSize != 0) { w.Key("fontSize"); w.Int(lbl.fontSize); }
+        w.EndObject();
+      }
+      w.EndArray();
     }
     w.EndObject();
   }

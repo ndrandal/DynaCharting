@@ -1,0 +1,213 @@
+{
+  "version": 1,
+  "viewport": { "width": 900, "height": 600 },
+  "buffers": {
+    "100": {
+      "data": [
+        0, 0.6, 75, 1.4,
+        0, 1.6, 70, 2.4,
+        0, 2.6, 80, 3.4,
+        0, 3.6, 85, 4.4,
+        0, 4.6, 65, 5.4
+      ]
+    },
+    "103": {
+      "data": [
+        0, 0.6, 50, 1.4,
+        0, 1.6, 45, 2.4,
+        0, 2.6, 55, 3.4,
+        0, 3.6, 60, 4.4,
+        0, 4.6, 40, 5.4
+      ]
+    },
+    "106": {
+      "data": [
+        0, 0.6, 25, 1.4,
+        0, 1.6, 20, 2.4,
+        0, 2.6, 30, 3.4,
+        0, 3.6, 35, 4.4,
+        0, 4.6, 15, 5.4
+      ]
+    },
+    "109": {
+      "data": [
+        0, 0.76, 68, 1.24
+      ]
+    },
+    "112": {
+      "data": [
+        0, 1.76, 55, 2.24
+      ]
+    },
+    "115": {
+      "data": [
+        0, 2.76, 72, 3.24
+      ]
+    },
+    "118": {
+      "data": [
+        0, 3.76, 78, 4.24
+      ]
+    },
+    "121": {
+      "data": [
+        0, 4.76, 42, 5.24
+      ]
+    },
+    "124": {
+      "data": [
+        72, 0.6, 72, 1.4,
+        60, 1.6, 60, 2.4,
+        65, 2.6, 65, 3.4,
+        80, 3.6, 80, 4.4,
+        50, 4.6, 50, 5.4
+      ]
+    }
+  },
+  "transforms": {
+    "50": {
+      "sx": 0.016667,
+      "sy": 0.288889,
+      "tx": -0.733333,
+      "ty": -0.9
+    }
+  },
+  "panes": {
+    "1": {
+      "name": "BulletCharts",
+      "region": {
+        "clipYMin": -0.9,
+        "clipYMax": 0.8333,
+        "clipXMin": -0.7333,
+        "clipXMax": 0.9333
+      },
+      "hasClearColor": true,
+      "clearColor": [0.067, 0.094, 0.153, 1.0]
+    }
+  },
+  "layers": {
+    "10": { "paneId": 1, "name": "GoodBands" },
+    "11": { "paneId": 1, "name": "SatisfactoryBands" },
+    "12": { "paneId": 1, "name": "PoorBands" },
+    "13": { "paneId": 1, "name": "ActualBars" },
+    "14": { "paneId": 1, "name": "TargetMarkers" }
+  },
+  "geometries": {
+    "101": { "vertexBufferId": 100, "format": "rect4", "vertexCount": 5 },
+    "104": { "vertexBufferId": 103, "format": "rect4", "vertexCount": 5 },
+    "107": { "vertexBufferId": 106, "format": "rect4", "vertexCount": 5 },
+    "110": { "vertexBufferId": 109, "format": "rect4", "vertexCount": 1 },
+    "113": { "vertexBufferId": 112, "format": "rect4", "vertexCount": 1 },
+    "116": { "vertexBufferId": 115, "format": "rect4", "vertexCount": 1 },
+    "119": { "vertexBufferId": 118, "format": "rect4", "vertexCount": 1 },
+    "122": { "vertexBufferId": 121, "format": "rect4", "vertexCount": 1 },
+    "125": { "vertexBufferId": 124, "format": "rect4", "vertexCount": 5 }
+  },
+  "drawItems": {
+    "102": {
+      "layerId": 10,
+      "name": "GoodBands",
+      "pipeline": "instancedRect@1",
+      "geometryId": 101,
+      "transformId": 50,
+      "color": [1.0, 1.0, 1.0, 0.12]
+    },
+    "105": {
+      "layerId": 11,
+      "name": "SatisfactoryBands",
+      "pipeline": "instancedRect@1",
+      "geometryId": 104,
+      "transformId": 50,
+      "color": [1.0, 1.0, 1.0, 0.20]
+    },
+    "108": {
+      "layerId": 12,
+      "name": "PoorBands",
+      "pipeline": "instancedRect@1",
+      "geometryId": 107,
+      "transformId": 50,
+      "color": [1.0, 1.0, 1.0, 0.30]
+    },
+    "111": {
+      "layerId": 13,
+      "name": "RevenueBar",
+      "pipeline": "instancedRect@1",
+      "geometryId": 110,
+      "transformId": 50,
+      "color": [0.231, 0.510, 0.965, 1.0]
+    },
+    "114": {
+      "layerId": 13,
+      "name": "ProfitBar",
+      "pipeline": "instancedRect@1",
+      "geometryId": 113,
+      "transformId": 50,
+      "color": [0.063, 0.725, 0.506, 1.0]
+    },
+    "117": {
+      "layerId": 13,
+      "name": "NewCustomersBar",
+      "pipeline": "instancedRect@1",
+      "geometryId": 116,
+      "transformId": 50,
+      "color": [0.961, 0.620, 0.043, 1.0]
+    },
+    "120": {
+      "layerId": 13,
+      "name": "SatisfactionBar",
+      "pipeline": "instancedRect@1",
+      "geometryId": 119,
+      "transformId": 50,
+      "color": [0.545, 0.361, 0.965, 1.0]
+    },
+    "123": {
+      "layerId": 13,
+      "name": "OrderSizeBar",
+      "pipeline": "instancedRect@1",
+      "geometryId": 122,
+      "transformId": 50,
+      "color": [0.925, 0.282, 0.600, 1.0]
+    },
+    "126": {
+      "layerId": 14,
+      "name": "TargetMarkers",
+      "pipeline": "lineAA@1",
+      "geometryId": 125,
+      "transformId": 50,
+      "color": [1.0, 1.0, 1.0, 0.9],
+      "lineWidth": 2.0
+    }
+  },
+  "textOverlay": {
+    "fontSize": 13,
+    "color": "#b2b5bc",
+    "labels": [
+      { "clipX": 0.1, "clipY": 0.92, "text": "KPI Bullet Charts", "align": "c", "fontSize": 18, "color": "#e2e8f0" },
+      { "clipX": 0.1, "clipY": 0.87, "text": "Actual vs Target (% of maximum)", "align": "c", "fontSize": 11, "color": "#64748b" },
+
+      { "clipX": -0.78, "clipY": -0.6111, "text": "Revenue", "align": "r", "fontSize": 13, "color": "#e2e8f0" },
+      { "clipX": -0.78, "clipY": -0.3222, "text": "Profit", "align": "r", "fontSize": 13, "color": "#e2e8f0" },
+      { "clipX": -0.78, "clipY": -0.0333, "text": "New Customers", "align": "r", "fontSize": 13, "color": "#e2e8f0" },
+      { "clipX": -0.78, "clipY": 0.2556, "text": "Satisfaction", "align": "r", "fontSize": 13, "color": "#e2e8f0" },
+      { "clipX": -0.78, "clipY": 0.5444, "text": "Order Size", "align": "r", "fontSize": 13, "color": "#e2e8f0" },
+
+      { "clipX": 0.4333, "clipY": -0.6111, "text": "68", "align": "l", "fontSize": 11, "color": "#3b82f6" },
+      { "clipX": 0.2167, "clipY": -0.3222, "text": "55", "align": "l", "fontSize": 11, "color": "#10b981" },
+      { "clipX": 0.5000, "clipY": -0.0333, "text": "72", "align": "l", "fontSize": 11, "color": "#f59e0b" },
+      { "clipX": 0.5667, "clipY": 0.2556, "text": "78", "align": "l", "fontSize": 11, "color": "#8b5cf6" },
+      { "clipX": -0.0333, "clipY": 0.5444, "text": "42", "align": "l", "fontSize": 11, "color": "#ec4899" },
+
+      { "clipX": 0.4667, "clipY": -0.49, "text": "\u25bc 72", "align": "c", "fontSize": 10, "color": "#94a3b8" },
+      { "clipX": 0.2667, "clipY": -0.20, "text": "\u25bc 60", "align": "c", "fontSize": 10, "color": "#94a3b8" },
+      { "clipX": 0.3500, "clipY": 0.09, "text": "\u25bc 65", "align": "c", "fontSize": 10, "color": "#94a3b8" },
+      { "clipX": 0.6000, "clipY": 0.38, "text": "\u25bc 80", "align": "c", "fontSize": 10, "color": "#94a3b8" },
+      { "clipX": 0.1000, "clipY": 0.67, "text": "\u25bc 50", "align": "c", "fontSize": 10, "color": "#94a3b8" },
+
+      { "clipX": -0.7333, "clipY": -0.82, "text": "0", "align": "l", "fontSize": 10, "color": "#475569" },
+      { "clipX": -0.3167, "clipY": -0.82, "text": "25", "align": "c", "fontSize": 10, "color": "#475569" },
+      { "clipX": 0.1000, "clipY": -0.82, "text": "50", "align": "c", "fontSize": 10, "color": "#475569" },
+      { "clipX": 0.5167, "clipY": -0.82, "text": "75", "align": "c", "fontSize": 10, "color": "#475569" },
+      { "clipX": 0.9333, "clipY": -0.82, "text": "100", "align": "r", "fontSize": 10, "color": "#475569" }
+    ]
+  }
+}

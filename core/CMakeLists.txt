@@ -61,6 +61,8 @@ file(GLOB_RECURSE DC_SOURCES
 )
 # Exclude gl/ sources — those belong to dc_gl.
 list(FILTER DC_SOURCES EXCLUDE REGEX ".*/gl/.*")
+# Exclude host/ sources — standalone executables.
+list(FILTER DC_SOURCES EXCLUDE REGEX ".*/host/.*")
 # Exclude WebSocketDataSource — belongs to dc_ws (conditional).
 list(FILTER DC_SOURCES EXCLUDE REGEX ".*WebSocketDataSource\\.cpp$")
 
@@ -260,6 +262,14 @@ if (DC_HAS_GLAD AND (DC_HAS_OSMESA OR DC_HAS_GLFW))
   # D78 Modern Chart Styling Showcase
   add_executable(dc_d78_showcase "${CMAKE_CURRENT_SOURCE_DIR}/demos/d78_showcase.cpp")
   target_link_libraries(dc_d78_showcase PRIVATE dc_gl)
+
+  # Dashboard server (5-pane market command center)
+  add_executable(dc_dashboard_server "${CMAKE_CURRENT_SOURCE_DIR}/demos/dashboard_server.cpp")
+  target_link_libraries(dc_dashboard_server PRIVATE dc_gl)
+
+  # D79 Generic JSON host (reads .json chart, serves via TEXT/FRME protocol)
+  add_executable(dc_json_host "${CMAKE_CURRENT_SOURCE_DIR}/src/host/JsonHost.cpp")
+  target_link_libraries(dc_json_host PRIVATE dc_gl)
 else()
   message(STATUS "Skipping dc_gl (requires GLAD + at least one of OSMesa/GLFW)")
 endif()
@@ -1689,4 +1699,20 @@ if (DC_BUILD_TESTS)
   )
   target_link_libraries(dc_d78_4_grid_style PRIVATE dc)
   add_test(NAME dc_d78_4_grid_style COMMAND dc_d78_4_grid_style)
+
+  # D79.1 JSON host parse/serialize round-trip (pure C++)
+  add_executable(dc_d79_1_json_host
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/d79_1_json_host.cpp"
+  )
+  target_link_libraries(dc_d79_1_json_host PRIVATE dc)
+  add_test(NAME dc_d79_1_json_host COMMAND dc_d79_1_json_host)
+
+  # D79.2 JSON host GL integration (needs OSMesa)
+  if (DC_HAS_GLAD AND DC_HAS_OSMESA)
+    add_executable(dc_d79_2_json_host_gl
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/d79_2_json_host_gl.cpp"
+    )
+    target_link_libraries(dc_d79_2_json_host_gl PRIVATE dc_gl)
+    add_test(NAME dc_d79_2_json_host_gl COMMAND dc_d79_2_json_host_gl)
+  endif()
 endif()

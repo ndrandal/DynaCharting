@@ -10,9 +10,28 @@ const ROOT = resolve(__dirname, '../..');
 
 // ---------- Find the C++ binary ----------
 
-const cppBinary = process.env.DC_BINARY
-  ? resolve(ROOT, process.env.DC_BINARY)
-  : join(ROOT, 'build/core/dc_live_server');
+const chartFile = process.env.DC_CHART ? resolve(ROOT, process.env.DC_CHART) : null;
+
+let cppBinary;
+let cppArgs;
+if (chartFile) {
+  // JSON host mode: use dc_json_host with chart file argument
+  cppBinary = process.env.DC_BINARY
+    ? resolve(ROOT, process.env.DC_BINARY)
+    : join(ROOT, 'build/core/dc_json_host');
+  cppArgs = [chartFile];
+  if (!existsSync(chartFile)) {
+    console.error('Chart file not found at', chartFile);
+    process.exit(1);
+  }
+} else {
+  // Legacy mode: use dc_live_server
+  cppBinary = process.env.DC_BINARY
+    ? resolve(ROOT, process.env.DC_BINARY)
+    : join(ROOT, 'build/core/dc_live_server');
+  cppArgs = [];
+}
+
 if (!existsSync(cppBinary)) {
   console.error('C++ binary not found at', cppBinary);
   console.error('Run: cmake --build build');
@@ -21,7 +40,7 @@ if (!existsSync(cppBinary)) {
 
 // ---------- Spawn C++ renderer ----------
 
-const cpp = spawn(cppBinary, [], {
+const cpp = spawn(cppBinary, cppArgs, {
   cwd: ROOT, // so it can find third_party/test_font.ttf
   stdio: ['pipe', 'pipe', 'inherit'], // stdin=pipe, stdout=pipe, stderr=inherit
 });

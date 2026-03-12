@@ -1,0 +1,143 @@
+{
+  "version": 1,
+  "viewport": { "width": 1000, "height": 600 },
+  "buffers": {
+    "100": {
+      "data": [
+        0, 0, 36, 35,
+        36, 0, 64, 30,
+        64, 0, 88, 45,
+        88, 0, 100, 25
+      ]
+    },
+    "103": {
+      "data": [
+        0, 35, 36, 75,
+        36, 30, 64, 65,
+        64, 45, 88, 75,
+        88, 25, 100, 55
+      ]
+    },
+    "106": {
+      "data": [
+        0, 75, 36, 100,
+        36, 65, 64, 100,
+        64, 75, 88, 100,
+        88, 55, 100, 100
+      ]
+    },
+    "109": {
+      "data": [
+        36, 0, 36, 100,
+        64, 0, 64, 100,
+        88, 0, 88, 100
+      ]
+    }
+  },
+  "transforms": {
+    "50": {
+      "sx": 0.0184,
+      "sy": 0.017,
+      "tx": -0.88,
+      "ty": -0.866667
+    }
+  },
+  "panes": {
+    "1": {
+      "name": "Marimekko",
+      "region": {
+        "clipYMin": -0.866667,
+        "clipYMax": 0.833333,
+        "clipXMin": -0.88,
+        "clipXMax": 0.96
+      },
+      "hasClearColor": true,
+      "clearColor": [0.067, 0.094, 0.153, 1.0]
+    }
+  },
+  "layers": {
+    "10": { "paneId": 1, "name": "Hardware" },
+    "11": { "paneId": 1, "name": "Software" },
+    "12": { "paneId": 1, "name": "Services" },
+    "13": { "paneId": 1, "name": "Separators" }
+  },
+  "geometries": {
+    "101": { "vertexBufferId": 100, "format": "rect4", "vertexCount": 4 },
+    "104": { "vertexBufferId": 103, "format": "rect4", "vertexCount": 4 },
+    "107": { "vertexBufferId": 106, "format": "rect4", "vertexCount": 4 },
+    "110": { "vertexBufferId": 109, "format": "rect4", "vertexCount": 3 }
+  },
+  "drawItems": {
+    "102": {
+      "layerId": 10,
+      "name": "HardwareRects",
+      "pipeline": "instancedRect@1",
+      "geometryId": 101,
+      "transformId": 50,
+      "color": [0.231, 0.510, 0.965, 0.85]
+    },
+    "105": {
+      "layerId": 11,
+      "name": "SoftwareRects",
+      "pipeline": "instancedRect@1",
+      "geometryId": 104,
+      "transformId": 50,
+      "color": [0.545, 0.361, 0.965, 0.85]
+    },
+    "108": {
+      "layerId": 12,
+      "name": "ServicesRects",
+      "pipeline": "instancedRect@1",
+      "geometryId": 107,
+      "transformId": 50,
+      "color": [0.961, 0.620, 0.043, 0.85]
+    },
+    "111": {
+      "layerId": 13,
+      "name": "ColumnSeparators",
+      "pipeline": "lineAA@1",
+      "geometryId": 110,
+      "transformId": 50,
+      "color": [1.0, 1.0, 1.0, 0.25],
+      "lineWidth": 1.0
+    }
+  },
+  "viewports": {
+    "main": {
+      "transformId": 50,
+      "paneId": 1,
+      "xMin": 0,
+      "xMax": 100,
+      "yMin": 0,
+      "yMax": 100,
+      "panX": false,
+      "panY": false,
+      "zoomX": false,
+      "zoomY": false
+    }
+  },
+  "textOverlay": {
+    "fontSize": 14,
+    "color": "#b2b5bc",
+    "labels": [
+      { "clipX": 0.04, "clipY": 0.95, "text": "Global IT Market by Region", "align": "c", "fontSize": 18 },
+
+      { "clipX": -0.549, "clipY": 0.87, "text": "North America", "align": "c", "fontSize": 13 },
+      { "clipX": 0.04, "clipY": 0.87, "text": "Europe", "align": "c", "fontSize": 13 },
+      { "clipX": 0.518, "clipY": 0.87, "text": "Asia Pacific", "align": "c", "fontSize": 13 },
+      { "clipX": 0.850, "clipY": 0.87, "text": "Rest of World", "align": "c", "fontSize": 13 },
+
+      { "clipX": -0.549, "clipY": 0.81, "text": "$180B", "align": "c", "fontSize": 11, "color": "#8b8fa0" },
+      { "clipX": 0.04, "clipY": 0.81, "text": "$140B", "align": "c", "fontSize": 11, "color": "#8b8fa0" },
+      { "clipX": 0.518, "clipY": 0.81, "text": "$120B", "align": "c", "fontSize": 11, "color": "#8b8fa0" },
+      { "clipX": 0.850, "clipY": 0.81, "text": "$60B", "align": "c", "fontSize": 11, "color": "#8b8fa0" },
+
+      { "clipX": -0.95, "clipY": -0.93, "text": "\u25a0", "align": "l", "fontSize": 13, "color": "#3b82f6" },
+      { "clipX": -0.92, "clipY": -0.93, "text": "Hardware", "align": "l", "fontSize": 12 },
+      { "clipX": -0.55, "clipY": -0.93, "text": "\u25a0", "align": "l", "fontSize": 13, "color": "#8b5cf6" },
+      { "clipX": -0.52, "clipY": -0.93, "text": "Software", "align": "l", "fontSize": 12 },
+      { "clipX": -0.15, "clipY": -0.93, "text": "\u25a0", "align": "l", "fontSize": 13, "color": "#f59e0b" },
+      { "clipX": -0.12, "clipY": -0.93, "text": "Services", "align": "l", "fontSize": 12 }
+    ]
+  }
+}

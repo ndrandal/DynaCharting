@@ -1,0 +1,146 @@
+{
+  "version": 1,
+  "viewport": { "width": 800, "height": 900 },
+  "buffers": {
+    "100": {
+      "data": [
+        -0.50, 6.00,  -0.34, 5.15,   0.50, 6.00,
+         0.50, 6.00,  -0.34, 5.15,   0.34, 5.15
+      ]
+    },
+    "103": {
+      "data": [
+        -0.34, 5.00,  -0.21, 4.15,   0.34, 5.00,
+         0.34, 5.00,  -0.21, 4.15,   0.21, 4.15
+      ]
+    },
+    "106": {
+      "data": [
+        -0.21, 4.00,  -0.125, 3.15,   0.21, 4.00,
+         0.21, 4.00,  -0.125, 3.15,   0.125, 3.15
+      ]
+    },
+    "109": {
+      "data": [
+        -0.125, 3.00,  -0.07, 2.15,   0.125, 3.00,
+         0.125, 3.00,  -0.07, 2.15,   0.07, 2.15
+      ]
+    },
+    "112": {
+      "data": [
+        -0.07, 2.00,  -0.04, 1.15,   0.07, 2.00,
+         0.07, 2.00,  -0.04, 1.15,   0.04, 1.15
+      ]
+    },
+    "115": {
+      "data": [
+        -0.04, 1.00,  -0.04, 0.15,   0.04, 1.00,
+         0.04, 1.00,  -0.04, 0.15,   0.04, 0.15
+      ]
+    }
+  },
+  "transforms": {
+    "50": { "sx": 1.0, "sy": 1.0, "tx": 0.0, "ty": 0.0 }
+  },
+  "panes": {
+    "1": {
+      "name": "Funnel",
+      "region": {
+        "clipYMin": -0.97333,
+        "clipYMax": 0.97333,
+        "clipXMin": -0.97,
+        "clipXMax": 0.97
+      },
+      "hasClearColor": true,
+      "clearColor": [0.051, 0.067, 0.090, 1.0]
+    }
+  },
+  "layers": {
+    "10": { "paneId": 1, "name": "stages" }
+  },
+  "geometries": {
+    "101": { "vertexBufferId": 100, "format": "pos2_clip", "vertexCount": 6 },
+    "104": { "vertexBufferId": 103, "format": "pos2_clip", "vertexCount": 6 },
+    "107": { "vertexBufferId": 106, "format": "pos2_clip", "vertexCount": 6 },
+    "110": { "vertexBufferId": 109, "format": "pos2_clip", "vertexCount": 6 },
+    "113": { "vertexBufferId": 112, "format": "pos2_clip", "vertexCount": 6 },
+    "116": { "vertexBufferId": 115, "format": "pos2_clip", "vertexCount": 6 }
+  },
+  "drawItems": {
+    "102": {
+      "layerId": 10,
+      "name": "Visitors",
+      "pipeline": "triSolid@1",
+      "geometryId": 101,
+      "transformId": 50,
+      "color": [0.259, 0.522, 0.957, 1.0]
+    },
+    "105": {
+      "layerId": 10,
+      "name": "Leads",
+      "pipeline": "triSolid@1",
+      "geometryId": 104,
+      "transformId": 50,
+      "color": [0.0, 0.675, 0.757, 1.0]
+    },
+    "108": {
+      "layerId": 10,
+      "name": "Qualified",
+      "pipeline": "triSolid@1",
+      "geometryId": 107,
+      "transformId": 50,
+      "color": [0.204, 0.659, 0.325, 1.0]
+    },
+    "111": {
+      "layerId": 10,
+      "name": "Proposals",
+      "pipeline": "triSolid@1",
+      "geometryId": 110,
+      "transformId": 50,
+      "color": [0.984, 0.549, 0.0, 1.0]
+    },
+    "114": {
+      "layerId": 10,
+      "name": "Negotiations",
+      "pipeline": "triSolid@1",
+      "geometryId": 113,
+      "transformId": 50,
+      "color": [0.902, 0.290, 0.098, 1.0]
+    },
+    "117": {
+      "layerId": 10,
+      "name": "ClosedWon",
+      "pipeline": "triSolid@1",
+      "geometryId": 116,
+      "transformId": 50,
+      "color": [0.827, 0.184, 0.184, 1.0]
+    }
+  },
+  "viewports": {
+    "main": {
+      "transformId": 50,
+      "paneId": 1,
+      "xMin": -0.6,
+      "xMax": 0.6,
+      "yMin": -0.1,
+      "yMax": 7.1,
+      "panX": false,
+      "panY": false,
+      "zoomX": false,
+      "zoomY": false
+    }
+  },
+  "textOverlay": {
+    "fontSize": 13,
+    "color": "#ffffff",
+    "labels": [
+      { "clipX": 0.0, "clipY": 0.82, "text": "Sales Funnel", "align": "c", "fontSize": 18 },
+      { "clipX": 0.0, "clipY": 0.561, "text": "Visitors \u2014 100%", "align": "c" },
+      { "clipX": 0.0, "clipY": 0.291, "text": "Leads \u2014 68%", "align": "c" },
+      { "clipX": 0.0, "clipY": 0.020, "text": "Qualified \u2014 42%", "align": "c" },
+      { "clipX": 0.0, "clipY": -0.250, "text": "Proposals \u2014 25%", "align": "c" },
+      { "clipX": 0.0, "clipY": -0.520, "text": "Negotiations \u2014 14%", "align": "c" },
+      { "clipX": 0.0, "clipY": -0.791, "text": "Closed Won \u2014 8%", "align": "c" }
+    ]
+  }
+}

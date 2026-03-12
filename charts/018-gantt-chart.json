@@ -1,0 +1,154 @@
+{
+  "version": 1,
+  "viewport": { "width": 1200, "height": 600 },
+  "buffers": {
+    "100": {
+      "data": [
+        0, 11.7, 3, 12.3,
+        1, 10.7, 5, 11.3,
+        2, 9.7, 4, 10.3,
+        3, 8.7, 8, 9.3
+      ]
+    },
+    "103": {
+      "data": [
+        4, 7.7, 10, 8.3,
+        5, 6.7, 12, 7.3,
+        7, 5.7, 13, 6.3
+      ]
+    },
+    "106": {
+      "data": [
+        10, 4.7, 15, 5.3,
+        12, 3.7, 17, 4.3,
+        14, 2.7, 18, 3.3,
+        16, 1.7, 19, 2.3,
+        18, 0.7, 20, 1.3
+      ]
+    },
+    "109": {
+      "data": [
+        9, 0.4, 9, 12.6
+      ]
+    }
+  },
+  "transforms": {
+    "50": {
+      "sx": 0.089090909,
+      "sy": 0.147692308,
+      "tx": -0.890909091,
+      "ty": -0.96
+    }
+  },
+  "panes": {
+    "1": {
+      "name": "Gantt",
+      "region": {
+        "clipYMin": -0.96,
+        "clipYMax": 0.96,
+        "clipXMin": -0.98,
+        "clipXMax": 0.98
+      },
+      "hasClearColor": true,
+      "clearColor": [0.051, 0.067, 0.09, 1.0]
+    }
+  },
+  "layers": {
+    "10": { "paneId": 1, "name": "Bars" },
+    "11": { "paneId": 1, "name": "TodayLine" }
+  },
+  "geometries": {
+    "101": { "vertexBufferId": 100, "format": "rect4", "vertexCount": 4 },
+    "104": { "vertexBufferId": 103, "format": "rect4", "vertexCount": 3 },
+    "107": { "vertexBufferId": 106, "format": "rect4", "vertexCount": 5 },
+    "110": { "vertexBufferId": 109, "format": "rect4", "vertexCount": 1 }
+  },
+  "drawItems": {
+    "102": {
+      "layerId": 10,
+      "name": "GreenBars",
+      "pipeline": "instancedRect@1",
+      "geometryId": 101,
+      "transformId": 50,
+      "color": [0.2, 0.72, 0.35, 1.0],
+      "cornerRadius": 3.0
+    },
+    "105": {
+      "layerId": 10,
+      "name": "BlueBars",
+      "pipeline": "instancedRect@1",
+      "geometryId": 104,
+      "transformId": 50,
+      "color": [0.26, 0.52, 0.96, 1.0],
+      "cornerRadius": 3.0
+    },
+    "108": {
+      "layerId": 10,
+      "name": "GrayBars",
+      "pipeline": "instancedRect@1",
+      "geometryId": 107,
+      "transformId": 50,
+      "color": [0.4, 0.42, 0.45, 1.0],
+      "cornerRadius": 3.0
+    },
+    "111": {
+      "layerId": 11,
+      "name": "TodayLine",
+      "pipeline": "lineAA@1",
+      "geometryId": 110,
+      "transformId": 50,
+      "color": [1.0, 1.0, 1.0, 0.6],
+      "lineWidth": 2.0,
+      "dashLength": 8.0,
+      "gapLength": 5.0
+    }
+  },
+  "viewports": {
+    "main": {
+      "transformId": 50,
+      "paneId": 1,
+      "xMin": -1,
+      "xMax": 21,
+      "yMin": 0,
+      "yMax": 13,
+      "panX": false,
+      "panY": false,
+      "zoomX": false,
+      "zoomY": false
+    }
+  },
+  "textOverlay": {
+    "fontSize": 11,
+    "color": "#ffffff",
+    "labels": [
+      { "clipX": 0.0, "clipY": 0.99, "text": "Project Timeline", "align": "c", "fontSize": 16 },
+
+      { "clipX": -0.92, "clipY": 0.812, "text": "Requirements", "align": "r", "fontSize": 11 },
+      { "clipX": -0.92, "clipY": 0.665, "text": "UI Design", "align": "r", "fontSize": 11 },
+      { "clipX": -0.92, "clipY": 0.517, "text": "DB Schema", "align": "r", "fontSize": 11 },
+      { "clipX": -0.92, "clipY": 0.369, "text": "Auth Module", "align": "r", "fontSize": 11 },
+      { "clipX": -0.92, "clipY": 0.222, "text": "API Layer", "align": "r", "fontSize": 11 },
+      { "clipX": -0.92, "clipY": 0.074, "text": "Frontend Core", "align": "r", "fontSize": 11 },
+      { "clipX": -0.92, "clipY": -0.074, "text": "Data Pipeline", "align": "r", "fontSize": 11 },
+      { "clipX": -0.92, "clipY": -0.222, "text": "Integration", "align": "r", "fontSize": 11 },
+      { "clipX": -0.92, "clipY": -0.369, "text": "Testing", "align": "r", "fontSize": 11 },
+      { "clipX": -0.92, "clipY": -0.517, "text": "Performance", "align": "r", "fontSize": 11 },
+      { "clipX": -0.92, "clipY": -0.665, "text": "Documentation", "align": "r", "fontSize": 11 },
+      { "clipX": -0.92, "clipY": -0.812, "text": "Launch", "align": "r", "fontSize": 11 },
+
+      { "clipX": -0.891, "clipY": -0.99, "text": "W0", "align": "c", "fontSize": 10 },
+      { "clipX": -0.713, "clipY": -0.99, "text": "W2", "align": "c", "fontSize": 10 },
+      { "clipX": -0.535, "clipY": -0.99, "text": "W4", "align": "c", "fontSize": 10 },
+      { "clipX": -0.356, "clipY": -0.99, "text": "W6", "align": "c", "fontSize": 10 },
+      { "clipX": -0.178, "clipY": -0.99, "text": "W8", "align": "c", "fontSize": 10 },
+      { "clipX": 0.0, "clipY": -0.99, "text": "W10", "align": "c", "fontSize": 10 },
+      { "clipX": 0.178, "clipY": -0.99, "text": "W12", "align": "c", "fontSize": 10 },
+      { "clipX": 0.356, "clipY": -0.99, "text": "W14", "align": "c", "fontSize": 10 },
+      { "clipX": 0.535, "clipY": -0.99, "text": "W16", "align": "c", "fontSize": 10 },
+      { "clipX": 0.713, "clipY": -0.99, "text": "W18", "align": "c", "fontSize": 10 },
+      { "clipX": 0.891, "clipY": -0.99, "text": "W20", "align": "c", "fontSize": 10 },
+
+      { "clipX": -0.089, "clipY": 0.93, "text": "Today", "align": "c", "fontSize": 10, "color": "#ffffffaa" }
+    ]
+  }
+}

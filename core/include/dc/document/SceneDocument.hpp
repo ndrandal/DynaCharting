@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <map>
 #include <string>
+#include <vector>
 
 namespace dc {
 
@@ -12,6 +13,7 @@ namespace dc {
 
 struct DocBuffer {
   std::uint32_t byteLength{0};
+  std::vector<float> data;  // inline vertex floats; when non-empty, byteLength is derived
 };
 
 struct DocTransform {
@@ -81,6 +83,30 @@ struct DocDrawItem {
   float gradientRadius{0.5f};
 };
 
+// --- Viewport declaration (for interactive pan/zoom) ---
+struct DocViewport {
+  Id transformId{0};
+  Id paneId{0};
+  double xMin{0}, xMax{1}, yMin{0}, yMax{1};
+  std::string linkGroup;
+  bool panX{true}, panY{true}, zoomX{true}, zoomY{true};
+};
+
+// --- Text overlay declarations ---
+struct DocTextLabel {
+  float clipX{0}, clipY{0};
+  std::string text;
+  std::string align{"l"};  // "l", "c", "r"
+  std::string color;        // hex, empty = default
+  int fontSize{0};          // 0 = use overlay default
+};
+
+struct DocTextOverlay {
+  int fontSize{12};
+  std::string color{"#b2b5bc"};
+  std::vector<DocTextLabel> labels;
+};
+
 struct SceneDocument {
   int version{1};
   int viewportWidth{0};
@@ -92,6 +118,9 @@ struct SceneDocument {
   std::map<Id, DocLayer> layers;
   std::map<Id, DocGeometry> geometries;
   std::map<Id, DocDrawItem> drawItems;
+
+  std::map<std::string, DocViewport> viewports;
+  DocTextOverlay textOverlay;
 };
 
 // Parse a JSON string into a SceneDocument. Returns true on success.
