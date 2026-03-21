@@ -26,7 +26,13 @@ void AnimationManager::cancelAll() {
 }
 
 void AnimationManager::tick(float dt) {
-  for (auto& tw : tweens_) {
+  // Swap tweens_ into a local to guard against iterator invalidation:
+  // callbacks (onUpdate, onComplete) may call addTween(), which would
+  // reallocate tweens_ while we're iterating over it.
+  auto active = std::move(tweens_);
+  tweens_.clear();  // any addTween() during callbacks goes into fresh tweens_
+
+  for (auto& tw : active) {
     if (tw.finished) continue;
 
     tw.elapsed += dt;
@@ -48,11 +54,10 @@ void AnimationManager::tick(float dt) {
     }
   }
 
-  // Remove finished tweens
-  tweens_.erase(
-    std::remove_if(tweens_.begin(), tweens_.end(),
-                   [](const Tween& tw) { return tw.finished; }),
-    tweens_.end());
+  // Keep unfinished tweens, prepend before any newly-added ones
+  for (auto& tw : active) {
+    if (!tw.finished) tweens_.insert(tweens_.begin(), std::move(tw));
+  }
 }
 
 std::size_t AnimationManager::activeCount() const {

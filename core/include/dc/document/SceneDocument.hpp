@@ -107,6 +107,43 @@ struct DocTextOverlay {
   std::vector<DocTextLabel> labels;
 };
 
+// --- Binding declarations (D80: reactive data relationships) ---
+
+struct DocBindingTrigger {
+  std::string type;                  // "selection", "hover", "viewport", "threshold"
+  Id drawItemId{0};                  // for selection/hover triggers
+  std::string viewportName;          // for viewport trigger
+  Id sourceBufferId{0};              // for threshold trigger
+  std::uint32_t fieldOffset{0};      // byte offset to float field in record
+  std::string condition;             // "greaterThan", "lessThan", "crossingUp", "crossingDown"
+  double value{0};                   // threshold value
+};
+
+struct DocBindingEffect {
+  std::string type;                  // "filterBuffer", "rangeBuffer", "setVisible", "setColor"
+
+  // filterBuffer / rangeBuffer
+  Id sourceBufferId{0};
+  Id outputBufferId{0};
+  std::uint32_t recordStride{0};
+  Id geometryId{0};                  // auto-update vertexCount
+  std::uint32_t xFieldOffset{0};     // rangeBuffer: byte offset of x-coordinate
+
+  // setVisible
+  Id drawItemId{0};
+  bool visible{true};
+  bool defaultVisible{true};
+
+  // setColor
+  float color[4] = {1, 1, 1, 1};
+  float defaultColor[4] = {1, 1, 1, 1};
+};
+
+struct DocBinding {
+  DocBindingTrigger trigger;
+  DocBindingEffect effect;
+};
+
 struct SceneDocument {
   int version{1};
   int viewportWidth{0};
@@ -121,6 +158,8 @@ struct SceneDocument {
 
   std::map<std::string, DocViewport> viewports;
   DocTextOverlay textOverlay;
+
+  std::map<Id, DocBinding> bindings;
 };
 
 // Parse a JSON string into a SceneDocument. Returns true on success.

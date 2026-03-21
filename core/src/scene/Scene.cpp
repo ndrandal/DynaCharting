@@ -166,12 +166,14 @@ std::vector<Id> Scene::bufferIds() const {
   std::vector<Id> out;
   out.reserve(buffers_.size());
   for (auto& kv : buffers_) out.push_back(kv.first);
+  std::sort(out.begin(), out.end());
   return out;
 }
 std::vector<Id> Scene::geometryIds() const {
   std::vector<Id> out;
   out.reserve(geometries_.size());
   for (auto& kv : geometries_) out.push_back(kv.first);
+  std::sort(out.begin(), out.end());
   return out;
 }
 
@@ -179,6 +181,7 @@ std::vector<Id> Scene::transformIds() const {
   std::vector<Id> out;
   out.reserve(transforms_.size());
   for (auto& kv : transforms_) out.push_back(kv.first);
+  std::sort(out.begin(), out.end());
   return out;
 }
 

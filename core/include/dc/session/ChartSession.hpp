@@ -15,6 +15,7 @@
 
 namespace dc {
 
+class BindingEvaluator;
 class CommandProcessor;
 class IngestProcessor;
 class Viewport;
@@ -62,6 +63,7 @@ public:
   void setConfig(const ChartSessionConfig& cfg);
   void setViewport(Viewport* vp);
   void setEventBus(EventBus* bus);
+  void setBindingEvaluator(BindingEvaluator* eval);
 
   // Multi-viewport: per-pane viewport management
   void addPaneViewport(Id paneId, Viewport* vp, Id transformId);
@@ -139,6 +141,9 @@ private:
 
   // Selection-change trigger (D26)
   bool selectionDirty_{false};
+
+  // D80: optional binding evaluator
+  BindingEvaluator* bindingEval_{nullptr};
 };
 
 } // namespace dc

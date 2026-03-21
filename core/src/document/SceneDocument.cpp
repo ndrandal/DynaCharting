@@ -255,6 +255,44 @@ bool parseSceneDocument(const std::string& json, SceneDocument& out) {
     }
   }
 
+  // bindings (D80)
+  if (doc.HasMember("bindings") && doc["bindings"].IsObject()) {
+    for (auto it = doc["bindings"].MemberBegin(); it != doc["bindings"].MemberEnd(); ++it) {
+      Id id = parseIdKey(it->name.GetString());
+      if (id == 0 || !it->value.IsObject()) continue;
+      DocBinding b;
+      // trigger
+      auto tit = it->value.FindMember("trigger");
+      if (tit != it->value.MemberEnd() && tit->value.IsObject()) {
+        const auto& t = tit->value;
+        b.trigger.type = getString(t, "type");
+        b.trigger.drawItemId = getId(t, "drawItemId");
+        b.trigger.viewportName = getString(t, "viewportName");
+        b.trigger.sourceBufferId = getId(t, "sourceBufferId");
+        b.trigger.fieldOffset = getUint(t, "fieldOffset", 0);
+        b.trigger.condition = getString(t, "condition");
+        b.trigger.value = static_cast<double>(getFloat(t, "value", 0));
+      }
+      // effect
+      auto eit = it->value.FindMember("effect");
+      if (eit != it->value.MemberEnd() && eit->value.IsObject()) {
+        const auto& e = eit->value;
+        b.effect.type = getString(e, "type");
+        b.effect.sourceBufferId = getId(e, "sourceBufferId");
+        b.effect.outputBufferId = getId(e, "outputBufferId");
+        b.effect.recordStride = getUint(e, "recordStride", 0);
+        b.effect.geometryId = getId(e, "geometryId");
+        b.effect.xFieldOffset = getUint(e, "xFieldOffset", 0);
+        b.effect.drawItemId = getId(e, "drawItemId");
+        b.effect.visible = getBool(e, "visible", true);
+        b.effect.defaultVisible = getBool(e, "defaultVisible", true);
+        parseColor4(e, "color", b.effect.color);
+        parseColor4(e, "defaultColor", b.effect.defaultColor);
+      }
+      out.bindings[id] = std::move(b);
+    }
+  }
+
   // textOverlay
   if (doc.HasMember("textOverlay") && doc["textOverlay"].IsObject()) {
     const auto& ov = doc["textOverlay"];
@@ -542,6 +580,49 @@ std::string serializeSceneDocument(const SceneDocument& doc, bool compact) {
         w.EndObject();
       }
       w.EndArray();
+    }
+    w.EndObject();
+  }
+
+  // bindings (D80)
+  if (!compact || !doc.bindings.empty()) {
+    w.Key("bindings");
+    w.StartObject();
+    for (const auto& [id, b] : doc.bindings) {
+      w.Key(std::to_string(id).c_str());
+      w.StartObject();
+
+      // trigger
+      w.Key("trigger");
+      w.StartObject();
+      w.Key("type"); w.String(b.trigger.type.c_str());
+      if (!compact || b.trigger.drawItemId != 0)          { w.Key("drawItemId"); w.Uint64(b.trigger.drawItemId); }
+      if (!compact || !b.trigger.viewportName.empty())     { w.Key("viewportName"); w.String(b.trigger.viewportName.c_str()); }
+      if (!compact || b.trigger.sourceBufferId != 0)       { w.Key("sourceBufferId"); w.Uint64(b.trigger.sourceBufferId); }
+      if (!compact || b.trigger.fieldOffset != 0)          { w.Key("fieldOffset"); w.Uint(b.trigger.fieldOffset); }
+      if (!compact || !b.trigger.condition.empty())        { w.Key("condition"); w.String(b.trigger.condition.c_str()); }
+      if (!compact || b.trigger.value != 0)                { w.Key("value"); w.Double(b.trigger.value); }
+      w.EndObject();
+
+      // effect
+      w.Key("effect");
+      w.StartObject();
+      w.Key("type"); w.String(b.effect.type.c_str());
+      if (!compact || b.effect.sourceBufferId != 0) { w.Key("sourceBufferId"); w.Uint64(b.effect.sourceBufferId); }
+      if (!compact || b.effect.outputBufferId != 0) { w.Key("outputBufferId"); w.Uint64(b.effect.outputBufferId); }
+      if (!compact || b.effect.recordStride != 0)   { w.Key("recordStride"); w.Uint(b.effect.recordStride); }
+      if (!compact || b.effect.geometryId != 0)     { w.Key("geometryId"); w.Uint64(b.effect.geometryId); }
+      if (!compact || b.effect.xFieldOffset != 0)   { w.Key("xFieldOffset"); w.Uint(b.effect.xFieldOffset); }
+      if (!compact || b.effect.drawItemId != 0)     { w.Key("drawItemId"); w.Uint64(b.effect.drawItemId); }
+      if (!compact || !b.effect.visible)             { w.Key("visible"); w.Bool(b.effect.visible); }
+      if (!compact || !b.effect.defaultVisible)      { w.Key("defaultVisible"); w.Bool(b.effect.defaultVisible); }
+
+      const DocBindingEffect defEff;
+      if (!compact || !color4Eq(b.effect.color, defEff.color))         { w.Key("color"); writeColor4(w, b.effect.color); }
+      if (!compact || !color4Eq(b.effect.defaultColor, defEff.defaultColor)) { w.Key("defaultColor"); writeColor4(w, b.effect.defaultColor); }
+      w.EndObject();
+
+      w.EndObject();
     }
     w.EndObject();
   }

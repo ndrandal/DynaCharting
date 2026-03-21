@@ -19,7 +19,7 @@ inline TextLayoutResult layoutText(const GlyphAtlas& atlas, const char* text,
   float scale = fontSize / glyphPx;
 
   for (const char* p = text; *p; p++) {
-    const GlyphInfo* g = atlas.getGlyph(static_cast<std::uint32_t>(*p));
+    const GlyphInfo* g = atlas.getGlyph(static_cast<std::uint32_t>(static_cast<unsigned char>(*p)));
     if (!g) continue;
     if (g->w <= 0 || g->h <= 0) {
       cursorX += g->advance * scale;
@@ -47,7 +47,7 @@ inline TextLayoutResult layoutTextRightAligned(const GlyphAtlas& atlas, const ch
   float scale = fontSize / glyphPx;
   float width = 0;
   for (const char* p = text; *p; p++) {
-    const GlyphInfo* g = atlas.getGlyph(static_cast<std::uint32_t>(*p));
+    const GlyphInfo* g = atlas.getGlyph(static_cast<std::uint32_t>(static_cast<unsigned char>(*p)));
     if (g) width += g->advance * scale;
   }
   return layoutText(atlas, text, endX - width, baselineY, fontSize, glyphPx);

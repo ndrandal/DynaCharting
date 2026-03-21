@@ -1,4 +1,5 @@
 #include "dc/session/ChartSession.hpp"
+#include "dc/binding/BindingEvaluator.hpp"
 #include "dc/commands/CommandProcessor.hpp"
 #include "dc/ingest/IngestProcessor.hpp"
 #include "dc/data/DataSource.hpp"
@@ -29,6 +30,10 @@ void ChartSession::setViewport(Viewport* vp) {
 
 void ChartSession::setEventBus(EventBus* bus) {
   eventBus_ = bus;
+}
+
+void ChartSession::setBindingEvaluator(BindingEvaluator* eval) {
+  bindingEval_ = eval;
 }
 
 void ChartSession::addPaneViewport(Id paneId, Viewport* vp, Id transformId) {
@@ -311,6 +316,13 @@ FrameResult ChartSession::update(DataSource& source) {
       for (Id id : aggTouched) {
         touchedSet.insert(id);
       }
+    }
+
+    // 2c. D80: Evaluate data-triggered bindings
+    if (bindingEval_) {
+      auto bindingTouched = bindingEval_->onDataChanged(
+        std::vector<Id>(touchedSet.begin(), touchedSet.end()));
+      for (Id id : bindingTouched) touchedSet.insert(id);
     }
 
     result.touchedBufferIds.assign(touchedSet.begin(), touchedSet.end());

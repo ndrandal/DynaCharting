@@ -1715,4 +1715,27 @@ if (DC_BUILD_TESTS)
     target_link_libraries(dc_d79_2_json_host_gl PRIVATE dc_gl)
     add_test(NAME dc_d79_2_json_host_gl COMMAND dc_d79_2_json_host_gl)
   endif()
+
+  # D80.1 Binding document parse/serialize round-trip
+  add_executable(dc_d80_1_binding_document
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/d80_1_binding_document.cpp"
+  )
+  target_link_libraries(dc_d80_1_binding_document PRIVATE dc)
+  add_test(NAME dc_d80_1_binding_document COMMAND dc_d80_1_binding_document)
+
+  # D80.2 BindingEvaluator integration
+  add_executable(dc_d80_2_binding_evaluator
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/d80_2_binding_evaluator.cpp"
+  )
+  target_link_libraries(dc_d80_2_binding_evaluator PRIVATE dc)
+  add_test(NAME dc_d80_2_binding_evaluator COMMAND dc_d80_2_binding_evaluator)
+
+  # D80.3 Binding GL integration (needs OSMesa)
+  if (DC_HAS_GLAD AND DC_HAS_OSMESA)
+    add_executable(dc_d80_3_binding_gl
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/d80_3_binding_gl.cpp"
+    )
+    target_link_libraries(dc_d80_3_binding_gl PRIVATE dc_gl)
+    add_test(NAME dc_d80_3_binding_gl COMMAND dc_d80_3_binding_gl)
+  endif()
 endif()

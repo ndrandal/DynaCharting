@@ -35,6 +35,24 @@ static float readFloat(const std::uint8_t* data, std::uint32_t offset) {
   return v;
 }
 
+// ---- XML escaping ----
+
+static std::string escapeXml(const std::string& s) {
+  std::string out;
+  out.reserve(s.size());
+  for (char c : s) {
+    switch (c) {
+      case '&':  out += "&amp;"; break;
+      case '<':  out += "&lt;"; break;
+      case '>':  out += "&gt;"; break;
+      case '"':  out += "&quot;"; break;
+      case '\'': out += "&apos;"; break;
+      default:   out += c;
+    }
+  }
+  return out;
+}
+
 // ---- Color helpers ----
 
 std::string SvgExporter::colorToHex(const float color[4]) {
@@ -128,7 +146,7 @@ std::string SvgExporter::buildHeader(const SvgExportOptions& options) {
   ss << ">\n";
 
   if (!options.title.empty()) {
-    ss << "<title>" << options.title << "</title>\n";
+    ss << "<title>" << escapeXml(options.title) << "</title>\n";
   }
 
   return ss.str();
@@ -277,44 +295,84 @@ std::string SvgExporter::renderLines(const Scene& scene,
 
   std::ostringstream ss;
 
-  // Emit line segments as <line> pairs (2 vertices each)
-  std::uint32_t segCount = geom->vertexCount / 2;
-  for (std::uint32_t s = 0; s < segCount; ++s) {
-    std::uint32_t i0 = s * 2;
-    std::uint32_t i1 = s * 2 + 1;
-    std::uint32_t off0 = i0 * stride;
-    std::uint32_t off1 = i1 * stride;
-    if (off1 + 8 > bufSize) break;
+  // lineAA@1 uses Rect4 format (x0, y0, x1, y1 per segment);
+  // line2d@1 uses Pos2_Clip paired vertices (2 vertices per segment).
+  bool isRect4 = (geom->format == VertexFormat::Rect4);
 
-    float cx0 = readFloat(data, off0);
-    float cy0 = readFloat(data, off0 + 4);
-    float cx1 = readFloat(data, off1);
-    float cy1 = readFloat(data, off1 + 4);
+  if (isRect4) {
+    // Rect4: each record is a complete segment (x0, y0, x1, y1)
+    for (std::uint32_t i = 0; i < geom->vertexCount; ++i) {
+      std::uint32_t off = i * stride;
+      if (off + 16 > bufSize) break;
 
-    double sx0 = clipToSvgX(cx0, options.width);
-    double sy0 = clipToSvgY(cy0, options.height);
-    double sx1 = clipToSvgX(cx1, options.width);
-    double sy1 = clipToSvgY(cy1, options.height);
+      float cx0 = readFloat(data, off);
+      float cy0 = readFloat(data, off + 4);
+      float cx1 = readFloat(data, off + 8);
+      float cy1 = readFloat(data, off + 12);
 
-    ss << "<line x1=\"" << fmtDouble(sx0, 2)
-       << "\" y1=\"" << fmtDouble(sy0, 2)
-       << "\" x2=\"" << fmtDouble(sx1, 2)
-       << "\" y2=\"" << fmtDouble(sy1, 2)
-       << "\" stroke=\"" << stroke << "\""
-       << " stroke-width=\"" << fmtDouble(strokeW, 2) << "\"";
+      double sx0 = clipToSvgX(cx0, options.width);
+      double sy0 = clipToSvgY(cy0, options.height);
+      double sx1 = clipToSvgX(cx1, options.width);
+      double sy1 = clipToSvgY(cy1, options.height);
 
-    if (opacity < 1.0) {
-      ss << " stroke-opacity=\"" << fmtDouble(opacity, 3) << "\"";
+      ss << "<line x1=\"" << fmtDouble(sx0, 2)
+         << "\" y1=\"" << fmtDouble(sy0, 2)
+         << "\" x2=\"" << fmtDouble(sx1, 2)
+         << "\" y2=\"" << fmtDouble(sy1, 2)
+         << "\" stroke=\"" << stroke << "\""
+         << " stroke-width=\"" << fmtDouble(strokeW, 2) << "\"";
+
+      if (opacity < 1.0) {
+        ss << " stroke-opacity=\"" << fmtDouble(opacity, 3) << "\"";
+      }
+
+      if (di.dashLength > 0.0f && di.gapLength > 0.0f) {
+        ss << " stroke-dasharray=\""
+           << fmtDouble(static_cast<double>(di.dashLength), 1) << " "
+           << fmtDouble(static_cast<double>(di.gapLength), 1) << "\"";
+      }
+
+      ss << "/>\n";
     }
+  } else {
+    // Pos2_Clip: paired vertices (2 vertices per segment)
+    std::uint32_t segCount = geom->vertexCount / 2;
+    for (std::uint32_t s = 0; s < segCount; ++s) {
+      std::uint32_t i0 = s * 2;
+      std::uint32_t i1 = s * 2 + 1;
+      std::uint32_t off0 = i0 * stride;
+      std::uint32_t off1 = i1 * stride;
+      if (off1 + 8 > bufSize) break;
 
-    // Dash pattern
-    if (di.dashLength > 0.0f && di.gapLength > 0.0f) {
-      ss << " stroke-dasharray=\""
-         << fmtDouble(static_cast<double>(di.dashLength), 1) << " "
-         << fmtDouble(static_cast<double>(di.gapLength), 1) << "\"";
+      float cx0 = readFloat(data, off0);
+      float cy0 = readFloat(data, off0 + 4);
+      float cx1 = readFloat(data, off1);
+      float cy1 = readFloat(data, off1 + 4);
+
+      double sx0 = clipToSvgX(cx0, options.width);
+      double sy0 = clipToSvgY(cy0, options.height);
+      double sx1 = clipToSvgX(cx1, options.width);
+      double sy1 = clipToSvgY(cy1, options.height);
+
+      ss << "<line x1=\"" << fmtDouble(sx0, 2)
+         << "\" y1=\"" << fmtDouble(sy0, 2)
+         << "\" x2=\"" << fmtDouble(sx1, 2)
+         << "\" y2=\"" << fmtDouble(sy1, 2)
+         << "\" stroke=\"" << stroke << "\""
+         << " stroke-width=\"" << fmtDouble(strokeW, 2) << "\"";
+
+      if (opacity < 1.0) {
+        ss << " stroke-opacity=\"" << fmtDouble(opacity, 3) << "\"";
+      }
+
+      if (di.dashLength > 0.0f && di.gapLength > 0.0f) {
+        ss << " stroke-dasharray=\""
+           << fmtDouble(static_cast<double>(di.dashLength), 1) << " "
+           << fmtDouble(static_cast<double>(di.gapLength), 1) << "\"";
+      }
+
+      ss << "/>\n";
     }
-
-    ss << "/>\n";
   }
 
   return ss.str();
@@ -538,7 +596,7 @@ std::string SvgExporter::exportScene(const Scene& scene,
 
     svg << "<g id=\"pane_" << paneId << "\"";
     if (!pane->name.empty()) {
-      svg << " data-name=\"" << pane->name << "\"";
+      svg << " data-name=\"" << escapeXml(pane->name) << "\"";
     }
     svg << ">\n";
 
@@ -563,7 +621,7 @@ std::string SvgExporter::exportScene(const Scene& scene,
 
       svg << "<g id=\"layer_" << layerId << "\"";
       if (!layer->name.empty()) {
-        svg << " data-name=\"" << layer->name << "\"";
+        svg << " data-name=\"" << escapeXml(layer->name) << "\"";
       }
       svg << ">\n";
 

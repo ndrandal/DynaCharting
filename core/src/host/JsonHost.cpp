@@ -15,6 +15,10 @@
 #include "dc/gl/Renderer.hpp"
 #include "dc/viewport/Viewport.hpp"
 
+#include "dc/binding/BindingEvaluator.hpp"
+#include "dc/data/DerivedBuffer.hpp"
+#include "dc/selection/SelectionState.hpp"
+#include "dc/event/EventBus.hpp"
 #include "dc/export/ChartSnapshot.hpp"
 
 #include <rapidjson/document.h>
@@ -145,6 +149,19 @@ static void syncAllGpuBuffers(const dc::SceneDocument& doc,
   }
 }
 
+static void syncTouchedBuffersToGpu(const std::vector<dc::Id>& touchedIds,
+                                     dc::IngestProcessor& ingest,
+                                     dc::GpuBufferManager& gpuBufs) {
+  for (dc::Id id : touchedIds) {
+    const auto* data = ingest.getBufferData(id);
+    auto size = ingest.getBufferSize(id);
+    if (data && size > 0)
+      gpuBufs.setCpuData(id, data, size);
+    else
+      gpuBufs.setCpuData(id, nullptr, 0);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
@@ -222,6 +239,22 @@ int main(int argc, char* argv[]) {
     viewports[name] = std::move(hv);
   }
 
+  // ---- 7b. Set up bindings (D80) ----
+  dc::DerivedBufferManager derivedBufs;
+  dc::SelectionState selectionState;
+  dc::EventBus eventBus;
+  dc::BindingEvaluator binder(cp, ingest, derivedBufs);
+
+  if (!doc.bindings.empty()) {
+    // Ensure output buffers exist in IngestProcessor
+    for (const auto& [id, b] : doc.bindings) {
+      if (b.effect.outputBufferId != 0)
+        ingest.ensureBuffer(b.effect.outputBufferId);
+    }
+    binder.loadBindings(doc.bindings);
+    binder.attach(eventBus, selectionState);
+  }
+
   // ---- 8. Init renderer and GPU buffers ----
   auto gpuBufs = std::make_unique<dc::GpuBufferManager>();
   auto renderer = std::make_unique<dc::Renderer>();
@@ -246,7 +279,10 @@ int main(int argc, char* argv[]) {
 
   // ---- 10. Input loop ----
   bool dragging = false;
+  bool didDrag = false;
   double lastMouseX = 0.0, lastMouseY = 0.0;
+  double mouseDownX = 0.0, mouseDownY = 0.0;
+  bool hasBindings = !doc.bindings.empty();
 
   while (true) {
     std::string line = readLine();
@@ -271,10 +307,40 @@ int main(int argc, char* argv[]) {
 
       if (type == "down") {
         dragging = (buttons & 1) != 0;
+        didDrag = false;
         lastMouseX = px; lastMouseY = py;
+        mouseDownX = px; mouseDownY = py;
       }
       else if (type == "up") {
+        // Click detection: if mouse didn't move much, treat as a pick-click
+        if (hasBindings) {
+          double dist = std::sqrt((px - mouseDownX) * (px - mouseDownX) +
+                                   (py - mouseDownY) * (py - mouseDownY));
+          if (dist < 20.0) {
+            // GPU pick at click position (flip Y: browser=top-down, GL=bottom-up)
+            gpuBufs->uploadDirty();
+            int pickY = H - 1 - static_cast<int>(py);
+            auto pick = renderer->renderPick(scene, *gpuBufs, W, H,
+              static_cast<int>(px), pickY);
+            if (pick.drawItemId != 0) {
+              // Toggle selection on the picked DrawItem
+              dc::SelectionKey key{pick.drawItemId, 0};
+              if (selectionState.isSelected(key)) {
+                selectionState.clear();
+              } else {
+                selectionState.clear();
+                selectionState.select(key);
+              }
+            } else {
+              selectionState.clear();
+            }
+            auto touched = binder.onSelectionChanged(selectionState);
+            syncTouchedBuffersToGpu(touched, ingest, *gpuBufs);
+            needsRender = true;
+          }
+        }
         dragging = false;
+        didDrag = false;
       }
       else if (type == "move" && (buttons & 1) != 0) {
         if (!dragging) {
@@ -286,6 +352,7 @@ int main(int argc, char* argv[]) {
         lastMouseX = px; lastMouseY = py;
 
         if (std::fabs(dx) > 0.001 || std::fabs(dy) > 0.001) {
+          didDrag = true;
           // Find viewport under cursor
           std::string activeVp;
           for (auto& [name, hv] : viewports) {
@@ -412,6 +479,60 @@ int main(int argc, char* argv[]) {
         syncAllGpuBuffers(doc, ingest, *gpuBufs);
         needsRender = true;
       }
+    }
+
+    // ---- D80: Selection commands (drive bindings) ----
+    else if (cmd == "select") {
+      dc::Id diId = jdoc.HasMember("drawItemId")
+        ? static_cast<dc::Id>(jdoc["drawItemId"].GetUint64()) : 0;
+      std::uint32_t recIdx = jdoc.HasMember("recordIndex")
+        ? static_cast<std::uint32_t>(jdoc["recordIndex"].GetUint()) : 0;
+      if (diId != 0) {
+        selectionState.select({diId, recIdx});
+        auto touched = binder.onSelectionChanged(selectionState);
+        syncTouchedBuffersToGpu(touched, ingest, *gpuBufs);
+        needsRender = true;
+      }
+    }
+    else if (cmd == "deselect") {
+      dc::Id diId = jdoc.HasMember("drawItemId")
+        ? static_cast<dc::Id>(jdoc["drawItemId"].GetUint64()) : 0;
+      std::uint32_t recIdx = jdoc.HasMember("recordIndex")
+        ? static_cast<std::uint32_t>(jdoc["recordIndex"].GetUint()) : 0;
+      if (diId != 0) {
+        selectionState.deselect({diId, recIdx});
+        auto touched = binder.onSelectionChanged(selectionState);
+        syncTouchedBuffersToGpu(touched, ingest, *gpuBufs);
+        needsRender = true;
+      }
+    }
+    else if (cmd == "clearSelection") {
+      selectionState.clear();
+      auto touched = binder.onSelectionChanged(selectionState);
+      syncTouchedBuffersToGpu(touched, ingest, *gpuBufs);
+      needsRender = true;
+    }
+    else if (cmd == "toggleSelection") {
+      dc::Id diId = jdoc.HasMember("drawItemId")
+        ? static_cast<dc::Id>(jdoc["drawItemId"].GetUint64()) : 0;
+      std::uint32_t recIdx = jdoc.HasMember("recordIndex")
+        ? static_cast<std::uint32_t>(jdoc["recordIndex"].GetUint()) : 0;
+      if (diId != 0) {
+        selectionState.toggle({diId, recIdx});
+        auto touched = binder.onSelectionChanged(selectionState);
+        syncTouchedBuffersToGpu(touched, ingest, *gpuBufs);
+        needsRender = true;
+      }
+    }
+    else if (cmd == "hover") {
+      dc::Id diId = jdoc.HasMember("drawItemId")
+        ? static_cast<dc::Id>(jdoc["drawItemId"].GetUint64()) : 0;
+      std::uint32_t recIdx = jdoc.HasMember("recordIndex")
+        ? static_cast<std::uint32_t>(jdoc["recordIndex"].GetUint())
+        : static_cast<std::uint32_t>(-1);
+      auto touched = binder.onHoverChanged(diId, recIdx);
+      syncTouchedBuffersToGpu(touched, ingest, *gpuBufs);
+      if (!touched.empty()) needsRender = true;
     }
 
     if (needsRender) {
