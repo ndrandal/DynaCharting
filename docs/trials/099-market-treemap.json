@@ -1,0 +1,174 @@
+{
+  "version": 1,
+  "viewport": {
+    "width": 900,
+    "height": 700
+  },
+  "buffers": {
+    "100": {
+      "data": [
+        -0.85,
+        0.44,
+        -0.296667,
+        0.85,
+        0.296667,
+        0.44,
+        0.85,
+        0.85,
+        -0.85,
+        -0.42,
+        -0.296667,
+        -0.01
+      ]
+    },
+    "103": {
+      "data": [
+        -0.276667,
+        0.44,
+        0.276667,
+        0.85,
+        -0.276667,
+        0.01,
+        0.276667,
+        0.42
+      ]
+    },
+    "106": {
+      "data": [
+        -0.85,
+        0.01,
+        -0.296667,
+        0.42,
+        0.296667,
+        -0.42,
+        0.85,
+        -0.01,
+        -0.85,
+        -0.85,
+        -0.296667,
+        -0.44
+      ]
+    },
+    "109": {
+      "data": [
+        0.296667,
+        0.01,
+        0.85,
+        0.42,
+        -0.276667,
+        -0.42,
+        0.276667,
+        -0.01,
+        -0.276667,
+        -0.85,
+        0.276667,
+        -0.44,
+        0.296667,
+        -0.85,
+        0.85,
+        -0.44
+      ]
+    }
+  },
+  "transforms": {},
+  "panes": {
+    "1": {
+      "name": "Treemap",
+      "region": {
+        "clipYMin": -0.95,
+        "clipYMax": 0.95,
+        "clipXMin": -0.95,
+        "clipXMax": 0.95
+      },
+      "hasClearColor": true,
+      "clearColor": [
+        0.04,
+        0.04,
+        0.08,
+        1.0
+      ]
+    }
+  },
+  "layers": {
+    "10": {
+      "paneId": 1,
+      "name": "rects"
+    }
+  },
+  "geometries": {
+    "101": {
+      "vertexBufferId": 100,
+      "format": "rect4",
+      "vertexCount": 3
+    },
+    "104": {
+      "vertexBufferId": 103,
+      "format": "rect4",
+      "vertexCount": 2
+    },
+    "107": {
+      "vertexBufferId": 106,
+      "format": "rect4",
+      "vertexCount": 3
+    },
+    "110": {
+      "vertexBufferId": 109,
+      "format": "rect4",
+      "vertexCount": 4
+    }
+  },
+  "drawItems": {
+    "102": {
+      "layerId": 10,
+      "name": "Tech",
+      "pipeline": "instancedRect@1",
+      "geometryId": 101,
+      "color": [
+        0.2,
+        0.5,
+        0.9,
+        1.0
+      ],
+      "cornerRadius": 4.0
+    },
+    "105": {
+      "layerId": 10,
+      "name": "Finance",
+      "pipeline": "instancedRect@1",
+      "geometryId": 104,
+      "color": [
+        0.3,
+        0.8,
+        0.4,
+        1.0
+      ],
+      "cornerRadius": 4.0
+    },
+    "108": {
+      "layerId": 10,
+      "name": "Health",
+      "pipeline": "instancedRect@1",
+      "geometryId": 107,
+      "color": [
+        0.9,
+        0.4,
+        0.2,
+        1.0
+      ],
+      "cornerRadius": 4.0
+    },
+    "111": {
+      "layerId": 10,
+      "name": "Energy",
+      "pipeline": "instancedRect@1",
+      "geometryId": 110,
+      "color": [
+        0.8,
+        0.7,
+        0.2,
+        1.0
+      ],
+      "cornerRadius": 4.0
+    }
+  }
+}

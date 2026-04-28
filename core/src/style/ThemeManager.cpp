@@ -66,33 +66,25 @@ Theme ThemeManager::interpolate(const Theme& t1, const Theme& t2, float t) {
   Theme out = t1; // start with t1 as base (copies name, etc.)
 
   lerpColor4(t1.backgroundColor, t2.backgroundColor, t, out.backgroundColor);
-  lerpColor4(t1.candleUp, t2.candleUp, t, out.candleUp);
-  lerpColor4(t1.candleDown, t2.candleDown, t, out.candleDown);
+  lerpColor4(t1.textColor, t2.textColor, t, out.textColor);
+  lerpColor4(t1.highlightColor, t2.highlightColor, t, out.highlightColor);
+  lerpColor4(t1.drawingColor, t2.drawingColor, t, out.drawingColor);
   lerpColor4(t1.gridColor, t2.gridColor, t, out.gridColor);
   lerpColor4(t1.tickColor, t2.tickColor, t, out.tickColor);
   lerpColor4(t1.labelColor, t2.labelColor, t, out.labelColor);
 
   out.gridLineWidth = t1.gridLineWidth + (t2.gridLineWidth - t1.gridLineWidth) * t;
   out.tickLineWidth = t1.tickLineWidth + (t2.tickLineWidth - t1.tickLineWidth) * t;
-
-  // D78: grid dash/gap/opacity
   out.gridDashLength = t1.gridDashLength + (t2.gridDashLength - t1.gridDashLength) * t;
   out.gridGapLength = t1.gridGapLength + (t2.gridGapLength - t1.gridGapLength) * t;
   out.gridOpacity = t1.gridOpacity + (t2.gridOpacity - t1.gridOpacity) * t;
 
-  lerpColor4(t1.crosshairColor, t2.crosshairColor, t, out.crosshairColor);
-
-  for (int i = 0; i < Theme::kMaxOverlayColors; ++i) {
-    lerpColor4(t1.overlayColors[i], t2.overlayColors[i], t, out.overlayColors[i]);
+  // Generic palette interpolation — no chart-domain field names.
+  for (int i = 0; i < Theme::kPaletteSize; ++i) {
+    lerpColor4(t1.palette[i], t2.palette[i], t, out.palette[i]);
+    lerpColor4(t1.paletteAlt[i], t2.paletteAlt[i], t, out.paletteAlt[i]);
   }
 
-  lerpColor4(t1.volumeUp, t2.volumeUp, t, out.volumeUp);
-  lerpColor4(t1.volumeDown, t2.volumeDown, t, out.volumeDown);
-  lerpColor4(t1.textColor, t2.textColor, t, out.textColor);
-  lerpColor4(t1.highlightColor, t2.highlightColor, t, out.highlightColor);
-  lerpColor4(t1.drawingColor, t2.drawingColor, t, out.drawingColor);
-
-  // D78: pane border/separator
   lerpColor4(t1.paneBorderColor, t2.paneBorderColor, t, out.paneBorderColor);
   out.paneBorderWidth = t1.paneBorderWidth + (t2.paneBorderWidth - t1.paneBorderWidth) * t;
   lerpColor4(t1.separatorColor, t2.separatorColor, t, out.separatorColor);

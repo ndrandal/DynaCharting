@@ -269,8 +269,32 @@ void ChartSession::notifySelectionChanged() {
   selectionDirty_ = true;
 }
 
+void ChartSession::attachDataSource(DataSource& source) {
+  auto cap = source.queueCapacity();
+  pendingDropCapacity_.store(cap);
+  source.setOverflowCallback([this, cap](std::uint64_t dropped) {
+    pendingDropCount_.store(dropped, std::memory_order_relaxed);
+    pendingDropCapacity_.store(cap, std::memory_order_relaxed);
+  });
+}
+
 FrameResult ChartSession::update(DataSource& source) {
   FrameResult result;
+
+  // 0. Drain any pending ingest-drop notifications from background threads.
+  if (eventBus_) {
+    auto drop = pendingDropCount_.load(std::memory_order_relaxed);
+    auto lastEmitted = lastEmittedDropCount_.load(std::memory_order_relaxed);
+    if (drop > lastEmitted) {
+      EventData ev;
+      ev.type = EventType::IngestDropped;
+      ev.payload[0] = static_cast<double>(drop);
+      ev.payload[1] =
+          static_cast<double>(pendingDropCapacity_.load(std::memory_order_relaxed));
+      eventBus_->emit(ev);
+      lastEmittedDropCount_.store(drop, std::memory_order_relaxed);
+    }
+  }
 
   // 1. Drain data via LiveIngestLoop
   auto touched = loop_.consumeAndUpdate(source, ingest_, cp_);

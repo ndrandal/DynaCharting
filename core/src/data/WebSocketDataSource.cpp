@@ -36,6 +36,10 @@ WebSocketDataSource::Status WebSocketDataSource::status() const {
   return status_.load();
 }
 
+void WebSocketDataSource::setOverflowCallback(OverflowCallback cb) {
+  queue_.setOverflowCallback(std::move(cb));
+}
+
 void WebSocketDataSource::receiveLoop() {
   while (running_.load()) {
     status_.store(Status::connecting);

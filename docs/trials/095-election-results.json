@@ -1,0 +1,168 @@
+{
+  "version": 1,
+  "viewport": {
+    "width": 800,
+    "height": 500
+  },
+  "buffers": {
+    "100": {
+      "data": [
+        -0.85,
+        0.54,
+        0.4488,
+        0.8
+      ]
+    },
+    "103": {
+      "data": [
+        -0.85,
+        0.2,
+        0.221,
+        0.46
+      ]
+    },
+    "106": {
+      "data": [
+        -0.85,
+        -0.14,
+        -0.3128,
+        0.12
+      ]
+    },
+    "109": {
+      "data": [
+        -0.85,
+        -0.48,
+        -0.5406,
+        -0.22
+      ]
+    },
+    "112": {
+      "data": [
+        -0.85,
+        -0.82,
+        -0.6664,
+        -0.56
+      ]
+    }
+  },
+  "transforms": {},
+  "panes": {
+    "1": {
+      "name": "Election",
+      "region": {
+        "clipYMin": -0.95,
+        "clipYMax": 0.95,
+        "clipXMin": -0.95,
+        "clipXMax": 0.95
+      },
+      "hasClearColor": true,
+      "clearColor": [
+        0.05,
+        0.05,
+        0.1,
+        1.0
+      ]
+    }
+  },
+  "layers": {
+    "10": {
+      "paneId": 1,
+      "name": "bars"
+    }
+  },
+  "geometries": {
+    "101": {
+      "vertexBufferId": 100,
+      "format": "rect4",
+      "vertexCount": 1
+    },
+    "104": {
+      "vertexBufferId": 103,
+      "format": "rect4",
+      "vertexCount": 1
+    },
+    "107": {
+      "vertexBufferId": 106,
+      "format": "rect4",
+      "vertexCount": 1
+    },
+    "110": {
+      "vertexBufferId": 109,
+      "format": "rect4",
+      "vertexCount": 1
+    },
+    "113": {
+      "vertexBufferId": 112,
+      "format": "rect4",
+      "vertexCount": 1
+    }
+  },
+  "drawItems": {
+    "102": {
+      "layerId": 10,
+      "name": "Progressive",
+      "pipeline": "instancedRect@1",
+      "geometryId": 101,
+      "color": [
+        0.2,
+        0.5,
+        0.9,
+        1.0
+      ],
+      "cornerRadius": 4.0
+    },
+    "105": {
+      "layerId": 10,
+      "name": "Conservative",
+      "pipeline": "instancedRect@1",
+      "geometryId": 104,
+      "color": [
+        0.9,
+        0.2,
+        0.2,
+        1.0
+      ],
+      "cornerRadius": 4.0
+    },
+    "108": {
+      "layerId": 10,
+      "name": "Liberal",
+      "pipeline": "instancedRect@1",
+      "geometryId": 107,
+      "color": [
+        1.0,
+        0.7,
+        0.1,
+        1.0
+      ],
+      "cornerRadius": 4.0
+    },
+    "111": {
+      "layerId": 10,
+      "name": "Green",
+      "pipeline": "instancedRect@1",
+      "geometryId": 110,
+      "color": [
+        0.2,
+        0.8,
+        0.3,
+        1.0
+      ],
+      "cornerRadius": 4.0
+    },
+    "114": {
+      "layerId": 10,
+      "name": "Independent",
+      "pipeline": "instancedRect@1",
+      "geometryId": 113,
+      "color": [
+        0.6,
+        0.6,
+        0.6,
+        1.0
+      ],
+      "cornerRadius": 4.0
+    }
+  }
+}

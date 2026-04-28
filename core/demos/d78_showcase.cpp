@@ -13,6 +13,8 @@
 #include "dc/commands/CommandProcessor.hpp"
 #include "dc/ingest/IngestProcessor.hpp"
 #include "dc/gl/GpuBufferManager.hpp"
+#include "dc/gl/IngestGpuSync.hpp"
+#include "dc/recipe/ChartTheme.hpp"
 #include "dc/gl/Renderer.hpp"
 #include "dc/gl/BuiltinEffects.hpp"
 #include "dc/gl/PostProcessPass.hpp"
@@ -128,17 +130,19 @@ static void renderThemed(const char* outputPath, const dc::Theme& theme,
   cp.applyJsonText(R"({"cmd":"createDrawItem","id":210,"layerId":20,"name":"VolBars"})");
   cp.applyJsonText(R"({"cmd":"bindDrawItem","drawItemId":210,"pipeline":"instancedRect@1","geometryId":111})");
 
-  // Apply theme colors to candle draw item
+  // Apply theme colors to candle draw item (via generic palette slot 0)
+  const float* cu = dc::chart_theme::candleUp(theme);
+  const float* cd = dc::chart_theme::candleDown(theme);
   std::snprintf(buf, sizeof(buf),
     R"({"cmd":"setDrawItemStyle","drawItemId":200,"colorUpR":%.9g,"colorUpG":%.9g,"colorUpB":%.9g,"colorUpA":%.9g,"colorDownR":%.9g,"colorDownG":%.9g,"colorDownB":%.9g,"colorDownA":%.9g})",
-    theme.candleUp[0], theme.candleUp[1], theme.candleUp[2], theme.candleUp[3],
-    theme.candleDown[0], theme.candleDown[1], theme.candleDown[2], theme.candleDown[3]);
+    cu[0], cu[1], cu[2], cu[3], cd[0], cd[1], cd[2], cd[3]);
   cp.applyJsonText(buf);
 
-  // Volume bar color
+  // Volume bar color (via generic palette slot 1)
+  const float* vu = dc::chart_theme::volumeUp(theme);
   std::snprintf(buf, sizeof(buf),
     R"({"cmd":"setDrawItemColor","drawItemId":210,"r":%.9g,"g":%.9g,"b":%.9g,"a":%.9g})",
-    theme.volumeUp[0], theme.volumeUp[1], theme.volumeUp[2], theme.volumeUp[3]);
+    vu[0], vu[1], vu[2], vu[3]);
   cp.applyJsonText(buf);
 
   // Grid lines (horizontal) for price pane
@@ -216,10 +220,8 @@ static void renderThemed(const char* outputPath, const dc::Theme& theme,
   cp.applyJsonText(buf);
   cp.applyJsonText(R"({"cmd":"setGeometryVertexCount","geometryId":121,"vertexCount":5})");
 
-  // Upload to GPU
-  for (dc::Id bid : ir.touchedBufferIds) {
-    gpuBuf.setCpuData(bid, ingest.getBufferData(bid), ingest.getBufferSize(bid));
-  }
+  // Upload to GPU using range-aware sync (D81).
+  dc::syncIngestWritesToGpu(ir, ingest, gpuBuf);
   gpuBuf.uploadDirty();
 
   // Render

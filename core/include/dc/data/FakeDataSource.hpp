@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -37,6 +38,12 @@ public:
   std::uint32_t candleCount() const;
   float priceMin() const;
   float priceMax() const;
+
+  // Backpressure: invoked (off the caller thread) whenever the internal queue
+  // drops a batch due to capacity overflow. Argument is cumulative drop count.
+  void setOverflowCallback(OverflowCallback cb) override;
+  std::uint64_t droppedCount() const override { return queue_.droppedCount(); }
+  std::size_t queueCapacity() const override { return queue_.capacity(); }
 
 private:
   void producerLoop();

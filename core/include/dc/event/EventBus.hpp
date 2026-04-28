@@ -13,7 +13,10 @@ enum class EventType : std::uint8_t {
   HoverChanged,
   GeometryClicked,
   DrawItemVisibilityChanged,
-  FrameCommitted
+  FrameCommitted,
+  // Emitted when an ingest queue drops an item due to capacity.
+  // payload[0] = cumulative dropped count, payload[1] = queue capacity.
+  IngestDropped
 };
 
 struct EventData {

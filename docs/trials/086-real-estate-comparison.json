@@ -1,0 +1,162 @@
+{
+  "version": 1,
+  "viewport": {
+    "width": 900,
+    "height": 500
+  },
+  "buffers": {
+    "100": {
+      "data": [
+        -0.2,
+        0,
+        -0.08,
+        450,
+        0.8,
+        0,
+        0.92,
+        280,
+        1.8,
+        0,
+        1.92,
+        520,
+        2.8,
+        0,
+        2.92,
+        340
+      ]
+    },
+    "103": {
+      "data": [
+        -0.05,
+        0,
+        0.07,
+        180,
+        0.95,
+        0,
+        1.07,
+        250,
+        1.95,
+        0,
+        2.07,
+        160,
+        2.95,
+        0,
+        3.07,
+        300
+      ]
+    },
+    "106": {
+      "data": [
+        0.1,
+        0,
+        0.22,
+        85,
+        1.1,
+        0,
+        1.22,
+        72,
+        2.1,
+        0,
+        2.22,
+        90,
+        3.1,
+        0,
+        3.22,
+        78
+      ]
+    }
+  },
+  "transforms": {
+    "50": {
+      "sx": 0.45,
+      "sy": 0.003272727,
+      "tx": -0.675,
+      "ty": -0.9
+    }
+  },
+  "panes": {
+    "1": {
+      "name": "Comparison",
+      "region": {
+        "clipYMin": -0.95,
+        "clipYMax": 0.95,
+        "clipXMin": -0.95,
+        "clipXMax": 0.95
+      },
+      "hasClearColor": true,
+      "clearColor": [
+        0.06,
+        0.09,
+        0.16,
+        1.0
+      ]
+    }
+  },
+  "layers": {
+    "10": {
+      "paneId": 1,
+      "name": "bars"
+    }
+  },
+  "geometries": {
+    "101": {
+      "vertexBufferId": 100,
+      "format": "rect4",
+      "vertexCount": 4
+    },
+    "104": {
+      "vertexBufferId": 103,
+      "format": "rect4",
+      "vertexCount": 4
+    },
+    "107": {
+      "vertexBufferId": 106,
+      "format": "rect4",
+      "vertexCount": 4
+    }
+  },
+  "drawItems": {
+    "102": {
+      "layerId": 10,
+      "name": "Metric0",
+      "pipeline": "instancedRect@1",
+      "geometryId": 101,
+      "color": [
+        0.2,
+        0.6,
+        1.0,
+        1.0
+      ],
+      "transformId": 50,
+      "cornerRadius": 2.0
+    },
+    "105": {
+      "layerId": 10,
+      "name": "Metric1",
+      "pipeline": "instancedRect@1",
+      "geometryId": 104,
+      "color": [
+        0.3,
+        0.8,
+        0.4,
+        1.0
+      ],
+      "transformId": 50,
+      "cornerRadius": 2.0
+    },
+    "108": {
+      "layerId": 10,
+      "name": "Metric2",
+      "pipeline": "instancedRect@1",
+      "geometryId": 107,
+      "color": [
+        1.0,
+        0.6,
+        0.2,
+        1.0
+      ],
+      "transformId": 50,
+      "cornerRadius": 2.0
+    }
+  }
+}

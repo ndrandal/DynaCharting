@@ -1,0 +1,364 @@
+{
+  "version": 1,
+  "viewport": {
+    "width": 960,
+    "height": 640
+  },
+  "buffers": {
+    "100": {
+      "data": [
+        -0.7,
+        0.40306,
+        0.7,
+        0.0822
+      ]
+    },
+    "103": {
+      "data": [
+        -0.7,
+        -0.55397,
+        0.7,
+        -0.23142
+      ]
+    },
+    "106": {
+      "data": [
+        -0.7,
+        -0.44486,
+        0.7,
+        -0.72
+      ]
+    },
+    "109": {
+      "data": [
+        -0.7,
+        -0.14498,
+        0.7,
+        -0.50151
+      ]
+    },
+    "112": {
+      "data": [
+        -0.7,
+        -0.31777,
+        0.7,
+        0.00222
+      ]
+    },
+    "115": {
+      "data": [
+        -0.7,
+        0.41816,
+        0.7,
+        0.72
+      ]
+    },
+    "118": {
+      "data": [
+        -0.7,
+        0.30494,
+        0.7,
+        0.33472
+      ]
+    },
+    "121": {
+      "data": [
+        -0.7,
+        0.51475,
+        0.7,
+        0.66121
+      ]
+    },
+    "124": {
+      "data": [
+        -0.7,
+        0.05804,
+        0.7,
+        -0.10893
+      ]
+    },
+    "127": {
+      "data": [
+        -0.7,
+        0.62936,
+        0.7,
+        0.56115
+      ]
+    },
+    "130": {
+      "data": [
+        -0.7,
+        0.40306,
+        -0.7,
+        -0.55397,
+        -0.7,
+        -0.44486,
+        -0.7,
+        -0.14498,
+        -0.7,
+        -0.31777,
+        -0.7,
+        0.41816,
+        -0.7,
+        0.30494,
+        -0.7,
+        0.51475,
+        -0.7,
+        0.05804,
+        -0.7,
+        0.62936,
+        0.7,
+        0.0822,
+        0.7,
+        -0.23142,
+        0.7,
+        -0.72,
+        0.7,
+        -0.50151,
+        0.7,
+        0.00222,
+        0.7,
+        0.72,
+        0.7,
+        0.33472,
+        0.7,
+        0.66121,
+        0.7,
+        -0.10893,
+        0.7,
+        0.56115
+      ]
+    }
+  },
+  "transforms": {},
+  "panes": {
+    "1": {
+      "name": "Main",
+      "region": {
+        "clipYMin": -0.95,
+        "clipYMax": 0.95,
+        "clipXMin": -0.95,
+        "clipXMax": 0.95
+      },
+      "hasClearColor": true,
+      "clearColor": [
+        0.06,
+        0.09,
+        0.16,
+        1.0
+      ]
+    }
+  },
+  "layers": {
+    "10": {
+      "paneId": 1,
+      "name": "slopes"
+    },
+    "11": {
+      "paneId": 1,
+      "name": "dots"
+    }
+  },
+  "geometries": {
+    "101": {
+      "vertexBufferId": 100,
+      "format": "rect4",
+      "vertexCount": 1
+    },
+    "104": {
+      "vertexBufferId": 103,
+      "format": "rect4",
+      "vertexCount": 1
+    },
+    "107": {
+      "vertexBufferId": 106,
+      "format": "rect4",
+      "vertexCount": 1
+    },
+    "110": {
+      "vertexBufferId": 109,
+      "format": "rect4",
+      "vertexCount": 1
+    },
+    "113": {
+      "vertexBufferId": 112,
+      "format": "rect4",
+      "vertexCount": 1
+    },
+    "116": {
+      "vertexBufferId": 115,
+      "format": "rect4",
+      "vertexCount": 1
+    },
+    "119": {
+      "vertexBufferId": 118,
+      "format": "rect4",
+      "vertexCount": 1
+    },
+    "122": {
+      "vertexBufferId": 121,
+      "format": "rect4",
+      "vertexCount": 1
+    },
+    "125": {
+      "vertexBufferId": 124,
+      "format": "rect4",
+      "vertexCount": 1
+    },
+    "128": {
+      "vertexBufferId": 127,
+      "format": "rect4",
+      "vertexCount": 1
+    },
+    "131": {
+      "vertexBufferId": 130,
+      "format": "pos2_clip",
+      "vertexCount": 20
+    }
+  },
+  "drawItems": {
+    "102": {
+      "layerId": 10,
+      "name": "slope0",
+      "pipeline": "lineAA@1",
+      "geometryId": 101,
+      "color": [
+        0.865,
+        0.235,
+        0.235,
+        1.0
+      ],
+      "lineWidth": 2.0
+    },
+    "105": {
+      "layerId": 10,
+      "name": "slope1",
+      "pipeline": "lineAA@1",
+      "geometryId": 104,
+      "color": [
+        0.865,
+        0.613,
+        0.235,
+        1.0
+      ],
+      "lineWidth": 2.0
+    },
+    "108": {
+      "layerId": 10,
+      "name": "slope2",
+      "pipeline": "lineAA@1",
+      "geometryId": 107,
+      "color": [
+        0.739,
+        0.865,
+        0.235,
+        1.0
+      ],
+      "lineWidth": 2.0
+    },
+    "111": {
+      "layerId": 10,
+      "name": "slope3",
+      "pipeline": "lineAA@1",
+      "geometryId": 110,
+      "color": [
+        0.361,
+        0.865,
+        0.235,
+        1.0
+      ],
+      "lineWidth": 2.0
+    },
+    "114": {
+      "layerId": 10,
+      "name": "slope4",
+      "pipeline": "lineAA@1",
+      "geometryId": 113,
+      "color": [
+        0.235,
+        0.865,
+        0.487,
+        1.0
+      ],
+      "lineWidth": 2.0
+    },
+    "117": {
+      "layerId": 10,
+      "name": "slope5",
+      "pipeline": "lineAA@1",
+      "geometryId": 116,
+      "color": [
+        0.235,
+        0.865,
+        0.865,
+        1.0
+      ],
+      "lineWidth": 2.0
+    },
+    "120": {
+      "layerId": 10,
+      "name": "slope6",
+      "pipeline": "lineAA@1",
+      "geometryId": 119,
+      "color": [
+        0.235,
+        0.487,
+        0.865,
+        1.0
+      ],
+      "lineWidth": 2.0
+    },
+    "123": {
+      "layerId": 10,
+      "name": "slope7",
+      "pipeline": "lineAA@1",
+      "geometryId": 122,
+      "color": [
+        0.361,
+        0.235,
+        0.865,
+        1.0
+      ],
+      "lineWidth": 2.0
+    },
+    "126": {
+      "layerId": 10,
+      "name": "slope8",
+      "pipeline": "lineAA@1",
+      "geometryId": 125,
+      "color": [
+        0.739,
+        0.235,
+        0.865,
+        1.0
+      ],
+      "lineWidth": 2.0
+    },
+    "129": {
+      "layerId": 10,
+      "name": "slope9",
+      "pipeline": "lineAA@1",
+      "geometryId": 128,
+      "color": [
+        0.865,
+        0.235,
+        0.613,
+        1.0
+      ],
+      "lineWidth": 2.0
+    },
+    "132": {
+      "layerId": 11,
+      "name": "dotsAll",
+      "pipeline": "points@1",
+      "geometryId": 131,
+      "color": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "pointSize": 6.0
+    }
+  }
+}

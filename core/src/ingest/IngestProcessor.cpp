@@ -32,14 +32,29 @@ IngestResult IngestProcessor::processBatch(const std::uint8_t* data, std::uint32
     CpuBuffer& buf = buffers_[bufferId];
 
     if (op == OP_APPEND) {
+      std::uint32_t preSize = static_cast<std::uint32_t>(buf.data.size());
       buf.data.insert(buf.data.end(), pos, pos + payloadLen);
+      std::uint32_t postSize = static_cast<std::uint32_t>(buf.data.size());
       enforceCap(buf);
+      std::uint32_t finalSize = static_cast<std::uint32_t>(buf.data.size());
+
+      if (finalSize < postSize) {
+        // Eviction shifted the whole buffer — emit full-range write.
+        result.writes.push_back({bufferId, 0, finalSize});
+      } else {
+        // No eviction — only the appended tail is new.
+        result.writes.push_back({bufferId, preSize, payloadLen});
+      }
     } else if (op == OP_UPDATE_RANGE) {
+      std::uint32_t oldSize = static_cast<std::uint32_t>(buf.data.size());
       std::uint32_t needed = offset + payloadLen;
-      if (needed > static_cast<std::uint32_t>(buf.data.size())) {
+      if (needed > oldSize) {
         buf.data.resize(needed);
       }
       std::memcpy(buf.data.data() + offset, pos, payloadLen);
+      // Dirty range covers any zero-fill gap introduced by the resize as well.
+      std::uint32_t dirtyStart = std::min(oldSize, offset);
+      result.writes.push_back({bufferId, dirtyStart, needed - dirtyStart});
     }
 
     result.payloadBytes += payloadLen;

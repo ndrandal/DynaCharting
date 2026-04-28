@@ -1,0 +1,172 @@
+{
+  "version": 1,
+  "viewport": {
+    "width": 900,
+    "height": 500
+  },
+  "buffers": {
+    "100": {
+      "data": [
+        0,
+        62853.12,
+        1,
+        62615.99,
+        1,
+        62615.99,
+        2,
+        46886.77,
+        2,
+        46886.77,
+        3,
+        52961.08,
+        3,
+        52961.08,
+        4,
+        63306.13,
+        4,
+        63306.13,
+        5,
+        85940.74
+      ]
+    },
+    "103": {
+      "data": [
+        0,
+        72077.27,
+        1,
+        68002.25,
+        1,
+        68002.25,
+        2,
+        59985.75,
+        2,
+        59985.75,
+        3,
+        61013.14,
+        3,
+        61013.14,
+        4,
+        75791.42,
+        4,
+        75791.42,
+        5,
+        79293.19
+      ]
+    }
+  },
+  "transforms": {
+    "50": {
+      "sx": 0.327272727,
+      "sy": 4.19e-05,
+      "tx": -0.818181818,
+      "ty": -2.782740235
+    }
+  },
+  "panes": {
+    "1": {
+      "name": "main",
+      "region": {
+        "clipYMin": -0.85,
+        "clipYMax": 0.85,
+        "clipXMin": -0.9,
+        "clipXMax": 0.9
+      },
+      "hasClearColor": true,
+      "clearColor": [
+        0.07,
+        0.07,
+        0.1,
+        1.0
+      ]
+    }
+  },
+  "layers": {
+    "10": {
+      "paneId": 1,
+      "name": "data"
+    }
+  },
+  "geometries": {
+    "101": {
+      "vertexBufferId": 100,
+      "format": "rect4",
+      "vertexCount": 5
+    },
+    "104": {
+      "vertexBufferId": 103,
+      "format": "rect4",
+      "vertexCount": 5
+    }
+  },
+  "drawItems": {
+    "102": {
+      "layerId": 10,
+      "pipeline": "lineAA@1",
+      "geometryId": 101,
+      "transformId": 50,
+      "color": [
+        0.23137254901960785,
+        0.5098039215686274,
+        0.9647058823529412,
+        1.0
+      ],
+      "lineWidth": 2.5
+    },
+    "105": {
+      "layerId": 10,
+      "pipeline": "lineAA@1",
+      "geometryId": 104,
+      "transformId": 50,
+      "color": [
+        0.9372549019607843,
+        0.26666666666666666,
+        0.26666666666666666,
+        1.0
+      ],
+      "lineWidth": 2.5
+    }
+  },
+  "textOverlay": {
+    "fontSize": 13,
+    "color": "#c0c4cc",
+    "labels": [
+      {
+        "clipX": 0.0,
+        "clipY": 0.95,
+        "text": "H2 Revenue: 2024 vs 2025",
+        "align": "c",
+        "fontSize": 15
+      },
+      {
+        "clipX": 0.75,
+        "clipY": 0.88,
+        "text": "H2 2024",
+        "align": "r",
+        "color": "#3b82f6"
+      },
+      {
+        "clipX": 0.75,
+        "clipY": 0.82,
+        "text": "H2 2025",
+        "align": "r",
+        "color": "#ef4444"
+      },
+      {
+        "clipX": -0.85,
+        "clipY": -0.92,
+        "text": "Jul",
+        "align": "l",
+        "fontSize": 11,
+        "color": "#888"
+      },
+      {
+        "clipX": 0.85,
+        "clipY": -0.92,
+        "text": "Dec",
+        "align": "r",
+        "fontSize": 11,
+        "color": "#888"
+      }
+    ]
+  }
+}

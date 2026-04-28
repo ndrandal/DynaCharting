@@ -8,8 +8,19 @@
 
 namespace dc {
 
+// D81: per-write range produced by processBatch. A single record usually
+// produces one IngestWrite; when an append triggers a ring-buffer eviction,
+// a full-range write is emitted instead so the downstream uploader knows the
+// entire buffer shifted.
+struct IngestWrite {
+  Id bufferId{0};
+  std::uint32_t offset{0};
+  std::uint32_t length{0};
+};
+
 struct IngestResult {
   std::vector<Id> touchedBufferIds;
+  std::vector<IngestWrite> writes;   // D81: exact byte ranges mutated
   std::uint32_t payloadBytes{0};
   std::uint32_t droppedBytes{0};
 };

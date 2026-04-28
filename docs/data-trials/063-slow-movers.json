@@ -1,0 +1,128 @@
+{
+  "version": 1,
+  "viewport": {
+    "width": 900,
+    "height": 500
+  },
+  "buffers": {
+    "100": {
+      "data": [
+        0,
+        -0.3,
+        34,
+        0.3,
+        0,
+        0.7,
+        70,
+        1.3,
+        0,
+        1.7,
+        70,
+        2.3,
+        0,
+        2.7,
+        87,
+        3.3
+      ]
+    }
+  },
+  "transforms": {
+    "50": {
+      "sx": 0.018808777,
+      "sy": 0.454545455,
+      "tx": -0.818181818,
+      "ty": -0.681818182
+    }
+  },
+  "panes": {
+    "1": {
+      "name": "main",
+      "region": {
+        "clipYMin": -0.85,
+        "clipYMax": 0.85,
+        "clipXMin": -0.9,
+        "clipXMax": 0.9
+      },
+      "hasClearColor": true,
+      "clearColor": [
+        0.07,
+        0.07,
+        0.1,
+        1.0
+      ]
+    }
+  },
+  "layers": {
+    "10": {
+      "paneId": 1,
+      "name": "data"
+    }
+  },
+  "geometries": {
+    "101": {
+      "vertexBufferId": 100,
+      "format": "rect4",
+      "vertexCount": 4
+    }
+  },
+  "drawItems": {
+    "102": {
+      "layerId": 10,
+      "pipeline": "instancedRect@1",
+      "geometryId": 101,
+      "transformId": 50,
+      "color": [
+        0.9372549019607843,
+        0.26666666666666666,
+        0.26666666666666666,
+        1.0
+      ],
+      "cornerRadius": 2.0
+    }
+  },
+  "textOverlay": {
+    "fontSize": 13,
+    "color": "#c0c4cc",
+    "labels": [
+      {
+        "clipX": 0.0,
+        "clipY": 0.95,
+        "text": "Slow-Moving Products (<100 units) \u2014 4 Total, Showing 20",
+        "align": "c",
+        "fontSize": 15
+      },
+      {
+        "clipX": -0.88,
+        "clipY": 0.85,
+        "text": "Portable Generator 350",
+        "align": "l",
+        "fontSize": 9,
+        "color": "#aaa"
+      },
+      {
+        "clipX": -0.88,
+        "clipY": 0.425,
+        "text": "Push Mower Gas 21in",
+        "align": "l",
+        "fontSize": 9,
+        "color": "#aaa"
+      },
+      {
+        "clipX": -0.88,
+        "clipY": 0.0,
+        "text": "Patio Heater Propane 4",
+        "align": "l",
+        "fontSize": 9,
+        "color": "#aaa"
+      },
+      {
+        "clipX": -0.88,
+        "clipY": -0.42499999999999993,
+        "text": "Paint Sprayer HVLP Ele",
+        "align": "l",
+        "fontSize": 9,
+        "color": "#aaa"
+      }
+    ]
+  }
+}

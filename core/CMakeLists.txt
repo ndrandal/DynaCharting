@@ -1738,4 +1738,27 @@ if (DC_BUILD_TESTS)
     target_link_libraries(dc_d80_3_binding_gl PRIVATE dc_gl)
     add_test(NAME dc_d80_3_binding_gl COMMAND dc_d80_3_binding_gl)
   endif()
+
+  # D81.1 Ingest backpressure (drop counter + overflow callback)
+  add_executable(dc_d81_1_backpressure
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/d81_1_backpressure.cpp"
+  )
+  target_link_libraries(dc_d81_1_backpressure PRIVATE dc)
+  add_test(NAME dc_d81_1_backpressure COMMAND dc_d81_1_backpressure)
+
+  # D81.2 CompositeDataSource (multi-source round-robin)
+  add_executable(dc_d81_2_composite_source
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/d81_2_composite_source.cpp"
+  )
+  target_link_libraries(dc_d81_2_composite_source PRIVATE dc)
+  add_test(NAME dc_d81_2_composite_source COMMAND dc_d81_2_composite_source)
+
+  # D81.3 Partial GPU uploads (coalesced dirty ranges)
+  if (DC_HAS_GLAD AND DC_HAS_OSMESA)
+    add_executable(dc_d81_3_range_upload
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/d81_3_range_upload.cpp"
+    )
+    target_link_libraries(dc_d81_3_range_upload PRIVATE dc_gl)
+    add_test(NAME dc_d81_3_range_upload COMMAND dc_d81_3_range_upload)
+  endif()
 endif()

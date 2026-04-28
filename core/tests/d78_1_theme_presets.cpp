@@ -1,4 +1,5 @@
 // D78.1: Theme presets and new style fields
+#include "dc/recipe/ChartTheme.hpp"
 #include "dc/style/Theme.hpp"
 #include "dc/style/ThemeManager.hpp"
 
@@ -37,21 +38,18 @@ static void testPresetsDistinct() {
   std::printf("T1 presetsDistinct: PASS\n");
 }
 
-// T2: Overlay colors array is 8-deep with non-zero values
+// T2: Overlay slots populated with non-zero RGBA values in each preset.
 static void testOverlayColors8() {
   dc::Theme t = dc::midnightTheme();
 
-  assert(dc::Theme::kMaxOverlayColors == 8);
-
-  for (int i = 0; i < dc::Theme::kMaxOverlayColors; ++i) {
-    // Each overlay color should have alpha = 1.0
-    assert(feq(t.overlayColors[i][3], 1.0f));
-    // Each should have at least some RGB
-    float rgb = t.overlayColors[i][0] + t.overlayColors[i][1] + t.overlayColors[i][2];
+  for (int i = 0; i < 8; ++i) {
+    const float* c = dc::chart_theme::overlay(t, i);
+    assert(feq(c[3], 1.0f));
+    float rgb = c[0] + c[1] + c[2];
     assert(rgb > 0.0f);
   }
 
-  std::printf("T2 overlayColors8: PASS\n");
+  std::printf("T2 overlaySlots: PASS\n");
 }
 
 // T3: New grid/border/separator fields have sensible defaults
@@ -137,10 +135,11 @@ static void testInterpolateNewFields() {
   float expectedSW = (a.separatorWidth + b.separatorWidth) * 0.5f;
   assert(feq(mid.separatorWidth, expectedSW));
 
-  // Overlay color 5 (slot 4, zero-indexed) should be interpolated
+  // Overlay color 5 (chart_theme::overlay(_, 4)) should be interpolated.
   for (int j = 0; j < 4; ++j) {
-    float exp = (a.overlayColors[4][j] + b.overlayColors[4][j]) * 0.5f;
-    assert(feq(mid.overlayColors[4][j], exp));
+    float exp = (dc::chart_theme::overlay(a, 4)[j]
+                 + dc::chart_theme::overlay(b, 4)[j]) * 0.5f;
+    assert(feq(dc::chart_theme::overlay(mid, 4)[j], exp));
   }
 
   // Border color should be interpolated

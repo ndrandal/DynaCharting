@@ -5,6 +5,7 @@
 #include "dc/data/AggregationManager.hpp"
 #include "dc/scene/Geometry.hpp"
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -97,6 +98,13 @@ public:
   // Per-frame update: drains data, runs compute callbacks, syncs transforms.
   FrameResult update(DataSource& source);
 
+  // Install a backpressure hook on `source` that forwards queue-drop events
+  // (latched from background threads) to this session's EventBus as
+  // EventType::IngestDropped, emitted on the next update() call. Safe to call
+  // multiple times; replaces any previous hook on `source`. The session's
+  // EventBus must be set before this fires any events.
+  void attachDataSource(DataSource& source);
+
   // Issue setTransform command for a managed transform.
   void syncTransform(Id transformId);
   void syncTransformFromViewport(Id transformId, Viewport* vp);
@@ -144,6 +152,12 @@ private:
 
   // D80: optional binding evaluator
   BindingEvaluator* bindingEval_{nullptr};
+
+  // D81: pending ingest-drop events from background producer threads.
+  // Drained and emitted at the top of update() on the main thread.
+  std::atomic<std::uint64_t> pendingDropCount_{0};
+  std::atomic<std::uint64_t> pendingDropCapacity_{0};
+  std::atomic<std::uint64_t> lastEmittedDropCount_{0};
 };
 
 } // namespace dc

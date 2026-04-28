@@ -1,0 +1,155 @@
+{
+  "version": 1,
+  "viewport": {
+    "width": 900,
+    "height": 500
+  },
+  "buffers": {
+    "100": {
+      "data": [
+        -0.35,
+        0,
+        0.35,
+        35,
+        0.65,
+        0,
+        1.35,
+        42,
+        1.65,
+        0,
+        2.35,
+        38,
+        2.65,
+        0,
+        3.35,
+        50,
+        3.65,
+        0,
+        4.35,
+        45,
+        4.65,
+        0,
+        5.35,
+        55,
+        5.65,
+        0,
+        6.35,
+        48,
+        6.65,
+        0,
+        7.35,
+        52
+      ]
+    },
+    "103": {
+      "data": [
+        0,
+        38.5,
+        1,
+        38.333333,
+        1,
+        38.333333,
+        2,
+        43.333333,
+        2,
+        43.333333,
+        3,
+        44.333333,
+        3,
+        44.333333,
+        4,
+        50.0,
+        4,
+        50.0,
+        5,
+        49.333333,
+        5,
+        49.333333,
+        6,
+        51.666667,
+        6,
+        51.666667,
+        7,
+        50.0
+      ]
+    }
+  },
+  "transforms": {
+    "50": {
+      "sx": 0.225,
+      "sy": 0.027692308,
+      "tx": -0.7875,
+      "ty": -0.9
+    }
+  },
+  "panes": {
+    "1": {
+      "name": "Velocity",
+      "region": {
+        "clipYMin": -0.95,
+        "clipYMax": 0.95,
+        "clipXMin": -0.95,
+        "clipXMax": 0.95
+      },
+      "hasClearColor": true,
+      "clearColor": [
+        0.06,
+        0.09,
+        0.16,
+        1.0
+      ]
+    }
+  },
+  "layers": {
+    "10": {
+      "paneId": 1,
+      "name": "bars"
+    },
+    "11": {
+      "paneId": 1,
+      "name": "average"
+    }
+  },
+  "geometries": {
+    "101": {
+      "vertexBufferId": 100,
+      "format": "rect4",
+      "vertexCount": 8
+    },
+    "104": {
+      "vertexBufferId": 103,
+      "format": "rect4",
+      "vertexCount": 7
+    }
+  },
+  "drawItems": {
+    "102": {
+      "layerId": 10,
+      "name": "SprintBars",
+      "pipeline": "instancedRect@1",
+      "geometryId": 101,
+      "color": [
+        0.25,
+        0.55,
+        0.9,
+        0.85
+      ],
+      "transformId": 50,
+      "cornerRadius": 3.0
+    },
+    "105": {
+      "layerId": 11,
+      "name": "MovingAvg",
+      "pipeline": "lineAA@1",
+      "geometryId": 104,
+      "color": [
+        1.0,
+        0.6,
+        0.1,
+        1.0
+      ],
+      "transformId": 50,
+      "lineWidth": 2.5
+    }
+  }
+}

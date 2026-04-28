@@ -1,5 +1,7 @@
 #pragma once
 #include <cstddef>
+#include <cstdint>
+#include <functional>
 #include <mutex>
 #include <queue>
 
@@ -8,15 +10,29 @@ namespace dc {
 template <typename T>
 class ThreadSafeQueue {
 public:
+  // Invoked after a push drops an older item due to capacity.
+  // Argument is the cumulative dropped count. Called outside the internal lock.
+  using OverflowCallback = std::function<void(std::uint64_t totalDropped)>;
+
   explicit ThreadSafeQueue(std::size_t maxCapacity = 256)
       : maxCap_(maxCapacity) {}
 
   bool push(T item) {
-    std::lock_guard<std::mutex> lock(mtx_);
-    if (queue_.size() >= maxCap_) {
-      queue_.pop(); // drop oldest
+    bool overflowed = false;
+    std::uint64_t droppedNow = 0;
+    {
+      std::lock_guard<std::mutex> lock(mtx_);
+      if (queue_.size() >= maxCap_) {
+        queue_.pop();
+        ++dropped_;
+        overflowed = true;
+        droppedNow = dropped_;
+      }
+      queue_.push(std::move(item));
     }
-    queue_.push(std::move(item));
+    if (overflowed && overflowCb_) {
+      overflowCb_(droppedNow);
+    }
     return true;
   }
 
@@ -38,10 +54,24 @@ public:
     while (!queue_.empty()) queue_.pop();
   }
 
+  std::size_t capacity() const { return maxCap_; }
+
+  std::uint64_t droppedCount() const {
+    std::lock_guard<std::mutex> lock(mtx_);
+    return dropped_;
+  }
+
+  void setOverflowCallback(OverflowCallback cb) {
+    std::lock_guard<std::mutex> lock(mtx_);
+    overflowCb_ = std::move(cb);
+  }
+
 private:
   mutable std::mutex mtx_;
   std::queue<T> queue_;
   std::size_t maxCap_;
+  std::uint64_t dropped_{0};
+  OverflowCallback overflowCb_;
 };
 
 } // namespace dc

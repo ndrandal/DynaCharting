@@ -31,6 +31,10 @@ bool FakeDataSource::poll(std::vector<std::uint8_t>& batch) {
 
 bool FakeDataSource::isRunning() const { return running_.load(); }
 
+void FakeDataSource::setOverflowCallback(OverflowCallback cb) {
+  queue_.setOverflowCallback(std::move(cb));
+}
+
 std::uint32_t FakeDataSource::candleCount() const {
   std::lock_guard<std::mutex> lock(stateMtx_);
   return candleCount_;

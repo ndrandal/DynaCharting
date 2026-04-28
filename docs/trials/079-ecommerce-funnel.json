@@ -1,0 +1,168 @@
+{
+  "version": 1,
+  "viewport": {
+    "width": 600,
+    "height": 800
+  },
+  "buffers": {
+    "100": {
+      "data": [
+        -0.85,
+        0.52,
+        0.85,
+        0.8
+      ]
+    },
+    "103": {
+      "data": [
+        -0.5525,
+        0.18,
+        0.5525,
+        0.46
+      ]
+    },
+    "106": {
+      "data": [
+        -0.357,
+        -0.16,
+        0.357,
+        0.12
+      ]
+    },
+    "109": {
+      "data": [
+        -0.2635,
+        -0.5,
+        0.2635,
+        -0.22
+      ]
+    },
+    "112": {
+      "data": [
+        -0.204,
+        -0.84,
+        0.204,
+        -0.56
+      ]
+    }
+  },
+  "transforms": {},
+  "panes": {
+    "1": {
+      "name": "Funnel",
+      "region": {
+        "clipYMin": -0.95,
+        "clipYMax": 0.95,
+        "clipXMin": -0.95,
+        "clipXMax": 0.95
+      },
+      "hasClearColor": true,
+      "clearColor": [
+        0.06,
+        0.09,
+        0.16,
+        1.0
+      ]
+    }
+  },
+  "layers": {
+    "10": {
+      "paneId": 1,
+      "name": "bars"
+    }
+  },
+  "geometries": {
+    "101": {
+      "vertexBufferId": 100,
+      "format": "rect4",
+      "vertexCount": 1
+    },
+    "104": {
+      "vertexBufferId": 103,
+      "format": "rect4",
+      "vertexCount": 1
+    },
+    "107": {
+      "vertexBufferId": 106,
+      "format": "rect4",
+      "vertexCount": 1
+    },
+    "110": {
+      "vertexBufferId": 109,
+      "format": "rect4",
+      "vertexCount": 1
+    },
+    "113": {
+      "vertexBufferId": 112,
+      "format": "rect4",
+      "vertexCount": 1
+    }
+  },
+  "drawItems": {
+    "102": {
+      "layerId": 10,
+      "name": "Stage1",
+      "pipeline": "instancedRect@1",
+      "geometryId": 101,
+      "color": [
+        0.3,
+        0.6,
+        1.0,
+        1.0
+      ],
+      "cornerRadius": 6.0
+    },
+    "105": {
+      "layerId": 10,
+      "name": "Stage2",
+      "pipeline": "instancedRect@1",
+      "geometryId": 104,
+      "color": [
+        0.25,
+        0.5,
+        0.9,
+        1.0
+      ],
+      "cornerRadius": 6.0
+    },
+    "108": {
+      "layerId": 10,
+      "name": "Stage3",
+      "pipeline": "instancedRect@1",
+      "geometryId": 107,
+      "color": [
+        0.2,
+        0.4,
+        0.8,
+        1.0
+      ],
+      "cornerRadius": 6.0
+    },
+    "111": {
+      "layerId": 10,
+      "name": "Stage4",
+      "pipeline": "instancedRect@1",
+      "geometryId": 110,
+      "color": [
+        0.15,
+        0.3,
+        0.7,
+        1.0
+      ],
+      "cornerRadius": 6.0
+    },
+    "114": {
+      "layerId": 10,
+      "name": "Stage5",
+      "pipeline": "instancedRect@1",
+      "geometryId": 113,
+      "color": [
+        0.1,
+        0.2,
+        0.6,
+        1.0
+      ],
+      "cornerRadius": 6.0
+    }
+  }
+}

@@ -1,0 +1,318 @@
+{
+  "version": 1,
+  "viewport": {
+    "width": 1000,
+    "height": 500
+  },
+  "buffers": {
+    "100": {
+      "data": [
+        -0.3,
+        0,
+        0.3,
+        200
+      ]
+    },
+    "103": {
+      "data": [
+        0.7,
+        200,
+        1.3,
+        130
+      ]
+    },
+    "106": {
+      "data": [
+        1.7,
+        0,
+        2.3,
+        130
+      ]
+    },
+    "109": {
+      "data": [
+        2.7,
+        130,
+        3.3,
+        85
+      ]
+    },
+    "112": {
+      "data": [
+        3.7,
+        85,
+        4.3,
+        60
+      ]
+    },
+    "115": {
+      "data": [
+        4.7,
+        60,
+        5.3,
+        35
+      ]
+    },
+    "118": {
+      "data": [
+        5.7,
+        35,
+        6.3,
+        50
+      ]
+    },
+    "121": {
+      "data": [
+        6.7,
+        0,
+        7.3,
+        50
+      ]
+    },
+    "124": {
+      "data": [
+        0.3,
+        200,
+        0.7,
+        200,
+        1.3,
+        130,
+        1.7,
+        130,
+        2.3,
+        130,
+        2.7,
+        130,
+        3.3,
+        85,
+        3.7,
+        85,
+        4.3,
+        60,
+        4.7,
+        60,
+        5.3,
+        35,
+        5.7,
+        35,
+        6.3,
+        50,
+        6.7,
+        50
+      ]
+    }
+  },
+  "transforms": {
+    "50": {
+      "sx": 0.225,
+      "sy": 0.007826087,
+      "tx": -0.7875,
+      "ty": -0.82173913
+    }
+  },
+  "panes": {
+    "1": {
+      "name": "Waterfall",
+      "region": {
+        "clipYMin": -0.95,
+        "clipYMax": 0.95,
+        "clipXMin": -0.95,
+        "clipXMax": 0.95
+      },
+      "hasClearColor": true,
+      "clearColor": [
+        0.06,
+        0.09,
+        0.16,
+        1.0
+      ]
+    }
+  },
+  "layers": {
+    "10": {
+      "paneId": 1,
+      "name": "bars"
+    },
+    "11": {
+      "paneId": 1,
+      "name": "connectors"
+    }
+  },
+  "geometries": {
+    "101": {
+      "vertexBufferId": 100,
+      "format": "rect4",
+      "vertexCount": 1
+    },
+    "104": {
+      "vertexBufferId": 103,
+      "format": "rect4",
+      "vertexCount": 1
+    },
+    "107": {
+      "vertexBufferId": 106,
+      "format": "rect4",
+      "vertexCount": 1
+    },
+    "110": {
+      "vertexBufferId": 109,
+      "format": "rect4",
+      "vertexCount": 1
+    },
+    "113": {
+      "vertexBufferId": 112,
+      "format": "rect4",
+      "vertexCount": 1
+    },
+    "116": {
+      "vertexBufferId": 115,
+      "format": "rect4",
+      "vertexCount": 1
+    },
+    "119": {
+      "vertexBufferId": 118,
+      "format": "rect4",
+      "vertexCount": 1
+    },
+    "122": {
+      "vertexBufferId": 121,
+      "format": "rect4",
+      "vertexCount": 1
+    },
+    "125": {
+      "vertexBufferId": 124,
+      "format": "rect4",
+      "vertexCount": 7
+    }
+  },
+  "drawItems": {
+    "102": {
+      "layerId": 10,
+      "name": "Revenue",
+      "pipeline": "instancedRect@1",
+      "geometryId": 101,
+      "color": [
+        0.3,
+        0.7,
+        0.4,
+        1.0
+      ],
+      "transformId": 50,
+      "cornerRadius": 2.0
+    },
+    "105": {
+      "layerId": 10,
+      "name": "COGS",
+      "pipeline": "instancedRect@1",
+      "geometryId": 104,
+      "color": [
+        0.9,
+        0.3,
+        0.3,
+        1.0
+      ],
+      "transformId": 50,
+      "cornerRadius": 2.0
+    },
+    "108": {
+      "layerId": 10,
+      "name": "Gross",
+      "pipeline": "instancedRect@1",
+      "geometryId": 107,
+      "color": [
+        0.3,
+        0.6,
+        0.9,
+        1.0
+      ],
+      "transformId": 50,
+      "cornerRadius": 2.0
+    },
+    "111": {
+      "layerId": 10,
+      "name": "OpEx",
+      "pipeline": "instancedRect@1",
+      "geometryId": 110,
+      "color": [
+        0.9,
+        0.3,
+        0.3,
+        1.0
+      ],
+      "transformId": 50,
+      "cornerRadius": 2.0
+    },
+    "114": {
+      "layerId": 10,
+      "name": "Marketing",
+      "pipeline": "instancedRect@1",
+      "geometryId": 113,
+      "color": [
+        0.9,
+        0.3,
+        0.3,
+        1.0
+      ],
+      "transformId": 50,
+      "cornerRadius": 2.0
+    },
+    "117": {
+      "layerId": 10,
+      "name": "R&D",
+      "pipeline": "instancedRect@1",
+      "geometryId": 116,
+      "color": [
+        0.9,
+        0.3,
+        0.3,
+        1.0
+      ],
+      "transformId": 50,
+      "cornerRadius": 2.0
+    },
+    "120": {
+      "layerId": 10,
+      "name": "OtherInc",
+      "pipeline": "instancedRect@1",
+      "geometryId": 119,
+      "color": [
+        0.3,
+        0.7,
+        0.4,
+        1.0
+      ],
+      "transformId": 50,
+      "cornerRadius": 2.0
+    },
+    "123": {
+      "layerId": 10,
+      "name": "NetIncome",
+      "pipeline": "instancedRect@1",
+      "geometryId": 122,
+      "color": [
+        0.3,
+        0.6,
+        0.9,
+        1.0
+      ],
+      "transformId": 50,
+      "cornerRadius": 2.0
+    },
+    "126": {
+      "layerId": 11,
+      "name": "Connectors",
+      "pipeline": "lineAA@1",
+      "geometryId": 125,
+      "color": [
+        0.6,
+        0.6,
+        0.6,
+        0.5
+      ],
+      "transformId": 50,
+      "lineWidth": 1.0,
+      "dashLength": 4.0,
+      "gapLength": 3.0
+    }
+  }
+}

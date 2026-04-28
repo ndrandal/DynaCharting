@@ -1,5 +1,6 @@
 // D58.1 — ThemeManager: set/apply/callback/presets
 #include "dc/style/ThemeManager.hpp"
+#include "dc/recipe/ChartTheme.hpp"
 #include "dc/scene/Scene.hpp"
 #include "dc/scene/ResourceRegistry.hpp"
 #include "dc/commands/CommandProcessor.hpp"
@@ -132,9 +133,10 @@ int main() {
     cp.applyJsonText(R"({"cmd":"createLayer","id":10,"paneId":1})");
     cp.applyJsonText(R"({"cmd":"createDrawItem","id":100,"layerId":10})");
 
+    namespace ct = dc::chart_theme;
     dc::ThemeTarget target;
-    target.paneIds = {1};
-    target.candleDrawItemIds = {100};
+    target.groups.push_back(ct::paneBackgroundGroup({1}));
+    target.groups.push_back(ct::candleGroup({100}));
 
     dc::ThemeManager tm;
     tm.setTheme("Light");
@@ -142,7 +144,6 @@ int main() {
     int count = tm.applyTheme(cp, target);
     check(count == 2, "applyTheme returned 2 commands applied (1 pane + 1 candle)");
 
-    // Verify scene state reflects light theme
     const dc::Pane* pane = scene.getPane(1);
     check(pane != nullptr && pane->hasClearColor, "pane has clear color after apply");
     check(near(pane->clearColor[0], 0.95f), "pane bg R = light theme");
@@ -150,7 +151,7 @@ int main() {
     const dc::DrawItem* di = scene.getDrawItem(100);
     check(di != nullptr, "drawItem exists");
     dc::Theme lt = dc::lightTheme();
-    check(near(di->colorUp[1], lt.candleUp[1]), "drawItem colorUp G = light theme");
+    check(near(di->colorUp[1], ct::candleUp(lt)[1]), "drawItem colorUp G = light theme");
   }
 
   // Test 10: No callback if not set

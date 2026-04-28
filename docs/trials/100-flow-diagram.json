@@ -1,0 +1,153 @@
+{
+  "version": 1,
+  "viewport": {
+    "width": 1000,
+    "height": 400
+  },
+  "buffers": {
+    "100": {
+      "data": [
+        -0.79,
+        -0.125,
+        -0.51,
+        0.125,
+        -0.34,
+        -0.125,
+        -0.06,
+        0.125,
+        0.11,
+        -0.125,
+        0.39,
+        0.125,
+        0.56,
+        -0.125,
+        0.84,
+        0.125
+      ]
+    },
+    "103": {
+      "data": [
+        -0.51,
+        0,
+        -0.34,
+        0,
+        -0.06,
+        0,
+        0.11,
+        0,
+        0.39,
+        0,
+        0.56,
+        0
+      ]
+    },
+    "106": {
+      "data": [
+        -0.34,
+        0,
+        -0.38,
+        0.03,
+        -0.38,
+        -0.03,
+        0.11,
+        0,
+        0.07,
+        0.03,
+        0.07,
+        -0.03,
+        0.56,
+        0,
+        0.52,
+        0.03,
+        0.52,
+        -0.03
+      ]
+    }
+  },
+  "transforms": {},
+  "panes": {
+    "1": {
+      "name": "Flow",
+      "region": {
+        "clipYMin": -0.95,
+        "clipYMax": 0.95,
+        "clipXMin": -0.95,
+        "clipXMax": 0.95
+      },
+      "hasClearColor": true,
+      "clearColor": [
+        0.05,
+        0.06,
+        0.12,
+        1.0
+      ]
+    }
+  },
+  "layers": {
+    "10": {
+      "paneId": 1,
+      "name": "nodes"
+    },
+    "11": {
+      "paneId": 1,
+      "name": "arrows"
+    }
+  },
+  "geometries": {
+    "101": {
+      "vertexBufferId": 100,
+      "format": "rect4",
+      "vertexCount": 4
+    },
+    "104": {
+      "vertexBufferId": 103,
+      "format": "rect4",
+      "vertexCount": 3
+    },
+    "107": {
+      "vertexBufferId": 106,
+      "format": "pos2_clip",
+      "vertexCount": 9
+    }
+  },
+  "drawItems": {
+    "102": {
+      "layerId": 10,
+      "name": "Nodes",
+      "pipeline": "instancedRect@1",
+      "geometryId": 101,
+      "color": [
+        0.15,
+        0.35,
+        0.65,
+        1.0
+      ],
+      "cornerRadius": 10.0
+    },
+    "105": {
+      "layerId": 11,
+      "name": "Arrows",
+      "pipeline": "lineAA@1",
+      "geometryId": 104,
+      "color": [
+        0.7,
+        0.7,
+        0.7,
+        1.0
+      ],
+      "lineWidth": 2.0
+    },
+    "108": {
+      "layerId": 11,
+      "name": "ArrowHeads",
+      "pipeline": "triSolid@1",
+      "geometryId": 107,
+      "color": [
+        0.7,
+        0.7,
+        0.7,
+        1.0
+      ]
+    }
+  }
+}

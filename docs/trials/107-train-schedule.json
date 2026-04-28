@@ -1,0 +1,259 @@
+{
+  "version": 1,
+  "viewport": {
+    "width": 1000,
+    "height": 600
+  },
+  "buffers": {
+    "100": {
+      "data": [
+        0,
+        0,
+        24,
+        0,
+        0,
+        100,
+        24,
+        100,
+        0,
+        200,
+        24,
+        200,
+        0,
+        300,
+        24,
+        300,
+        0,
+        400,
+        24,
+        400,
+        0,
+        500,
+        24,
+        500,
+        0,
+        0,
+        0,
+        500,
+        4,
+        0,
+        4,
+        500,
+        8,
+        0,
+        8,
+        500,
+        12,
+        0,
+        12,
+        500,
+        16,
+        0,
+        16,
+        500,
+        20,
+        0,
+        20,
+        500,
+        24,
+        0,
+        24,
+        500
+      ]
+    },
+    "103": {
+      "data": [
+        2,
+        0,
+        6,
+        500
+      ]
+    },
+    "106": {
+      "data": [
+        5,
+        0,
+        10,
+        500
+      ]
+    },
+    "109": {
+      "data": [
+        8,
+        0,
+        14,
+        500
+      ]
+    },
+    "112": {
+      "data": [
+        12,
+        500,
+        16,
+        0
+      ]
+    },
+    "115": {
+      "data": [
+        16,
+        500,
+        21,
+        0
+      ]
+    }
+  },
+  "transforms": {
+    "50": {
+      "sx": 0.069230769,
+      "sy": 0.003333333,
+      "tx": -0.830769231,
+      "ty": -0.833333333
+    }
+  },
+  "panes": {
+    "1": {
+      "name": "Schedule",
+      "region": {
+        "clipYMin": -0.95,
+        "clipYMax": 0.95,
+        "clipXMin": -0.95,
+        "clipXMax": 0.95
+      },
+      "hasClearColor": true,
+      "clearColor": [
+        0.05,
+        0.05,
+        0.1,
+        1.0
+      ]
+    }
+  },
+  "layers": {
+    "10": {
+      "paneId": 1,
+      "name": "grid"
+    },
+    "11": {
+      "paneId": 1,
+      "name": "trains"
+    }
+  },
+  "geometries": {
+    "101": {
+      "vertexBufferId": 100,
+      "format": "rect4",
+      "vertexCount": 13
+    },
+    "104": {
+      "vertexBufferId": 103,
+      "format": "rect4",
+      "vertexCount": 1
+    },
+    "107": {
+      "vertexBufferId": 106,
+      "format": "rect4",
+      "vertexCount": 1
+    },
+    "110": {
+      "vertexBufferId": 109,
+      "format": "rect4",
+      "vertexCount": 1
+    },
+    "113": {
+      "vertexBufferId": 112,
+      "format": "rect4",
+      "vertexCount": 1
+    },
+    "116": {
+      "vertexBufferId": 115,
+      "format": "rect4",
+      "vertexCount": 1
+    }
+  },
+  "drawItems": {
+    "102": {
+      "layerId": 10,
+      "name": "Grid",
+      "pipeline": "lineAA@1",
+      "geometryId": 101,
+      "color": [
+        0.3,
+        0.3,
+        0.4,
+        0.4
+      ],
+      "transformId": 50,
+      "lineWidth": 1.0
+    },
+    "105": {
+      "layerId": 11,
+      "name": "TrainA",
+      "pipeline": "lineAA@1",
+      "geometryId": 104,
+      "color": [
+        0.3,
+        0.7,
+        1.0,
+        1.0
+      ],
+      "transformId": 50,
+      "lineWidth": 2.5
+    },
+    "108": {
+      "layerId": 11,
+      "name": "TrainB",
+      "pipeline": "lineAA@1",
+      "geometryId": 107,
+      "color": [
+        0.9,
+        0.4,
+        0.2,
+        1.0
+      ],
+      "transformId": 50,
+      "lineWidth": 2.5
+    },
+    "111": {
+      "layerId": 11,
+      "name": "TrainC",
+      "pipeline": "lineAA@1",
+      "geometryId": 110,
+      "color": [
+        0.3,
+        0.8,
+        0.4,
+        1.0
+      ],
+      "transformId": 50,
+      "lineWidth": 2.5
+    },
+    "114": {
+      "layerId": 11,
+      "name": "TrainD",
+      "pipeline": "lineAA@1",
+      "geometryId": 113,
+      "color": [
+        0.9,
+        0.8,
+        0.2,
+        1.0
+      ],
+      "transformId": 50,
+      "lineWidth": 2.5
+    },
+    "117": {
+      "layerId": 11,
+      "name": "TrainE",
+      "pipeline": "lineAA@1",
+      "geometryId": 116,
+      "color": [
+        0.7,
+        0.3,
+        0.9,
+        1.0
+      ],
+      "transformId": 50,
+      "lineWidth": 2.5
+    }
+  }
+}

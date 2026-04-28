@@ -1,0 +1,195 @@
+{
+  "version": 1,
+  "viewport": {
+    "width": 900,
+    "height": 500
+  },
+  "buffers": {
+    "109": {
+      "data": [
+        -0.5,
+        150,
+        3.5,
+        150
+      ]
+    },
+    "100": {
+      "data": [
+        -0.18,
+        0,
+        -0.08,
+        45,
+        0.82,
+        0,
+        0.92,
+        30,
+        1.82,
+        0,
+        1.92,
+        55,
+        2.82,
+        0,
+        2.92,
+        20
+      ]
+    },
+    "103": {
+      "data": [
+        -0.05,
+        0,
+        0.05,
+        120,
+        0.95,
+        0,
+        1.05,
+        85,
+        1.95,
+        0,
+        2.05,
+        180,
+        2.95,
+        0,
+        3.05,
+        45
+      ]
+    },
+    "106": {
+      "data": [
+        0.08,
+        0,
+        0.18,
+        167,
+        1.08,
+        0,
+        1.18,
+        183,
+        2.08,
+        0,
+        2.18,
+        227,
+        3.08,
+        0,
+        3.18,
+        125
+      ]
+    }
+  },
+  "transforms": {
+    "50": {
+      "sx": 0.45,
+      "sy": 0.0072,
+      "tx": -0.675,
+      "ty": -0.9
+    }
+  },
+  "panes": {
+    "1": {
+      "name": "ROI",
+      "region": {
+        "clipYMin": -0.95,
+        "clipYMax": 0.95,
+        "clipXMin": -0.95,
+        "clipXMax": 0.95
+      },
+      "hasClearColor": true,
+      "clearColor": [
+        0.06,
+        0.09,
+        0.16,
+        1.0
+      ]
+    }
+  },
+  "layers": {
+    "10": {
+      "paneId": 1,
+      "name": "bars"
+    },
+    "11": {
+      "paneId": 1,
+      "name": "benchmark"
+    }
+  },
+  "geometries": {
+    "101": {
+      "vertexBufferId": 100,
+      "format": "rect4",
+      "vertexCount": 4
+    },
+    "104": {
+      "vertexBufferId": 103,
+      "format": "rect4",
+      "vertexCount": 4
+    },
+    "107": {
+      "vertexBufferId": 106,
+      "format": "rect4",
+      "vertexCount": 4
+    },
+    "110": {
+      "vertexBufferId": 109,
+      "format": "rect4",
+      "vertexCount": 1
+    }
+  },
+  "drawItems": {
+    "102": {
+      "layerId": 10,
+      "name": "Spend",
+      "pipeline": "instancedRect@1",
+      "geometryId": 101,
+      "color": [
+        0.9,
+        0.3,
+        0.3,
+        1.0
+      ],
+      "transformId": 50,
+      "cornerRadius": 2.0
+    },
+    "105": {
+      "layerId": 10,
+      "name": "Revenue",
+      "pipeline": "instancedRect@1",
+      "geometryId": 104,
+      "color": [
+        0.3,
+        0.8,
+        0.4,
+        1.0
+      ],
+      "transformId": 50,
+      "cornerRadius": 2.0
+    },
+    "108": {
+      "layerId": 10,
+      "name": "ROI",
+      "pipeline": "instancedRect@1",
+      "geometryId": 107,
+      "color": [
+        0.3,
+        0.6,
+        1.0,
+        1.0
+      ],
+      "transformId": 50,
+      "cornerRadius": 2.0
+    },
+    "111": {
+      "layerId": 11,
+      "name": "Benchmark",
+      "pipeline": "lineAA@1",
+      "geometryId": 110,
+      "color": [
+        1.0,
+        1.0,
+        1.0,
+        0.5
+      ],
+      "transformId": 50,
+      "lineWidth": 1.5,
+      "dashLength": 8.0,
+      "gapLength": 5.0
+    }
+  }
+}

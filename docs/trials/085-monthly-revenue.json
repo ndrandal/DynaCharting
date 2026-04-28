@@ -1,0 +1,199 @@
+{
+  "version": 1,
+  "viewport": {
+    "width": 1000,
+    "height": 500
+  },
+  "buffers": {
+    "100": {
+      "data": [
+        -0.35,
+        0,
+        0.35,
+        42,
+        0.65,
+        0,
+        1.35,
+        48,
+        1.65,
+        0,
+        2.35,
+        55,
+        2.65,
+        0,
+        3.35,
+        52,
+        3.65,
+        0,
+        4.35,
+        60,
+        4.65,
+        0,
+        5.35,
+        65,
+        5.65,
+        0,
+        6.35,
+        70,
+        6.65,
+        0,
+        7.35,
+        68,
+        7.65,
+        0,
+        8.35,
+        75,
+        8.65,
+        0,
+        9.35,
+        80,
+        9.65,
+        0,
+        10.35,
+        78,
+        10.65,
+        0,
+        11.35,
+        85
+      ]
+    },
+    "103": {
+      "data": [
+        0,
+        40,
+        1,
+        44,
+        1,
+        44,
+        2,
+        48,
+        2,
+        48,
+        3,
+        52,
+        3,
+        52,
+        4,
+        56,
+        4,
+        56,
+        5,
+        60,
+        5,
+        60,
+        6,
+        64,
+        6,
+        64,
+        7,
+        68,
+        7,
+        68,
+        8,
+        72,
+        8,
+        72,
+        9,
+        76,
+        9,
+        76,
+        10,
+        80,
+        10,
+        80,
+        11,
+        84
+      ]
+    }
+  },
+  "transforms": {
+    "50": {
+      "sx": 0.138461538,
+      "sy": 0.018947368,
+      "tx": -0.761538462,
+      "ty": -0.9
+    }
+  },
+  "panes": {
+    "1": {
+      "name": "Revenue",
+      "region": {
+        "clipYMin": -0.95,
+        "clipYMax": 0.95,
+        "clipXMin": -0.95,
+        "clipXMax": 0.95
+      },
+      "hasClearColor": true,
+      "clearColor": [
+        0.06,
+        0.09,
+        0.16,
+        1.0
+      ]
+    }
+  },
+  "layers": {
+    "10": {
+      "paneId": 1,
+      "name": "bars"
+    },
+    "11": {
+      "paneId": 1,
+      "name": "trend"
+    }
+  },
+  "geometries": {
+    "101": {
+      "vertexBufferId": 100,
+      "format": "rect4",
+      "vertexCount": 12
+    },
+    "104": {
+      "vertexBufferId": 103,
+      "format": "rect4",
+      "vertexCount": 11
+    }
+  },
+  "drawItems": {
+    "102": {
+      "layerId": 10,
+      "name": "RevenueBars",
+      "pipeline": "instancedRect@1",
+      "geometryId": 101,
+      "color": [
+        0.2,
+        0.5,
+        0.9,
+        0.8
+      ],
+      "transformId": 50,
+      "cornerRadius": 3.0
+    },
+    "105": {
+      "layerId": 11,
+      "name": "TrendLine",
+      "pipeline": "lineAA@1",
+      "geometryId": 104,
+      "color": [
+        1.0,
+        0.7,
+        0.1,
+        1.0
+      ],
+      "transformId": 50,
+      "lineWidth": 2.5,
+      "dashLength": 10.0,
+      "gapLength": 6.0
+    }
+  },
+  "viewports": {
+    "revenue": {
+      "transformId": 50,
+      "paneId": 1,
+      "xMin": -1,
+      "xMax": 12,
+      "yMin": 0,
+      "yMax": 95
+    }
+  }
+}

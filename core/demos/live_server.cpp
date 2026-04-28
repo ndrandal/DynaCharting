@@ -18,6 +18,7 @@
 #include "dc/text/GlyphAtlas.hpp"
 #include "dc/layout/LayoutManager.hpp"
 #include "dc/style/Theme.hpp"
+#include "dc/recipe/ChartTheme.hpp"
 #include "dc/math/NiceTicks.hpp"
 #include "dc/math/NiceTimeTicks.hpp"
 #include "dc/math/TimeFormat.hpp"
@@ -436,14 +437,14 @@ int main() {
   candleCfg.layerId = 15;
   candleCfg.name = "BTCUSD";
   candleCfg.createTransform = false;
-  candleCfg.colorUp[0]   = theme.candleUp[0];
-  candleCfg.colorUp[1]   = theme.candleUp[1];
-  candleCfg.colorUp[2]   = theme.candleUp[2];
-  candleCfg.colorUp[3]   = theme.candleUp[3];
-  candleCfg.colorDown[0] = theme.candleDown[0];
-  candleCfg.colorDown[1] = theme.candleDown[1];
-  candleCfg.colorDown[2] = theme.candleDown[2];
-  candleCfg.colorDown[3] = theme.candleDown[3];
+  {
+    const float* cu = dc::chart_theme::candleUp(theme);
+    const float* cd = dc::chart_theme::candleDown(theme);
+    for (int i = 0; i < 4; ++i) {
+      candleCfg.colorUp[i]   = cu[i];
+      candleCfg.colorDown[i] = cd[i];
+    }
+  }
 
   dc::CandleRecipe candleRecipe(100, candleCfg);
   auto candleBuild = candleRecipe.build();
@@ -466,14 +467,14 @@ int main() {
   volCfg.layerId = 30;
   volCfg.name = "Volume";
   volCfg.createTransform = false;
-  volCfg.colorUp[0]   = theme.volumeUp[0];
-  volCfg.colorUp[1]   = theme.volumeUp[1];
-  volCfg.colorUp[2]   = theme.volumeUp[2];
-  volCfg.colorUp[3]   = theme.volumeUp[3];
-  volCfg.colorDown[0] = theme.volumeDown[0];
-  volCfg.colorDown[1] = theme.volumeDown[1];
-  volCfg.colorDown[2] = theme.volumeDown[2];
-  volCfg.colorDown[3] = theme.volumeDown[3];
+  {
+    const float* vu = dc::chart_theme::volumeUp(theme);
+    const float* vd = dc::chart_theme::volumeDown(theme);
+    for (int i = 0; i < 4; ++i) {
+      volCfg.colorUp[i]   = vu[i];
+      volCfg.colorDown[i] = vd[i];
+    }
+  }
 
   dc::VolumeRecipe volRecipe(200, volCfg);
   auto volBuild = volRecipe.build();
