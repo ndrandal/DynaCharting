@@ -47,7 +47,7 @@ All engine-level primitives from the original roadmap have been implemented (D1�
 
 ### Infrastructure
 - **CI/CD Pipeline** — GitHub Actions for build + test (OSMesa headless GL in CI)
-- **GLFW Live Window** — First interactive real-time demo from C++ (DC_HAS_GLFW). See `specs/2026-05-01-glfw-live-window/SPEC.md` (ENC-91).
+- ✅ **GLFW Live Window** (ENC-91) — `core/demos/hello_glfw.cpp` is the canonical embedding template; `dc_d2_7_demo`, `dc_d5_7_interactive_demo`, `dc_d6_3_live_demo` exercise more interactive paths. Build with `find_package(glfw3)` available; binary is `dc_hello_glfw`.
 - **Embedding Example** — Minimal C++ app or WebAssembly build demonstrating library integration
 
 ### Reactive Bindings (D80, retroactively documented)

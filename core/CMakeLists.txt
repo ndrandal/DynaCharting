@@ -196,6 +196,13 @@ if (DC_HAS_GLAD AND (DC_HAS_OSMESA OR DC_HAS_GLFW))
     endif()
   endif()
 
+  # ENC-91: minimal first-window demo. Built only if GLFW is present;
+  # serves as the canonical embedding template.
+  if (DC_HAS_GLFW)
+    add_executable(dc_hello_glfw "${CMAKE_CURRENT_SOURCE_DIR}/demos/hello_glfw.cpp")
+    target_link_libraries(dc_hello_glfw PRIVATE dc_gl)
+  endif()
+
   # D2.7 demo
   add_executable(dc_d2_7_demo "${CMAKE_CURRENT_SOURCE_DIR}/demos/d2_7_candle_demo.cpp")
   target_link_libraries(dc_d2_7_demo PRIVATE dc_gl)
