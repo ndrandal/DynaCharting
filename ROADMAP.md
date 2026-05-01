@@ -47,8 +47,11 @@ All engine-level primitives from the original roadmap have been implemented (D1�
 
 ### Infrastructure
 - **CI/CD Pipeline** — GitHub Actions for build + test (OSMesa headless GL in CI)
-- **GLFW Live Window** — First interactive real-time demo from C++ (DC_HAS_GLFW)
+- **GLFW Live Window** — First interactive real-time demo from C++ (DC_HAS_GLFW). See `specs/2026-05-01-glfw-live-window/SPEC.md` (ENC-91).
 - **Embedding Example** — Minimal C++ app or WebAssembly build demonstrating library integration
+
+### Reactive Bindings (D80, retroactively documented)
+- **BindingEvaluator** — Reactive bindings between scene elements (selection / hover / viewport / data triggers → filter / range / visibility / color effects). See `docs/binding-evaluator.md` (ENC-88).
 
 ### Engine Refinements
 - **Error Observability** — Richer error context from data ingestion (LiveIngestLoop, IngestProcessor)
