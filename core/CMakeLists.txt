@@ -334,6 +334,12 @@ if (DC_FETCH_DAWN)
   set(DAWN_BUILD_FUZZERS        OFF CACHE BOOL "" FORCE)
   set(DAWN_BUILD_NODE_BINDINGS  OFF CACHE BOOL "" FORCE)
   set(DAWN_ENABLE_INSTALL       OFF CACHE BOOL "" FORCE)
+  # Don't build Dawn's bundled GLFW windowing utils or Wayland surface support.
+  # We don't need them (samples are OFF; dc_gpu is headless for now, and our own
+  # windowing later uses the system GLFW, not Dawn's). Building Dawn's GLFW pulls
+  # in a wayland-scanner requirement that fails on bare Linux CI runners.
+  set(DAWN_USE_GLFW             OFF CACHE BOOL "" FORCE)
+  set(DAWN_USE_WAYLAND          OFF CACHE BOOL "" FORCE)
   # Tint: no standalone command-line tools or tests (only what Dawn links).
   set(TINT_BUILD_CMD_TOOLS      OFF CACHE BOOL "" FORCE)
   set(TINT_BUILD_TESTS          OFF CACHE BOOL "" FORCE)
