@@ -340,6 +340,14 @@ if (DC_FETCH_DAWN)
   # in a wayland-scanner requirement that fails on bare Linux CI runners.
   set(DAWN_USE_GLFW             OFF CACHE BOOL "" FORCE)
   set(DAWN_USE_WAYLAND          OFF CACHE BOOL "" FORCE)
+  # Don't build Dawn's experimental C++20-modules bindings (dawncpp_module).
+  # Dawn's own probe is a false positive on GCC 13.x (its `-fmodules-ts` test
+  # compiles, so DAWN_SUPPORTS_CXX_MODULES=True), but CMake's Ninja generator
+  # can't do GCC C++-module dependency scanning → "compiler does not provide a
+  # way to discover the import graph" at generate time. We don't need the module
+  # target (nothing links it when off — see Dawn src/dawn/CMakeLists.txt). Pre-
+  # define the cache var FALSE so Dawn's check_cxx_source_compiles is skipped.
+  set(DAWN_SUPPORTS_CXX_MODULES FALSE CACHE BOOL "" FORCE)
   # Tint: no standalone command-line tools or tests (only what Dawn links).
   set(TINT_BUILD_CMD_TOOLS      OFF CACHE BOOL "" FORCE)
   set(TINT_BUILD_TESTS          OFF CACHE BOOL "" FORCE)
