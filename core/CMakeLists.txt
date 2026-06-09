@@ -5,6 +5,11 @@ project(dc_core LANGUAGES C CXX)
 option(DC_BUILD_TESTS "Build core tests in core/tests/" ON)
 option(DC_WARNINGS_AS_ERRORS "Treat warnings as errors" OFF)
 option(DC_HAS_WEBSOCKET "Build WebSocket data source (requires easywsclient)" OFF)
+# Demo / sample / server executables under core/demos/ and core/src/host/.
+# Default ON to preserve historical behavior. Turn OFF (-DDC_BUILD_DEMOS=OFF) to
+# build only the libraries + tests — useful for CI, since some demos may not be
+# kept in sync with core API changes and are not part of the conformance gate.
+option(DC_BUILD_DEMOS "Build demo/sample/server executables" ON)
 
 # ---- C++ standard ----
 set(CMAKE_CXX_STANDARD 17)
@@ -198,6 +203,12 @@ if (DC_HAS_GLAD AND (DC_HAS_OSMESA OR DC_HAS_GLFW))
     endif()
   endif()
 
+  # ---- Demo / sample / server executables ----
+  # Gated by DC_BUILD_DEMOS (default ON). These link dc_gl but are not part of
+  # the conformance test gate, and some are not kept in sync with core API
+  # changes (e.g. demos/hello_glfw.cpp). CI builds with -DDC_BUILD_DEMOS=OFF so
+  # the libraries + tests build cleanly regardless of demo drift.
+  if (DC_BUILD_DEMOS)
   # ENC-91: minimal first-window demo. Built only if GLFW is present;
   # serves as the canonical embedding template.
   if (DC_HAS_GLFW)
@@ -279,6 +290,9 @@ if (DC_HAS_GLAD AND (DC_HAS_OSMESA OR DC_HAS_GLFW))
   # D79 Generic JSON host (reads .json chart, serves via TEXT/FRME protocol)
   add_executable(dc_json_host "${CMAKE_CURRENT_SOURCE_DIR}/src/host/JsonHost.cpp")
   target_link_libraries(dc_json_host PRIVATE dc_gl)
+  else()
+    message(STATUS "Skipping demo/server executables (DC_BUILD_DEMOS=OFF)")
+  endif()
 else()
   message(STATUS "Skipping dc_gl (requires GLAD + at least one of OSMesa/GLFW)")
 endif()

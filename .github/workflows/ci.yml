@@ -1,0 +1,189 @@
+# DynaCharting CI — ENC-499 (WebGPU/Dawn migration)
+#
+# Two responsibilities:
+#   1. `conformance`  — gate the C++ core + GL backend conformance suite
+#                       (baseline 199/199 ctest) on every push and PR.
+#   2. `dawn-build`   — prove Dawn builds from source and `dc_gpu` links
+#                       against `dawn::webgpu_dawn` (validates what ENC-479
+#                       deferred). Slow first run; cached thereafter.
+#
+# Triggered on BOTH push (any branch) and pull_request, so it runs immediately
+# when a feature branch is pushed and also gates PRs into main.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# Cancel superseded runs on the same ref to save runner minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Job 1 — conformance: build dc + dc_gl and run the full ctest suite.
+  # ---------------------------------------------------------------------------
+  conformance:
+    name: GL conformance (ctest)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies (apt)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake \
+            g++ \
+            ninja-build \
+            rapidjson-dev \
+            libosmesa6-dev \
+            libglfw3-dev \
+            libgl1-mesa-dev
+
+      # RapidJSON: the project finds it via find_path(NAMES rapidjson/document.h)
+      # with no NO_DEFAULT_PATH, so it searches system include dirs. rapidjson-dev
+      # installs the headers under /usr/include/rapidjson, which find_path picks
+      # up even though THIRD_PARTY_ROOT/rapidjson is an (unpopulated) gitlink on a
+      # clean checkout. We pass an absolute THIRD_PARTY_ROOT so GLAD / stb / the
+      # test font (all vendored in-repo) resolve.
+      - name: Configure (CMake, demos OFF)
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DTHIRD_PARTY_ROOT="$PWD/third_party" \
+            -DDC_BUILD_TESTS=ON \
+            -DDC_BUILD_DEMOS=OFF
+
+      # NOTE: -DDC_BUILD_DEMOS=OFF gates the demo/sample/server executables.
+      # core/demos/hello_glfw.cpp does not compile on main (references the
+      # removed CmdResult::code / ::message), so a default build that includes
+      # demos fails. The conformance gate only needs the libraries + tests.
+      - name: Build (libraries + tests)
+        run: cmake --build build -j
+
+      - name: Run conformance suite (ctest, expect 199/199)
+        run: ctest --test-dir build -j --output-on-failure
+
+  # ---------------------------------------------------------------------------
+  # Job 2 — dawn-build: build Dawn from source and link dc_gpu.
+  # Proves dawn::webgpu_dawn resolves and dc_gpu links — the piece ENC-479
+  # deferred. Slow on a cache miss (Dawn build is ~30-60 min); cached by the
+  # pinned Dawn revision + runner OS so reruns are fast.
+  # ---------------------------------------------------------------------------
+  dawn-build:
+    name: Dawn build + dc_gpu link (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies (apt)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake \
+            g++ \
+            ninja-build \
+            python3 \
+            git \
+            pkg-config \
+            rapidjson-dev \
+            libx11-dev \
+            libxrandr-dev \
+            libxinerama-dev \
+            libxcursor-dev \
+            libxi-dev
+
+      # Read the pinned Dawn revision straight from core/CMakeLists.txt so the
+      # cache key always tracks the source of truth (no second copy to drift).
+      - name: Resolve pinned Dawn revision
+        id: dawn_rev
+        run: |
+          rev="$(grep -oE 'set\(DC_DAWN_GIT_TAG "[0-9a-f]+"' core/CMakeLists.txt \
+            | grep -oE '[0-9a-f]{40}')"
+          if [ -z "$rev" ]; then
+            echo "Could not parse DC_DAWN_GIT_TAG from core/CMakeLists.txt" >&2
+            exit 1
+          fi
+          echo "rev=$rev" >> "$GITHUB_OUTPUT"
+          echo "Pinned Dawn revision: $rev"
+
+      # Cache the FetchContent source + build trees for Dawn (build-dawn/_deps).
+      # Keyed on runner OS + the pinned Dawn revision: a Dawn bump invalidates the
+      # cache; same-revision reruns restore it and the Dawn build is incremental.
+      - name: Cache Dawn FetchContent (_deps)
+        uses: actions/cache@v4
+        with:
+          path: build-dawn/_deps
+          key: dawn-${{ runner.os }}-${{ steps.dawn_rev.outputs.rev }}
+          restore-keys: |
+            dawn-${{ runner.os }}-
+
+      - name: Configure (CMake, Dawn ON)
+        run: |
+          cmake -S . -B build-dawn -G Ninja \
+            -DTHIRD_PARTY_ROOT="$PWD/third_party" \
+            -DDC_BUILD_TESTS=OFF \
+            -DDC_BUILD_DEMOS=OFF \
+            -DDC_FETCH_DAWN=ON
+
+      # Builds Dawn from source (DAWN_FETCH_DEPENDENCIES=ON pulls Dawn's own deps
+      # via its python helper — no depot_tools) and then dc_gpu. Success here
+      # means dawn::webgpu_dawn resolved and dc_gpu linked against it.
+      - name: Build dc_gpu (builds Dawn from source)
+        run: cmake --build build-dawn --target dc_gpu -j
+
+  # ---------------------------------------------------------------------------
+  # Job 3 — dawn-build-macos: build Dawn + dc_gpu on macOS/Metal (no ctest).
+  # Full macOS conformance needs the Dawn renderer ports (later tickets) and
+  # OSMesa-on-mac is awkward, so this job only proves Dawn + the dc_gpu link on
+  # Apple toolchains. Metal frameworks ship with the runner; Dawn fetches its
+  # own deps. Slow on a cache miss; cached by pinned revision + OS like Linux.
+  #
+  # TODO(ENC-498 / ENC-499-macos): add a real macOS/Metal ctest conformance job
+  # once the Dawn-backed renderer ports land.
+  # ---------------------------------------------------------------------------
+  dawn-build-macos:
+    name: Dawn build + dc_gpu link (macOS/Metal)
+    runs-on: macos-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies (Homebrew)
+        run: brew install cmake ninja rapidjson
+
+      - name: Resolve pinned Dawn revision
+        id: dawn_rev
+        run: |
+          rev="$(grep -oE 'set\(DC_DAWN_GIT_TAG "[0-9a-f]+"' core/CMakeLists.txt \
+            | grep -oE '[0-9a-f]{40}')"
+          if [ -z "$rev" ]; then
+            echo "Could not parse DC_DAWN_GIT_TAG from core/CMakeLists.txt" >&2
+            exit 1
+          fi
+          echo "rev=$rev" >> "$GITHUB_OUTPUT"
+          echo "Pinned Dawn revision: $rev"
+
+      - name: Cache Dawn FetchContent (_deps)
+        uses: actions/cache@v4
+        with:
+          path: build-dawn/_deps
+          key: dawn-${{ runner.os }}-${{ steps.dawn_rev.outputs.rev }}
+          restore-keys: |
+            dawn-${{ runner.os }}-
+
+      - name: Configure (CMake, Dawn ON)
+        run: |
+          cmake -S . -B build-dawn -G Ninja \
+            -DTHIRD_PARTY_ROOT="$PWD/third_party" \
+            -DDC_BUILD_TESTS=OFF \
+            -DDC_BUILD_DEMOS=OFF \
+            -DDC_FETCH_DAWN=ON
+
+      - name: Build dc_gpu (builds Dawn from source)
+        run: cmake --build build-dawn --target dc_gpu -j
