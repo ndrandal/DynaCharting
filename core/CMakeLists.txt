@@ -61,6 +61,8 @@ file(GLOB_RECURSE DC_SOURCES
 )
 # Exclude gl/ sources — those belong to dc_gl.
 list(FILTER DC_SOURCES EXCLUDE REGEX ".*/gl/.*")
+# Exclude gpu/ sources — those belong to dc_gpu (WebGPU/Dawn backend).
+list(FILTER DC_SOURCES EXCLUDE REGEX ".*/gpu/.*")
 # Exclude host/ sources — standalone executables.
 list(FILTER DC_SOURCES EXCLUDE REGEX ".*/host/.*")
 # Exclude WebSocketDataSource — belongs to dc_ws (conditional).
@@ -279,6 +281,103 @@ if (DC_HAS_GLAD AND (DC_HAS_OSMESA OR DC_HAS_GLFW))
   target_link_libraries(dc_json_host PRIVATE dc_gl)
 else()
   message(STATUS "Skipping dc_gl (requires GLAD + at least one of OSMesa/GLFW)")
+endif()
+
+# =======================
+# Dawn (WebGPU native backend) — build-from-source via FetchContent
+# =======================
+# ENC-479 (P0.1): optional WebGPU/Dawn backend for the renderer migration.
+#
+# OFF by default so normal dc / dc_gl builds and other tickets' CI are
+# unaffected. Turn ON with -DDC_FETCH_DAWN=ON to fetch and build Dawn from
+# source. This mirrors the graceful-skip pattern used by the OSMesa/GLFW
+# blocks above: when Dawn is unavailable we set DC_HAS_DAWN=FALSE and emit a
+# clean STATUS skip, and dc / dc_gl build unchanged.
+#
+# Pinned Dawn revision (do NOT track a moving branch):
+#   commit 58263faefe3c52fac4656825c6d55f85ee3c7536
+#   == tip of branch chromium/7880 as of 2026-06-09.
+# This is an explicit immutable commit hash so the build is reproducible.
+# The full Dawn build is slow (30-60+ min first build, needs python3 + ninja);
+# it is validated in CI (ENC-499), not necessarily locally.
+option(DC_FETCH_DAWN "Fetch and build Dawn (WebGPU) from source for dc_gpu" OFF)
+
+set(DC_HAS_DAWN FALSE)
+if (DC_FETCH_DAWN)
+  include(FetchContent)
+
+  set(DC_DAWN_GIT_REPOSITORY "https://dawn.googlesource.com/dawn")
+  # Pinned immutable commit (tip of chromium/7880 @ 2026-06-09). See note above.
+  set(DC_DAWN_GIT_TAG "58263faefe3c52fac4656825c6d55f85ee3c7536")
+
+  # --- Keep Dawn's build lean for our use ---
+  # Fetch Dawn's own deps with its python helper instead of depot_tools.
+  set(DAWN_FETCH_DEPENDENCIES ON CACHE BOOL "" FORCE)
+  # Disable Dawn samples / tests / benchmarks / fuzzers / node bindings.
+  set(DAWN_BUILD_SAMPLES        OFF CACHE BOOL "" FORCE)
+  set(DAWN_BUILD_TESTS          OFF CACHE BOOL "" FORCE)
+  set(DAWN_BUILD_BENCHMARKS     OFF CACHE BOOL "" FORCE)
+  set(DAWN_BUILD_FUZZERS        OFF CACHE BOOL "" FORCE)
+  set(DAWN_BUILD_NODE_BINDINGS  OFF CACHE BOOL "" FORCE)
+  set(DAWN_ENABLE_INSTALL       OFF CACHE BOOL "" FORCE)
+  # Tint: no standalone command-line tools or tests (only what Dawn links).
+  set(TINT_BUILD_CMD_TOOLS      OFF CACHE BOOL "" FORCE)
+  set(TINT_BUILD_TESTS          OFF CACHE BOOL "" FORCE)
+  # Build the single monolithic webgpu_dawn static library (default is STATIC,
+  # set explicitly for clarity). Exposes target dawn::webgpu_dawn.
+  set(DAWN_BUILD_MONOLITHIC_LIBRARY "STATIC" CACHE STRING "" FORCE)
+
+  message(STATUS "DC_FETCH_DAWN=ON: fetching Dawn ${DC_DAWN_GIT_TAG} from ${DC_DAWN_GIT_REPOSITORY}")
+  message(STATUS "  (build-from-source — first build is slow; validated in CI/ENC-499)")
+
+  FetchContent_Declare(
+    dawn
+    GIT_REPOSITORY "${DC_DAWN_GIT_REPOSITORY}"
+    GIT_TAG        "${DC_DAWN_GIT_TAG}"
+    GIT_SHALLOW    FALSE   # need the pinned commit; shallow can't fetch arbitrary SHA
+  )
+  FetchContent_MakeAvailable(dawn)
+
+  if (TARGET dawn::webgpu_dawn OR TARGET webgpu_dawn)
+    set(DC_HAS_DAWN TRUE)
+    message(STATUS "Dawn available — dc_gpu will be built")
+  else()
+    set(DC_HAS_DAWN FALSE)
+    message(STATUS "Dawn fetched but target dawn::webgpu_dawn not found — dc_gpu skipped")
+  endif()
+else()
+  message(STATUS "Dawn not enabled (DC_FETCH_DAWN=OFF) — dc_gpu will not be built")
+endif()
+
+# =======================
+# dc_gpu library (WebGPU/Dawn rendering backend) — scaffold
+# =======================
+# ENC-479 (P0.1): an (almost) empty static library so future WebGPU backend
+# work has a real, linkable target. Built only when Dawn is available.
+if (DC_HAS_DAWN)
+  add_library(dc_gpu STATIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/gpu/placeholder.cpp"
+  )
+  target_include_directories(dc_gpu PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  )
+  # Link the Dawn monolithic WebGPU target. Prefer the namespaced alias.
+  if (TARGET dawn::webgpu_dawn)
+    target_link_libraries(dc_gpu PUBLIC dc dawn::webgpu_dawn)
+  else()
+    target_link_libraries(dc_gpu PUBLIC dc webgpu_dawn)
+  endif()
+
+  if (NOT MSVC)
+    target_compile_options(dc_gpu PRIVATE -Wall -Wextra -Wpedantic)
+    if (DC_WARNINGS_AS_ERRORS)
+      target_compile_options(dc_gpu PRIVATE -Werror)
+    endif()
+  endif()
+
+  message(STATUS "dc_gpu (WebGPU/Dawn) enabled")
+else()
+  message(STATUS "Skipping dc_gpu (requires DC_FETCH_DAWN=ON + Dawn available)")
 endif()
 
 # =======================
