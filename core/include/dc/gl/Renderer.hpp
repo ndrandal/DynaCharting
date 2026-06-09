@@ -2,6 +2,8 @@
 #include "dc/gl/ShaderProgram.hpp"
 #include "dc/gl/GpuBufferManager.hpp"
 #include "dc/gl/GlDevice.hpp"
+#include "dc/gl/GlTriSolidBackend.hpp"
+#include "dc/render/BackendRegistry.hpp"
 #include "dc/scene/Scene.hpp"
 #include "dc/debug/Stats.hpp"
 #include <glad/gl.h>
@@ -68,6 +70,14 @@ private:
   GlDevice device_;
   TextureHandle atlasTex_{};  // SDF glyph atlas, created/uploaded via device_
   bool inited_{false};
+
+  // ENC-483 (P1.3): pipeline dispatch is keyed through a registry. The Renderer
+  // owns the GL backends it registers; the dispatch loop looks up di->pipeline
+  // and routes ported pipelines through their IRendererBackend. Un-ported
+  // pipelines (the other 9) still fall through to the legacy inline draw helpers
+  // below — see the dispatch loop in Renderer::render and TODO(ENC-486..492).
+  BackendRegistry backends_;
+  GlTriSolidBackend triSolidBackend_;  // triSolid@1 — the first ported backend
 
   GlyphAtlas* atlas_{nullptr};
   TextureManager* texMgr_{nullptr};

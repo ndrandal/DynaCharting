@@ -545,6 +545,17 @@ bool Renderer::init() {
     std::fprintf(stderr, "Renderer::init: GlDevice init failed\n");
     return false;
   }
+
+  // ENC-483 (P1.3): bring up and register the ported GL backends, keyed on
+  // (DeviceKind::Gl, pipelineId). Today only triSolid@1 is ported; the dispatch
+  // loop routes it through the registry and falls back to the inline helpers for
+  // every other pipeline. ENC-486..492 will port the remaining pipelines here.
+  if (!triSolidBackend_.init(device_)) {
+    std::fprintf(stderr, "Renderer::init: GlTriSolidBackend init failed\n");
+    return false;
+  }
+  backends_.registerBackend(DeviceKind::Gl, &triSolidBackend_);
+
   inited_ = true;
   return true;
 }
@@ -1200,9 +1211,23 @@ Stats Renderer::render(const Scene& scene, GpuBufferManager& gpuBufs,
           device_.setClipState(ClipMode::None);
         }
 
-        if (di->pipeline == "triSolid@1") {
-          drawPos2(*di, scene, gpuBufs, GL_TRIANGLES, stats);
-        } else if (di->pipeline == "line2d@1") {
+        // ENC-483 (P1.3): pipeline selection + per-pipeline draw dispatch now go
+        // through the backend registry. If a backend is registered for this
+        // pipeline (today: triSolid@1 -> GlTriSolidBackend), route the draw
+        // through it; the per-pane/layer walk, culling, scissor, blend and clip
+        // state (applied above via device_) stay in this dispatcher.
+        if (IRendererBackend* backend =
+                backends_.find(DeviceKind::Gl, di->pipeline)) {
+          BackendStats bs = backend->renderDrawItem(device_, scene, gpuBufs,
+                                                    *di, viewW, viewH);
+          stats.drawCalls += bs.drawCalls;
+        }
+        // Un-ported pipelines fall through to the legacy inline helpers below.
+        // TODO(ENC-486): port line2d@1; TODO(ENC-487): points@1;
+        // TODO(ENC-488): instancedRect@1; TODO(ENC-489): instancedCandle@1;
+        // TODO(ENC-490): textSDF@1; TODO(ENC-491): lineAA@1;
+        // TODO(ENC-492): triGradient@1 / triAA@1 / texturedQuad@1.
+        else if (di->pipeline == "line2d@1") {
           drawPos2(*di, scene, gpuBufs, GL_LINES, stats);
         } else if (di->pipeline == "points@1") {
           drawPos2(*di, scene, gpuBufs, GL_POINTS, stats);
