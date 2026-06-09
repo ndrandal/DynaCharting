@@ -335,8 +335,23 @@ if (DC_FETCH_DAWN)
     GIT_REPOSITORY "${DC_DAWN_GIT_REPOSITORY}"
     GIT_TAG        "${DC_DAWN_GIT_TAG}"
     GIT_SHALLOW    FALSE   # need the pinned commit; shallow can't fetch arbitrary SHA
+    # Do NOT recursively clone Dawn's git submodules (the full chromium tree:
+    # build/, buildtools/, tools/clang, etc.). That clone is enormous and one of
+    # those chromium submodules fails to update on CI runners ("Failed to update
+    # submodules"). Instead, GIT_SUBMODULES "" fetches none, and Dawn's own
+    # DAWN_FETCH_DEPENDENCIES=ON (above) pulls only the curated deps it needs via
+    # fetch_dawn_dependencies.py. (Empty string == no submodules on CMake >= 3.16.)
+    GIT_SUBMODULES ""
   )
+  # Dawn requires C++20 (its dawncpp_module target uses C++ modules). Our `dc` /
+  # `dc_gl` targets are already defined above with C++17 (the standard property is
+  # captured per-target at add_library time), so raising the default here only
+  # affects Dawn's targets and `dc_gpu` below — not the core libs. Restore after.
+  set(_dc_saved_cxx_standard "${CMAKE_CXX_STANDARD}")
+  set(CMAKE_CXX_STANDARD 20)
+  set(CMAKE_CXX_STANDARD_REQUIRED ON)
   FetchContent_MakeAvailable(dawn)
+  set(CMAKE_CXX_STANDARD "${_dc_saved_cxx_standard}")
 
   if (TARGET dawn::webgpu_dawn OR TARGET webgpu_dawn)
     set(DC_HAS_DAWN TRUE)
