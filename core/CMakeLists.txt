@@ -326,6 +326,11 @@ if (DC_FETCH_DAWN)
   # in a wayland-scanner requirement that fails on bare Linux CI runners.
   set(DAWN_USE_GLFW             OFF CACHE BOOL "" FORCE)
   set(DAWN_USE_WAYLAND          OFF CACHE BOOL "" FORCE)
+  # No X11 surface support either. dc_gpu is headless for now (offscreen render +
+  # readback), so it needs no windowing system — and disabling X11 avoids Dawn's
+  # X11/Xlib-xcb.h build requirement. Re-enable the surface we actually want when
+  # windowed presentation lands (ENC-497).
+  set(DAWN_USE_X11              OFF CACHE BOOL "" FORCE)
   # Don't build Dawn's experimental C++20-modules bindings (dawncpp_module).
   # Dawn's own probe is a false positive on GCC 13.x (its `-fmodules-ts` test
   # compiles, so DAWN_SUPPORTS_CXX_MODULES=True), but CMake's Ninja generator
