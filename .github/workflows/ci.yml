@@ -12,7 +12,10 @@
 name: CI
 
 on:
+  # Only run on push to main (post-merge gate). PR branches are covered by the
+  # pull_request trigger, so feature pushes don't double-run.
   push:
+    branches: [main]
   pull_request:
 
 # Cancel superseded runs on the same ref to save runner minutes.
