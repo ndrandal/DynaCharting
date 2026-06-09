@@ -1,6 +1,7 @@
 #pragma once
 #include "dc/gl/ShaderProgram.hpp"
 #include "dc/gl/GpuBufferManager.hpp"
+#include "dc/gl/GlDevice.hpp"
 #include "dc/scene/Scene.hpp"
 #include "dc/debug/Stats.hpp"
 #include <glad/gl.h>
@@ -62,8 +63,10 @@ private:
   ShaderProgram triAAProg_;       // triAA@1
   ShaderProgram triGradientProg_; // triGradient@1
   ShaderProgram texQuadProg_;     // D41: texturedQuad@1
-  GLuint vao_{0};
-  GLuint atlasTexture_{0};
+  // ENC-482: device-level GL state (VAO, atlas texture, pick FBO, frame/pass
+  // state) now lives behind the GpuDevice seam.
+  GlDevice device_;
+  TextureHandle atlasTex_{};  // SDF glyph atlas, created/uploaded via device_
   bool inited_{false};
 
   GlyphAtlas* atlas_{nullptr};
@@ -79,9 +82,8 @@ private:
   ShaderProgram pickInstRectProg_;   // instancedRect pick
   ShaderProgram pickInstCandleProg_; // instancedCandle pick
   ShaderProgram pickLineAAProg_;     // lineAA pick
-  GLuint pickFbo_{0};
-  GLuint pickRbo_{0};
-  int pickW_{0}, pickH_{0};
+  // ENC-482: the pick FBO/RBO target now lives inside GlDevice (the offscreen
+  // RenderTargetHandle); renderPick() drives it via beginRenderPass/readPixel.
 
   void drawPos2(const DrawItem& di, const Scene& scene,
                 GpuBufferManager& gpuBufs, GLenum mode, Stats& stats);
@@ -101,8 +103,6 @@ private:
                         GpuBufferManager& gpuBufs, int viewW, int viewH, Stats& stats);
 
   void uploadAtlasIfDirty();
-  void applyBlendMode(BlendMode mode);
-  void ensurePickFbo(int w, int h);
   void drawPick(const DrawItem& di, const Scene& scene,
                 GpuBufferManager& gpuBufs, int viewW, int viewH,
                 float pickR, float pickG, float pickB);

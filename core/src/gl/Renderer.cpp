@@ -450,21 +450,23 @@ void main() {
 
 // ---- Renderer implementation ----
 
+// ENC-482: map the scene-level BlendMode onto the device-neutral enum.
+static DeviceBlendMode toDeviceBlend(BlendMode mode) {
+  switch (mode) {
+    case BlendMode::Normal:   return DeviceBlendMode::Normal;
+    case BlendMode::Additive: return DeviceBlendMode::Additive;
+    case BlendMode::Multiply: return DeviceBlendMode::Multiply;
+    case BlendMode::Screen:   return DeviceBlendMode::Screen;
+  }
+  return DeviceBlendMode::Normal;
+}
+
 Renderer::~Renderer() {
-  if (vao_) {
-    glDeleteVertexArrays(1, &vao_);
-  }
-  if (atlasTexture_) {
-    glDeleteTextures(1, &atlasTexture_);
-  }
+  // ENC-482: VAO, atlas texture and the pick FBO/RBO are owned by device_ and
+  // released in its destructor. scratchVbo_ is draw-helper machinery (the
+  // D26 indexed gather) and stays here until the helpers migrate (ENC-484).
   if (scratchVbo_) {
     glDeleteBuffers(1, &scratchVbo_);
-  }
-  if (pickRbo_) {
-    glDeleteRenderbuffers(1, &pickRbo_);
-  }
-  if (pickFbo_) {
-    glDeleteFramebuffers(1, &pickFbo_);
   }
 }
 
@@ -536,9 +538,13 @@ bool Renderer::init() {
     return false;
   }
 
-  glGenVertexArrays(1, &vao_);
-  glGenTextures(1, &atlasTexture_);
-  glEnable(GL_PROGRAM_POINT_SIZE);
+  // ENC-482: shared VAO + GL_PROGRAM_POINT_SIZE are now device-level setup.
+  // The atlas texture is created lazily on first uploadAtlasIfDirty() (when its
+  // dimensions are known), via device_.createTexture().
+  if (!device_.init()) {
+    std::fprintf(stderr, "Renderer::init: GlDevice init failed\n");
+    return false;
+  }
   inited_ = true;
   return true;
 }
@@ -715,16 +721,20 @@ void Renderer::drawInstancedCandle(const DrawItem& di, const Scene& scene,
 void Renderer::uploadAtlasIfDirty() {
   if (!atlas_ || !atlas_->isDirty()) return;
 
-  glBindTexture(GL_TEXTURE_2D, atlasTexture_);
-  glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-  GLsizei sz = static_cast<GLsizei>(atlas_->atlasSize());
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, sz, sz, 0,
-               GL_RED, GL_UNSIGNED_BYTE, atlas_->atlasData());
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-  glBindTexture(GL_TEXTURE_2D, 0);
+  // ENC-482: the single-channel (R8) SDF atlas is a device texture. Create it
+  // on first upload (now that the atlas size is known), then re-upload pixels.
+  std::uint32_t sz = static_cast<std::uint32_t>(atlas_->atlasSize());
+  if (!atlasTex_.valid()) {
+    TextureDesc desc;
+    desc.width = sz;
+    desc.height = sz;
+    desc.format = TextureFormat::R8;
+    desc.filter = TextureFilter::Linear;
+    desc.data = atlas_->atlasData();
+    atlasTex_ = device_.createTexture(desc);
+  } else {
+    device_.updateTexture(atlasTex_, atlas_->atlasData());
+  }
   atlas_->clearDirty();
 }
 
@@ -745,9 +755,11 @@ void Renderer::drawTextSdf(const DrawItem& di, const Scene& scene,
   float pxRange = (atlas_ && !atlas_->useSdf()) ? -1.0f : 12.0f;
   textSdfProg_.setUniformFloat(textSdfProg_.uniformLocation("u_pxRange"), pxRange);
 
-  // Bind atlas texture
+  // Bind atlas texture. TODO(ENC-484): bind via a device bind group once the
+  // textSDF draw helper migrates onto IRendererBackend; for now the helper
+  // still binds the device-owned GL texture name directly.
   glActiveTexture(GL_TEXTURE0);
-  glBindTexture(GL_TEXTURE_2D, atlasTexture_);
+  glBindTexture(GL_TEXTURE_2D, device_.glTexture(atlasTex_));
   glUniform1i(textSdfProg_.uniformLocation("u_atlas"), 0);
 
   // D26: indexed gather for instanced text
@@ -969,7 +981,9 @@ void Renderer::drawTexturedQuad(const DrawItem& di, const Scene& scene,
   texQuadProg_.setUniformVec4(texQuadProg_.uniformLocation("u_color"),
                                di.color[0], di.color[1], di.color[2], di.color[3]);
 
-  // Bind texture
+  // Bind texture. TODO(ENC-484): route the user-image texture bind through a
+  // device bind group (and TextureManager via GpuDevice::createTexture) when
+  // this draw helper migrates onto IRendererBackend; inline for now.
   glActiveTexture(GL_TEXTURE0);
   texMgr_->bind(di.textureId, 0);
   glUniform1i(texQuadProg_.uniformLocation("u_texture"), 0);
@@ -1106,18 +1120,25 @@ Stats Renderer::render(const Scene& scene, GpuBufferManager& gpuBufs,
 
   uploadAtlasIfDirty();
 
-  glViewport(0, 0, viewW, viewH);
-  glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-  glClear(GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+  // ENC-482: frame-level target bind + viewport + clear go through the device.
+  RenderPassDesc pass;
+  pass.target = {};            // default backbuffer
+  pass.viewportWidth = static_cast<std::uint32_t>(viewW);
+  pass.viewportHeight = static_cast<std::uint32_t>(viewH);
+  pass.clear = true;
+  pass.clearColor[0] = 0.0f; pass.clearColor[1] = 0.0f;
+  pass.clearColor[2] = 0.0f; pass.clearColor[3] = 1.0f;
+  pass.clearStencil = true;
+  device_.beginRenderPass(pass);  // viewport + clear + bind shared VAO
 
-  // Enable blending for SDF text
+  // Enable blending for SDF text. GL_BLEND is a frame-level enable not modeled
+  // by the device's per-draw setBlendMode (which only sets the blend func), so
+  // it stays inline here. TODO(ENC-493): fold into pipeline color-target state.
   glEnable(GL_BLEND);
-  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-  glBindVertexArray(vao_);
+  device_.setBlendMode(DeviceBlendMode::Normal);
 
   // Walk all draw items (pane → layer → drawItem).
-  glEnable(GL_SCISSOR_TEST);
+  device_.setScissorTestEnabled(true);
 
   for (Id paneId : scene.paneIds()) {
     const Pane* pane = scene.getPane(paneId);
@@ -1128,9 +1149,12 @@ Stats Renderer::render(const Scene& scene, GpuBufferManager& gpuBufs,
     int sy = static_cast<int>(std::round((pane->region.clipYMin + 1.0f) / 2.0f * viewH));
     int sx2 = static_cast<int>(std::round((pane->region.clipXMax + 1.0f) / 2.0f * viewW));
     int sy2 = static_cast<int>(std::round((pane->region.clipYMax + 1.0f) / 2.0f * viewH));
-    glScissor(sx, sy, sx2 - sx, sy2 - sy);
+    device_.setScissorRect({sx, sy, sx2 - sx, sy2 - sy});
 
-    // Per-pane clear color (D10.4) + stencil reset per pane (D29.2)
+    // Per-pane clear color (D10.4) + stencil reset per pane (D29.2). This is a
+    // *scissored* mid-pass clear (the active scissor box bounds it to the pane),
+    // which the device's whole-target RenderPassDesc clear does not express.
+    // TODO(ENC-493): model as a per-pane sub-pass / scoped clear on the device.
     if (pane->hasClearColor) {
       glClearColor(pane->clearColor[0], pane->clearColor[1],
                    pane->clearColor[2], pane->clearColor[3]);
@@ -1164,23 +1188,16 @@ Stats Renderer::render(const Scene& scene, GpuBufferManager& gpuBufs,
           }
         }
 
-        // D29.1: per-DrawItem blend mode
-        applyBlendMode(di->blendMode);
+        // D29.1: per-DrawItem blend mode (device blend func).
+        device_.setBlendMode(toDeviceBlend(di->blendMode));
 
-        // D29.2: stencil-based clipping
+        // D29.2: stencil-based clipping (two-pass write/use mask) via device.
         if (di->isClipSource) {
-          glEnable(GL_STENCIL_TEST);
-          glStencilFunc(GL_ALWAYS, 1, 0xFF);
-          glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
-          glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+          device_.setClipState(ClipMode::WriteMask);
         } else if (di->useClipMask) {
-          glEnable(GL_STENCIL_TEST);
-          glStencilFunc(GL_EQUAL, 1, 0xFF);
-          glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
-          glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+          device_.setClipState(ClipMode::UseMask);
         } else {
-          glDisable(GL_STENCIL_TEST);
-          glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+          device_.setClipState(ClipMode::None);
         }
 
         if (di->pipeline == "triSolid@1") {
@@ -1205,9 +1222,9 @@ Stats Renderer::render(const Scene& scene, GpuBufferManager& gpuBufs,
           drawTexturedQuad(*di, scene, gpuBufs, viewW, viewH, stats);
         }
 
-        // Restore color mask after clip source draw
+        // Restore color mask after clip source draw (WriteMask masked it off).
         if (di->isClipSource) {
-          glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+          device_.restoreColorMask();
         }
       }
     }
@@ -1223,71 +1240,30 @@ Stats Renderer::render(const Scene& scene, GpuBufferManager& gpuBufs,
     int bsy = static_cast<int>(std::round((pane->region.clipYMin + 1.0f) / 2.0f * viewH)) - 1;
     int bsx2 = static_cast<int>(std::round((pane->region.clipXMax + 1.0f) / 2.0f * viewW)) + 1;
     int bsy2 = static_cast<int>(std::round((pane->region.clipYMax + 1.0f) / 2.0f * viewH)) + 1;
-    glScissor(bsx, bsy, bsx2 - bsx, bsy2 - bsy);
+    device_.setScissorRect({bsx, bsy, bsx2 - bsx, bsy2 - bsy});
 
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    device_.setBlendMode(DeviceBlendMode::Normal);
     drawPaneBorder(*pane, viewW, viewH);
   }
 
-  glDisable(GL_SCISSOR_TEST);
-  glDisable(GL_STENCIL_TEST);
+  device_.setScissorTestEnabled(false);
+  device_.setClipState(ClipMode::None);  // disables stencil test
 
   // D78: Draw pane separators (full viewport, no scissor)
-  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  device_.setBlendMode(DeviceBlendMode::Normal);
   drawPaneSeparators(scene, viewW, viewH);
 
   // Restore default blend mode
-  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  device_.setBlendMode(DeviceBlendMode::Normal);
 
-  glBindVertexArray(0);
+  // ENC-482: unbind VAO + flush is the pass-end boundary. GL_BLEND is a
+  // frame-level enable kept inline (see beginRenderPass note above).
   glDisable(GL_BLEND);
-  glFlush();
+  device_.endRenderPass();  // unbind VAO + glFlush
   return stats;
 }
 
-// ---- D29.1: Blend mode helper ----
-
-void Renderer::applyBlendMode(BlendMode mode) {
-  switch (mode) {
-    case BlendMode::Normal:
-      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-      break;
-    case BlendMode::Additive:
-      glBlendFunc(GL_SRC_ALPHA, GL_ONE);
-      break;
-    case BlendMode::Multiply:
-      glBlendFuncSeparate(GL_DST_COLOR, GL_ZERO, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-      break;
-    case BlendMode::Screen:
-      glBlendFuncSeparate(GL_ONE, GL_ONE_MINUS_SRC_COLOR, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-      break;
-  }
-}
-
 // ---- D29.3: GPU picking ----
-
-void Renderer::ensurePickFbo(int w, int h) {
-  if (pickFbo_ && pickW_ == w && pickH_ == h) return;
-
-  if (pickRbo_) glDeleteRenderbuffers(1, &pickRbo_);
-  if (pickFbo_) glDeleteFramebuffers(1, &pickFbo_);
-
-  glGenFramebuffers(1, &pickFbo_);
-  glGenRenderbuffers(1, &pickRbo_);
-
-  glBindRenderbuffer(GL_RENDERBUFFER, pickRbo_);
-  glRenderbufferStorage(GL_RENDERBUFFER, GL_RGBA8, w, h);
-
-  glBindFramebuffer(GL_FRAMEBUFFER, pickFbo_);
-  glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                            GL_RENDERBUFFER, pickRbo_);
-
-  glBindFramebuffer(GL_FRAMEBUFFER, 0);
-  glBindRenderbuffer(GL_RENDERBUFFER, 0);
-
-  pickW_ = w;
-  pickH_ = h;
-}
 
 void Renderer::drawPick(const DrawItem& di, const Scene& scene,
                          GpuBufferManager& gpuBufs, int viewW, int viewH,
@@ -1516,16 +1492,21 @@ PickResult Renderer::renderPick(const Scene& scene, GpuBufferManager& gpuBufs,
   PickResult result;
   if (!inited_) return result;
 
-  ensurePickFbo(viewW, viewH);
+  // ENC-482: pick renders into the device's offscreen RGBA8 target (id 1).
+  // beginRenderPass ensures the FBO/RBO, binds it, sets viewport, clears to
+  // transparent black (no stencil clear here), and binds the shared VAO.
+  RenderPassDesc pass;
+  pass.target.id = 1;          // offscreen pick target
+  pass.viewportWidth = static_cast<std::uint32_t>(viewW);
+  pass.viewportHeight = static_cast<std::uint32_t>(viewH);
+  pass.clear = true;
+  pass.clearColor[0] = 0.0f; pass.clearColor[1] = 0.0f;
+  pass.clearColor[2] = 0.0f; pass.clearColor[3] = 0.0f;
+  pass.clearStencil = false;
+  device_.beginRenderPass(pass);
 
-  glBindFramebuffer(GL_FRAMEBUFFER, pickFbo_);
-  glViewport(0, 0, viewW, viewH);
-  glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-  glClear(GL_COLOR_BUFFER_BIT);
   glDisable(GL_BLEND);
-
-  glBindVertexArray(vao_);
-  glEnable(GL_SCISSOR_TEST);
+  device_.setScissorTestEnabled(true);
 
   for (Id paneId : scene.paneIds()) {
     const Pane* pane = scene.getPane(paneId);
@@ -1535,7 +1516,7 @@ PickResult Renderer::renderPick(const Scene& scene, GpuBufferManager& gpuBufs,
     int sy = static_cast<int>(std::round((pane->region.clipYMin + 1.0f) / 2.0f * viewH));
     int sx2 = static_cast<int>(std::round((pane->region.clipXMax + 1.0f) / 2.0f * viewW));
     int sy2 = static_cast<int>(std::round((pane->region.clipYMax + 1.0f) / 2.0f * viewH));
-    glScissor(sx, sy, sx2 - sx, sy2 - sy);
+    device_.setScissorRect({sx, sy, sx2 - sx, sy2 - sy});
 
     for (Id layerId : scene.layerIds()) {
       const Layer* layer = scene.getLayer(layerId);
@@ -1557,12 +1538,13 @@ PickResult Renderer::renderPick(const Scene& scene, GpuBufferManager& gpuBufs,
     }
   }
 
-  glDisable(GL_SCISSOR_TEST);
+  device_.setScissorTestEnabled(false);
 
-  // Read pixel at cursor
+  // Read pixel at cursor — while the pick target is still bound (endRenderPass
+  // unbinds it below). Goes through the device's readback path.
   if (pickX >= 0 && pickX < viewW && pickY >= 0 && pickY < viewH) {
     unsigned char pixel[4];
-    glReadPixels(pickX, pickY, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
+    device_.readPixel(pickX, pickY, pixel);
     Id id = static_cast<Id>(pixel[0]) |
             (static_cast<Id>(pixel[1]) << 8) |
             (static_cast<Id>(pixel[2]) << 16);
@@ -1579,8 +1561,9 @@ PickResult Renderer::renderPick(const Scene& scene, GpuBufferManager& gpuBufs,
     }
   }
 
-  glBindVertexArray(0);
-  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  // ENC-482: pass end unbinds the shared VAO and the pick FBO (back to the
+  // default backbuffer). No glFlush for the offscreen pick pass.
+  device_.endRenderPass();
   return result;
 }
 
