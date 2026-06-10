@@ -2009,5 +2009,18 @@ if (DC_BUILD_TESTS)
     )
     target_link_libraries(dc_d36_1_dawn_texquad PRIVATE dc_gpu)
     add_test(NAME dc_d36_1_dawn_texquad COMMAND dc_d36_1_dawn_texquad)
+
+    # ENC-489 (P2.6) — instancedCandle@1 on Dawn. Renders a row of OHLC candles
+    # (mix of up/down, each with a wick) through the backend registry with
+    # DeviceKind::Dawn into the headless DawnDevice, reads back, and asserts body
+    # up/down color at the body center, wicks present above/below the body (thin
+    # vertical lines at high/low), and clear gaps between candles (vs the GL
+    # drawInstancedCandle / d14_6_volume_gl semantics). Reuses the shared
+    # drawInstanced foundation. Links only dc_gpu.
+    add_executable(dc_d14_6_dawn_candle
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/d14_6_dawn_candle.cpp"
+    )
+    target_link_libraries(dc_d14_6_dawn_candle PRIVATE dc_gpu)
+    add_test(NAME dc_d14_6_dawn_candle COMMAND dc_d14_6_dawn_candle)
   endif()
 endif()
