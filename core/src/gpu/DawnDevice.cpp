@@ -485,6 +485,14 @@ constexpr std::size_t clipIndex(ClipMode mode) {
   return static_cast<std::size_t>(mode);
 }
 
+// ENC-510 — inverse of blendIndex/clipIndex, so createPipeline can iterate the
+// 4x3 variant grid and eagerly build every (blend, clip) cell (the enum values
+// are 0-based and contiguous, so the index IS the enum value).
+constexpr DeviceBlendMode blendFromIndex(int i) {
+  return static_cast<DeviceBlendMode>(i);
+}
+constexpr ClipMode clipFromIndex(int i) { return static_cast<ClipMode>(i); }
+
 // ENC-494 (D29.2) — the Stencil8 format used for the offscreen depth-stencil
 // target and the per-ClipMode DepthStencilState below. We only need a stencil
 // (no depth: the 2D painter's-order draw has no depth test), so Stencil8 is the
@@ -697,10 +705,30 @@ PipelineHandle DawnDevice::createPipeline(const PipelineDesc& desc) {
   // same module / layout / topology / vertex layouts, blendStateFor(Normal) ==
   // the old hardcoded SrcAlpha/OneMinusSrcAlpha BlendState, and ClipMode::None
   // attaches the stencil aspect but disables the stencil test (every fragment
-  // passes, nothing is written) so output matches the no-stencil base. The other
-  // (blend, clip) cells are built lazily by pipelineVariant() on first
-  // bindPipeline request.
-  pipelineVariant(pipelines_.back(), DeviceBlendMode::Normal, ClipMode::None);
+  // passes, nothing is written) so output matches the no-stencil base.
+  //
+  // ENC-510 (P5.0b) — EAGERLY build EVERY (blend, clip) variant here too, not
+  // just (Normal, None). RATIONALE: the GL<->Dawn parity harness surfaced that
+  // building a variant LAZILY inside bindPipeline() — which runs while a
+  // RenderPassEncoder is open — drops the entire frame on the Vulkan backend
+  // (NVK): the mid-pass wgpu CreateRenderPipeline splits/flushes the command
+  // encoder, discarding the in-flight pass (clear + draws), so any DrawItem that
+  // first needed a non-base variant (additive/multiply/screen blend, or the
+  // WriteMask/UseMask clip mask) produced an all-zero readback. The pre-ENC-510
+  // Dawn tests never hit this because they only drove the Normal/None base
+  // through the registry (the standalone blend/clip tests used triSolid and
+  // happened to render before the corrupted pass mattered). Pipelines are
+  // created in each backend's init() — BEFORE any beginRenderPass — so building
+  // all 12 cells here keeps every CreateRenderPipeline strictly outside a pass.
+  // The cost is one-time and tiny (<=10 pipelines * 4 blend * 3 clip), and the
+  // variants are cached forever; pipelineVariant() is now a pure cache hit at
+  // bindPipeline time. The (Normal, None) cell is byte-identical to before.
+  PipelineEntry& built = pipelines_.back();
+  for (int b = 0; b < 4; ++b) {
+    for (int c = 0; c < 3; ++c) {
+      pipelineVariant(built, blendFromIndex(b), clipFromIndex(c));
+    }
+  }
   return h;
 }
 

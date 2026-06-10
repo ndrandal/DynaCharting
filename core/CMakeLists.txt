@@ -2148,5 +2148,37 @@ if (DC_BUILD_TESTS)
       )
     endif()
     add_test(NAME dc_d50_dawn_scene_renderer COMMAND dc_d50_dawn_scene_renderer)
+
+    # ENC-510 (P5.0b) — GL<->Dawn parity harness + conformance coverage. Renders
+    # the SAME scenes through BOTH the GL backend (Renderer + OsMesaContext) and
+    # the Dawn backend (DawnSceneRenderer) and compares the RGBA readbacks pixel
+    # by pixel within a per-feature tolerance (parity_harness.hpp). This proves
+    # the Dawn backend matches GL across the conformance feature areas (render
+    # core, transforms, pipelines, scissor/clip, blend, AA/dashed lines, rounded
+    # rect, gradient, volume/candle, frustum cull, and — font permitting — text)
+    # before the ENC-500 cutover. Needs dc_gl (GL path + GpuBufferManager) AND
+    # dc_gpu (Dawn path); both render paths exist in the Dawn build because
+    # OSMesa is present. Skips gracefully if either backend is unavailable.
+    if (TARGET dc_gl)
+      add_executable(dc_parity_conformance
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/parity_conformance.cpp"
+      )
+      target_link_libraries(dc_parity_conformance PRIVATE dc_gpu dc_gl)
+      add_test(NAME dc_parity_conformance COMMAND dc_parity_conformance)
+
+      add_executable(dc_parity_text
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/parity_text.cpp"
+      )
+      target_link_libraries(dc_parity_text PRIVATE dc_gpu dc_gl)
+      if (EXISTS "${DC_TEST_FONT}")
+        target_compile_definitions(dc_parity_text PRIVATE
+          FONT_PATH="${DC_TEST_FONT}"
+        )
+      endif()
+      add_test(NAME dc_parity_text COMMAND dc_parity_text)
+    else()
+      message(STATUS
+        "Skipping ENC-510 parity tests (need dc_gl for the GL render path)")
+    endif()
   endif()
 endif()
