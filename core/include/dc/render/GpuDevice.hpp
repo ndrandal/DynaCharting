@@ -252,6 +252,19 @@ struct PipelineDesc {
   // impl records them and re-applies on bindPipeline()).
   DeviceBlendMode blend{DeviceBlendMode::Normal};
   ClipMode clip{ClipMode::None};
+
+  // Size (bytes) of the group-0 uniform buffer this pipeline's shader declares.
+  // Drives the bind-group layout's minBindingSize and the per-draw uniform
+  // buffer allocation on the Dawn backend (the GL backend ignores it). The
+  // device packs the bound UniformBindings into this buffer by name (see the
+  // Dawn createBindGroup packing). Defaults to 0 == "the device's base uniform
+  // layout" (three mat3 columns + a color vec4 = 64 bytes), which is what the
+  // non-instanced pipelines (triSolid/triGradient/triAA) use. Instanced
+  // pipelines that need extra fields (viewport size, corner radius, ...) set a
+  // larger size — e.g. instancedRect@1 uses 80 (adds a vec2 viewport + f32
+  // cornerRadius). Per-instance strides are unrelated to this (those live in the
+  // vertex buffer layout); this is purely the uniform-block size.
+  std::size_t uniformBytes{0};
 };
 
 /// A single uniform value to bind for a draw. Kept as a tagged union of the few

@@ -1981,5 +1981,18 @@ if (DC_BUILD_TESTS)
     )
     target_link_libraries(dc_d28_3_dawn_gradient PRIVATE dc_gpu)
     add_test(NAME dc_d28_3_dawn_gradient COMMAND dc_d28_3_dawn_gradient)
+
+    # ENC-488 (P2.5) — instancedRect@1 + rounded corners (D28.2) + indexed gather
+    # (D26) on Dawn. First instanced pipeline: exercises the shared drawInstanced
+    # foundation (per-instance step-mode buffer + instanced draw) plus the
+    # rounded-corner SDF and the CPU-side D26 gather. Renders rects through the
+    # backend registry with DeviceKind::Dawn into the headless DawnDevice, reads
+    # back, and asserts filled interiors / rounded corners / selected subset (vs
+    # the GL d28_2_rounded_rect + d26_2_indexed_gl baselines). Links only dc_gpu.
+    add_executable(dc_d28_2_dawn_rounded_rect
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/d28_2_dawn_rounded_rect.cpp"
+    )
+    target_link_libraries(dc_d28_2_dawn_rounded_rect PRIVATE dc_gpu)
+    add_test(NAME dc_d28_2_dawn_rounded_rect COMMAND dc_d28_2_dawn_rounded_rect)
   endif()
 endif()

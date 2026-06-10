@@ -300,27 +300,35 @@ void DawnDevice::destroyTexture(TextureHandle) {
 // DawnTriSolidBackend for the matching declaration.
 
 namespace {
-constexpr std::size_t kTriSolidUniformSize = 64;  // 4 * vec4<f32>
+// Base uniform-block size: three mat3 columns padded to vec4 + a color vec4.
+// Pipelines that need more (instanced rect: + viewport vec2 + cornerRadius f32)
+// declare a larger PipelineDesc::uniformBytes; see the name-driven packing in
+// createBindGroup.
+constexpr std::size_t kBaseUniformSize = 64;  // 4 * vec4<f32>
 }  // namespace
 
 PipelineHandle DawnDevice::createPipeline(const PipelineDesc& desc) {
   if (!desc.vertexSource) return {};
+
+  // Per-pipeline uniform-block size (defaults to the 64-byte base layout).
+  const std::size_t uniformSize =
+      desc.uniformBytes > 0 ? desc.uniformBytes : kBaseUniformSize;
 
   // Compile the WGSL module (one module, two entry points: vs_main / fs_main).
   wgpu::ShaderSourceWGSL wgsl = {};
   wgsl.code = desc.vertexSource;
   wgpu::ShaderModuleDescriptor smd = {};
   smd.nextInChain = &wgsl;
-  smd.label = desc.debugName ? desc.debugName : "dc_trisolid_wgsl";
+  smd.label = desc.debugName ? desc.debugName : "dc_wgsl";
   wgpu::ShaderModule module = device_.CreateShaderModule(&smd);
 
   // Explicit bind-group layout: group 0 / binding 0 = uniform buffer, visible
-  // to the vertex stage (transform) and fragment stage (color).
+  // to the vertex stage (transform) and fragment stage (color/cornerRadius).
   wgpu::BindGroupLayoutEntry bglEntry = {};
   bglEntry.binding = 0;
   bglEntry.visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment;
   bglEntry.buffer.type = wgpu::BufferBindingType::Uniform;
-  bglEntry.buffer.minBindingSize = kTriSolidUniformSize;
+  bglEntry.buffer.minBindingSize = uniformSize;
 
   wgpu::BindGroupLayoutDescriptor bglDesc = {};
   bglDesc.entryCount = 1;
@@ -332,32 +340,50 @@ PipelineHandle DawnDevice::createPipeline(const PipelineDesc& desc) {
   plDesc.bindGroupLayouts = &bgl;
   wgpu::PipelineLayout layout = device_.CreatePipelineLayout(&plDesc);
 
-  // Vertex buffer layout: build wgpu attributes from the PipelineDesc's
-  // VertexAttribute array (triSolid: one Float32x2 attribute at location 0).
-  std::vector<wgpu::VertexAttribute> attrs;
-  wgpu::VertexBufferLayout vbLayout = {};
+  // Vertex buffer layouts: build one wgpu::VertexBufferLayout per PipelineDesc
+  // VertexBufferLayout. This is GENERAL — a pipeline may feed several buffers,
+  // and any of them may be per-instance (stepInstance == true ->
+  // VertexStepMode::Instance). The instanced pipelines (ENC-488 instancedRect,
+  // and ENC-489/490/491 candle/lineAA/textured) drive the per-instance path
+  // through here: one instance-step buffer carrying the per-instance attributes
+  // (a_rect / a_c0 / ...). Per-instance strides must be 4-byte aligned for the
+  // queue.WriteBuffer streaming upload (ENC-485) — our formats (rect4 = 16B,
+  // candle6 = 24B, ...) already are.
+  std::vector<wgpu::VertexBufferLayout> vbLayouts;
+  // attrStorage holds the per-buffer attribute arrays; vbLayouts point into it,
+  // so it must outlive the CreateRenderPipeline call below (kept on the stack).
+  std::vector<std::vector<wgpu::VertexAttribute>> attrStorage;
   if (desc.vertexBufferCount > 0 && desc.vertexBuffers) {
-    const VertexBufferLayout& src = desc.vertexBuffers[0];
-    attrs.reserve(src.attributeCount);
-    for (std::size_t i = 0; i < src.attributeCount; ++i) {
-      const VertexAttribute& a = src.attributes[i];
-      wgpu::VertexAttribute wa = {};
-      wa.shaderLocation = a.location;
-      wa.offset = a.offsetBytes;
-      // Only Float32 components are used today (pos2 = Float32x2).
-      switch (a.componentCount) {
-        case 1: wa.format = wgpu::VertexFormat::Float32; break;
-        case 2: wa.format = wgpu::VertexFormat::Float32x2; break;
-        case 3: wa.format = wgpu::VertexFormat::Float32x3; break;
-        default: wa.format = wgpu::VertexFormat::Float32x4; break;
+    vbLayouts.reserve(desc.vertexBufferCount);
+    attrStorage.reserve(desc.vertexBufferCount);
+    for (std::size_t b = 0; b < desc.vertexBufferCount; ++b) {
+      const VertexBufferLayout& src = desc.vertexBuffers[b];
+      attrStorage.emplace_back();
+      std::vector<wgpu::VertexAttribute>& attrs = attrStorage.back();
+      attrs.reserve(src.attributeCount);
+      for (std::size_t i = 0; i < src.attributeCount; ++i) {
+        const VertexAttribute& a = src.attributes[i];
+        wgpu::VertexAttribute wa = {};
+        wa.shaderLocation = a.location;
+        wa.offset = a.offsetBytes;
+        // Only Float32 components are used today (pos2 = Float32x2, rect4 =
+        // Float32x4).
+        switch (a.componentCount) {
+          case 1: wa.format = wgpu::VertexFormat::Float32; break;
+          case 2: wa.format = wgpu::VertexFormat::Float32x2; break;
+          case 3: wa.format = wgpu::VertexFormat::Float32x3; break;
+          default: wa.format = wgpu::VertexFormat::Float32x4; break;
+        }
+        attrs.push_back(wa);
       }
-      attrs.push_back(wa);
+      wgpu::VertexBufferLayout vbLayout = {};
+      vbLayout.arrayStride = src.strideBytes;
+      vbLayout.stepMode = src.stepInstance ? wgpu::VertexStepMode::Instance
+                                           : wgpu::VertexStepMode::Vertex;
+      vbLayout.attributeCount = attrs.size();
+      vbLayout.attributes = attrs.data();
+      vbLayouts.push_back(vbLayout);
     }
-    vbLayout.arrayStride = src.strideBytes;
-    vbLayout.stepMode = src.stepInstance ? wgpu::VertexStepMode::Instance
-                                         : wgpu::VertexStepMode::Vertex;
-    vbLayout.attributeCount = attrs.size();
-    vbLayout.attributes = attrs.data();
   }
 
   // Topology (triSolid = TriangleList).
@@ -368,12 +394,25 @@ PipelineHandle DawnDevice::createPipeline(const PipelineDesc& desc) {
     case PrimitiveTopology::Points:    topo = wgpu::PrimitiveTopology::PointList;    break;
   }
 
-  // Color target matches the offscreen RGBA8Unorm framebuffer. ENC-484 scope:
-  // opaque triSolid only — no blend state (TODO(ENC-493) permutation cache maps
-  // PipelineDesc.blend/clip onto wgpu blend/depth-stencil variants).
+  // Color target matches the offscreen RGBA8Unorm framebuffer.
   wgpu::ColorTargetState colorTarget = {};
   colorTarget.format = wgpu::TextureFormat::RGBA8Unorm;
   colorTarget.writeMask = wgpu::ColorWriteMask::All;
+
+  // Default Normal alpha blending — matches GL's globally-enabled
+  // glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA). Required so alpha<1
+  // fragments (AA fringes, rounded-rect corners per D28.2, SDF text) composite
+  // against the target instead of overwriting it with their RGB. Opaque
+  // geometry (alpha==1) is unaffected. The other per-draw-item blend modes
+  // (Additive/Multiply/Screen) become pipeline permutations in ENC-493.
+  wgpu::BlendState blend = {};
+  blend.color.srcFactor = wgpu::BlendFactor::SrcAlpha;
+  blend.color.dstFactor = wgpu::BlendFactor::OneMinusSrcAlpha;
+  blend.color.operation = wgpu::BlendOperation::Add;
+  blend.alpha.srcFactor = wgpu::BlendFactor::SrcAlpha;
+  blend.alpha.dstFactor = wgpu::BlendFactor::OneMinusSrcAlpha;
+  blend.alpha.operation = wgpu::BlendOperation::Add;
+  colorTarget.blend = &blend;
 
   wgpu::FragmentState fragment = {};
   fragment.module = module;
@@ -382,20 +421,20 @@ PipelineHandle DawnDevice::createPipeline(const PipelineDesc& desc) {
   fragment.targets = &colorTarget;
 
   wgpu::RenderPipelineDescriptor rpd = {};
-  rpd.label = desc.debugName ? desc.debugName : "dc_trisolid_pipeline";
+  rpd.label = desc.debugName ? desc.debugName : "dc_pipeline";
   rpd.layout = layout;
   rpd.vertex.module = module;
   rpd.vertex.entryPoint = "vs_main";
-  rpd.vertex.bufferCount = (vbLayout.attributeCount > 0) ? 1u : 0u;
-  rpd.vertex.buffers = (vbLayout.attributeCount > 0) ? &vbLayout : nullptr;
+  rpd.vertex.bufferCount = static_cast<std::uint32_t>(vbLayouts.size());
+  rpd.vertex.buffers = vbLayouts.empty() ? nullptr : vbLayouts.data();
   rpd.primitive.topology = topo;
   rpd.fragment = &fragment;
-  // Single-sampled, no depth/stencil (triSolid is flat 2D, painter's order).
+  // Single-sampled, no depth/stencil (flat 2D, painter's order).
 
   wgpu::RenderPipeline pipeline = device_.CreateRenderPipeline(&rpd);
 
   pipelines_.push_back(PipelineEntry{std::move(pipeline), std::move(bgl),
-                                     kTriSolidUniformSize});
+                                     uniformSize});
   PipelineHandle h;
   h.id = static_cast<std::uint32_t>(pipelines_.size());  // 1-based
   return h;
@@ -412,43 +451,77 @@ BindGroupHandle DawnDevice::createBindGroup(const BindGroupDesc& desc) {
   PipelineEntry* pe = pipelineAt(desc.pipeline);
   if (!pe) return {};
 
-  // Pack the uniforms (UniformBinding mat3 transform + vec4 color) into the
-  // 64-byte layout: [c0.xyzw][c1.xyzw][c2.xyzw][color.rgba]. The host mat3 is
-  // column-major 9 floats (GlTriSolidBackend's resolveTransform / Transform.mat3
-  // — col0 = {m[0],m[1],m[2]}, col1 = {m[3],m[4],m[5]}, col2 = {m[6],m[7],m[8]}).
-  float uniformData[16] = {0};
+  // The uniform-block size is the one the pipeline's shader declared (64 for the
+  // base mat3+color layout; 80 for instancedRect which adds viewport+radius).
+  const std::size_t uniformSize =
+      pe->uniformSize > 0 ? pe->uniformSize : kBaseUniformSize;
+
+  // Pack the bound UniformBindings into a flat float layout BY NAME. The WGSL
+  // uniform struct is a fixed, std140-friendly sequence the host fills with no
+  // implicit padding:
+  //   bytes  0..47  : c0/c1/c2  — three mat3 columns, each a vec4 (xyz used)
+  //   bytes 48..63  : color     — vec4 (rgba)
+  //   bytes 64..71  : viewport  — vec2 (px width/height)   [instanced rect]
+  //   bytes 72..75  : cornerRadius — f32                   [instanced rect]
+  //   bytes 76..79  : padding   — f32 (pad the block to 80 / 16-aligned)
+  // The host mat3 is column-major 9 floats (Transform.mat3 — col0 = {m0,m1,m2},
+  // col1 = {m3,m4,m5}, col2 = {m6,m7,m8}). Non-instanced pipelines pass only
+  // u_transform (+ optional color) and leave the tail zero; their pipelines use
+  // a 64-byte block so the tail isn't even allocated.
+  constexpr std::size_t kMaxUniformFloats = 20;  // 80 bytes / 4
+  float uniformData[kMaxUniformFloats] = {0};
+  auto nameIs = [](const char* a, const char* b) {
+    if (!a || !b) return false;
+    return std::strcmp(a, b) == 0;
+  };
   for (std::size_t i = 0; i < desc.uniformCount; ++i) {
     const UniformBinding& u = desc.uniforms[i];
     if (!u.name || !u.data) continue;
-    if (u.kind == UniformBinding::Kind::Mat3) {
-      // 3 columns -> three padded vec4s.
-      for (int c = 0; c < 3; ++c) {
-        uniformData[c * 4 + 0] = u.data[c * 3 + 0];
-        uniformData[c * 4 + 1] = u.data[c * 3 + 1];
-        uniformData[c * 4 + 2] = u.data[c * 3 + 2];
-        uniformData[c * 4 + 3] = 0.0f;
-      }
-    } else if (u.kind == UniformBinding::Kind::Vec4) {
-      uniformData[12] = u.data[0];
-      uniformData[13] = u.data[1];
-      uniformData[14] = u.data[2];
-      uniformData[15] = u.data[3];
+    switch (u.kind) {
+      case UniformBinding::Kind::Mat3:
+        // 3 columns -> three padded vec4s at offset 0.
+        for (int c = 0; c < 3; ++c) {
+          uniformData[c * 4 + 0] = u.data[c * 3 + 0];
+          uniformData[c * 4 + 1] = u.data[c * 3 + 1];
+          uniformData[c * 4 + 2] = u.data[c * 3 + 2];
+          uniformData[c * 4 + 3] = 0.0f;
+        }
+        break;
+      case UniformBinding::Kind::Vec4:
+        // The color vec4 lives at byte 48 (float index 12).
+        uniformData[12] = u.data[0];
+        uniformData[13] = u.data[1];
+        uniformData[14] = u.data[2];
+        uniformData[15] = u.data[3];
+        break;
+      case UniformBinding::Kind::Vec2:
+        // u_viewportSize at byte 64 (float index 16).
+        uniformData[16] = u.data[0];
+        uniformData[17] = u.data[1];
+        break;
+      case UniformBinding::Kind::Float:
+        // u_cornerRadius at byte 72 (float index 18).
+        if (nameIs(u.name, "u_cornerRadius")) {
+          uniformData[18] = u.data[0];
+        }
+        break;
+      case UniformBinding::Kind::Sampler2D:
+        break;  // texture/sampler bindings: TODO(ENC-491 textured)
     }
-    // Other kinds (Vec2/Float/Sampler2D) are unused by triSolid.
   }
 
   wgpu::BufferDescriptor ubd = {};
-  ubd.label = "dc_trisolid_uniform";
-  ubd.size = kTriSolidUniformSize;
+  ubd.label = "dc_uniform";
+  ubd.size = uniformSize;
   ubd.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
   wgpu::Buffer uniformBuffer = device_.CreateBuffer(&ubd);
-  queue_.WriteBuffer(uniformBuffer, 0, uniformData, kTriSolidUniformSize);
+  queue_.WriteBuffer(uniformBuffer, 0, uniformData, uniformSize);
 
   wgpu::BindGroupEntry bge = {};
   bge.binding = 0;
   bge.buffer = uniformBuffer;
   bge.offset = 0;
-  bge.size = kTriSolidUniformSize;
+  bge.size = uniformSize;
 
   wgpu::BindGroupDescriptor bgd = {};
   bgd.layout = pe->bindGroupLayout;
@@ -516,10 +589,43 @@ DeviceDrawStats DawnDevice::draw(BindGroupHandle group,
   return stats;
 }
 
-DeviceDrawStats DawnDevice::drawInstanced(BindGroupHandle,
-                                          const DrawInstancedParams&) {
-  // TODO(ENC-488/489): instanced pipelines (instancedRect/instancedCandle).
-  return {};
+DeviceDrawStats DawnDevice::drawInstanced(BindGroupHandle group,
+                                          const DrawInstancedParams& params) {
+  // ENC-488 instanced draw foundation (reused by ENC-489/490/491). The bound
+  // pipeline carries a per-instance step-mode vertex buffer layout (built in
+  // createPipeline from VertexBufferLayout::stepInstance); here we bind the
+  // per-instance buffer(s) and issue a single instanced draw. WebGPU's
+  // RenderPassEncoder::Draw(vertexCount, instanceCount, firstVertex,
+  // firstInstance) is the equivalent of GL's glDrawArraysInstanced(topology, 0,
+  // vertsPerInstance, instanceCount) — the unit quad's 6 vertices are generated
+  // from @builtin(vertex_index) in the WGSL (no per-vertex buffer needed), and
+  // the per-instance attributes (a_rect, ...) advance once per instance.
+  DeviceDrawStats stats{};
+  if (!pass_) return stats;
+  BindGroupEntry* bg = bindGroupAt(group);
+  if (!bg) return stats;
+  if (params.instanceCount == 0 || params.vertexCountPerInstance == 0) return stats;
+
+  pass_.SetBindGroup(0, bg->bindGroup);
+
+  // Bind the per-instance vertex buffer in slot 0 (the instance attributes). The
+  // pipeline's slot-0 layout has VertexStepMode::Instance, so the buffer is read
+  // once per instance. (Future split-attribute pipelines — candle a_c0/a_c1 —
+  // will bind additional slots here; the layout supports multiple buffers.)
+  BufferEntry* vb = bufferAt(bg->vertexBuffer);
+  if (!vb || !vb->buffer) return stats;
+  pass_.SetVertexBuffer(0, vb->buffer);
+
+  // Draw vertsPerInstance vertices, instanceCount instances. firstVertex selects
+  // the start vertex (0 for the unit quad); firstInstance is 0 — the gathered /
+  // visible-subset selection is done CPU-side by the backend (D26 indexed gather
+  // packs the selected instances into the bound buffer), so every bound instance
+  // is drawn.
+  pass_.Draw(params.vertexCountPerInstance, params.instanceCount,
+             params.firstVertex, 0);
+  stats.drawCalls = 1;
+  stats.verticesSubmitted = params.vertexCountPerInstance * params.instanceCount;
+  return stats;
 }
 
 // --- render target ---------------------------------------------------------

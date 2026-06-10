@@ -302,12 +302,16 @@ int main() {
                 mid[0], mid[1], mid[2], mid[3]);
     std::printf("  triAA fade apex(bottom) R=%u G=%u B=%u A=%u\n",
                 apex[0], apex[1], apex[2], apex[3]);
-    // RGB is the white fill everywhere the triangle covers; only alpha varies.
-    // Blending is off: readback alpha == color.a * v_alpha. Base ~255, fading.
-    check(base[3] > 200, "triAA fade: base alpha high (v_alpha~1)");
-    check(mid[3] < base[3] && mid[3] > apex[3], "triAA fade: mid alpha between base and apex (linear v_alpha)");
-    check(apex[3] < base[3], "triAA fade: apex alpha < base alpha (per-vertex alpha plumbed)");
-    check(apex[3] < 130, "triAA fade: apex alpha low (v_alpha~0)");
+    // The fill is white; per-vertex v_alpha varies along the triangle. With
+    // Normal alpha blending enabled (matching GL's always-on blend, ENC-488),
+    // the white fragments composite against the black clear, so the v_alpha
+    // ramp shows up cleanly in the COMPOSITED RGB: rgb == 255 * v_alpha. (The
+    // framebuffer alpha channel is src.a^2 + dst.a*(1-src.a), i.e. U-shaped, so
+    // it is no longer the right channel to assert the ramp on.)
+    check(base[0] > 200, "triAA fade: base composited bright (v_alpha~1)");
+    check(mid[0] < base[0] && mid[0] > apex[0], "triAA fade: mid between base and apex (linear v_alpha)");
+    check(apex[0] < base[0], "triAA fade: apex < base (per-vertex alpha plumbed)");
+    check(apex[0] < 80, "triAA fade: apex composited dark (v_alpha~0)");
   }
 
   std::printf("=== Dawn gradient/triAA: %d passed, %d failed ===\n", passed, failed);
