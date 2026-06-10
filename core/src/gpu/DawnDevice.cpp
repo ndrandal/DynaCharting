@@ -56,6 +56,8 @@ DawnDevice::~DawnDevice() {
   buffers_.clear();
   colorView_ = nullptr;
   colorTexture_ = nullptr;
+  stencilView_ = nullptr;     // ENC-494
+  stencilTexture_ = nullptr;  // ENC-494
   queue_ = nullptr;
   device_ = nullptr;
 }
@@ -474,9 +476,85 @@ wgpu::BlendState blendStateFor(DeviceBlendMode mode) {
   return bs;
 }
 
-// Index a PipelineEntry::variants[] slot by blend mode (Normal=0 .. Screen=3).
+// Index a PipelineEntry::variants[][] slot by blend mode (Normal=0 .. Screen=3).
 constexpr std::size_t blendIndex(DeviceBlendMode mode) {
   return static_cast<std::size_t>(mode);
+}
+
+// ENC-494 (D29.2) — index a PipelineEntry::variants[][] slot by clip mode
+// (None=0, WriteMask=1, UseMask=2). Mirrors the ClipMode enum values.
+constexpr std::size_t clipIndex(ClipMode mode) {
+  return static_cast<std::size_t>(mode);
+}
+
+// ENC-494 (D29.2) — the Stencil8 format used for the offscreen depth-stencil
+// target and the per-ClipMode DepthStencilState below. We only need a stencil
+// (no depth: the 2D painter's-order draw has no depth test), so Stencil8 is the
+// minimal attachment. DepthStencilState requires `depthCompare` be set to a
+// valid value even when depth is unused; Always + depthWriteEnabled=false makes
+// depth a no-op.
+constexpr wgpu::TextureFormat kStencilFormat = wgpu::TextureFormat::Stencil8;
+
+// ENC-494 (D29.2) — translate a ClipMode to the wgpu::DepthStencilState baked
+// into a pipeline variant. These are the exact WebGPU equivalents of GL's
+// two-pass stencil clip in GlDevice::setClipState:
+//
+//   None      glDisable(GL_STENCIL_TEST); glColorMask(1,1,1,1)
+//             -> stencil disabled (compare Always, ops Keep — a no-op pass),
+//                color writes on. (writeMask handled by the caller as All.)
+//   WriteMask glStencilFunc(GL_ALWAYS,1,0xFF); glStencilOp(KEEP,KEEP,REPLACE);
+//             glColorMask(0,0,0,0)
+//             -> compare Always, passOp Replace (writes the SetStencilReference
+//                value, 1, where geometry covers), color writes OFF (the caller
+//                sets colorTarget.writeMask = None for this clip). The clip
+//                SOURCE pass: paint the mask into the stencil, no color.
+//   UseMask   glStencilFunc(GL_EQUAL,1,0xFF); glStencilOp(KEEP,KEEP,KEEP);
+//             glColorMask(1,1,1,1)
+//             -> compare Equal (against SetStencilReference == 1), all ops Keep
+//                (don't disturb the mask), color writes on. The CLIPPED pass:
+//                content draws only where stencil == 1.
+//
+// `stencilReadMask`/`stencilWriteMask` are 0xFF (GL's 0xFF mask argument).
+// `depthCompare = Always` + `depthWriteEnabled = false` make the (unused) depth
+// aspect a no-op; Stencil8 has no depth aspect, but the field must be valid.
+wgpu::DepthStencilState depthStencilStateFor(ClipMode mode) {
+  wgpu::DepthStencilState ds = {};
+  ds.format = kStencilFormat;
+  ds.depthWriteEnabled = false;
+  ds.depthCompare = wgpu::CompareFunction::Always;
+  ds.stencilReadMask = 0xFF;
+  ds.stencilWriteMask = 0xFF;
+
+  wgpu::StencilFaceState face = {};
+  switch (mode) {
+    case ClipMode::None:
+      // Stencil effectively disabled: Always pass, Keep everything.
+      face.compare = wgpu::CompareFunction::Always;
+      face.failOp = wgpu::StencilOperation::Keep;
+      face.depthFailOp = wgpu::StencilOperation::Keep;
+      face.passOp = wgpu::StencilOperation::Keep;
+      ds.stencilWriteMask = 0;  // never write stencil in None mode
+      break;
+    case ClipMode::WriteMask:
+      // Clip source: write ref (1) everywhere geometry covers.
+      face.compare = wgpu::CompareFunction::Always;
+      face.failOp = wgpu::StencilOperation::Keep;
+      face.depthFailOp = wgpu::StencilOperation::Keep;
+      face.passOp = wgpu::StencilOperation::Replace;  // GL_REPLACE
+      break;
+    case ClipMode::UseMask:
+      // Clipped draw: pass only where stencil == ref (1); keep the mask.
+      face.compare = wgpu::CompareFunction::Equal;
+      face.failOp = wgpu::StencilOperation::Keep;
+      face.depthFailOp = wgpu::StencilOperation::Keep;
+      face.passOp = wgpu::StencilOperation::Keep;
+      break;
+  }
+  // Single-sided clip geometry; apply the same state to front + back faces (GL's
+  // glStencilFunc/glStencilOp without glStencilOpSeparate is two-sided too).
+  ds.stencilFront = face;
+  ds.stencilBack = face;
+  return ds;
 }
 }  // namespace
 
@@ -616,35 +694,52 @@ PipelineHandle DawnDevice::createPipeline(const PipelineDesc& desc) {
   PipelineHandle h;
   h.id = static_cast<std::uint32_t>(pipelines_.size());  // 1-based
 
-  // Eagerly build the Normal variant (the base pipeline). This is the
+  // Eagerly build the (Normal, None) variant (the base pipeline). This is the
   // byte-identical equivalent of the pre-ENC-493 single CreateRenderPipeline:
-  // same module / layout / topology / vertex layouts, and blendStateFor(Normal)
-  // == the old hardcoded SrcAlpha/OneMinusSrcAlpha BlendState. The other three
-  // modes are built lazily by pipelineVariant() on first bindPipeline request.
-  pipelineVariant(pipelines_.back(), DeviceBlendMode::Normal);
+  // same module / layout / topology / vertex layouts, blendStateFor(Normal) ==
+  // the old hardcoded SrcAlpha/OneMinusSrcAlpha BlendState, and ClipMode::None
+  // attaches the stencil aspect but disables the stencil test (every fragment
+  // passes, nothing is written) so output matches the no-stencil base. The other
+  // (blend, clip) cells are built lazily by pipelineVariant() on first
+  // bindPipeline request.
+  pipelineVariant(pipelines_.back(), DeviceBlendMode::Normal, ClipMode::None);
   return h;
 }
 
-// ENC-493 — lazily build + cache one blend-mode variant of a base pipeline.
+// ENC-493/494 — lazily build + cache one (blend, clip) variant of a base
+// pipeline. ENC-493 keyed on blend alone; ENC-494 adds the clip axis: the same
+// builder now also bakes a per-ClipMode wgpu::DepthStencilState and, for the
+// WriteMask clip source, masks color writes off (colorTarget.writeMask = None).
 wgpu::RenderPipeline& DawnDevice::pipelineVariant(PipelineEntry& pe,
-                                                  DeviceBlendMode mode) {
-  wgpu::RenderPipeline& slot = pe.variants[blendIndex(mode)];
+                                                  DeviceBlendMode blend,
+                                                  ClipMode clip) {
+  wgpu::RenderPipeline& slot = pe.variants[blendIndex(blend)][clipIndex(clip)];
   if (slot) return slot;  // already built
 
   // Color target matches the offscreen RGBA8Unorm framebuffer. The BlendState is
-  // the per-mode permutation (the ONLY thing that differs between variants);
-  // everything else (module / layout / topology / vertex layouts) is shared.
-  wgpu::BlendState blend = blendStateFor(mode);
+  // the per-blend permutation; the color-write mask is the per-clip permutation:
+  // the WriteMask clip SOURCE writes the stencil only (no color), matching GL's
+  // glColorMask(0,0,0,0). Everything else (module / layout / topology / vertex
+  // layouts) is shared across variants.
+  wgpu::BlendState blendState = blendStateFor(blend);
   wgpu::ColorTargetState colorTarget = {};
   colorTarget.format = wgpu::TextureFormat::RGBA8Unorm;
-  colorTarget.writeMask = wgpu::ColorWriteMask::All;
-  colorTarget.blend = &blend;
+  colorTarget.writeMask = (clip == ClipMode::WriteMask)
+                              ? wgpu::ColorWriteMask::None
+                              : wgpu::ColorWriteMask::All;
+  colorTarget.blend = &blendState;
 
   wgpu::FragmentState fragment = {};
   fragment.module = pe.module;
   fragment.entryPoint = "fs_main";
   fragment.targetCount = 1;
   fragment.targets = &colorTarget;
+
+  // ENC-494: per-ClipMode DepthStencilState. ALL variants carry the Stencil8
+  // depth-stencil state (the render pass always attaches the stencil target, so
+  // every pipeline drawing into the pass must declare a matching depth-stencil
+  // format — including the None variants, which simply disable the test).
+  wgpu::DepthStencilState depthStencil = depthStencilStateFor(clip);
 
   wgpu::RenderPipelineDescriptor rpd = {};
   rpd.label = "dc_pipeline";
@@ -655,7 +750,7 @@ wgpu::RenderPipeline& DawnDevice::pipelineVariant(PipelineEntry& pe,
   rpd.vertex.buffers = pe.vbLayouts.empty() ? nullptr : pe.vbLayouts.data();
   rpd.primitive.topology = pe.topology;
   rpd.fragment = &fragment;
-  // Single-sampled, no depth/stencil (flat 2D, painter's order).
+  rpd.depthStencil = &depthStencil;  // ENC-494: Stencil8, per-clip stencil state
 
   slot = device_.CreateRenderPipeline(&rpd);
   return slot;
@@ -664,7 +759,9 @@ wgpu::RenderPipeline& DawnDevice::pipelineVariant(PipelineEntry& pe,
 void DawnDevice::destroyPipeline(PipelineHandle pipe) {
   PipelineEntry* e = pipelineAt(pipe);
   if (!e) return;
-  for (auto& v : e->variants) v = nullptr;  // ENC-493: release all blend variants
+  // ENC-493/494: release every (blend, clip) variant cell.
+  for (auto& row : e->variants)
+    for (auto& v : row) v = nullptr;
   e->bindGroupLayout = nullptr;
   e->module = nullptr;
   e->pipelineLayout = nullptr;
@@ -844,14 +941,15 @@ void DawnDevice::bindPipeline(PipelineHandle pipe) {
   boundPipeline_ = pipe;
   PipelineEntry* pe = pipelineAt(pipe);
   if (!pass_ || !pe) return;
-  // ENC-493 (D29.1): WebGPU bakes blend state into the immutable pipeline, so
-  // honoring the per-DrawItem blend mode means selecting the matching pipeline
-  // VARIANT at bind time rather than mutating global state. currentBlendMode_ is
-  // whatever the dispatcher last requested via setBlendMode() (Normal by default
-  // if the backend never calls it). pipelineVariant() returns the cached variant
-  // for that mode, building it lazily on first use. ENC-494 (stencil clipping)
-  // will likewise select on ClipMode here.
-  wgpu::RenderPipeline& variant = pipelineVariant(*pe, currentBlendMode_);
+  // ENC-493/494 (D29.1/D29.2): WebGPU bakes blend AND stencil state into the
+  // immutable pipeline, so honoring the per-DrawItem blend mode + clip state
+  // means selecting the matching pipeline VARIANT at bind time rather than
+  // mutating global state. currentBlendMode_/currentClipMode_ are whatever the
+  // dispatcher last requested via setBlendMode()/setClipState() (Normal/None by
+  // default if the backend never calls them). pipelineVariant() returns the
+  // cached (blend, clip) variant, building it lazily on first use.
+  wgpu::RenderPipeline& variant =
+      pipelineVariant(*pe, currentBlendMode_, currentClipMode_);
   if (variant) pass_.SetPipeline(variant);
 }
 
@@ -940,6 +1038,24 @@ void DawnDevice::ensureRenderTarget(std::uint32_t w, std::uint32_t h) {
 
   colorTexture_ = device_.CreateTexture(&td);
   colorView_ = colorTexture_.CreateView();
+
+  // ENC-494 (D29.2): co-sized Stencil8 depth-stencil target for the two-pass
+  // stencil clip mask. RenderAttachment only (it's never copied/read back — the
+  // pixel readback reads the color target). Recreated with the color target on
+  // resize. Every pipeline drawn into the pass declares this same Stencil8
+  // format in its DepthStencilState (see pipelineVariant); the pass clears it
+  // per-pane on beginRenderPass (matching GL's GL_STENCIL_BUFFER_BIT clear).
+  wgpu::TextureDescriptor sd = {};
+  sd.label = "dc_offscreen_stencil";
+  sd.dimension = wgpu::TextureDimension::e2D;
+  sd.size = {w, h, 1};
+  sd.format = kStencilFormat;
+  sd.mipLevelCount = 1;
+  sd.sampleCount = 1;
+  sd.usage = wgpu::TextureUsage::RenderAttachment;
+  stencilTexture_ = device_.CreateTexture(&sd);
+  stencilView_ = stencilTexture_.CreateView();
+
   targetW_ = w;
   targetH_ = h;
 }
@@ -960,9 +1076,27 @@ void DawnDevice::beginRenderPass(const RenderPassDesc& desc) {
   color.clearValue = wgpu::Color{desc.clearColor[0], desc.clearColor[1],
                                  desc.clearColor[2], desc.clearColor[3]};
 
+  // ENC-494 (D29.2): the stencil attachment for the two-pass clip mask. The
+  // stencil is cleared per-pass when desc.clearStencil is set (matching GL's
+  // per-pane GL_STENCIL_BUFFER_BIT clear in GlDevice::beginRenderPass: a pass
+  // that clears color also clears stencil to 0), otherwise loaded. clearValue 0
+  // means "no clip mask written yet"; the WriteMask source pass replaces it with
+  // 1 where clip geometry covers, and the UseMask pass tests == 1. We have no
+  // depth aspect (Stencil8), so depthLoadOp/depthStoreOp are Undefined and the
+  // depth clear value is irrelevant. storeOp = Store so the mask written by the
+  // source pass survives for the clipped pass within the same render pass.
+  wgpu::RenderPassDepthStencilAttachment stencil = {};
+  stencil.view = stencilView_;
+  const bool clearStencil = desc.clear && desc.clearStencil;
+  stencil.stencilLoadOp = clearStencil ? wgpu::LoadOp::Clear : wgpu::LoadOp::Load;
+  stencil.stencilStoreOp = wgpu::StoreOp::Store;
+  stencil.stencilClearValue = 0;
+  // Stencil8 has no depth aspect: leave depth load/store Undefined.
+
   wgpu::RenderPassDescriptor rp = {};
   rp.colorAttachmentCount = 1;
   rp.colorAttachments = &color;
+  rp.depthStencilAttachment = &stencil;
 
   pass_ = encoder_.BeginRenderPass(&rp);
   // The pass viewport defaults to the full attachment; set explicitly to match
@@ -1021,8 +1155,18 @@ void DawnDevice::setBlendMode(DeviceBlendMode mode) {
   // calls setBlendMode keeps the byte-identical base pipeline.
   currentBlendMode_ = mode;
 }
-void DawnDevice::setClipState(ClipMode) {
-  // TODO(ENC-484/ENC-493)
+void DawnDevice::setClipState(ClipMode mode) {
+  // ENC-494 (D29.2): on WebGPU this does NOT mutate global stencil state (there
+  // is none — the stencil compare/op + color-write mask are baked into the
+  // immutable pipeline). It records the mode the next bindPipeline() should
+  // select the (blend, clip) variant for. The dispatcher calls this before
+  // binding/drawing each DrawItem (WriteMask for the clip source, UseMask for
+  // the clipped content, None otherwise), mirroring GL's two-pass
+  // glStencilFunc/glStencilOp/glColorMask. The per-draw stencil REFERENCE value
+  // (GL's `ref` argument, 1) is a render-pass property, not a pipeline one, so
+  // it's set on the active pass here: WriteMask writes 1, UseMask compares == 1.
+  currentClipMode_ = mode;
+  if (pass_) pass_.SetStencilReference(1);
 }
 
 // --- synchronous readback --------------------------------------------------

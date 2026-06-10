@@ -2053,6 +2053,26 @@ if (DC_BUILD_TESTS)
     target_link_libraries(dc_d29_1_dawn_blend PRIVATE dc_gpu)
     add_test(NAME dc_d29_1_dawn_blend COMMAND dc_d29_1_dawn_blend)
 
+    # ENC-494 (P3.2) — stencil clipping masks as pipeline permutations (D29.2).
+    # GL clips via a two-pass stencil (clip-source pass writes a mask with
+    # compare Always / op Replace / color OFF, clipped pass draws where stencil
+    # == 1 with compare Equal); WebGPU bakes the stencil compare/op + color-write
+    # mask into the immutable pipeline, so ClipMode (None/WriteMask/UseMask)
+    # becomes a second permutation axis on the ENC-493 variant cache — the key
+    # grows to (blend, clip). The DawnDevice offscreen target gains a Stencil8
+    # depth-stencil attachment (cleared per pass, matching GL's per-pane stencil
+    # clear). This test draws a small clip-source triangle in WriteMask (stencil
+    # only, no color) then a full-viewport content triangle in UseMask (drawn
+    # only where stencil == 1) into the headless DawnDevice, reads back the
+    # center (inside the clip -> content shows) and a corner (outside -> clipped
+    # to the background), asserting content appears ONLY inside the clip region
+    # (vs the GL d29_2_clipping baseline). Links only dc_gpu.
+    add_executable(dc_d29_2_dawn_clipping
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/d29_2_dawn_clipping.cpp"
+    )
+    target_link_libraries(dc_d29_2_dawn_clipping PRIVATE dc_gpu)
+    add_test(NAME dc_d29_2_dawn_clipping COMMAND dc_d29_2_dawn_clipping)
+
     # ENC-492 (P2.9) — textSDF@1 + glyph atlas upload on Dawn. The LAST Phase-2
     # pipeline: completes all 10 pipelines on WebGPU. Uploads the GlyphAtlas R8
     # SDF bitmap to a Dawn R8 texture (ENC-491 createTexture(R8) +

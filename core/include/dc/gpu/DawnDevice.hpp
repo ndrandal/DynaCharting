@@ -136,6 +136,15 @@ class DawnDevice final : public GpuDevice {
   // Offscreen color target (the headless framebuffer). Recreated on resize.
   wgpu::Texture colorTexture_;
   wgpu::TextureView colorView_;
+  // ENC-494 (D29.2) — depth-stencil target for the two-pass stencil clip mask.
+  // A Stencil8 attachment co-sized with the color target; the clip-source pass
+  // writes ref=1 into it (compare Always, passOp Replace) and the clipped pass
+  // reads it (compare Equal, ref=1). Created lazily alongside the color target
+  // in ensureRenderTarget; the render pass attaches it (with the per-pane
+  // stencil clear, matching GL's GL_STENCIL_BUFFER_BIT clear). Recreated on
+  // resize together with the color target.
+  wgpu::Texture stencilTexture_;
+  wgpu::TextureView stencilView_;
   std::uint32_t targetW_{0};
   std::uint32_t targetH_{0};
 
@@ -205,10 +214,21 @@ class DawnDevice final : public GpuDevice {
     // PipelineDesc declares a Sampler2D uniform (texturedQuad@1; future SDF text).
     bool hasTexture{false};
 
-    // ENC-493 variant cache + the immutable inputs needed to (re)build a variant.
-    // The four slots are indexed by DeviceBlendMode (Normal=0 .. Screen=3); a
-    // null slot has not been built yet. variants[Normal] is the base pipeline.
-    wgpu::RenderPipeline variants[4];
+    // ENC-493/494 variant cache + the immutable inputs needed to (re)build a
+    // variant. ENC-493 keyed the cache on DeviceBlendMode alone (4 slots);
+    // ENC-494 adds the ClipMode axis (the variant builder was deliberately
+    // factored so the clip axis drops in — see the class-level note), so the key
+    // is now (blendMode, clipMode) and the table is a 2D grid:
+    //   variants[blendIndex(Normal..Screen)][clipIndex(None/WriteMask/UseMask)]
+    // A null slot has not been built yet. variants[Normal][None] is the base
+    // pipeline (byte-identical to the pre-ENC-493 default: Normal blend, no
+    // stencil, full color write). Every (blend,clip) cell is built LAZILY on
+    // first bindPipeline request for that combination and then cached. Building a
+    // cell reuses the already-compiled WGSL module + pipeline layout + vertex
+    // layouts; it bakes only the per-blend wgpu::BlendState, the per-clip
+    // wgpu::DepthStencilState, and (for the WriteMask clip source) sets
+    // colorTarget.writeMask = None so the clip geometry writes stencil only.
+    wgpu::RenderPipeline variants[4][3];
     // Captured pipeline build inputs (shared by every blend variant): the
     // compiled WGSL module, the group-0 pipeline layout, the topology, and a
     // self-owned snapshot of the vertex buffer layouts (the original
@@ -222,16 +242,26 @@ class DawnDevice final : public GpuDevice {
   };
   std::vector<PipelineEntry> pipelines_;
 
-  // ENC-493: lazily build (and cache) the wgpu::RenderPipeline variant of `pe`
-  // for blend mode `mode`, returning it. The Normal variant is built eagerly in
-  // createPipeline; the rest are built here on first request. Reuses pe.module /
-  // pe.pipelineLayout / pe.topology / pe.vbLayouts and bakes only the BlendState.
-  wgpu::RenderPipeline& pipelineVariant(PipelineEntry& pe, DeviceBlendMode mode);
+  // ENC-493/494: lazily build (and cache) the wgpu::RenderPipeline variant of
+  // `pe` for the (blend, clip) combination, returning it. The (Normal, None)
+  // variant is built eagerly in createPipeline; the rest are built here on first
+  // request. Reuses pe.module / pe.pipelineLayout / pe.topology / pe.vbLayouts
+  // and bakes only the per-blend BlendState + per-clip DepthStencilState +
+  // color-write mask.
+  wgpu::RenderPipeline& pipelineVariant(PipelineEntry& pe, DeviceBlendMode blend,
+                                        ClipMode clip);
 
   // The blend mode selected by the most recent setBlendMode(); applied by
   // bindPipeline() to pick the matching pipeline variant. Defaults to Normal so
   // a backend that never calls setBlendMode gets the byte-identical base.
   DeviceBlendMode currentBlendMode_{DeviceBlendMode::Normal};
+
+  // ENC-494 (D29.2): the clip/stencil mode selected by the most recent
+  // setClipState(); applied by bindPipeline() to pick the matching pipeline
+  // variant. Defaults to None (stencil disabled, full color write) so a backend
+  // that never calls setClipState gets the byte-identical base — the existing
+  // Dawn tests stay green.
+  ClipMode currentClipMode_{ClipMode::None};
 
   // Bind groups. A bind group owns a small uniform buffer (the packed
   // transform+color) plus the wgpu::BindGroup referencing it, and records the
