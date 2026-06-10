@@ -37,6 +37,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace dc {
 
@@ -132,6 +133,51 @@ class DawnDevice final : public GpuDevice {
   // Active render pass scratch (valid between beginRenderPass/endRenderPass).
   wgpu::CommandEncoder encoder_;
   wgpu::RenderPassEncoder pass_;
+
+  // --- ENC-484 draw-path resource tables ---------------------------------
+  // Opaque handles index into these vectors (1-based; id 0 == null). Mirrors
+  // GlDevice's BufferEntry/TextureEntry slot model so the Dawn and GL devices
+  // stay parallel.
+  //
+  // Buffers (ENC-484: static create+write is enough for triSolid; the full
+  // streaming/coalescing write-range model is TODO(ENC-485)).
+  struct BufferEntry {
+    wgpu::Buffer buffer;
+    std::size_t capacity{0};
+    bool isIndex{false};  // chosen at create time so usage flags match
+  };
+  std::vector<BufferEntry> buffers_;
+
+  // Render pipelines. Each PipelineDesc -> one wgpu::RenderPipeline + its
+  // implicit bind-group layout (group 0) and a uniform-buffer size. Cached by
+  // the backend (it creates one per pipelineId and reuses it), so we never
+  // rebuild per draw.
+  struct PipelineEntry {
+    wgpu::RenderPipeline pipeline;
+    wgpu::BindGroupLayout bindGroupLayout;
+    std::size_t uniformSize{0};  // bytes of the group-0 uniform buffer
+  };
+  std::vector<PipelineEntry> pipelines_;
+
+  // Bind groups. A bind group owns a small uniform buffer (the packed
+  // transform+color) plus the wgpu::BindGroup referencing it, and records the
+  // vertex/index buffers + index format to bind at draw time (WebGPU sets
+  // vertex/index buffers on the render pass, not in the bind group).
+  struct BindGroupEntry {
+    wgpu::BindGroup bindGroup;
+    wgpu::Buffer uniformBuffer;
+    BufferHandle vertexBuffer{};
+    BufferHandle indexBuffer{};
+    wgpu::IndexFormat indexFormat{wgpu::IndexFormat::Uint32};
+  };
+  std::vector<BindGroupEntry> bindGroups_;
+
+  // The pipeline bound by the most recent bindPipeline(), applied by draw().
+  PipelineHandle boundPipeline_{};
+
+  BufferEntry* bufferAt(BufferHandle h);
+  PipelineEntry* pipelineAt(PipelineHandle h);
+  BindGroupEntry* bindGroupAt(BindGroupHandle h);
 };
 
 }  // namespace dc

@@ -407,6 +407,15 @@ if (DC_HAS_DAWN)
   else()
     target_link_libraries(dc_gpu PUBLIC dc webgpu_dawn)
   endif()
+  # ENC-484: DawnTriSolidBackend reads CPU-side vertex/index bytes via
+  # GpuBufferManager (dc/gl/GpuBufferManager.hpp), whose header includes
+  # <glad/gl.h>. dc_gpu therefore needs glad's headers to compile — it never
+  # calls any gl* function (the device is pure Dawn). The GpuBufferManager
+  # *symbols* live in dc_gl and are linked by consumers that build a scene
+  # (the d2_1 Dawn test links dc_gl too). Link glad here for the headers.
+  if (TARGET glad)
+    target_link_libraries(dc_gpu PUBLIC glad)
+  endif()
 
   if (NOT MSVC)
     target_compile_options(dc_gpu PRIVATE -Wall -Wextra -Wpedantic)
@@ -1919,5 +1928,22 @@ if (DC_BUILD_TESTS)
     )
     target_link_libraries(dc_d2_0_dawn_clear PRIVATE dc_gpu)
     add_test(NAME dc_d2_0_dawn_clear COMMAND dc_d2_0_dawn_clear)
+
+    # ENC-484 (P2.1) — triSolid@1 end-to-end on Dawn (D2.1 first render). Renders
+    # the same colored-triangle scene as dc_d2_1_first_render through the backend
+    # registry with DeviceKind::Dawn into the headless DawnDevice offscreen
+    # target, reads it back, and asserts the interior == fill color and a clear
+    # region == clear color. Links dc_gl as well to reuse GpuBufferManager for the
+    # CPU-side vertex bytes (no GL context is created by the test).
+    if (TARGET dc_gl)
+      add_executable(dc_d2_1_dawn_first_render
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/d2_1_dawn_first_render.cpp"
+      )
+      target_link_libraries(dc_d2_1_dawn_first_render PRIVATE dc_gpu dc_gl)
+      add_test(NAME dc_d2_1_dawn_first_render COMMAND dc_d2_1_dawn_first_render)
+    else()
+      message(STATUS
+        "Skipping dc_d2_1_dawn_first_render (needs dc_gl for GpuBufferManager)")
+    endif()
   endif()
 endif()

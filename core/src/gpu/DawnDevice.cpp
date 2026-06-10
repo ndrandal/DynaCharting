@@ -42,6 +42,10 @@ DawnDevice::~DawnDevice() {
   // exactly the destruction order of these members (reverse declaration order).
   pass_ = nullptr;
   encoder_ = nullptr;
+  // Release ENC-484 draw-path resources before the device/instance.
+  bindGroups_.clear();
+  pipelines_.clear();
+  buffers_.clear();
   colorView_ = nullptr;
   colorTexture_ = nullptr;
   queue_ = nullptr;
@@ -112,25 +116,89 @@ bool DawnDevice::init() {
   return true;
 }
 
-// --- buffer resources (TODO(ENC-485)) --------------------------------------
-// The streaming vertex/index/uniform buffer model (mirroring GpuBufferManager)
-// lands with the draw path. Stubbed here so device bring-up + clear/readback
-// stay scoped to ENC-480.
+// --- handle <-> slot helpers -----------------------------------------------
+// 1-based opaque handles index these vectors; id 0 == null. Matches GlDevice.
 
-BufferHandle DawnDevice::createBuffer(std::size_t /*capacityBytes*/,
-                                      const void* /*initData*/,
-                                      std::size_t /*initBytes*/) {
-  return {};  // TODO(ENC-485)
+DawnDevice::BufferEntry* DawnDevice::bufferAt(BufferHandle h) {
+  if (!h.valid() || h.id > buffers_.size()) return nullptr;
+  return &buffers_[h.id - 1];
 }
-void DawnDevice::updateBuffer(BufferHandle, const void*, std::size_t) {
-  // TODO(ENC-485)
+DawnDevice::PipelineEntry* DawnDevice::pipelineAt(PipelineHandle h) {
+  if (!h.valid() || h.id > pipelines_.size()) return nullptr;
+  return &pipelines_[h.id - 1];
 }
-void DawnDevice::writeBufferRange(BufferHandle, std::size_t, const void*,
-                                  std::size_t) {
-  // TODO(ENC-485)
+DawnDevice::BindGroupEntry* DawnDevice::bindGroupAt(BindGroupHandle h) {
+  if (!h.valid() || h.id > bindGroups_.size()) return nullptr;
+  return &bindGroups_[h.id - 1];
 }
-void DawnDevice::destroyBuffer(BufferHandle) {
-  // TODO(ENC-485)
+
+// --- buffer resources (ENC-484: static create+write for triSolid) ----------
+// SCOPE NOTE: ENC-484 only needs a static vertex/index upload — the triangle's
+// vertices are written once and drawn. The full streaming write-range model
+// (incremental tail-appends + dirty coalescing, mirroring GpuBufferManager)
+// is TODO(ENC-485): createBuffer/updateBuffer/writeBufferRange below allocate a
+// fixed buffer and use queue.WriteBuffer for the whole/partial range, which is
+// correct but not yet the coalesced live-tick path.
+//
+// A vertex buffer here is created with usage Vertex|Index|CopyDst (both Vertex
+// and Index so the same slot model can back either; CopyDst for WriteBuffer).
+
+BufferHandle DawnDevice::createBuffer(std::size_t capacityBytes,
+                                      const void* initData,
+                                      std::size_t initBytes) {
+  // WebGPU requires buffer sizes be a multiple of 4. Round up the capacity.
+  const std::size_t size = (capacityBytes + 3u) & ~std::size_t{3u};
+
+  wgpu::BufferDescriptor bd = {};
+  bd.label = "dc_vertex_or_index";
+  bd.size = size;
+  bd.usage = wgpu::BufferUsage::Vertex | wgpu::BufferUsage::Index |
+             wgpu::BufferUsage::CopyDst;
+  wgpu::Buffer buffer = device_.CreateBuffer(&bd);
+
+  if (initData && initBytes > 0) {
+    // WriteBuffer requires the written size be a multiple of 4. The caller's
+    // vertex data (pos2 = 8B/vertex, u32 indices = 4B) is already 4-aligned.
+    const std::size_t writeBytes = (initBytes + 3u) & ~std::size_t{3u};
+    queue_.WriteBuffer(buffer, 0, initData,
+                       writeBytes <= size ? writeBytes : size);
+  }
+
+  buffers_.push_back(BufferEntry{std::move(buffer), size, /*isIndex=*/false});
+  BufferHandle h;
+  h.id = static_cast<std::uint32_t>(buffers_.size());  // 1-based
+  return h;
+}
+
+void DawnDevice::updateBuffer(BufferHandle buf, const void* data,
+                              std::size_t bytes) {
+  BufferEntry* e = bufferAt(buf);
+  if (!e || !data || bytes == 0) return;
+  // ENC-484: no realloc-on-grow yet (static buffers); clamp to capacity. The
+  // grow path lands with the streaming model in TODO(ENC-485).
+  const std::size_t writeBytes = (bytes + 3u) & ~std::size_t{3u};
+  queue_.WriteBuffer(e->buffer, 0, data,
+                     writeBytes <= e->capacity ? writeBytes : e->capacity);
+}
+
+void DawnDevice::writeBufferRange(BufferHandle buf, std::size_t offsetBytes,
+                                  const void* data, std::size_t bytes) {
+  // TODO(ENC-485): full coalesced streaming. ENC-484 only needs a plain ranged
+  // WriteBuffer (offset+size must be 4-aligned, which holds for our formats).
+  BufferEntry* e = bufferAt(buf);
+  if (!e || !data || bytes == 0) return;
+  if (offsetBytes + bytes > e->capacity) return;
+  queue_.WriteBuffer(e->buffer, offsetBytes, data, bytes);
+}
+
+void DawnDevice::destroyBuffer(BufferHandle buf) {
+  BufferEntry* e = bufferAt(buf);
+  if (!e) return;
+  if (e->buffer) {
+    e->buffer.Destroy();
+    e->buffer = nullptr;
+  }
+  e->capacity = 0;
 }
 
 // --- texture resources (TODO(ENC-485)) -------------------------------------
@@ -145,30 +213,240 @@ void DawnDevice::destroyTexture(TextureHandle) {
   // TODO(ENC-485)
 }
 
-// --- pipelines & bind groups (TODO(ENC-484)) -------------------------------
-// The triSolid pipeline + WGSL + bind groups are ENC-484; no shaders here.
+// --- pipelines & bind groups (ENC-484: triSolid render pipeline) -----------
+// triSolid's PipelineDesc carries a single WGSL module string (vertexSource;
+// fragmentSource is unused for WGSL — the one module holds both vs_main and
+// fs_main; see DawnTriSolidBackend) and one Float32x2 vertex buffer layout.
+//
+// Group 0, binding 0 is a uniform buffer holding the packed transform+color.
+// To avoid WGSL's mat3x3<f32> column padding (each column is 16-byte aligned,
+// so a host-side 9-float mat3 doesn't map 1:1), the uniform is laid out as four
+// vec4<f32>: three transform columns (xyz used, w padding) + the RGBA color.
+// That's a clean 64-byte struct the host fills with no implicit padding. The
+// vertex shader reconstructs mat3x3(c0.xyz, c1.xyz, c2.xyz). See the shader in
+// DawnTriSolidBackend for the matching declaration.
 
-PipelineHandle DawnDevice::createPipeline(const PipelineDesc&) {
-  return {};  // TODO(ENC-484)
+namespace {
+constexpr std::size_t kTriSolidUniformSize = 64;  // 4 * vec4<f32>
+}  // namespace
+
+PipelineHandle DawnDevice::createPipeline(const PipelineDesc& desc) {
+  if (!desc.vertexSource) return {};
+
+  // Compile the WGSL module (one module, two entry points: vs_main / fs_main).
+  wgpu::ShaderSourceWGSL wgsl = {};
+  wgsl.code = desc.vertexSource;
+  wgpu::ShaderModuleDescriptor smd = {};
+  smd.nextInChain = &wgsl;
+  smd.label = desc.debugName ? desc.debugName : "dc_trisolid_wgsl";
+  wgpu::ShaderModule module = device_.CreateShaderModule(&smd);
+
+  // Explicit bind-group layout: group 0 / binding 0 = uniform buffer, visible
+  // to the vertex stage (transform) and fragment stage (color).
+  wgpu::BindGroupLayoutEntry bglEntry = {};
+  bglEntry.binding = 0;
+  bglEntry.visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment;
+  bglEntry.buffer.type = wgpu::BufferBindingType::Uniform;
+  bglEntry.buffer.minBindingSize = kTriSolidUniformSize;
+
+  wgpu::BindGroupLayoutDescriptor bglDesc = {};
+  bglDesc.entryCount = 1;
+  bglDesc.entries = &bglEntry;
+  wgpu::BindGroupLayout bgl = device_.CreateBindGroupLayout(&bglDesc);
+
+  wgpu::PipelineLayoutDescriptor plDesc = {};
+  plDesc.bindGroupLayoutCount = 1;
+  plDesc.bindGroupLayouts = &bgl;
+  wgpu::PipelineLayout layout = device_.CreatePipelineLayout(&plDesc);
+
+  // Vertex buffer layout: build wgpu attributes from the PipelineDesc's
+  // VertexAttribute array (triSolid: one Float32x2 attribute at location 0).
+  std::vector<wgpu::VertexAttribute> attrs;
+  wgpu::VertexBufferLayout vbLayout = {};
+  if (desc.vertexBufferCount > 0 && desc.vertexBuffers) {
+    const VertexBufferLayout& src = desc.vertexBuffers[0];
+    attrs.reserve(src.attributeCount);
+    for (std::size_t i = 0; i < src.attributeCount; ++i) {
+      const VertexAttribute& a = src.attributes[i];
+      wgpu::VertexAttribute wa = {};
+      wa.shaderLocation = a.location;
+      wa.offset = a.offsetBytes;
+      // Only Float32 components are used today (pos2 = Float32x2).
+      switch (a.componentCount) {
+        case 1: wa.format = wgpu::VertexFormat::Float32; break;
+        case 2: wa.format = wgpu::VertexFormat::Float32x2; break;
+        case 3: wa.format = wgpu::VertexFormat::Float32x3; break;
+        default: wa.format = wgpu::VertexFormat::Float32x4; break;
+      }
+      attrs.push_back(wa);
+    }
+    vbLayout.arrayStride = src.strideBytes;
+    vbLayout.stepMode = src.stepInstance ? wgpu::VertexStepMode::Instance
+                                         : wgpu::VertexStepMode::Vertex;
+    vbLayout.attributeCount = attrs.size();
+    vbLayout.attributes = attrs.data();
+  }
+
+  // Topology (triSolid = TriangleList).
+  wgpu::PrimitiveTopology topo = wgpu::PrimitiveTopology::TriangleList;
+  switch (desc.topology) {
+    case PrimitiveTopology::Triangles: topo = wgpu::PrimitiveTopology::TriangleList; break;
+    case PrimitiveTopology::Lines:     topo = wgpu::PrimitiveTopology::LineList;     break;
+    case PrimitiveTopology::Points:    topo = wgpu::PrimitiveTopology::PointList;    break;
+  }
+
+  // Color target matches the offscreen RGBA8Unorm framebuffer. ENC-484 scope:
+  // opaque triSolid only — no blend state (TODO(ENC-493) permutation cache maps
+  // PipelineDesc.blend/clip onto wgpu blend/depth-stencil variants).
+  wgpu::ColorTargetState colorTarget = {};
+  colorTarget.format = wgpu::TextureFormat::RGBA8Unorm;
+  colorTarget.writeMask = wgpu::ColorWriteMask::All;
+
+  wgpu::FragmentState fragment = {};
+  fragment.module = module;
+  fragment.entryPoint = "fs_main";
+  fragment.targetCount = 1;
+  fragment.targets = &colorTarget;
+
+  wgpu::RenderPipelineDescriptor rpd = {};
+  rpd.label = desc.debugName ? desc.debugName : "dc_trisolid_pipeline";
+  rpd.layout = layout;
+  rpd.vertex.module = module;
+  rpd.vertex.entryPoint = "vs_main";
+  rpd.vertex.bufferCount = (vbLayout.attributeCount > 0) ? 1u : 0u;
+  rpd.vertex.buffers = (vbLayout.attributeCount > 0) ? &vbLayout : nullptr;
+  rpd.primitive.topology = topo;
+  rpd.fragment = &fragment;
+  // Single-sampled, no depth/stencil (triSolid is flat 2D, painter's order).
+
+  wgpu::RenderPipeline pipeline = device_.CreateRenderPipeline(&rpd);
+
+  pipelines_.push_back(PipelineEntry{std::move(pipeline), std::move(bgl),
+                                     kTriSolidUniformSize});
+  PipelineHandle h;
+  h.id = static_cast<std::uint32_t>(pipelines_.size());  // 1-based
+  return h;
 }
-void DawnDevice::destroyPipeline(PipelineHandle) {
-  // TODO(ENC-484)
+
+void DawnDevice::destroyPipeline(PipelineHandle pipe) {
+  PipelineEntry* e = pipelineAt(pipe);
+  if (!e) return;
+  e->pipeline = nullptr;
+  e->bindGroupLayout = nullptr;
 }
-BindGroupHandle DawnDevice::createBindGroup(const BindGroupDesc&) {
-  return {};  // TODO(ENC-484)
+
+BindGroupHandle DawnDevice::createBindGroup(const BindGroupDesc& desc) {
+  PipelineEntry* pe = pipelineAt(desc.pipeline);
+  if (!pe) return {};
+
+  // Pack the uniforms (UniformBinding mat3 transform + vec4 color) into the
+  // 64-byte layout: [c0.xyzw][c1.xyzw][c2.xyzw][color.rgba]. The host mat3 is
+  // column-major 9 floats (GlTriSolidBackend's resolveTransform / Transform.mat3
+  // — col0 = {m[0],m[1],m[2]}, col1 = {m[3],m[4],m[5]}, col2 = {m[6],m[7],m[8]}).
+  float uniformData[16] = {0};
+  for (std::size_t i = 0; i < desc.uniformCount; ++i) {
+    const UniformBinding& u = desc.uniforms[i];
+    if (!u.name || !u.data) continue;
+    if (u.kind == UniformBinding::Kind::Mat3) {
+      // 3 columns -> three padded vec4s.
+      for (int c = 0; c < 3; ++c) {
+        uniformData[c * 4 + 0] = u.data[c * 3 + 0];
+        uniformData[c * 4 + 1] = u.data[c * 3 + 1];
+        uniformData[c * 4 + 2] = u.data[c * 3 + 2];
+        uniformData[c * 4 + 3] = 0.0f;
+      }
+    } else if (u.kind == UniformBinding::Kind::Vec4) {
+      uniformData[12] = u.data[0];
+      uniformData[13] = u.data[1];
+      uniformData[14] = u.data[2];
+      uniformData[15] = u.data[3];
+    }
+    // Other kinds (Vec2/Float/Sampler2D) are unused by triSolid.
+  }
+
+  wgpu::BufferDescriptor ubd = {};
+  ubd.label = "dc_trisolid_uniform";
+  ubd.size = kTriSolidUniformSize;
+  ubd.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
+  wgpu::Buffer uniformBuffer = device_.CreateBuffer(&ubd);
+  queue_.WriteBuffer(uniformBuffer, 0, uniformData, kTriSolidUniformSize);
+
+  wgpu::BindGroupEntry bge = {};
+  bge.binding = 0;
+  bge.buffer = uniformBuffer;
+  bge.offset = 0;
+  bge.size = kTriSolidUniformSize;
+
+  wgpu::BindGroupDescriptor bgd = {};
+  bgd.layout = pe->bindGroupLayout;
+  bgd.entryCount = 1;
+  bgd.entries = &bge;
+  wgpu::BindGroup bindGroup = device_.CreateBindGroup(&bgd);
+
+  BindGroupEntry entry;
+  entry.bindGroup = std::move(bindGroup);
+  entry.uniformBuffer = std::move(uniformBuffer);
+  if (desc.vertexBufferCount > 0 && desc.vertexBuffers) {
+    entry.vertexBuffer = desc.vertexBuffers[0];
+  }
+  entry.indexBuffer = desc.indexBuffer;
+  entry.indexFormat = (desc.indexFormat == IndexFormat::Uint16)
+                          ? wgpu::IndexFormat::Uint16
+                          : wgpu::IndexFormat::Uint32;
+
+  bindGroups_.push_back(std::move(entry));
+  BindGroupHandle h;
+  h.id = static_cast<std::uint32_t>(bindGroups_.size());  // 1-based
+  return h;
 }
-void DawnDevice::destroyBindGroup(BindGroupHandle) {
-  // TODO(ENC-484)
+
+void DawnDevice::destroyBindGroup(BindGroupHandle group) {
+  BindGroupEntry* e = bindGroupAt(group);
+  if (!e) return;
+  e->bindGroup = nullptr;
+  e->uniformBuffer = nullptr;
 }
-void DawnDevice::bindPipeline(PipelineHandle) {
-  // TODO(ENC-484)
+
+void DawnDevice::bindPipeline(PipelineHandle pipe) {
+  boundPipeline_ = pipe;
+  PipelineEntry* pe = pipelineAt(pipe);
+  if (pass_ && pe && pe->pipeline) {
+    pass_.SetPipeline(pe->pipeline);
+  }
 }
-DeviceDrawStats DawnDevice::draw(BindGroupHandle, const DrawParams&) {
-  return {};  // TODO(ENC-484)
+
+DeviceDrawStats DawnDevice::draw(BindGroupHandle group,
+                                 const DrawParams& params) {
+  DeviceDrawStats stats{};
+  if (!pass_) return stats;
+  BindGroupEntry* bg = bindGroupAt(group);
+  if (!bg) return stats;
+
+  pass_.SetBindGroup(0, bg->bindGroup);
+
+  BufferEntry* vb = bufferAt(bg->vertexBuffer);
+  if (!vb || !vb->buffer) return stats;
+  pass_.SetVertexBuffer(0, vb->buffer);
+
+  if (params.indexCount > 0 && bg->indexBuffer.valid()) {
+    BufferEntry* ib = bufferAt(bg->indexBuffer);
+    if (!ib || !ib->buffer) return stats;
+    pass_.SetIndexBuffer(ib->buffer, bg->indexFormat);
+    pass_.DrawIndexed(params.indexCount, 1, 0, 0, 0);
+    stats.drawCalls = 1;
+    stats.verticesSubmitted = params.indexCount;
+  } else {
+    pass_.Draw(params.vertexCount, 1, params.firstVertex, 0);
+    stats.drawCalls = 1;
+    stats.verticesSubmitted = params.vertexCount;
+  }
+  return stats;
 }
+
 DeviceDrawStats DawnDevice::drawInstanced(BindGroupHandle,
                                           const DrawInstancedParams&) {
-  return {};  // TODO(ENC-484)
+  // TODO(ENC-488/489): instanced pipelines (instancedRect/instancedCandle).
+  return {};
 }
 
 // --- render target ---------------------------------------------------------
