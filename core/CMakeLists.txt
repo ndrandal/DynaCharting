@@ -2185,6 +2185,19 @@ if (DC_BUILD_TESTS)
       )
       target_link_libraries(dc_parity_multipane PRIVATE dc_gpu dc_gl)
       add_test(NAME dc_parity_multipane COMMAND dc_parity_multipane)
+
+      # ENC-512 (P5.0d) — extended parity: texturedQuad@1 (same texture to BOTH
+      # backends via TextureManager / TextureSource), GPU picking (decoded id-
+      # buffer parity, GL renderPick vs Dawn DawnSceneRenderer::renderPick),
+      # indexed-gather (D26 index/order buffer filtering instanced draws), and a
+      # recipe-driven full chart (CandleRecipe + LineRecipe). Closes the remaining
+      # conformance areas before the ENC-500 cutover. Links dc_gpu + dc_gl (Dawn +
+      # GL render paths) and the recipe sources are in dc.
+      add_executable(dc_parity_extended
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/parity_extended.cpp"
+      )
+      target_link_libraries(dc_parity_extended PRIVATE dc_gpu dc_gl)
+      add_test(NAME dc_parity_extended COMMAND dc_parity_extended)
     else()
       message(STATUS
         "Skipping ENC-510 parity tests (need dc_gl for the GL render path)")
