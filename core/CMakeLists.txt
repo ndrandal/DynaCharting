@@ -276,9 +276,10 @@ if (DC_HAS_GLAD AND (DC_HAS_OSMESA OR DC_HAS_GLFW))
   add_executable(dc_dashboard_server "${CMAKE_CURRENT_SOURCE_DIR}/demos/dashboard_server.cpp")
   target_link_libraries(dc_dashboard_server PRIVATE dc_gl)
 
-  # D79 Generic JSON host (reads .json chart, serves via TEXT/FRME protocol)
-  add_executable(dc_json_host "${CMAKE_CURRENT_SOURCE_DIR}/src/host/JsonHost.cpp")
-  target_link_libraries(dc_json_host PRIVATE dc_gl)
+  # D79 Generic JSON host — moved below the Dawn block (ENC-500) so it can
+  # default to the Dawn render path when Dawn is available, with the GL path as a
+  # build-time fallback. See the "dc_json_host (ENC-500 cutover)" block after the
+  # dc_gpu definition.
 else()
   message(STATUS "Skipping dc_gl (requires GLAD + at least one of OSMesa/GLFW)")
 endif()
@@ -422,6 +423,31 @@ if (DC_HAS_DAWN)
   message(STATUS "dc_gpu (WebGPU/Dawn) enabled")
 else()
   message(STATUS "Skipping dc_gpu (requires DC_FETCH_DAWN=ON + Dawn available)")
+endif()
+
+# =======================
+# dc_json_host (ENC-500 cutover) — Dawn by default, GL fallback
+# =======================
+# P5.1: the generic JSON chart host. Its render + readback path is now Dawn by
+# DEFAULT when Dawn is available (DC_HAS_DAWN), via DawnDevice + CpuBufferStore +
+# DawnSceneRenderer. When Dawn is OFF it falls back to the original GL path
+# (OsMesaContext + GpuBufferManager + Renderer), so the host still builds and
+# works without Dawn. The single source file selects the path with a DC_HAS_DAWN
+# guard; only the linked libraries differ here.
+if (DC_HAS_DAWN)
+  add_executable(dc_json_host "${CMAKE_CURRENT_SOURCE_DIR}/src/host/JsonHost.cpp")
+  # dc_gpu carries the Dawn render path (DawnSceneRenderer, CpuBufferStore,
+  # ChartSnapshot lives in dc). dc_gl is NOT linked — the Dawn host needs no GL.
+  target_link_libraries(dc_json_host PRIVATE dc_gpu)
+  target_compile_definitions(dc_json_host PRIVATE DC_HAS_DAWN=1)
+  message(STATUS "dc_json_host: Dawn render path (default)")
+elseif (TARGET dc_gl)
+  add_executable(dc_json_host "${CMAKE_CURRENT_SOURCE_DIR}/src/host/JsonHost.cpp")
+  target_link_libraries(dc_json_host PRIVATE dc_gl)
+  target_compile_definitions(dc_json_host PRIVATE DC_HAS_DAWN=0)
+  message(STATUS "dc_json_host: GL render path (fallback — Dawn unavailable)")
+else()
+  message(STATUS "Skipping dc_json_host (needs Dawn or dc_gl)")
 endif()
 
 # =======================
@@ -2198,6 +2224,18 @@ if (DC_BUILD_TESTS)
       )
       target_link_libraries(dc_parity_extended PRIVATE dc_gpu dc_gl)
       add_test(NAME dc_parity_extended COMMAND dc_parity_extended)
+
+      # ENC-500 (P5.1) — JsonHost-via-Dawn conformance + streaming perf sweep.
+      # Drives the JsonHost embedding pipeline (parseSceneDocument ->
+      # SceneReconciler -> IngestProcessor -> store -> render -> readback) on BOTH
+      # backends and asserts the Dawn readback matches the GL JsonHost baseline
+      # within the parity tolerance — the cutover conformance proof. Also times N
+      # writeRange+uploadDirty cycles on GL vs Dawn (streaming perf sanity).
+      add_executable(dc_d79_dawn_json_host
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/d79_dawn_json_host.cpp"
+      )
+      target_link_libraries(dc_d79_dawn_json_host PRIVATE dc_gpu dc_gl)
+      add_test(NAME dc_d79_dawn_json_host COMMAND dc_d79_dawn_json_host)
     else()
       message(STATUS
         "Skipping ENC-510 parity tests (need dc_gl for the GL render path)")
