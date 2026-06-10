@@ -1952,5 +1952,22 @@ if (DC_BUILD_TESTS)
     )
     target_link_libraries(dc_d85_dawn_range_upload PRIVATE dc_gpu)
     add_test(NAME dc_d85_dawn_range_upload COMMAND dc_d85_dawn_range_upload)
+
+    # ENC-486 (P2.3) — line2d@1 + points@1 end-to-end on Dawn. Renders a line2d
+    # scene and a points scene through the backend registry with DeviceKind::Dawn
+    # into the headless DawnDevice offscreen target, reads back, and asserts the
+    # 1px LineList / PointList coverage lands where expected with clear elsewhere.
+    # Links dc_gl as well to reuse GpuBufferManager for the CPU-side vertex bytes
+    # (no GL context is created by the test), matching dc_d2_1_dawn_first_render.
+    if (TARGET dc_gl)
+      add_executable(dc_d2_3_dawn_pipelines
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/d2_3_dawn_pipelines.cpp"
+      )
+      target_link_libraries(dc_d2_3_dawn_pipelines PRIVATE dc_gpu dc_gl)
+      add_test(NAME dc_d2_3_dawn_pipelines COMMAND dc_d2_3_dawn_pipelines)
+    else()
+      message(STATUS
+        "Skipping dc_d2_3_dawn_pipelines (needs dc_gl for GpuBufferManager)")
+    endif()
   endif()
 endif()
