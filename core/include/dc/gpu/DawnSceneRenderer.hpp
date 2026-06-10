@@ -72,6 +72,20 @@ class Scene;
 class CpuBufferStore;
 class GlyphAtlas;
 class EventBus;
+struct Pane;
+
+// ENC-511 (P5.0c) — pane border + separator style. A POD mirror of GL's
+// `dc::RenderStyle` (core/include/dc/gl/Renderer.hpp): the DawnSceneRenderer
+// can't include the dc_gl header (it lives in a different library), so the
+// struct is duplicated field-for-field. setRenderStyle() drives the same D78
+// border/separator pass GL's Renderer::render does. Defaults are zero-width =
+// nothing drawn, so the common single-pane case is byte-identical to ENC-509.
+struct DawnRenderStyle {
+  float paneBorderColor[4] = {0, 0, 0, 0};
+  float paneBorderWidth{0.0f};  // pixels, 0 = no border
+  float separatorColor[4] = {0, 0, 0, 0};
+  float separatorWidth{0.0f};   // pixels, 0 = no separator
+};
 
 class DawnSceneRenderer {
  public:
@@ -98,6 +112,12 @@ class DawnSceneRenderer {
   bool init();
 
   const std::string& errorMessage() const { return errorMessage_; }
+
+  // ENC-511 (P5.0c) — D78 pane borders + separators. Mirrors GL
+  // Renderer::setRenderStyle. Drawn on top of pane content (after the scene
+  // walk), matching GL's draw order. Defaults to zero widths == nothing drawn.
+  void setRenderStyle(const DawnRenderStyle& style) { renderStyle_ = style; }
+  const DawnRenderStyle& renderStyle() const { return renderStyle_; }
 
   // The underlying device (so a caller can readPixel() the offscreen target after
   // render(), or share it with another renderer).
@@ -144,6 +164,34 @@ class DawnSceneRenderer {
   BackendRegistry backends_;
   bool inited_{false};
   std::string errorMessage_;
+
+  // ENC-511 (P5.0c) — D78 pane border/separator style + per-pane clear.
+  DawnRenderStyle renderStyle_;
+
+  // A self-contained solid-fill pipeline (a tiny pos2 triSolid clone) used to
+  // paint clip-space quads in a flat color: per-pane clear-quads (the Dawn
+  // analogue of GL's scissored mid-pass glClear) and the border/separator edge
+  // rects. It's separate from the registry's triSolid_ backend because those
+  // draws are synthetic (no Scene DrawItem / Geometry) — we drive the device
+  // directly (createBuffer + createBindGroup + bindPipeline + draw), exactly the
+  // shape DawnTriSolidBackend uses but without a Scene lookup.
+  PipelineHandle solidPipeline_;
+
+  // Draw a filled clip-space rectangle [x0,x1]x[y0,y1] in `rgba`, scissor as set
+  // by the caller. Goes through solidPipeline_ (which y-flips like every backend
+  // so it lands in the same screen region as the scene + scissor).
+  void fillRect(float x0, float y0, float x1, float y1, const float rgba[4]);
+
+  // ENC-511: per-pane scissored clear. GL issues a scissored glClear inside the
+  // pass for pane.hasClearColor; WebGPU has no scissored mid-pass clear, so we
+  // draw a full-pane clear-quad (with the pane scissor active) instead.
+  void clearPane(const Pane& pane, const float rgba[4]);
+
+  // ENC-511: D78 border (4 thin edge rects around the pane region) + separators
+  // (thin rects at the boundary between consecutive panes). Pixel widths from
+  // renderStyle_ are converted to clip-space half-extents per axis.
+  void drawPaneBorder(const Pane& pane, int viewW, int viewH);
+  void drawPaneSeparators(const Scene& scene, int viewW, int viewH);
 };
 
 }  // namespace dc

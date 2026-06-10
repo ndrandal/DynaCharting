@@ -2176,6 +2176,15 @@ if (DC_BUILD_TESTS)
         )
       endif()
       add_test(NAME dc_parity_text COMMAND dc_parity_text)
+
+      # ENC-511 (P5.0c) — multi-pane parity: per-pane clear colors + D78 pane
+      # borders/separators (DawnSceneRenderer vs GL Renderer). Same Scene + same
+      # RenderStyle through both backends; diffs the RGBA readbacks.
+      add_executable(dc_parity_multipane
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/parity_multipane.cpp"
+      )
+      target_link_libraries(dc_parity_multipane PRIVATE dc_gpu dc_gl)
+      add_test(NAME dc_parity_multipane COMMAND dc_parity_multipane)
     else()
       message(STATUS
         "Skipping ENC-510 parity tests (need dc_gl for the GL render path)")

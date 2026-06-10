@@ -111,6 +111,18 @@ struct Tolerance {
                              // offscreen targets are opaque so A is uniformly 255)
 };
 
+// ENC-511 (P5.0c) — optional D78 pane border/separator style applied to BOTH
+// backends before rendering (GL Renderer::setRenderStyle and
+// DawnSceneRenderer::setRenderStyle). Defaults (zero widths) mean "no style",
+// so existing scenarios that don't pass one are byte-identical to ENC-510.
+struct ParityStyle {
+  bool enabled{false};
+  float paneBorderColor[4] = {0, 0, 0, 0};
+  float paneBorderWidth{0.0f};
+  float separatorColor[4] = {0, 0, 0, 0};
+  float separatorWidth{0.0f};
+};
+
 struct ParityResult {
   bool skipped{false};
   std::string skipReason;
@@ -135,7 +147,8 @@ struct ParityResult {
 // Build a Scene from `builder` and render it via GL into `outRgba` (bottom-left
 // origin, row-major RGBA, size W*H*4). Returns false if OSMesa is unavailable.
 inline bool renderGl(const SceneBuilder& builder, int W, int H,
-                     GlyphAtlas* atlas, std::vector<std::uint8_t>& outRgba) {
+                     GlyphAtlas* atlas, std::vector<std::uint8_t>& outRgba,
+                     const ParityStyle& style = {}) {
   OsMesaContext ctx;
   if (!ctx.init(W, H)) return false;
 
@@ -155,6 +168,20 @@ inline bool renderGl(const SceneBuilder& builder, int W, int H,
   Renderer renderer;
   if (!renderer.init()) return false;
   if (atlas) renderer.setGlyphAtlas(atlas);
+  if (style.enabled) {
+    RenderStyle rs;
+    rs.paneBorderColor[0] = style.paneBorderColor[0];
+    rs.paneBorderColor[1] = style.paneBorderColor[1];
+    rs.paneBorderColor[2] = style.paneBorderColor[2];
+    rs.paneBorderColor[3] = style.paneBorderColor[3];
+    rs.paneBorderWidth = style.paneBorderWidth;
+    rs.separatorColor[0] = style.separatorColor[0];
+    rs.separatorColor[1] = style.separatorColor[1];
+    rs.separatorColor[2] = style.separatorColor[2];
+    rs.separatorColor[3] = style.separatorColor[3];
+    rs.separatorWidth = style.separatorWidth;
+    renderer.setRenderStyle(rs);
+  }
   bufs.uploadDirty();
   renderer.render(scene, bufs, W, H);
   ctx.swapBuffers();
@@ -168,13 +195,28 @@ inline bool renderGl(const SceneBuilder& builder, int W, int H,
 // Returns false (with `reason`) if Dawn can't bring up an adapter.
 inline bool renderDawn(const SceneBuilder& builder, int W, int H,
                        GlyphAtlas* atlas, std::vector<std::uint8_t>& outRgba,
-                       std::string& backendName, std::string& reason) {
+                       std::string& backendName, std::string& reason,
+                       const ParityStyle& style = {}) {
   DawnSceneRenderer renderer(atlas, nullptr);
   if (!renderer.init()) {
     reason = renderer.errorMessage();
     return false;
   }
   backendName = renderer.device().backendName();
+  if (style.enabled) {
+    DawnRenderStyle rs;
+    rs.paneBorderColor[0] = style.paneBorderColor[0];
+    rs.paneBorderColor[1] = style.paneBorderColor[1];
+    rs.paneBorderColor[2] = style.paneBorderColor[2];
+    rs.paneBorderColor[3] = style.paneBorderColor[3];
+    rs.paneBorderWidth = style.paneBorderWidth;
+    rs.separatorColor[0] = style.separatorColor[0];
+    rs.separatorColor[1] = style.separatorColor[1];
+    rs.separatorColor[2] = style.separatorColor[2];
+    rs.separatorColor[3] = style.separatorColor[3];
+    rs.separatorWidth = style.separatorWidth;
+    renderer.setRenderStyle(rs);
+  }
 
   Scene scene;
   ResourceRegistry reg;
@@ -277,13 +319,14 @@ inline bool detectRowFlip(GlyphAtlas* /*atlas*/, bool& haveResult) {
 // ---------------------------------------------------------------------------
 inline ParityResult compareScene(const char* name, const SceneBuilder& builder,
                                   int W, int H, const Tolerance& tol,
-                                  GlyphAtlas* atlas = nullptr) {
+                                  GlyphAtlas* atlas = nullptr,
+                                  const ParityStyle& style = {}) {
   ParityResult r;
   r.width = W;
   r.height = H;
 
   std::vector<std::uint8_t> glFb;
-  if (!renderGl(builder, W, H, atlas, glFb)) {
+  if (!renderGl(builder, W, H, atlas, glFb, style)) {
     r.skipped = true;
     r.skipReason = "OSMesa/GL unavailable";
     std::printf("[parity %s] SKIP: %s\n", name, r.skipReason.c_str());
@@ -292,7 +335,7 @@ inline ParityResult compareScene(const char* name, const SceneBuilder& builder,
 
   std::vector<std::uint8_t> dawnFb;
   std::string reason;
-  if (!renderDawn(builder, W, H, atlas, dawnFb, r.dawnBackend, reason)) {
+  if (!renderDawn(builder, W, H, atlas, dawnFb, r.dawnBackend, reason, style)) {
     r.skipped = true;
     r.skipReason = "Dawn adapter unavailable: " + reason;
     std::printf("[parity %s] SKIP: %s\n", name, r.skipReason.c_str());

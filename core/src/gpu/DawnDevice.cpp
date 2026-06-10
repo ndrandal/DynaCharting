@@ -1241,12 +1241,26 @@ void DawnDevice::setViewport(std::uint32_t width, std::uint32_t height) {
 
 void DawnDevice::setScissorRect(const ScissorRect& rect) {
   if (pass_ && rect.width > 0 && rect.height > 0) {
-    // GpuDevice scissor is bottom-left origin (GL convention); WebGPU is
-    // top-left. Flip y against the current target height.
-    const std::int32_t flippedY =
-        static_cast<std::int32_t>(targetH_) - rect.y - rect.height;
-    pass_.SetScissorRect(static_cast<std::uint32_t>(rect.x),
-                         static_cast<std::uint32_t>(flippedY < 0 ? 0 : flippedY),
+    // The incoming rect is GL bottom-left (GpuDevice convention): rect.y is
+    // measured from the BOTTOM, derived from the pane clip region as
+    // (clipY+1)/2*H. WebGPU's SetScissorRect is TOP-LEFT.
+    //
+    // ENC-511: every Dawn backend's vertex shader NEGATES clip-space y (so the
+    // top-left WebGPU framebuffer matches the bottom-left GL readback — see the
+    // NDC-Y-FLIP note in each backend). Net result: a fragment whose GL
+    // bottom-left row is `r` is written by Dawn at the SAME top-left row `r`
+    // (rowFlip=0; verified by the parity harness probe). The scissor must
+    // therefore use the SAME row index — i.e. pass rect.y straight through, NOT
+    // flip it against targetH_. The previous targetH_-rect.y-height flip put the
+    // scissor box on the OPPOSITE half from where the y-negating shader writes,
+    // which only stayed invisible while every test scissored on X (full-height
+    // Y, where the flip is a no-op). A Y-split pane (multi-pane: per-pane clear,
+    // content, borders) exposes it: the box and the geometry land on opposite
+    // halves and nothing shows. Passing rect.y through fixes per-pane Y
+    // scissoring for content AND the ENC-511 clear/border draws, and is a no-op
+    // for the existing full-height-Y (X-split) scissor scenes.
+    pass_.SetScissorRect(static_cast<std::uint32_t>(rect.x < 0 ? 0 : rect.x),
+                         static_cast<std::uint32_t>(rect.y < 0 ? 0 : rect.y),
                          static_cast<std::uint32_t>(rect.width),
                          static_cast<std::uint32_t>(rect.height));
   }
