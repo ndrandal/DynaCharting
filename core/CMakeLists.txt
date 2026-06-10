@@ -1969,5 +1969,17 @@ if (DC_BUILD_TESTS)
       message(STATUS
         "Skipping dc_d2_3_dawn_pipelines (needs dc_gl for GpuBufferManager)")
     endif()
+
+    # ENC-487 (P2.4) — triGradient@1 + triAA@1 on Dawn. Renders a per-vertex-color
+    # gradient triangle and per-vertex-alpha triAA triangles through the backend
+    # registry with DeviceKind::Dawn into the headless DawnDevice, reads back, and
+    # asserts gradient corner-color trend + 3-way-blend centroid (vs the GL
+    # d28_3_gradient baseline) and the AA per-vertex-alpha plumbing. Links only
+    # dc_gpu: the CPU-side CpuBufferStore lives in pure dc (no GL header needed).
+    add_executable(dc_d28_3_dawn_gradient
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/d28_3_dawn_gradient.cpp"
+    )
+    target_link_libraries(dc_d28_3_dawn_gradient PRIVATE dc_gpu)
+    add_test(NAME dc_d28_3_dawn_gradient COMMAND dc_d28_3_dawn_gradient)
   endif()
 endif()
