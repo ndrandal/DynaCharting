@@ -22,7 +22,7 @@
 namespace dc {
 
 class Scene;
-class GpuBufferManager;
+class CpuBufferStore;
 class GpuDevice;
 struct DrawItem;
 
@@ -56,8 +56,11 @@ public:
   /// filtered drawItems whose `pipeline` matches this backend's `pipelineId`,
   /// and has already applied the per-item viewport/scissor/blend/clip state on
   /// the device. The backend selects/binds its pipeline + bind group and issues
-  /// the draw via `device`. `gpu` supplies the CPU/GPU buffer bytes for this
-  /// item's geometry; `viewW/viewH` are forwarded for backends that need pixel-
+  /// the draw via `device`. `gpu` is the device-agnostic CPU byte source
+  /// (CpuBufferStore) for this item's geometry — the GL backend downcasts it to
+  /// its GpuBufferManager to reach getGlBuffer(); the Dawn backend reads CPU
+  /// bytes straight from the base. `viewW/viewH` are forwarded for backends that
+  /// need pixel-
   /// space sizing (text / instanced / AA-line layouts).
   ///
   /// TODO(ENC-482): adopt this in Renderer.cpp — port each draw* helper in
@@ -65,7 +68,7 @@ public:
   /// through `device` instead of calling glDraw* directly.
   virtual BackendStats renderDrawItem(GpuDevice& device,
                                       const Scene& scene,
-                                      GpuBufferManager& gpu,
+                                      CpuBufferStore& gpu,
                                       const DrawItem& item,
                                       int viewW, int viewH) = 0;
 };

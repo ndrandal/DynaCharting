@@ -6,7 +6,7 @@
 // issues the indexed-or-arrays TriangleList draw through GpuDevice.
 #include "dc/gpu/DawnTriSolidBackend.hpp"
 
-#include "dc/gl/GpuBufferManager.hpp"
+#include "dc/render/CpuBufferStore.hpp"
 #include "dc/scene/Scene.hpp"
 #include "dc/scene/Geometry.hpp"
 #include "dc/scene/Types.hpp"
@@ -89,7 +89,7 @@ bool DawnTriSolidBackend::init(GpuDevice& device) {
 }
 
 DawnTriSolidBackend::GeoBuffers& DawnTriSolidBackend::ensureGeoBuffers(
-    GpuDevice& device, const Scene& scene, GpuBufferManager& gpu,
+    GpuDevice& device, const Scene& scene, CpuBufferStore& gpu,
     std::uint32_t geometryId) {
   for (auto& kv : geoBuffers_) {
     if (kv.first == geometryId) return kv.second;
@@ -98,9 +98,11 @@ DawnTriSolidBackend::GeoBuffers& DawnTriSolidBackend::ensureGeoBuffers(
   GeoBuffers gb;
   const Geometry* geo = scene.getGeometry(geometryId);
   if (geo) {
-    // Vertex buffer: copy the CPU bytes GpuBufferManager holds for this
-    // geometry's vertex buffer into a static Dawn buffer (ENC-484; the
-    // streaming path is TODO(ENC-485)).
+    // Vertex buffer: copy the CPU bytes the CpuBufferStore holds for this
+    // geometry's vertex buffer into a static Dawn buffer. (The live coalesced
+    // streaming path lands per-pipeline in ENC-488/489/490 via
+    // CpuBufferStore::uploadDirty + DeviceBufferResolver; triSolid geometry is
+    // uploaded once here.)
     const std::uint8_t* vtx = gpu.getCpuData(geo->vertexBufferId);
     const std::uint32_t vtxBytes = gpu.getCpuDataSize(geo->vertexBufferId);
     if (vtx && vtxBytes > 0) {
@@ -125,7 +127,7 @@ DawnTriSolidBackend::GeoBuffers& DawnTriSolidBackend::ensureGeoBuffers(
 
 BackendStats DawnTriSolidBackend::renderDrawItem(GpuDevice& device,
                                                  const Scene& scene,
-                                                 GpuBufferManager& gpu,
+                                                 CpuBufferStore& gpu,
                                                  const DrawItem& di,
                                                  int /*viewW*/, int /*viewH*/) {
   BackendStats stats{};

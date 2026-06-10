@@ -34,7 +34,7 @@ public:
 
   BackendStats renderDrawItem(GpuDevice& device,
                               const Scene& scene,
-                              GpuBufferManager& gpu,
+                              CpuBufferStore& gpu,
                               const DrawItem& item,
                               int viewW, int viewH) override;
 

@@ -103,6 +103,15 @@ class DawnDevice final : public GpuDevice {
   void readPixel(std::int32_t x, std::int32_t y,
                  std::uint8_t* outRgba) override;
 
+  // ENC-485 — Synchronous buffer readback for streaming-upload verification.
+  // Copies [offsetBytes, offsetBytes+bytes) of `buf` into a MapRead staging
+  // buffer and blocks until mapped, then copies the bytes into `out` (which must
+  // hold >= bytes). Returns false if the handle is invalid or the range exceeds
+  // the buffer capacity. Test-facing (a streaming test reads the buffer back to
+  // assert the coalesced upload landed the right bytes); not part of GpuDevice.
+  bool readBuffer(BufferHandle buf, std::size_t offsetBytes, std::size_t bytes,
+                  std::uint8_t* out);
+
  private:
   // Lazily (re)create the offscreen RGBA8Unorm color target at (w, h).
   void ensureRenderTarget(std::uint32_t w, std::uint32_t h);

@@ -1,70 +1,43 @@
 #pragma once
+// GpuBufferManager — the OpenGL backend of the streaming buffer manager.
+//
+// ENC-485 (P2.2): the backend-AGNOSTIC CPU side (per-id CPU bytes, capacity,
+// dirty-range list + coalescing, UploadStats, reserve/writeRange/setCpuData/
+// getCpuData) was extracted into dc::CpuBufferStore (dc/render/CpuBufferStore.hpp,
+// pure `dc`, no GL). This class now derives from it and adds ONLY the GL-specific
+// part: a VBO per buffer id and the glBufferData/glBufferSubData upload loop.
+// The dirty-range coalescing is shared with the Dawn backend via the base.
+//
+// Public API and GL upload behaviour are unchanged from the pre-ENC-485 class
+// (setCpuData/reserve/writeRange/uploadDirty/lastUploadStats/getGlBuffer/
+// getCpuData/getCpuDataSize all behave identically), so the GL renderer and all
+// GL tests are unaffected.
+#include "dc/render/CpuBufferStore.hpp"
 #include "dc/ids/Id.hpp"
 #include <glad/gl.h>
 #include <cstdint>
 #include <unordered_map>
-#include <vector>
 
 namespace dc {
 
-class GpuBufferManager {
+class GpuBufferManager : public CpuBufferStore {
 public:
-  // D81: upload statistics for the last uploadDirty() invocation. Useful for
-  // tests asserting that incremental writes don't devolve to full rewrites.
-  struct UploadStats {
-    std::uint32_t fullUploads{0};      // glBufferData calls
-    std::uint32_t subUploads{0};       // glBufferSubData calls
-    std::uint32_t rangesCoalesced{0};  // total dirty ranges merged into subUploads
-    std::uint64_t bytesUploaded{0};
-  };
+  // Re-export UploadStats at its historical name dc::GpuBufferManager::UploadStats
+  // for existing callers/tests.
+  using UploadStats = CpuBufferStore::UploadStats;
 
-  ~GpuBufferManager();
+  ~GpuBufferManager() override;
 
-  // Full-buffer replace. If the new size differs from the current GPU capacity,
-  // triggers a full glBufferData on next uploadDirty(); otherwise degrades to a
-  // single full-range glBufferSubData.
-  void setCpuData(Id bufferId, const void* data, std::uint32_t bytes);
-
-  // D81: reserve/grow the CPU buffer to `totalBytes` without marking dirty.
-  // Used by callers that will follow up with writeRange() for exact regions.
-  // If `totalBytes` is smaller than the current CPU size the buffer shrinks
-  // and a full reupload is forced on next uploadDirty().
-  void reserve(Id bufferId, std::uint32_t totalBytes);
-
-  // D81: write `bytes` at `offset`, marking [offset, offset+bytes) dirty.
-  // Grows the CPU buffer if needed (zero-fills any gap). Coalesces with
-  // adjacent / overlapping pending dirty ranges. Typical live-tick workloads
-  // (append at tail) collapse to a single dirty range.
-  void writeRange(Id bufferId, std::uint32_t offset,
-                  const void* data, std::uint32_t bytes);
-
-  // Upload any dirty buffers to GL VBOs. Returns total bytes uploaded.
+  // Upload any dirty buffers to GL VBOs using the shared coalescing computed by
+  // the CpuBufferStore base. Full (re)allocations use glBufferData
+  // (GL_DYNAMIC_DRAW); partial uploads use glBufferSubData per coalesced range.
+  // Returns total bytes uploaded.
   std::uint64_t uploadDirty();
 
-  // Stats from the most recent uploadDirty() call.
-  const UploadStats& lastUploadStats() const { return stats_; }
-
   GLuint getGlBuffer(Id bufferId) const;
-  const std::uint8_t* getCpuData(Id bufferId) const;
-  std::uint32_t getCpuDataSize(Id bufferId) const;
 
 private:
-  struct DirtyRange {
-    std::uint32_t offset{0};
-    std::uint32_t length{0};
-  };
-  struct Entry {
-    std::vector<std::uint8_t> cpuData;
-    GLuint vbo{0};
-    std::uint32_t gpuCapacity{0};
-    bool needsFullUpload{false};
-    std::vector<DirtyRange> dirty;     // sorted ascending, non-overlapping
-  };
-
-  void addDirtyRange(Entry& e, std::uint32_t offset, std::uint32_t length);
-
-  std::unordered_map<Id, Entry> entries_;
-  UploadStats stats_{};
+  std::unordered_map<Id, GLuint> vbos_;  // GL VBO per buffer id (0 == none)
 };
 
 } // namespace dc

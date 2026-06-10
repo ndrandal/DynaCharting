@@ -407,15 +407,10 @@ if (DC_HAS_DAWN)
   else()
     target_link_libraries(dc_gpu PUBLIC dc webgpu_dawn)
   endif()
-  # ENC-484: DawnTriSolidBackend reads CPU-side vertex/index bytes via
-  # GpuBufferManager (dc/gl/GpuBufferManager.hpp), whose header includes
-  # <glad/gl.h>. dc_gpu therefore needs glad's headers to compile — it never
-  # calls any gl* function (the device is pure Dawn). The GpuBufferManager
-  # *symbols* live in dc_gl and are linked by consumers that build a scene
-  # (the d2_1 Dawn test links dc_gl too). Link glad here for the headers.
-  if (TARGET glad)
-    target_link_libraries(dc_gpu PUBLIC glad)
-  endif()
+  # ENC-485: dc_gpu no longer depends on the GL/GLAD header. The backend-agnostic
+  # CPU-side buffer manager moved to dc::CpuBufferStore (dc/render/, pure dc), so
+  # DawnTriSolidBackend reads CPU bytes through that instead of the GL
+  # GpuBufferManager (which used to drag in <glad/gl.h>). No glad link here.
 
   if (NOT MSVC)
     target_compile_options(dc_gpu PRIVATE -Wall -Wextra -Wpedantic)
@@ -1945,5 +1940,17 @@ if (DC_BUILD_TESTS)
       message(STATUS
         "Skipping dc_d2_1_dawn_first_render (needs dc_gl for GpuBufferManager)")
     endif()
+
+    # ENC-485 (P2.2) — Dawn streaming buffer upload (coalesced dirty ranges).
+    # Streams data into a Dawn buffer through the shared CpuBufferStore coalescing
+    # path and a DeviceBufferResolver, asserts the same coalescing stats as the GL
+    # d81_3_range_upload, and verifies correctness by reading the Dawn buffer back.
+    # Links ONLY dc_gpu (no dc_gl): the CPU-side buffer manager is now in pure dc,
+    # so the Dawn streaming path needs no GL header.
+    add_executable(dc_d85_dawn_range_upload
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/d85_dawn_range_upload.cpp"
+    )
+    target_link_libraries(dc_d85_dawn_range_upload PRIVATE dc_gpu)
+    add_test(NAME dc_d85_dawn_range_upload COMMAND dc_d85_dawn_range_upload)
   endif()
 endif()

@@ -63,10 +63,14 @@ bool GlTriSolidBackend::init(GpuDevice& /*device*/) {
 
 BackendStats GlTriSolidBackend::renderDrawItem(GpuDevice& /*device*/,
                                                const Scene& scene,
-                                               GpuBufferManager& gpu,
+                                               CpuBufferStore& gpuBase,
                                                const DrawItem& di,
                                                int /*viewW*/, int /*viewH*/) {
   BackendStats stats{};
+
+  // The GL backend always runs against a GL buffer manager; downcast to reach
+  // getGlBuffer() (the device-agnostic base carries only the CPU bytes).
+  GpuBufferManager& gpu = static_cast<GpuBufferManager&>(gpuBase);
 
   const Geometry* geo = scene.getGeometry(di.geometryId);
   if (!geo) return stats;

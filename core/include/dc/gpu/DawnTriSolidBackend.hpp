@@ -44,7 +44,7 @@ class DawnTriSolidBackend final : public IRendererBackend {
   bool init(GpuDevice& device) override;
 
   BackendStats renderDrawItem(GpuDevice& device, const Scene& scene,
-                              GpuBufferManager& gpu, const DrawItem& item,
+                              CpuBufferStore& gpu, const DrawItem& item,
                               int viewW, int viewH) override;
 
  private:
@@ -53,8 +53,10 @@ class DawnTriSolidBackend final : public IRendererBackend {
   PipelineHandle pipeline_{};
 
   // Static per-geometry GPU buffers, created lazily on first draw of a geometry
-  // and reused thereafter. ENC-484 keeps this minimal/static; the streaming +
-  // GpuBufferManager-backed buffer model is TODO(ENC-485). Keyed by geometryId.
+  // and reused thereafter. triSolid keeps this minimal/static; the live coalesced
+  // streaming model (CpuBufferStore::uploadDirty + DeviceBufferResolver, ENC-485)
+  // is adopted by the instanced pipelines that stream per tick (ENC-488/489/490).
+  // Keyed by geometryId.
   struct GeoBuffers {
     BufferHandle vertexBuffer{};
     BufferHandle indexBuffer{};
@@ -65,7 +67,7 @@ class DawnTriSolidBackend final : public IRendererBackend {
   std::vector<std::pair<std::uint32_t, GeoBuffers>> geoBuffers_;
 
   GeoBuffers& ensureGeoBuffers(GpuDevice& device, const Scene& scene,
-                               GpuBufferManager& gpu, std::uint32_t geometryId);
+                               CpuBufferStore& gpu, std::uint32_t geometryId);
 };
 
 }  // namespace dc

@@ -12,6 +12,13 @@
 namespace dc {
 namespace {
 
+// Usage for streaming vertex/index buffers. Vertex|Index so one slot model backs
+// either; CopyDst for queue.WriteBuffer; CopySrc so a streaming test (and any
+// future GPU->GPU copy) can read the buffer back via CopyBufferToBuffer.
+constexpr wgpu::BufferUsage kStreamBufferUsage =
+    wgpu::BufferUsage::Vertex | wgpu::BufferUsage::Index |
+    wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::CopySrc;
+
 // Map a Dawn BackendType to a short human string for diagnostics/logging.
 const char* backendTypeName(wgpu::BackendType b) {
   switch (b) {
@@ -132,16 +139,26 @@ DawnDevice::BindGroupEntry* DawnDevice::bindGroupAt(BindGroupHandle h) {
   return &bindGroups_[h.id - 1];
 }
 
-// --- buffer resources (ENC-484: static create+write for triSolid) ----------
-// SCOPE NOTE: ENC-484 only needs a static vertex/index upload — the triangle's
-// vertices are written once and drawn. The full streaming write-range model
-// (incremental tail-appends + dirty coalescing, mirroring GpuBufferManager)
-// is TODO(ENC-485): createBuffer/updateBuffer/writeBufferRange below allocate a
-// fixed buffer and use queue.WriteBuffer for the whole/partial range, which is
-// correct but not yet the coalesced live-tick path.
+// --- buffer resources (ENC-485: coalesced streaming upload) -----------------
+// The Dawn half of the streaming buffer model. The CPU side (per-id bytes +
+// dirty-range coalescing + UploadStats) lives in dc::CpuBufferStore (pure dc);
+// it drives this device through GpuDevice::updateBuffer (full/grown buffer) and
+// writeBufferRange (one call per coalesced dirty range). See CpuBufferStore and
+// the d85_dawn_range_upload test.
 //
-// A vertex buffer here is created with usage Vertex|Index|CopyDst (both Vertex
-// and Index so the same slot model can back either; CopyDst for WriteBuffer).
+// UPLOAD STRATEGY: queue.WriteBuffer (Dawn's queued staging copy) for both the
+// full and the per-range path. WriteBuffer internally stages into an upload
+// ring and schedules a copy into the destination buffer, which is exactly the
+// "writeBuffer + staging" the ticket calls for; it needs no manual MapWrite
+// buffer, no extra command encoder, and no realloc of a staging buffer. The
+// only hard WebGPU constraint is 4-byte alignment of both the destination
+// offset and the written size — our vertex (8B pos2) and u32-index formats are
+// already 4-aligned; a non-aligned tail is rounded up to the next multiple of 4
+// (the CPU store over-allocates capacity to a 4-byte multiple, so the read does
+// not run past the buffer).
+//
+// A buffer is created with usage Vertex|Index|CopyDst (both Vertex and Index so
+// the same slot model can back either; CopyDst for WriteBuffer).
 
 BufferHandle DawnDevice::createBuffer(std::size_t capacityBytes,
                                       const void* initData,
@@ -152,8 +169,7 @@ BufferHandle DawnDevice::createBuffer(std::size_t capacityBytes,
   wgpu::BufferDescriptor bd = {};
   bd.label = "dc_vertex_or_index";
   bd.size = size;
-  bd.usage = wgpu::BufferUsage::Vertex | wgpu::BufferUsage::Index |
-             wgpu::BufferUsage::CopyDst;
+  bd.usage = kStreamBufferUsage;
   wgpu::Buffer buffer = device_.CreateBuffer(&bd);
 
   if (initData && initBytes > 0) {
@@ -174,21 +190,33 @@ void DawnDevice::updateBuffer(BufferHandle buf, const void* data,
                               std::size_t bytes) {
   BufferEntry* e = bufferAt(buf);
   if (!e || !data || bytes == 0) return;
-  // ENC-484: no realloc-on-grow yet (static buffers); clamp to capacity. The
-  // grow path lands with the streaming model in TODO(ENC-485).
+  // ENC-485 streaming: full (re)upload. If the data outgrows the current
+  // capacity, reallocate the Dawn buffer (a new CreateBuffer; the old handle is
+  // released when overwritten) — mirrors GL's glBufferData realloc-on-grow.
   const std::size_t writeBytes = (bytes + 3u) & ~std::size_t{3u};
-  queue_.WriteBuffer(e->buffer, 0, data,
-                     writeBytes <= e->capacity ? writeBytes : e->capacity);
+  if (writeBytes > e->capacity) {
+    wgpu::BufferDescriptor bd = {};
+    bd.label = "dc_vertex_or_index";
+    bd.size = writeBytes;
+    bd.usage = kStreamBufferUsage;
+    e->buffer = device_.CreateBuffer(&bd);
+    e->capacity = writeBytes;
+  }
+  queue_.WriteBuffer(e->buffer, 0, data, writeBytes);
 }
 
 void DawnDevice::writeBufferRange(BufferHandle buf, std::size_t offsetBytes,
                                   const void* data, std::size_t bytes) {
-  // TODO(ENC-485): full coalesced streaming. ENC-484 only needs a plain ranged
-  // WriteBuffer (offset+size must be 4-aligned, which holds for our formats).
+  // Partial (coalesced-range) streaming upload. offset+size must be 4-aligned;
+  // round the written size up to the next multiple of 4 (the CPU store keeps a
+  // 4-aligned capacity so the read stays in-bounds), and require the destination
+  // offset be 4-aligned (it is for our vertex/index formats).
   BufferEntry* e = bufferAt(buf);
   if (!e || !data || bytes == 0) return;
-  if (offsetBytes + bytes > e->capacity) return;
-  queue_.WriteBuffer(e->buffer, offsetBytes, data, bytes);
+  if ((offsetBytes & 0x3u) != 0) return;  // unaligned offset: unsupported
+  const std::size_t writeBytes = (bytes + 3u) & ~std::size_t{3u};
+  if (offsetBytes + writeBytes > e->capacity) return;
+  queue_.WriteBuffer(e->buffer, offsetBytes, data, writeBytes);
 }
 
 void DawnDevice::destroyBuffer(BufferHandle buf) {
@@ -199,6 +227,51 @@ void DawnDevice::destroyBuffer(BufferHandle buf) {
     e->buffer = nullptr;
   }
   e->capacity = 0;
+}
+
+bool DawnDevice::readBuffer(BufferHandle buf, std::size_t offsetBytes,
+                            std::size_t bytes, std::uint8_t* out) {
+  BufferEntry* e = bufferAt(buf);
+  if (!e || !e->buffer || bytes == 0 || !out) return false;
+  // CopyBufferToBuffer requires 4-byte-aligned offset + size; round the copy up
+  // (capacity is a 4-byte multiple) and clamp to capacity.
+  const std::size_t copyOff = offsetBytes & ~std::size_t{3u};
+  const std::size_t copyEnd =
+      (offsetBytes + bytes + 3u) & ~std::size_t{3u};
+  if (copyEnd > e->capacity) return false;
+  const std::size_t copySize = copyEnd - copyOff;
+
+  wgpu::BufferDescriptor bd = {};
+  bd.label = "dc_buffer_readback";
+  bd.size = copySize;
+  bd.usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead;
+  wgpu::Buffer readback = device_.CreateBuffer(&bd);
+
+  wgpu::CommandEncoder enc = device_.CreateCommandEncoder();
+  enc.CopyBufferToBuffer(e->buffer, copyOff, readback, 0, copySize);
+  wgpu::CommandBuffer cmd = enc.Finish();
+  queue_.Submit(1, &cmd);
+
+  struct MapState {
+    bool done = false;
+    bool ok = false;
+  } mapState;
+  readback.MapAsync(
+      wgpu::MapMode::Read, 0, copySize, wgpu::CallbackMode::AllowProcessEvents,
+      [](wgpu::MapAsyncStatus status, wgpu::StringView, MapState* st) {
+        st->ok = (status == wgpu::MapAsyncStatus::Success);
+        st->done = true;
+      },
+      &mapState);
+  waitUntil(&mapState.done);
+  if (!mapState.ok) return false;
+
+  const auto* base =
+      static_cast<const std::uint8_t*>(readback.GetConstMappedRange(0, copySize));
+  if (!base) return false;
+  std::memcpy(out, base + (offsetBytes - copyOff), bytes);
+  readback.Unmap();
+  return true;
 }
 
 // --- texture resources (TODO(ENC-485)) -------------------------------------
