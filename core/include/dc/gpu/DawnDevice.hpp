@@ -157,6 +157,26 @@ class DawnDevice final : public GpuDevice {
   };
   std::vector<BufferEntry> buffers_;
 
+  // --- ENC-491 texture resources -----------------------------------------
+  // A 2D texture (texturedQuad@1 user images, and the ENC-492 SDF glyph atlas).
+  // Owns the wgpu::Texture, a default view, and a sampler. RGBA8 (4-channel
+  // user images / pick) and R8 (single-channel coverage / SDF atlas) are both
+  // supported via the format/bytesPerPixel recorded at create time so
+  // updateTexture re-uploads with the right row pitch. The sampler's
+  // FilterMode (Linear/Nearest) comes from the TextureDesc; address mode is
+  // ClampToEdge (matches GL's GL_CLAMP_TO_EDGE in TextureManager).
+  struct TextureEntry {
+    wgpu::Texture texture;
+    wgpu::TextureView view;
+    wgpu::Sampler sampler;
+    std::uint32_t width{0};
+    std::uint32_t height{0};
+    std::uint32_t bytesPerPixel{4};  // 4 (RGBA8) or 1 (R8)
+    wgpu::TextureFormat format{wgpu::TextureFormat::RGBA8Unorm};
+  };
+  std::vector<TextureEntry> textures_;
+  TextureEntry* textureAt(TextureHandle h);
+
   // Render pipelines. Each PipelineDesc -> one wgpu::RenderPipeline + its
   // implicit bind-group layout (group 0) and a uniform-buffer size. Cached by
   // the backend (it creates one per pipelineId and reuses it), so we never
@@ -165,6 +185,11 @@ class DawnDevice final : public GpuDevice {
     wgpu::RenderPipeline pipeline;
     wgpu::BindGroupLayout bindGroupLayout;
     std::size_t uniformSize{0};  // bytes of the group-0 uniform buffer
+    // ENC-491: when true the pipeline's group-0 layout adds a texture (binding
+    // 1) + sampler (binding 2) alongside the uniform buffer (binding 0), and
+    // createBindGroup must supply the bound texture's view+sampler. Set when the
+    // PipelineDesc declares a Sampler2D uniform (texturedQuad@1; future SDF text).
+    bool hasTexture{false};
   };
   std::vector<PipelineEntry> pipelines_;
 

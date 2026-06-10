@@ -1994,5 +1994,20 @@ if (DC_BUILD_TESTS)
     )
     target_link_libraries(dc_d28_2_dawn_rounded_rect PRIVATE dc_gpu)
     add_test(NAME dc_d28_2_dawn_rounded_rect COMMAND dc_d28_2_dawn_rounded_rect)
+
+    # ENC-491 (P2.8) — texturedQuad@1 + TextureManager on Dawn. Exercises the new
+    # DawnDevice texture/sampler support (createTexture RGBA8Unorm +
+    # queue.WriteTexture + sampler + the texture/sampler bind-group entries) and
+    # the DawnTexturedQuadBackend, which reuses the shared drawInstanced
+    # foundation. Renders a textured quad sampling a small known RGBA texture
+    # through the backend registry with DeviceKind::Dawn into the headless
+    # DawnDevice, reads back, and asserts the sampled texels land at the expected
+    # screen positions + color modulation (vs the GL d36_1_texture_quad /
+    # d41_1_texquad_render baselines). Links only dc_gpu.
+    add_executable(dc_d36_1_dawn_texquad
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/d36_1_dawn_texquad.cpp"
+    )
+    target_link_libraries(dc_d36_1_dawn_texquad PRIVATE dc_gpu)
+    add_test(NAME dc_d36_1_dawn_texquad COMMAND dc_d36_1_dawn_texquad)
   endif()
 endif()

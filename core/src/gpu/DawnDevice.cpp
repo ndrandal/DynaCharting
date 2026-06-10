@@ -52,6 +52,7 @@ DawnDevice::~DawnDevice() {
   // Release ENC-484 draw-path resources before the device/instance.
   bindGroups_.clear();
   pipelines_.clear();
+  textures_.clear();  // ENC-491
   buffers_.clear();
   colorView_ = nullptr;
   colorTexture_ = nullptr;
@@ -274,16 +275,130 @@ bool DawnDevice::readBuffer(BufferHandle buf, std::size_t offsetBytes,
   return true;
 }
 
-// --- texture resources (TODO(ENC-485)) -------------------------------------
+// --- texture resources (ENC-491) -------------------------------------------
+// The Dawn half of TextureManager (core/src/gl/TextureManager.cpp). GL loads an
+// rgba image into a GL_TEXTURE_2D (RGBA8, LINEAR, CLAMP_TO_EDGE) and binds it to
+// a texture unit at draw time; here we create a wgpu::Texture (RGBA8Unorm or
+// R8Unorm, TextureBinding|CopyDst), upload via queue.WriteTexture, and build a
+// wgpu::Sampler. The texture's view + sampler are referenced by the bind group
+// (createBindGroup) for any pipeline declaring sampledTexture (texturedQuad@1;
+// ENC-492 SDF glyph atlas, which uses R8 single-channel coverage). This is kept
+// GENERAL over the channel count: TextureDesc::format selects RGBA8/R8 and the
+// per-pixel byte count drives WriteTexture's bytesPerRow.
 
-TextureHandle DawnDevice::createTexture(const TextureDesc& /*desc*/) {
-  return {};  // TODO(ENC-485)
+DawnDevice::TextureEntry* DawnDevice::textureAt(TextureHandle h) {
+  if (!h.valid() || h.id > textures_.size()) return nullptr;
+  return &textures_[h.id - 1];
 }
-void DawnDevice::updateTexture(TextureHandle, const std::uint8_t*) {
-  // TODO(ENC-485)
+
+namespace {
+// Map the device-neutral TextureFormat to a wgpu format + per-pixel byte count.
+// RGBA8 -> RGBA8Unorm (4 bytes); R8 -> R8Unorm (1 byte, the SDF atlas case).
+void mapTextureFormat(TextureFormat fmt, wgpu::TextureFormat* outWgpu,
+                      std::uint32_t* outBpp) {
+  switch (fmt) {
+    case TextureFormat::R8:
+      *outWgpu = wgpu::TextureFormat::R8Unorm;
+      *outBpp = 1;
+      break;
+    case TextureFormat::RGBA8:
+    default:
+      *outWgpu = wgpu::TextureFormat::RGBA8Unorm;
+      *outBpp = 4;
+      break;
+  }
 }
-void DawnDevice::destroyTexture(TextureHandle) {
-  // TODO(ENC-485)
+}  // namespace
+
+TextureHandle DawnDevice::createTexture(const TextureDesc& desc) {
+  if (desc.width == 0 || desc.height == 0) return {};
+
+  wgpu::TextureFormat wgpuFmt;
+  std::uint32_t bpp;
+  mapTextureFormat(desc.format, &wgpuFmt, &bpp);
+
+  // RGBA8Unorm / R8Unorm sampled texture. TextureBinding so a bind group can
+  // reference it for sampling; CopyDst so queue.WriteTexture can upload pixels.
+  wgpu::TextureDescriptor td = {};
+  td.label = "dc_texture";
+  td.dimension = wgpu::TextureDimension::e2D;
+  td.size = {desc.width, desc.height, 1};
+  td.format = wgpuFmt;
+  td.mipLevelCount = 1;
+  td.sampleCount = 1;
+  td.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst;
+  wgpu::Texture texture = device_.CreateTexture(&td);
+
+  wgpu::TextureView view = texture.CreateView();
+
+  // Sampler: filter from the desc (LINEAR/NEAREST on min+mag); ClampToEdge wrap
+  // to match GL's GL_CLAMP_TO_EDGE in TextureManager::load.
+  const wgpu::FilterMode filter = (desc.filter == TextureFilter::Nearest)
+                                      ? wgpu::FilterMode::Nearest
+                                      : wgpu::FilterMode::Linear;
+  wgpu::SamplerDescriptor sd = {};
+  sd.label = "dc_sampler";
+  sd.addressModeU = wgpu::AddressMode::ClampToEdge;
+  sd.addressModeV = wgpu::AddressMode::ClampToEdge;
+  sd.addressModeW = wgpu::AddressMode::ClampToEdge;
+  sd.magFilter = filter;
+  sd.minFilter = filter;
+  sd.mipmapFilter = wgpu::MipmapFilterMode::Nearest;
+  wgpu::Sampler sampler = device_.CreateSampler(&sd);
+
+  TextureEntry entry;
+  entry.texture = std::move(texture);
+  entry.view = std::move(view);
+  entry.sampler = std::move(sampler);
+  entry.width = desc.width;
+  entry.height = desc.height;
+  entry.bytesPerPixel = bpp;
+  entry.format = wgpuFmt;
+  textures_.push_back(std::move(entry));
+
+  TextureHandle h;
+  h.id = static_cast<std::uint32_t>(textures_.size());  // 1-based
+
+  // Optional initial upload (mirrors GL's glTexImage2D with data).
+  if (desc.data) updateTexture(h, desc.data);
+  return h;
+}
+
+void DawnDevice::updateTexture(TextureHandle tex, const std::uint8_t* data) {
+  TextureEntry* e = textureAt(tex);
+  if (!e || !e->texture || !data) return;
+  // queue.WriteTexture: the GL glTexImage2D re-upload equivalent. The source is
+  // tightly packed (bytesPerRow == width * bytesPerPixel) — WriteTexture (unlike
+  // a buffer copy) has NO 256-byte row-pitch constraint, so a tight upload is
+  // fine for both RGBA8 (4B/px) and R8 (1B/px, the SDF atlas).
+  wgpu::TexelCopyTextureInfo dst = {};
+  dst.texture = e->texture;
+  dst.mipLevel = 0;
+  dst.origin = {0, 0, 0};
+  dst.aspect = wgpu::TextureAspect::All;
+
+  wgpu::TexelCopyBufferLayout layout = {};
+  layout.offset = 0;
+  layout.bytesPerRow = e->width * e->bytesPerPixel;
+  layout.rowsPerImage = e->height;
+
+  wgpu::Extent3D writeSize = {e->width, e->height, 1};
+  const std::size_t byteCount =
+      static_cast<std::size_t>(e->width) * e->height * e->bytesPerPixel;
+  queue_.WriteTexture(&dst, data, byteCount, &layout, &writeSize);
+}
+
+void DawnDevice::destroyTexture(TextureHandle tex) {
+  TextureEntry* e = textureAt(tex);
+  if (!e) return;
+  if (e->texture) {
+    e->texture.Destroy();
+    e->texture = nullptr;
+  }
+  e->view = nullptr;
+  e->sampler = nullptr;
+  e->width = 0;
+  e->height = 0;
 }
 
 // --- pipelines & bind groups (ENC-484: triSolid render pipeline) -----------
@@ -324,15 +439,39 @@ PipelineHandle DawnDevice::createPipeline(const PipelineDesc& desc) {
 
   // Explicit bind-group layout: group 0 / binding 0 = uniform buffer, visible
   // to the vertex stage (transform) and fragment stage (color/cornerRadius).
-  wgpu::BindGroupLayoutEntry bglEntry = {};
-  bglEntry.binding = 0;
-  bglEntry.visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment;
-  bglEntry.buffer.type = wgpu::BufferBindingType::Uniform;
-  bglEntry.buffer.minBindingSize = uniformSize;
+  // ENC-491: a sampledTexture pipeline (texturedQuad@1; future SDF text) ALSO
+  // declares binding 1 = a sampled 2D float texture and binding 2 = a filtering
+  // sampler, both fragment-visible (the WGSL samples in fs_main). createBindGroup
+  // supplies the bound texture's view+sampler for those bindings.
+  std::vector<wgpu::BindGroupLayoutEntry> bglEntries;
+  {
+    wgpu::BindGroupLayoutEntry uniformEntry = {};
+    uniformEntry.binding = 0;
+    uniformEntry.visibility =
+        wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment;
+    uniformEntry.buffer.type = wgpu::BufferBindingType::Uniform;
+    uniformEntry.buffer.minBindingSize = uniformSize;
+    bglEntries.push_back(uniformEntry);
+  }
+  if (desc.sampledTexture) {
+    wgpu::BindGroupLayoutEntry texEntry = {};
+    texEntry.binding = 1;
+    texEntry.visibility = wgpu::ShaderStage::Fragment;
+    texEntry.texture.sampleType = wgpu::TextureSampleType::Float;
+    texEntry.texture.viewDimension = wgpu::TextureViewDimension::e2D;
+    texEntry.texture.multisampled = false;
+    bglEntries.push_back(texEntry);
+
+    wgpu::BindGroupLayoutEntry sampEntry = {};
+    sampEntry.binding = 2;
+    sampEntry.visibility = wgpu::ShaderStage::Fragment;
+    sampEntry.sampler.type = wgpu::SamplerBindingType::Filtering;
+    bglEntries.push_back(sampEntry);
+  }
 
   wgpu::BindGroupLayoutDescriptor bglDesc = {};
-  bglDesc.entryCount = 1;
-  bglDesc.entries = &bglEntry;
+  bglDesc.entryCount = static_cast<std::uint32_t>(bglEntries.size());
+  bglDesc.entries = bglEntries.data();
   wgpu::BindGroupLayout bgl = device_.CreateBindGroupLayout(&bglDesc);
 
   wgpu::PipelineLayoutDescriptor plDesc = {};
@@ -434,7 +573,7 @@ PipelineHandle DawnDevice::createPipeline(const PipelineDesc& desc) {
   wgpu::RenderPipeline pipeline = device_.CreateRenderPipeline(&rpd);
 
   pipelines_.push_back(PipelineEntry{std::move(pipeline), std::move(bgl),
-                                     uniformSize});
+                                     uniformSize, desc.sampledTexture});
   PipelineHandle h;
   h.id = static_cast<std::uint32_t>(pipelines_.size());  // 1-based
   return h;
@@ -474,8 +613,16 @@ BindGroupHandle DawnDevice::createBindGroup(const BindGroupDesc& desc) {
     if (!a || !b) return false;
     return std::strcmp(a, b) == 0;
   };
+  // ENC-491: capture the Sampler2D binding's texture handle (texturedQuad@1's
+  // u_texture / future SDF atlas). The texture's view+sampler are added to the
+  // bind group below when the pipeline declared a texture binding.
+  TextureHandle boundTexture{};
   for (std::size_t i = 0; i < desc.uniformCount; ++i) {
     const UniformBinding& u = desc.uniforms[i];
+    if (u.kind == UniformBinding::Kind::Sampler2D) {
+      boundTexture = u.texture;
+      continue;  // Sampler2D carries no float `data`; handled as a texture entry.
+    }
     if (!u.name || !u.data) continue;
     switch (u.kind) {
       case UniformBinding::Kind::Mat3:
@@ -506,7 +653,7 @@ BindGroupHandle DawnDevice::createBindGroup(const BindGroupDesc& desc) {
         }
         break;
       case UniformBinding::Kind::Sampler2D:
-        break;  // texture/sampler bindings: TODO(ENC-491 textured)
+        break;  // texture handle already captured above (boundTexture).
     }
   }
 
@@ -517,16 +664,36 @@ BindGroupHandle DawnDevice::createBindGroup(const BindGroupDesc& desc) {
   wgpu::Buffer uniformBuffer = device_.CreateBuffer(&ubd);
   queue_.WriteBuffer(uniformBuffer, 0, uniformData, uniformSize);
 
-  wgpu::BindGroupEntry bge = {};
-  bge.binding = 0;
-  bge.buffer = uniformBuffer;
-  bge.offset = 0;
-  bge.size = uniformSize;
+  std::vector<wgpu::BindGroupEntry> bgEntries;
+  {
+    wgpu::BindGroupEntry bge = {};
+    bge.binding = 0;
+    bge.buffer = uniformBuffer;
+    bge.offset = 0;
+    bge.size = uniformSize;
+    bgEntries.push_back(bge);
+  }
+  // ENC-491: a sampledTexture pipeline binds the texture's view (binding 1) and
+  // its sampler (binding 2). The layout was built with these entries in
+  // createPipeline; supplying them here completes the texturedQuad bind group.
+  if (pe->hasTexture) {
+    TextureEntry* te = textureAt(boundTexture);
+    if (!te || !te->view || !te->sampler) return {};  // texture not created
+    wgpu::BindGroupEntry texE = {};
+    texE.binding = 1;
+    texE.textureView = te->view;
+    bgEntries.push_back(texE);
+
+    wgpu::BindGroupEntry sampE = {};
+    sampE.binding = 2;
+    sampE.sampler = te->sampler;
+    bgEntries.push_back(sampE);
+  }
 
   wgpu::BindGroupDescriptor bgd = {};
   bgd.layout = pe->bindGroupLayout;
-  bgd.entryCount = 1;
-  bgd.entries = &bge;
+  bgd.entryCount = static_cast<std::uint32_t>(bgEntries.size());
+  bgd.entries = bgEntries.data();
   wgpu::BindGroup bindGroup = device_.CreateBindGroup(&bgd);
 
   BindGroupEntry entry;

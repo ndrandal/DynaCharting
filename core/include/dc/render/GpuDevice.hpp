@@ -265,6 +265,14 @@ struct PipelineDesc {
   // cornerRadius). Per-instance strides are unrelated to this (those live in the
   // vertex buffer layout); this is purely the uniform-block size.
   std::size_t uniformBytes{0};
+
+  // ENC-491: this pipeline samples a 2D texture (texturedQuad@1 user images; the
+  // future ENC-492 SDF glyph atlas). When true the Dawn backend's group-0
+  // bind-group layout gains a texture (binding 1) + sampler (binding 2) entry in
+  // addition to the uniform buffer (binding 0), and the matching createBindGroup
+  // call must carry a Sampler2D UniformBinding with a valid TextureHandle. The GL
+  // backend ignores this (it binds textures via glBindTexture at draw time).
+  bool sampledTexture{false};
 };
 
 /// A single uniform value to bind for a draw. Kept as a tagged union of the few
