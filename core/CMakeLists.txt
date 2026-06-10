@@ -2086,6 +2086,22 @@ if (DC_BUILD_TESTS)
     target_link_libraries(dc_d29_3_dawn_picking PRIVATE dc_gpu)
     add_test(NAME dc_d29_3_dawn_picking COMMAND dc_d29_3_dawn_picking)
 
+    # ENC-496 (P3.4) — post-process passes (D47 / D78.2) on Dawn. The LAST
+    # Phase-3 ticket: renders a scene into an offscreen render target (the ENC-495
+    # multi-target support, with the color texture now carrying TextureBinding
+    # usage), then chains fullscreen effect passes — each samples the previous
+    # pass's output texture (DawnPostProcessPass: a no-vertex-buffer fullscreen
+    # triangle from @builtin(vertex_index) + the ENC-491 sampledTexture path) and
+    # applies a builtin effect. Asserts the vignette darkens the corners (center >
+    # corner) and the blur turns a sharp edge into a gradient (intermediate edge
+    # pixel), cross-checking the GL d47_1_post_process / d47_2_blur_pass /
+    # d78_2_builtin_effects baselines. Links only dc_gpu.
+    add_executable(dc_d47_1_dawn_postprocess
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/d47_1_dawn_postprocess.cpp"
+    )
+    target_link_libraries(dc_d47_1_dawn_postprocess PRIVATE dc_gpu)
+    add_test(NAME dc_d47_1_dawn_postprocess COMMAND dc_d47_1_dawn_postprocess)
+
     # ENC-492 (P2.9) — textSDF@1 + glyph atlas upload on Dawn. The LAST Phase-2
     # pipeline: completes all 10 pipelines on WebGPU. Uploads the GlyphAtlas R8
     # SDF bitmap to a Dawn R8 texture (ENC-491 createTexture(R8) +

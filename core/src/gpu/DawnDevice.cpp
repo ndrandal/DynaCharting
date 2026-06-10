@@ -960,9 +960,15 @@ DeviceDrawStats DawnDevice::draw(BindGroupHandle group,
 
   pass_.SetBindGroup(0, bg->bindGroup);
 
-  BufferEntry* vb = bufferAt(bg->vertexBuffer);
-  if (!vb || !vb->buffer) return stats;
-  pass_.SetVertexBuffer(0, vb->buffer);
+  // ENC-496: a fullscreen post-process pass has NO vertex buffer — its three
+  // positions come from @builtin(vertex_index) in the WGSL (the pipeline declares
+  // zero vertex buffer layouts). Only bind a vertex buffer when the bind group
+  // actually carries one; otherwise issue the buffer-less Draw below.
+  if (bg->vertexBuffer.valid()) {
+    BufferEntry* vb = bufferAt(bg->vertexBuffer);
+    if (!vb || !vb->buffer) return stats;
+    pass_.SetVertexBuffer(0, vb->buffer);
+  }
 
   if (params.indexCount > 0 && bg->indexBuffer.valid()) {
     BufferEntry* ib = bufferAt(bg->indexBuffer);
@@ -1055,10 +1061,14 @@ DawnDevice::RenderTarget& DawnDevice::ensureRenderTarget(std::uint32_t id,
   td.mipLevelCount = 1;
   td.sampleCount = 1;
   // RenderAttachment so we can clear/draw into it; CopySrc so readback can
-  // copyTextureToBuffer out of it. (ENC-496 post-process will additionally OR in
-  // TextureBinding to sample a target as an input; not needed for D29.3 pick,
-  // which only reads back the pixel.)
-  td.usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::CopySrc;
+  // copyTextureToBuffer out of it; TextureBinding (ENC-496) so a fullscreen
+  // post-process pass can SAMPLE a target's color as its input. TextureBinding
+  // is harmless for the main (id 0) and pick (id 1) targets — they simply never
+  // get sampled — so OR-ing it in unconditionally keeps the id 0/1 semantics
+  // intact while enabling the post-process render-to-texture chain (id >= 2 are
+  // the scene/intermediate targets the stack samples).
+  td.usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::CopySrc |
+             wgpu::TextureUsage::TextureBinding;
 
   rt.colorTexture = device_.CreateTexture(&td);
   rt.colorView = rt.colorTexture.CreateView();
@@ -1085,6 +1095,47 @@ DawnDevice::RenderTarget& DawnDevice::ensureRenderTarget(std::uint32_t id,
   rt.w = w;
   rt.h = h;
   return rt;
+}
+
+// ENC-496 (P3.4) — expose a render target's color texture as a sampleable
+// TextureHandle. The target's color texture already carries TextureBinding usage
+// (ensureRenderTarget), so we just wrap its existing view + a fresh sampler in a
+// TextureEntry (the same struct createTexture builds), and return a handle into
+// textures_. A fullscreen post-process pass then binds this handle as its input
+// (ENC-491 Sampler2D path). NOTE: the entry borrows the target's view (it does
+// not own the wgpu::Texture); the entry's `texture` member is left null so
+// destroyTexture won't try to Destroy() a target-owned texture, and the target's
+// own lifetime (targets_) keeps the view alive.
+TextureHandle DawnDevice::textureForRenderTarget(std::uint32_t id,
+                                                 TextureFilter filter) {
+  RenderTarget* rt = targetAt(id);
+  if (!rt || !rt->colorView) return {};
+
+  const wgpu::FilterMode wfilter = (filter == TextureFilter::Nearest)
+                                       ? wgpu::FilterMode::Nearest
+                                       : wgpu::FilterMode::Linear;
+  wgpu::SamplerDescriptor sd = {};
+  sd.label = "dc_rt_sampler";
+  sd.addressModeU = wgpu::AddressMode::ClampToEdge;
+  sd.addressModeV = wgpu::AddressMode::ClampToEdge;
+  sd.addressModeW = wgpu::AddressMode::ClampToEdge;
+  sd.magFilter = wfilter;
+  sd.minFilter = wfilter;
+  sd.mipmapFilter = wgpu::MipmapFilterMode::Nearest;
+
+  TextureEntry entry;
+  // entry.texture intentionally left null — the target owns the wgpu::Texture.
+  entry.view = rt->colorView;  // borrowed (ref-counted) handle to the target view
+  entry.sampler = device_.CreateSampler(&sd);
+  entry.width = rt->w;
+  entry.height = rt->h;
+  entry.bytesPerPixel = 4;
+  entry.format = wgpu::TextureFormat::RGBA8Unorm;
+  textures_.push_back(std::move(entry));
+
+  TextureHandle h;
+  h.id = static_cast<std::uint32_t>(textures_.size());  // 1-based
+  return h;
 }
 
 // --- render pass -----------------------------------------------------------

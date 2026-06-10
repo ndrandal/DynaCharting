@@ -113,6 +113,20 @@ class DawnDevice final : public GpuDevice {
   bool readBuffer(BufferHandle buf, std::size_t offsetBytes, std::size_t bytes,
                   std::uint8_t* out);
 
+  // ENC-496 (P3.4) — wrap a render target's color texture as a SAMPLEABLE
+  // TextureHandle so a fullscreen post-process pass can sample it as the input
+  // of the next pass. The ENC-495 RenderTarget color texture now carries
+  // TextureBinding usage (see ensureRenderTarget), so its view can be bound to a
+  // sampledTexture pipeline (ENC-491 binding 1 + a sampler at binding 2). This
+  // returns a TextureHandle whose TextureEntry references the target's existing
+  // color view plus a freshly-created sampler (filter from `filter`); it does NOT
+  // copy or re-create the texture. Returns a null handle if the target `id` has
+  // not been created (call beginRenderPass on it first). The post-process stack
+  // ensures the scene/intermediate targets exist (by rendering into them), then
+  // feeds target N's color into pass N+1's bind group via this handle.
+  TextureHandle textureForRenderTarget(std::uint32_t id,
+                                       TextureFilter filter = TextureFilter::Linear);
+
  private:
   // ENC-495 (D29.3) — multi-target render-to-texture.
   //
