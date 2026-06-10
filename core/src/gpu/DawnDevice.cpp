@@ -461,14 +461,20 @@ BindGroupHandle DawnDevice::createBindGroup(const BindGroupDesc& desc) {
   // implicit padding:
   //   bytes  0..47  : c0/c1/c2  — three mat3 columns, each a vec4 (xyz used)
   //   bytes 48..63  : color     — vec4 (rgba)
-  //   bytes 64..71  : viewport  — vec2 (px width/height)   [instanced rect]
+  //   bytes 64..71  : viewport  — vec2 (px width/height)   [instanced rect/lineAA]
   //   bytes 72..75  : cornerRadius — f32                   [instanced rect]
-  //   bytes 76..79  : padding   — f32 (pad the block to 80 / 16-aligned)
+  //   bytes 76..79  : lineWidth  — f32 (clip units)        [lineAA]   (ENC-490)
+  //   bytes 80..83  : aaWidth    — f32 (clip units)        [lineAA]   (ENC-490)
+  //   bytes 84..87  : fringeEdge — f32 (v_dist space)      [lineAA]   (ENC-490)
+  //   bytes 88..91  : dashLen    — f32 (px)                [lineAA]   (ENC-490)
+  //   bytes 92..95  : gapLen     — f32 (px)                [lineAA]   (ENC-490)
   // The host mat3 is column-major 9 floats (Transform.mat3 — col0 = {m0,m1,m2},
   // col1 = {m3,m4,m5}, col2 = {m6,m7,m8}). Non-instanced pipelines pass only
   // u_transform (+ optional color) and leave the tail zero; their pipelines use
-  // a 64-byte block so the tail isn't even allocated.
-  constexpr std::size_t kMaxUniformFloats = 20;  // 80 bytes / 4
+  // a 64-byte block so the tail isn't even allocated. cornerRadius (rect, byte
+  // 72) and the lineAA tail (bytes 76..95) share the same flat float block but
+  // never coexist in one pipeline's WGSL struct, so the slots are disjoint.
+  constexpr std::size_t kMaxUniformFloats = 24;  // 96 bytes / 4
   float uniformData[kMaxUniformFloats] = {0};
   auto nameIs = [](const char* a, const char* b) {
     if (!a || !b) return false;
@@ -500,9 +506,22 @@ BindGroupHandle DawnDevice::createBindGroup(const BindGroupDesc& desc) {
         uniformData[17] = u.data[1];
         break;
       case UniformBinding::Kind::Float:
-        // u_cornerRadius at byte 72 (float index 18).
+        // u_cornerRadius at byte 72 (float index 18) [instancedRect].
+        // ENC-490 lineAA float tail: lineWidth/aaWidth/fringeEdge/dashLen/gapLen
+        // at float indices 19..23 (bytes 76..95). Disjoint from cornerRadius —
+        // no pipeline declares both.
         if (nameIs(u.name, "u_cornerRadius")) {
           uniformData[18] = u.data[0];
+        } else if (nameIs(u.name, "u_lineWidth")) {
+          uniformData[19] = u.data[0];
+        } else if (nameIs(u.name, "u_aaWidth")) {
+          uniformData[20] = u.data[0];
+        } else if (nameIs(u.name, "u_fringeEdge")) {
+          uniformData[21] = u.data[0];
+        } else if (nameIs(u.name, "u_dashLen")) {
+          uniformData[22] = u.data[0];
+        } else if (nameIs(u.name, "u_gapLen")) {
+          uniformData[23] = u.data[0];
         }
         break;
       case UniformBinding::Kind::Sampler2D:
