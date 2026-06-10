@@ -13,6 +13,7 @@ DynaCharting is a high-performance real-time charting engine intended as an embe
 - **`core/`** — C++17 static libraries (`dc` and `dc_gl`). Scene graph, command processor, resource registry, pipeline catalog, and GL rendering backend. This is where most new work happens. Built with CMake.
   - `dc` — Pure C++ core (no GL deps). Scene graph, commands, pipelines.
   - `dc_gl` — OpenGL rendering backend. Links against `dc`, GLAD, and OSMesa. Contains `GlContext`, `OsMesaContext`, `ShaderProgram`, `GpuBufferManager`, `Renderer`.
+  - `dc_gpu` — WebGPU/Dawn rendering backend (scaffold, OFF by default). Built only with `-DDC_FETCH_DAWN=ON`; links `dc` and `dawn::webgpu_dawn`. See the WebGPU/Dawn section under Build & Development Commands.
 - **`packages/engine-host/`** — TypeScript WebGL2 rendering host (`@repo/engine-host`). Prototype renderer — reference implementation for pipeline specs, glyph atlas, data ingestion.
 - **`packages/chart-controller/`** — High-level chart API (`@repo/chart-controller`). Recipe lifecycle and transform management. Depends on engine-host.
 - **`apps/demos/hello-engine/`** — Vite demo app. Useful as a reference for how the pieces connect.
@@ -35,9 +36,27 @@ ctest --test-dir build                               # run all C++ tests
 ctest --test-dir build -R dc_d1_1_smoke              # run a single test by name
 ```
 
-CMake options: `DC_BUILD_TESTS` (default ON), `DC_WARNINGS_AS_ERRORS` (default OFF).
+CMake options: `DC_BUILD_TESTS` (default ON), `DC_WARNINGS_AS_ERRORS` (default OFF), `DC_FETCH_DAWN` (default OFF — see below).
 
 **Note:** Third-party deps (RapidJSON, GLAD) need to be present under `./third_party` (or path set via `-DTHIRD_PARTY_ROOT`). OSMesa (`libosmesa6-dev`) must be installed for `dc_gl` and the D2.1 render test. If OSMesa is not found, `dc_gl` is gracefully skipped.
+
+### WebGPU / Dawn backend (`dc_gpu`)
+
+The WebGPU/Dawn rendering backend (`dc_gpu`) is **OFF by default**. Normal `dc` / `dc_gl` builds and CI for other tickets are completely unaffected unless you explicitly opt in.
+
+Enable Dawn (fetches and builds it from source via CMake `FetchContent`):
+
+```bash
+cmake -B build-dawn -DTHIRD_PARTY_ROOT=./third_party -DDC_FETCH_DAWN=ON
+cmake --build build-dawn --target dc_gpu -j$(nproc)
+```
+
+- **Pinned Dawn revision:** commit `58263faefe3c52fac4656825c6d55f85ee3c7536` — the immutable tip of branch `chromium/7880` as of **2026-06-09**. We pin an explicit commit hash (never a moving branch) for reproducibility. Update this hash deliberately when bumping Dawn.
+- **Source:** `https://dawn.googlesource.com/dawn`. Dawn's own dependencies are fetched with its `fetch_dawn_dependencies.py` helper (`DAWN_FETCH_DEPENDENCIES=ON`), so `depot_tools` is **not** required.
+- **Build cost (heads-up):** build-from-source is **slow** — the first configure clones ~3-4 GB of Dawn + its third-party deps, and a full compile takes **30-60+ minutes** and needs `python3` and `ninja`. Subsequent incremental builds are fast. The full Dawn build is validated in CI (ENC-499).
+- **Lean build:** Dawn samples, tests, benchmarks, fuzzers, node bindings, install rules, and Tint command-line tools/tests are all disabled. Dawn is built as a single monolithic static library.
+- **Linked target:** `dc_gpu` links the Dawn monolithic WebGPU target `dawn::webgpu_dawn` (alias of `webgpu_dawn`) plus `dc`. When `DC_FETCH_DAWN=OFF` (or Dawn is unavailable), `DC_HAS_DAWN` is FALSE and `dc_gpu` is gracefully skipped — exactly like the OSMesa/GLFW/`dc_gl` skip behavior.
+- `dc_gpu` currently contains only a placeholder translation unit (`core/src/gpu/placeholder.cpp`) and a public header (`core/include/gpu/Gpu.hpp`); the real backend lands in later P0/P1 tickets.
 
 ## Architecture
 
