@@ -600,14 +600,21 @@ BindGroupHandle DawnDevice::createBindGroup(const BindGroupDesc& desc) {
   // implicit padding:
   //   bytes  0..47  : c0/c1/c2  — three mat3 columns, each a vec4 (xyz used)
   //   bytes 48..63  : color     — vec4 (rgba)
-  //   bytes 64..71  : viewport  — vec2 (px width/height)   [instanced rect]
+  //   bytes 64..71  : viewport  — vec2 (px width/height)   [instanced rect/lineAA]
   //   bytes 72..75  : cornerRadius — f32                   [instanced rect]
-  //   bytes 76..79  : padding   — f32 (pad the block to 80 / 16-aligned)
+  //   bytes 76..79  : lineWidth  — f32 (clip units)        [lineAA]   (ENC-490)
+  //   bytes 80..83  : aaWidth    — f32 (clip units)        [lineAA]   (ENC-490)
+  //   bytes 84..87  : fringeEdge — f32 (v_dist space)      [lineAA]   (ENC-490)
+  //   bytes 88..91  : dashLen    — f32 (px)                [lineAA]   (ENC-490)
+  //   bytes 92..95  : gapLen     — f32 (px)                [lineAA]   (ENC-490)
   // The host mat3 is column-major 9 floats (Transform.mat3 — col0 = {m0,m1,m2},
   // col1 = {m3,m4,m5}, col2 = {m6,m7,m8}). Non-instanced pipelines pass only
   // u_transform (+ optional color) and leave the tail zero; their pipelines use
-  // a 64-byte block so the tail isn't even allocated.
-  constexpr std::size_t kMaxUniformFloats = 24;  // 96 bytes / 4 (ENC-489 candle)
+  // a 64-byte block so the tail isn't even allocated. cornerRadius (rect),
+  // wickHalf (candle), and the lineAA tail (lineWidth/aaWidth/fringeEdge/dashLen/
+  // gapLen) share this flat 96-byte float block but never coexist in one
+  // pipeline's WGSL struct, so overlapping slots are safe.
+  constexpr std::size_t kMaxUniformFloats = 24;  // 96 bytes / 4
   float uniformData[kMaxUniformFloats] = {0};
   auto nameIs = [](const char* a, const char* b) {
     if (!a || !b) return false;
@@ -655,15 +662,28 @@ BindGroupHandle DawnDevice::createBindGroup(const BindGroupDesc& desc) {
         uniformData[17] = u.data[1];
         break;
       case UniformBinding::Kind::Float:
+        // u_wickHalf (candle, float 20), u_cornerRadius (rect, float 18), and the
+        // lineAA tail (lineWidth/aaWidth/fringeEdge/dashLen/gapLen, floats 19..23)
+        // share this flat block but never coexist in one pipeline's WGSL struct,
+        // so overlapping slots (e.g. wickHalf@20 vs aaWidth@20) are safe.
         if (nameIs(u.name, "u_wickHalf")) {
-          // ENC-489 (instancedCandle): wick half-width (clip space) in its own
-          // dedicated field at byte 80 (float index 20), past the two color
-          // vec4s. Passed through a real uniform field so it survives bind-group
-          // packing (not smuggled into a mat3 padding lane).
+          // ENC-489 (instancedCandle): wick half-width (clip space), dedicated
+          // field at byte 80 (float index 20) — survives bind-group packing
+          // (not smuggled into a mat3 padding lane).
           uniformData[20] = u.data[0];
         } else if (nameIs(u.name, "u_cornerRadius")) {
           // u_cornerRadius at byte 72 (float index 18) — instancedRect.
           uniformData[18] = u.data[0];
+        } else if (nameIs(u.name, "u_lineWidth")) {
+          uniformData[19] = u.data[0];
+        } else if (nameIs(u.name, "u_aaWidth")) {
+          uniformData[20] = u.data[0];
+        } else if (nameIs(u.name, "u_fringeEdge")) {
+          uniformData[21] = u.data[0];
+        } else if (nameIs(u.name, "u_dashLen")) {
+          uniformData[22] = u.data[0];
+        } else if (nameIs(u.name, "u_gapLen")) {
+          uniformData[23] = u.data[0];
         }
         break;
       case UniformBinding::Kind::Sampler2D:

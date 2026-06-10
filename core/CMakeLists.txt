@@ -2022,5 +2022,19 @@ if (DC_BUILD_TESTS)
     )
     target_link_libraries(dc_d14_6_dawn_candle PRIVATE dc_gpu)
     add_test(NAME dc_d14_6_dawn_candle COMMAND dc_d14_6_dawn_candle)
+
+    # ENC-490 (P2.7) — lineAA@1 (anti-aliased thick lines) + dash patterns
+    # (D28.1) on Dawn. Quad-expands each segment into a thick AA quad in the
+    # vertex shader and does AA coverage falloff + dash on/off in the fragment
+    # shader (WebGPU has no native line width). Renders a solid thick AA line and
+    # a dashed line through the backend registry with DeviceKind::Dawn into the
+    # headless DawnDevice, reads back, and asserts line-center color, AA-edge
+    # fade, and dash on/off segments (vs the GL d28_1_dashed_lines / d10_6_aa_lines
+    # baselines). Links only dc_gpu.
+    add_executable(dc_d28_1_dawn_lineaa
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/d28_1_dawn_lineaa.cpp"
+    )
+    target_link_libraries(dc_d28_1_dawn_lineaa PRIVATE dc_gpu)
+    add_test(NAME dc_d28_1_dawn_lineaa COMMAND dc_d28_1_dawn_lineaa)
   endif()
 endif()
