@@ -2073,6 +2073,19 @@ if (DC_BUILD_TESTS)
     target_link_libraries(dc_d29_2_dawn_clipping PRIVATE dc_gpu)
     add_test(NAME dc_d29_2_dawn_clipping COMMAND dc_d29_2_dawn_clipping)
 
+    # ENC-495 (P3.3) — GPU color-ID picking (D29.3) on Dawn. Renders each
+    # pickable DrawItem's id as a unique RGB color into a SEPARATE offscreen pick
+    # target (DawnDevice multi-target support), reads back the probed pixel and
+    # decodes the id (cross-checks the GL d29_3_gpu_picking / d41_2_texquad_pick
+    # baselines). Asserts a hit decodes to the right id, a clear pixel decodes to
+    # 0, distinct items decode to distinct ids, and a GeometryClicked event fires
+    # on hit. Links only dc_gpu.
+    add_executable(dc_d29_3_dawn_picking
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/d29_3_dawn_picking.cpp"
+    )
+    target_link_libraries(dc_d29_3_dawn_picking PRIVATE dc_gpu)
+    add_test(NAME dc_d29_3_dawn_picking COMMAND dc_d29_3_dawn_picking)
+
     # ENC-492 (P2.9) — textSDF@1 + glyph atlas upload on Dawn. The LAST Phase-2
     # pipeline: completes all 10 pipelines on WebGPU. Uploads the GlyphAtlas R8
     # SDF bitmap to a Dawn R8 texture (ENC-491 createTexture(R8) +

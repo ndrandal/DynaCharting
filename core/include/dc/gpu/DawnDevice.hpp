@@ -37,6 +37,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace dc {
@@ -113,8 +114,40 @@ class DawnDevice final : public GpuDevice {
                   std::uint8_t* out);
 
  private:
-  // Lazily (re)create the offscreen RGBA8Unorm color target at (w, h).
-  void ensureRenderTarget(std::uint32_t w, std::uint32_t h);
+  // ENC-495 (D29.3) — multi-target render-to-texture.
+  //
+  // ENC-480/494 keyed a SINGLE offscreen color+stencil target on (w,h) and
+  // beginRenderPass always rendered into it. D29.3 GPU picking needs a SEPARATE
+  // offscreen color target (the pick buffer) so the pick pass — which draws each
+  // DrawItem's id as a flat RGB color — does not clobber the visible main target.
+  //
+  // ensureRenderTarget/beginRenderPass now branch on RenderTargetHandle::id:
+  //   * id 0  -> the main target (the visible/backbuffer-equivalent framebuffer),
+  //              co-allocated with a Stencil8 attachment for the D29.2 clip mask.
+  //   * id !=0 -> a distinct render-to-texture target (id 1 == the pick buffer).
+  // Each target is RGBA8Unorm (RenderAttachment|CopySrc, so readPixel can copy
+  // out of it) + a co-sized Stencil8 attachment (so every pipeline variant's
+  // DepthStencilState has a stencil to attach, even when the target never clips).
+  //
+  // Targets are cached by id and recreated on resize. readPixel reads back from
+  // the target bound by the most recent beginRenderPass (activeTarget_), so the
+  // Renderer's pick path reads the pick buffer, not the main one. This is the
+  // render-to-texture foundation ENC-496 (post-process) reuses: a post pass can
+  // render the scene into a non-zero target, then sample it as a texture.
+  struct RenderTarget {
+    wgpu::Texture colorTexture;
+    wgpu::TextureView colorView;
+    wgpu::Texture stencilTexture;
+    wgpu::TextureView stencilView;
+    std::uint32_t w{0};
+    std::uint32_t h{0};
+  };
+
+  // Lazily (re)create the offscreen color+stencil target `id` at (w, h) and
+  // return it. id 0 is the main target; non-zero ids are extra render-to-texture
+  // targets (id 1 == the D29.3 pick buffer). Recreated on resize.
+  RenderTarget& ensureRenderTarget(std::uint32_t id, std::uint32_t w,
+                                   std::uint32_t h);
 
   // Pump instance.ProcessEvents() (and tick the device) until *done is true.
   // The blocking primitive behind the synchronous readback.
@@ -133,18 +166,17 @@ class DawnDevice final : public GpuDevice {
   wgpu::Device device_;
   wgpu::Queue queue_;
 
-  // Offscreen color target (the headless framebuffer). Recreated on resize.
-  wgpu::Texture colorTexture_;
-  wgpu::TextureView colorView_;
-  // ENC-494 (D29.2) — depth-stencil target for the two-pass stencil clip mask.
-  // A Stencil8 attachment co-sized with the color target; the clip-source pass
-  // writes ref=1 into it (compare Always, passOp Replace) and the clipped pass
-  // reads it (compare Equal, ref=1). Created lazily alongside the color target
-  // in ensureRenderTarget; the render pass attaches it (with the per-pane
-  // stencil clear, matching GL's GL_STENCIL_BUFFER_BIT clear). Recreated on
-  // resize together with the color target.
-  wgpu::Texture stencilTexture_;
-  wgpu::TextureView stencilView_;
+  // ENC-495: the offscreen targets, keyed by RenderTargetHandle::id. The main
+  // target (id 0) is the headless framebuffer (ENC-480); id 1 is the D29.3 pick
+  // buffer. Each carries its own RGBA8Unorm color + Stencil8 attachment (the
+  // D29.2 clip mask). Recreated on resize. A small flat vector (only a couple of
+  // targets ever exist) keyed by id keeps lookup trivial.
+  std::vector<std::pair<std::uint32_t, RenderTarget>> targets_;
+  RenderTarget* targetAt(std::uint32_t id);
+
+  // The target bound by the most recent beginRenderPass — readPixel reads back
+  // from it (so the pick path reads the pick buffer, not the main target).
+  std::uint32_t activeTarget_{0};
   std::uint32_t targetW_{0};
   std::uint32_t targetH_{0};
 

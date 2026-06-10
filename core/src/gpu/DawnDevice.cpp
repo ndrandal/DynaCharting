@@ -7,6 +7,7 @@
 #include "dc/gpu/DawnDevice.hpp"
 
 #include <cstring>
+#include <utility>
 #include <vector>
 
 namespace dc {
@@ -54,10 +55,7 @@ DawnDevice::~DawnDevice() {
   pipelines_.clear();
   textures_.clear();  // ENC-491
   buffers_.clear();
-  colorView_ = nullptr;
-  colorTexture_ = nullptr;
-  stencilView_ = nullptr;     // ENC-494
-  stencilTexture_ = nullptr;  // ENC-494
+  targets_.clear();  // ENC-495: releases every target's color/stencil resources
   queue_ = nullptr;
   device_ = nullptr;
 }
@@ -1022,22 +1020,48 @@ DeviceDrawStats DawnDevice::drawInstanced(BindGroupHandle group,
 
 // --- render target ---------------------------------------------------------
 
-void DawnDevice::ensureRenderTarget(std::uint32_t w, std::uint32_t h) {
-  if (colorTexture_ && targetW_ == w && targetH_ == h) return;
+DawnDevice::RenderTarget* DawnDevice::targetAt(std::uint32_t id) {
+  for (auto& kv : targets_) {
+    if (kv.first == id) return &kv.second;
+  }
+  return nullptr;
+}
+
+DawnDevice::RenderTarget& DawnDevice::ensureRenderTarget(std::uint32_t id,
+                                                         std::uint32_t w,
+                                                         std::uint32_t h) {
+  // ENC-495: look up (or create) the target slot keyed by RenderTargetHandle id.
+  RenderTarget* existing = targetAt(id);
+  if (existing && existing->colorTexture && existing->w == w &&
+      existing->h == h) {
+    return *existing;
+  }
+  if (!existing) {
+    targets_.emplace_back(id, RenderTarget{});
+    existing = &targets_.back().second;
+  }
+  RenderTarget& rt = *existing;
+
+  // Label by id so captures distinguish the main target (0) from the pick
+  // buffer (1) and any future render-to-texture target (ENC-496 post-process).
+  const char* colorLabel =
+      (id == 0) ? "dc_offscreen_color" : "dc_offscreen_color_aux";
 
   wgpu::TextureDescriptor td = {};
-  td.label = "dc_offscreen_color";
+  td.label = colorLabel;
   td.dimension = wgpu::TextureDimension::e2D;
   td.size = {w, h, 1};
   td.format = wgpu::TextureFormat::RGBA8Unorm;
   td.mipLevelCount = 1;
   td.sampleCount = 1;
   // RenderAttachment so we can clear/draw into it; CopySrc so readback can
-  // copyTextureToBuffer out of it.
+  // copyTextureToBuffer out of it. (ENC-496 post-process will additionally OR in
+  // TextureBinding to sample a target as an input; not needed for D29.3 pick,
+  // which only reads back the pixel.)
   td.usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::CopySrc;
 
-  colorTexture_ = device_.CreateTexture(&td);
-  colorView_ = colorTexture_.CreateView();
+  rt.colorTexture = device_.CreateTexture(&td);
+  rt.colorView = rt.colorTexture.CreateView();
 
   // ENC-494 (D29.2): co-sized Stencil8 depth-stencil target for the two-pass
   // stencil clip mask. RenderAttachment only (it's never copied/read back — the
@@ -1045,6 +1069,8 @@ void DawnDevice::ensureRenderTarget(std::uint32_t w, std::uint32_t h) {
   // resize. Every pipeline drawn into the pass declares this same Stencil8
   // format in its DepthStencilState (see pipelineVariant); the pass clears it
   // per-pane on beginRenderPass (matching GL's GL_STENCIL_BUFFER_BIT clear).
+  // Each target gets its own stencil so the pick pass and main pass never share
+  // a clip mask.
   wgpu::TextureDescriptor sd = {};
   sd.label = "dc_offscreen_stencil";
   sd.dimension = wgpu::TextureDimension::e2D;
@@ -1053,11 +1079,12 @@ void DawnDevice::ensureRenderTarget(std::uint32_t w, std::uint32_t h) {
   sd.mipLevelCount = 1;
   sd.sampleCount = 1;
   sd.usage = wgpu::TextureUsage::RenderAttachment;
-  stencilTexture_ = device_.CreateTexture(&sd);
-  stencilView_ = stencilTexture_.CreateView();
+  rt.stencilTexture = device_.CreateTexture(&sd);
+  rt.stencilView = rt.stencilTexture.CreateView();
 
-  targetW_ = w;
-  targetH_ = h;
+  rt.w = w;
+  rt.h = h;
+  return rt;
 }
 
 // --- render pass -----------------------------------------------------------
@@ -1065,12 +1092,17 @@ void DawnDevice::ensureRenderTarget(std::uint32_t w, std::uint32_t h) {
 void DawnDevice::beginRenderPass(const RenderPassDesc& desc) {
   const std::uint32_t w = desc.viewportWidth;
   const std::uint32_t h = desc.viewportHeight;
-  ensureRenderTarget(w, h);
+  // ENC-495: render into the target keyed by desc.target.id (0 == main; 1 ==
+  // pick buffer). readPixel reads back from this same target.
+  activeTarget_ = desc.target.id;
+  RenderTarget& rt = ensureRenderTarget(activeTarget_, w, h);
+  targetW_ = w;
+  targetH_ = h;
 
   encoder_ = device_.CreateCommandEncoder();
 
   wgpu::RenderPassColorAttachment color = {};
-  color.view = colorView_;
+  color.view = rt.colorView;
   color.loadOp = desc.clear ? wgpu::LoadOp::Clear : wgpu::LoadOp::Load;
   color.storeOp = wgpu::StoreOp::Store;
   color.clearValue = wgpu::Color{desc.clearColor[0], desc.clearColor[1],
@@ -1086,7 +1118,7 @@ void DawnDevice::beginRenderPass(const RenderPassDesc& desc) {
   // depth clear value is irrelevant. storeOp = Store so the mask written by the
   // source pass survives for the clipped pass within the same render pass.
   wgpu::RenderPassDepthStencilAttachment stencil = {};
-  stencil.view = stencilView_;
+  stencil.view = rt.stencilView;
   const bool clearStencil = desc.clear && desc.clearStencil;
   stencil.stencilLoadOp = clearStencil ? wgpu::LoadOp::Clear : wgpu::LoadOp::Load;
   stencil.stencilStoreOp = wgpu::StoreOp::Store;
@@ -1186,7 +1218,11 @@ void DawnDevice::waitUntil(const bool* done) {
 void DawnDevice::readPixel(std::int32_t x, std::int32_t y,
                            std::uint8_t* outRgba) {
   outRgba[0] = outRgba[1] = outRgba[2] = outRgba[3] = 0;
-  if (!colorTexture_) return;
+  // ENC-495: read back from the target bound by the most recent beginRenderPass
+  // (activeTarget_) — so the D29.3 pick path reads the pick buffer, not the main
+  // target.
+  RenderTarget* rt = targetAt(activeTarget_);
+  if (!rt || !rt->colorTexture) return;
 
   // WebGPU requires bytesPerRow to be a multiple of 256. We read the whole
   // target so the center pixel can be located after mapping; one padded row is
@@ -1207,7 +1243,7 @@ void DawnDevice::readPixel(std::int32_t x, std::int32_t y,
   // Copy the offscreen texture into the readback buffer.
   wgpu::CommandEncoder enc = device_.CreateCommandEncoder();
   wgpu::TexelCopyTextureInfo src = {};
-  src.texture = colorTexture_;
+  src.texture = rt->colorTexture;
   src.mipLevel = 0;
   src.origin = {0, 0, 0};
   src.aspect = wgpu::TextureAspect::All;
