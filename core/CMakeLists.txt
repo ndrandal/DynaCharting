@@ -2036,5 +2036,29 @@ if (DC_BUILD_TESTS)
     )
     target_link_libraries(dc_d28_1_dawn_lineaa PRIVATE dc_gpu)
     add_test(NAME dc_d28_1_dawn_lineaa COMMAND dc_d28_1_dawn_lineaa)
+
+    # ENC-492 (P2.9) — textSDF@1 + glyph atlas upload on Dawn. The LAST Phase-2
+    # pipeline: completes all 10 pipelines on WebGPU. Uploads the GlyphAtlas R8
+    # SDF bitmap to a Dawn R8 texture (ENC-491 createTexture(R8) +
+    # queue.WriteTexture, re-uploaded on atlas-dirty, mirroring the GL
+    # uploadAtlasIfDirty) and samples it in the SDF shader; the fragment
+    # reconstructs the SDF coverage alpha (smoothstep around the 0.5 isoline) so
+    # the text edges are crisp + anti-aliased, composited by the default Normal
+    # blend. Renders "Hi" glyphs through the backend registry with
+    # DeviceKind::Dawn into the headless DawnDevice, reads back, and asserts glyph
+    # stroke pixels are the text color (SDF alpha ~1 inside), background/outside
+    # pixels clear, and the SDF edge produces partial-coverage (anti-aliased)
+    # pixels (vs the GL d3_3_text_sdf semantics). Needs the test font. Links only
+    # dc_gpu (GlyphAtlas lives in dc, which dc_gpu links).
+    if (EXISTS "${DC_TEST_FONT}")
+      add_executable(dc_d3_3_dawn_text_sdf
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/d3_3_dawn_text_sdf.cpp"
+      )
+      target_link_libraries(dc_d3_3_dawn_text_sdf PRIVATE dc_gpu)
+      target_compile_definitions(dc_d3_3_dawn_text_sdf PRIVATE
+        FONT_PATH="${DC_TEST_FONT}"
+      )
+      add_test(NAME dc_d3_3_dawn_text_sdf COMMAND dc_d3_3_dawn_text_sdf)
+    endif()
   endif()
 endif()
