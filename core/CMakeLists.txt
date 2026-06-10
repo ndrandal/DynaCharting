@@ -2125,5 +2125,28 @@ if (DC_BUILD_TESTS)
       )
       add_test(NAME dc_d3_3_dawn_text_sdf COMMAND dc_d3_3_dawn_text_sdf)
     endif()
+
+    # ENC-509 (P5.0a) — DawnSceneRenderer: full scene-walk dispatch on Dawn. The
+    # reusable Dawn mirror of GL Renderer::render: a single DawnSceneRenderer owns
+    # a DawnDevice + all 10 Dawn pipeline backends and walks a whole multi-pipeline
+    # Scene (built via CommandProcessor JSON) into the headless offscreen target,
+    # dispatching every DrawItem through the backend registry (clear, per-pane
+    # scissor, per-item frustum-cull + blend + clip + transform). Renders a
+    # triSolid triangle + an instancedRect + a line2d (+ optional textSDF "Hi" when
+    # the test font is present) in ONE render() call, reads back, and asserts each
+    # element lands at its expected location/color with clear gaps between them —
+    # proving the full walk dispatches every pipeline class. The keystone for
+    # ENC-510 (conformance) / ENC-500 (cutover). Links only dc_gpu (which links dc
+    # for Scene/CommandProcessor/GlyphAtlas).
+    add_executable(dc_d50_dawn_scene_renderer
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/d50_dawn_scene_renderer.cpp"
+    )
+    target_link_libraries(dc_d50_dawn_scene_renderer PRIVATE dc_gpu)
+    if (EXISTS "${DC_TEST_FONT}")
+      target_compile_definitions(dc_d50_dawn_scene_renderer PRIVATE
+        FONT_PATH="${DC_TEST_FONT}"
+      )
+    endif()
+    add_test(NAME dc_d50_dawn_scene_renderer COMMAND dc_d50_dawn_scene_renderer)
   endif()
 endif()
