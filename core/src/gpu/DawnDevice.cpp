@@ -468,7 +468,7 @@ BindGroupHandle DawnDevice::createBindGroup(const BindGroupDesc& desc) {
   // col1 = {m3,m4,m5}, col2 = {m6,m7,m8}). Non-instanced pipelines pass only
   // u_transform (+ optional color) and leave the tail zero; their pipelines use
   // a 64-byte block so the tail isn't even allocated.
-  constexpr std::size_t kMaxUniformFloats = 20;  // 80 bytes / 4
+  constexpr std::size_t kMaxUniformFloats = 24;  // 96 bytes / 4 (ENC-489 candle)
   float uniformData[kMaxUniformFloats] = {0};
   auto nameIs = [](const char* a, const char* b) {
     if (!a || !b) return false;
@@ -488,20 +488,34 @@ BindGroupHandle DawnDevice::createBindGroup(const BindGroupDesc& desc) {
         }
         break;
       case UniformBinding::Kind::Vec4:
-        // The color vec4 lives at byte 48 (float index 12).
-        uniformData[12] = u.data[0];
-        uniformData[13] = u.data[1];
-        uniformData[14] = u.data[2];
-        uniformData[15] = u.data[3];
+        if (nameIs(u.name, "u_colorDown")) {
+          // ENC-489 (instancedCandle): second color vec4 at byte 64 (float 16).
+          uniformData[16] = u.data[0];
+          uniformData[17] = u.data[1];
+          uniformData[18] = u.data[2];
+          uniformData[19] = u.data[3];
+        } else {
+          // The primary color vec4 (u_color / u_colorUp) at byte 48 (float 12).
+          uniformData[12] = u.data[0];
+          uniformData[13] = u.data[1];
+          uniformData[14] = u.data[2];
+          uniformData[15] = u.data[3];
+        }
         break;
       case UniformBinding::Kind::Vec2:
-        // u_viewportSize at byte 64 (float index 16).
+        // u_viewportSize at byte 64 (float index 16) — instancedRect.
         uniformData[16] = u.data[0];
         uniformData[17] = u.data[1];
         break;
       case UniformBinding::Kind::Float:
-        // u_cornerRadius at byte 72 (float index 18).
-        if (nameIs(u.name, "u_cornerRadius")) {
+        if (nameIs(u.name, "u_wickHalf")) {
+          // ENC-489 (instancedCandle): wick half-width (clip space) in its own
+          // dedicated field at byte 80 (float index 20), past the two color
+          // vec4s. Passed through a real uniform field so it survives bind-group
+          // packing (not smuggled into a mat3 padding lane).
+          uniformData[20] = u.data[0];
+        } else if (nameIs(u.name, "u_cornerRadius")) {
+          // u_cornerRadius at byte 72 (float index 18) — instancedRect.
           uniformData[18] = u.data[0];
         }
         break;
