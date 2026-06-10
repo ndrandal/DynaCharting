@@ -1,25 +1,23 @@
-// ENC-500 (P5.1) — JsonHost-via-Dawn conformance + streaming perf sweep.
+// ENC-501 (P5 cutover) — Dawn-only JsonHost golden conformance + streaming sweep.
 //
-// Proves the cutover: drives the EXACT JsonHost embedding pipeline
-// (parseSceneDocument -> SceneReconciler -> IngestProcessor -> buffer store ->
-// render -> readback) end-to-end on BOTH backends and asserts the Dawn readback
-// matches the GL readback within the parity tolerance (reusing the parity diff /
-// row-flip convention from parity_harness.hpp). This is the same render path
-// core/src/host/JsonHost.cpp takes — the only difference between the two passes
-// here is the backend (GL Renderer + GpuBufferManager + OSMesa readback vs
-// DawnSceneRenderer + CpuBufferStore + DawnDevice readback), exactly as the host
-// selects at build time via DC_HAS_DAWN.
+// Originally (ENC-500) this drove the JsonHost embedding pipeline (parseSceneDocument
+// -> SceneReconciler -> IngestProcessor -> buffer store -> render -> readback) on
+// BOTH backends and asserted the Dawn readback matched the GL JsonHost baseline
+// within the parity tolerance. Dawn is now the proven default renderer and dc_gl is
+// being deleted (ENC-501), so this drives the EXACT JsonHost embedding pipeline on
+// the Dawn backend ONLY and asserts the readback against captured GOLDEN probe
+// pixels (the same Dawn pixels that matched the GL baseline while dc_gl existed).
+// This is the same render path core/src/host/JsonHost.cpp takes.
 //
-// Then a STREAMING PERF SWEEP: times N writeRange()+uploadDirty() cycles on the
-// GL GpuBufferManager and on the Dawn CpuBufferStore+DeviceBufferResolver hot
-// path, and reports both numbers so the Dawn streaming-ingest path can be sanity-
-// checked against GL (the d2_4 / d81_3 tests already cover correctness).
+// Then a STREAMING PERF SWEEP on the Dawn live-ingest hot path (CpuBufferStore +
+// DeviceBufferResolver -> queue.writeBuffer): times N writeRange()+uploadDirty()
+// cycles and reports the per-cycle cost as a perf sanity number (the GL leg of the
+// old sweep is dropped with dc_gl; the d2_4 / d81_3 tests cover ingest correctness).
 //
 // On a headless box set the lavapipe ICD if Dawn finds no Vulkan adapter:
 //   VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json
 //
-// Graceful skip: if OSMesa or Dawn is unavailable the test prints SKIP and
-// exits 0, matching every other GL/Dawn test on a box without the backend.
+// Graceful skip: if Dawn is unavailable the test prints SKIP and exits 0.
 
 #include "dc/document/SceneDocument.hpp"
 #include "dc/document/SceneReconciler.hpp"
@@ -27,10 +25,6 @@
 #include "dc/scene/ResourceRegistry.hpp"
 #include "dc/commands/CommandProcessor.hpp"
 #include "dc/ingest/IngestProcessor.hpp"
-
-#include "dc/gl/OsMesaContext.hpp"
-#include "dc/gl/GpuBufferManager.hpp"
-#include "dc/gl/Renderer.hpp"
 
 #include "dc/gpu/DawnDevice.hpp"
 #include "dc/gpu/DawnSceneRenderer.hpp"
@@ -41,11 +35,13 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <string>
 #include <vector>
 
 static int g_failed = 0;
 static int g_passed = 0;
+static bool g_capture = false;
 
 static void check(bool cond, const char* name) {
   if (cond) { std::printf("  PASS: %s\n", name); ++g_passed; }
@@ -53,7 +49,7 @@ static void check(bool cond, const char* name) {
 }
 
 // A representative multi-pipeline JsonHost scene document: a filled triangle
-// (triSolid@1), a line (line2d@1), and an instanced rect (instancedRect@1) on a
+// (triSolid@1), an instanced rect (instancedRect@1), and a line (line2d@1) on a
 // single pane — exactly the SceneDocument shape JsonHost parses + reconciles.
 static const char* kSceneJson = R"({
   "version": 1,
@@ -83,18 +79,15 @@ static const char* kSceneJson = R"({
   }
 })";
 
-// ---- JsonHost render flow, parameterized by backend store population. --------
-// Build the same scene the host builds (parse + reconcile + ingest) and return
-// the document so each backend can populate its store from the ingested bytes.
+// Build the same scene the host builds (parse + reconcile + ingest).
 static bool buildHostScene(dc::SceneDocument& doc, dc::Scene& scene,
-                           dc::ResourceRegistry& reg, dc::CommandProcessor& cp,
+                           dc::ResourceRegistry& /*reg*/, dc::CommandProcessor& cp,
                            dc::IngestProcessor& ingest) {
   if (!dc::parseSceneDocument(kSceneJson, doc)) return false;
   cp.setIngestProcessor(&ingest);
   dc::SceneReconciler reconciler(cp);
   auto result = reconciler.reconcile(doc, scene);
   if (!result.ok) return false;
-  // Upload inline buffer data into the ingest processor (host step 6).
   for (const auto& [id, buf] : doc.buffers) {
     if (!buf.data.empty()) {
       ingest.ensureBuffer(id);
@@ -116,37 +109,18 @@ static void syncStore(const dc::SceneDocument& doc, dc::IngestProcessor& ingest,
   }
 }
 
-int main() {
-  std::printf("=== ENC-500 JsonHost-via-Dawn conformance + perf ===\n");
+// One golden probe (on-screen pixel -> expected RGB within tol).
+struct Probe { int x, y, r, g, b, tol; };
+
+int main(int argc, char** argv) {
+  if ((argc > 1 && std::strcmp(argv[1], "--capture") == 0) ||
+      std::getenv("DC_GOLDEN_CAPTURE"))
+    g_capture = true;
+
+  std::printf("=== ENC-501 Dawn-only JsonHost golden conformance + perf ===\n");
   constexpr int W = 96, H = 64;
 
-  // --- GL JsonHost baseline (bottom-up RGBA readback). ---------------------
-  std::vector<std::uint8_t> glFb;
-  {
-    dc::OsMesaContext ctx;
-    if (!ctx.init(W, H)) {
-      std::printf("SKIP: OSMesa/GL unavailable\n");
-      return 0;
-    }
-    dc::SceneDocument doc; dc::Scene scene; dc::ResourceRegistry reg;
-    dc::CommandProcessor cp(scene, reg); dc::IngestProcessor ingest;
-    if (!buildHostScene(doc, scene, reg, cp, ingest)) {
-      std::fprintf(stderr, "GL: buildHostScene failed\n"); return 1;
-    }
-    dc::GpuBufferManager gpuBufs;
-    syncStore(doc, ingest, gpuBufs);
-    gpuBufs.uploadDirty();
-    dc::Renderer renderer;
-    if (!renderer.init()) { std::printf("SKIP: GL Renderer init failed\n"); return 0; }
-    renderer.render(scene, gpuBufs, W, H);
-    ctx.swapBuffers();
-    glFb = ctx.readPixels();
-    if (glFb.size() != static_cast<std::size_t>(W) * H * 4) {
-      std::fprintf(stderr, "GL: readPixels size mismatch\n"); return 1;
-    }
-  }
-
-  // --- Dawn JsonHost (the cutover path; top-down RGBA readback). -----------
+  // --- Dawn JsonHost render (the cutover path; top-left RGBA readback). -----
   std::vector<std::uint8_t> dawnFb(static_cast<std::size_t>(W) * H * 4, 0);
   std::string dawnBackend;
   {
@@ -175,41 +149,42 @@ int main() {
       }
   }
 
-  // --- Compare GL (bottom-up) vs Dawn (top-down) with row flip. ------------
-  // Solid-fill scene: small per-channel tolerance, allow a tiny fraction of
-  // edge pixels (the two rasterizers' triangle/line edges differ by a pixel).
-  const int channelTol = 16;
-  const double maxMismatchPct = 2.0;
-  long mismatch = 0, compared = static_cast<long>(W) * H;
-  int maxDelta = 0;
-  for (int y = 0; y < H; ++y) {
-    const int dy = y;  // DawnSceneRenderer readback matches GL orientation (no flip; see ENC-510 parity harness, which empirically detected direct/no-flip)
-    for (int x = 0; x < W; ++x) {
-      const std::size_t gi = (static_cast<std::size_t>(y) * W + x) * 4;
-      const std::size_t di = (static_cast<std::size_t>(dy) * W + x) * 4;
-      int worst = 0;
-      for (int c = 0; c < 3; ++c) {
-        int d = std::abs(static_cast<int>(glFb[gi + c]) -
-                         static_cast<int>(dawnFb[di + c]));
-        if (d > worst) worst = d;
-      }
-      if (worst > maxDelta) maxDelta = worst;
-      if (worst > channelTol) ++mismatch;
+  auto at = [&](int x, int y) -> const std::uint8_t* {
+    return &dawnFb[(static_cast<std::size_t>(y) * W + x) * 4];
+  };
+
+  // --- Golden probes (captured from the GL-validated Dawn JsonHost output). --
+  // triSolid RED triangle (left third), instancedRect GREEN (center), line2d
+  // BLUE (right third, y=0 -> mid row), plus a clear corner. Solid-fill scene:
+  // small per-channel tolerance.
+  const std::vector<Probe> probes = {
+      {18, 38, 255, 0, 0, 16},   // inside the red triangle (left third)
+      {48, 32, 0, 255, 0, 16},   // inside the green instanced rect (center)
+      {80, 31, 0, 0, 255, 60},   // on the blue line (right third, mid row)
+      {88, 4, 0, 0, 0, 16},      // clear top-right corner
+  };
+  bool ok = true;
+  for (const auto& p : probes) {
+    const std::uint8_t* px = at(p.x, p.y);
+    if (g_capture) {
+      std::printf("  [capture jsonhost] (%2d,%2d) => %3d %3d %3d\n", p.x, p.y,
+                  px[0], px[1], px[2]);
+      continue;
+    }
+    bool hit = std::abs(int(px[0]) - p.r) <= p.tol &&
+               std::abs(int(px[1]) - p.g) <= p.tol &&
+               std::abs(int(px[2]) - p.b) <= p.tol;
+    if (!hit) {
+      ok = false;
+      std::fprintf(stderr,
+                   "  probe(%d,%d): got %d %d %d  want %d %d %d (+-%d)\n",
+                   p.x, p.y, px[0], px[1], px[2], p.r, p.g, p.b, p.tol);
     }
   }
-  double mismatchPct = 100.0 * static_cast<double>(mismatch) / compared;
-  std::printf(
-      "[JsonHost conformance] dawn=%s  W=%d H=%d  maxDelta=%d  "
-      "mismatch=%ld/%ld (%.3f%%)  tol(chan=%d, pct<=%.3f)\n",
-      dawnBackend.c_str(), W, H, maxDelta, mismatch, compared, mismatchPct,
-      channelTol, maxMismatchPct);
-  check(mismatchPct <= maxMismatchPct,
-        "JsonHost Dawn readback matches GL baseline within tolerance");
+  if (!g_capture)
+    check(ok, "JsonHost Dawn readback matches captured golden probes");
 
-  // --- Streaming perf sweep: N writeRange()+uploadDirty() cycles. ----------
-  // The live-ingest hot path appends to a buffer tail each tick and re-uploads
-  // the dirty range. We time that on GL (GpuBufferManager VBO upload) and on
-  // Dawn (CpuBufferStore + DeviceBufferResolver -> queue.writeBuffer).
+  // --- Streaming perf sweep: N writeRange()+uploadDirty() cycles on Dawn. ----
   {
     const int kCycles = 2000;
     const std::uint32_t kChunk = 256;  // bytes appended per cycle
@@ -217,25 +192,6 @@ int main() {
     for (std::uint32_t i = 0; i < kChunk; ++i)
       payload[i] = static_cast<std::uint8_t>(i & 0xFF);
 
-    // GL path.
-    double glMs = -1.0;
-    {
-      dc::OsMesaContext ctx;
-      if (ctx.init(8, 8)) {
-        dc::GpuBufferManager bufs;
-        bufs.reserve(7, kChunk * kCycles);
-        auto t0 = std::chrono::steady_clock::now();
-        for (int i = 0; i < kCycles; ++i) {
-          bufs.writeRange(7, static_cast<std::uint32_t>(i) * kChunk,
-                          payload.data(), kChunk);
-          bufs.uploadDirty();
-        }
-        auto t1 = std::chrono::steady_clock::now();
-        glMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
-      }
-    }
-
-    // Dawn path.
     double dawnMs = -1.0;
     {
       dc::DawnDevice device;
@@ -253,27 +209,18 @@ int main() {
         dawnMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
       }
     }
-
     std::printf(
         "[streaming perf] %d cycles x %u bytes (writeRange+uploadDirty):\n"
-        "    GL   GpuBufferManager : %s\n"
         "    Dawn CpuBufferStore   : %s\n",
         kCycles, kChunk,
-        glMs >= 0 ? (std::to_string(glMs) + " ms").c_str() : "(GL unavailable)",
         dawnMs >= 0 ? (std::to_string(dawnMs) + " ms").c_str()
                     : "(Dawn unavailable)");
-    if (glMs >= 0 && dawnMs >= 0) {
-      double ratio = dawnMs / glMs;
-      std::printf("    Dawn/GL ratio        : %.2fx  (per-cycle GL=%.4f ms, "
-                  "Dawn=%.4f ms)\n",
-                  ratio, glMs / 2000.0, dawnMs / 2000.0);
-      // Perf SANITY only (not a hard gate): flag if Dawn is wildly slower.
-      check(ratio < 10.0,
-            "Dawn streaming hot path within 10x of GL (perf sanity)");
-    }
+    if (dawnMs >= 0)
+      std::printf("    per-cycle Dawn        : %.4f ms\n", dawnMs / kCycles);
   }
 
-  std::printf("=== JsonHost-Dawn: %d passed, %d failed (dawn=%s) ===\n",
+  if (g_capture) { std::printf("=== capture complete ===\n"); return 0; }
+  std::printf("=== JsonHost-Dawn golden: %d passed, %d failed (dawn=%s) ===\n",
               g_passed, g_failed, dawnBackend.c_str());
   return g_failed > 0 ? 1 : 0;
 }

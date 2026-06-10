@@ -1,37 +1,46 @@
-// ENC-510 (P5.0b) — GL <-> Dawn parity for the textSDF@1 pipeline (axis/labels
-// feature area; d12_6_axis_gl / d3_3 conformance). Renders the same "Hi" glyph
-// run through both backends (each with the SAME GlyphAtlas) and compares.
+// ENC-501 (P5 cutover) — Dawn-only golden test for the textSDF@1 pipeline
+// (axis/labels feature area; d12_6_axis_gl / d3_3 conformance).
 //
-// WHY TEXT IS A SEPARATE TEST WITH A WIDER TOLERANCE
-// --------------------------------------------------
-// Text is SDF coverage: every glyph pixel is a smoothstep around the 0.5 isoline,
-// so almost EVERY lit pixel is a partial-coverage (anti-aliased) pixel, and the
-// GL (OSMesa/llvmpipe) and Dawn (Vulkan/lavapipe) samplers reconstruct that
-// coverage slightly differently (bilinear filtering + smoothstep rounding). So
-// unlike the solid-fill areas, text has NO large flat-fill core to match
-// byte-exactly — the parity bar is "the same glyphs land in the same place with
-// the same color", expressed as a moderate channelTol + a higher allowed
-// mismatch%. This is a documented, expected GL<->Dawn divergence class, not a
-// bug. Needs the test font; skips gracefully without it.
-#include "parity_harness.hpp"
+// Originally (ENC-510) this rendered the same "Hi" glyph run through BOTH the GL
+// backend and the DawnSceneRenderer and compared the readbacks within a wide SDF
+// tolerance. Dawn is now the proven default renderer and dc_gl is being deleted
+// (ENC-501), so this renders ONLY via Dawn and self-validates the readback the way
+// the dedicated d3_3_dawn_text_sdf test does: scan the frame and assert
+//   * a healthy count of STRONG-STROKE text-colored pixels (SDF alpha ~1 inside),
+//   * those strong-stroke pixels actually ARE the text color (cyan),
+//   * the background/outside-glyph region stays clear,
+//   * the SDF edge produces PARTIAL-COVERAGE (anti-aliased) pixels (smoothstep,
+//     not a 1-bit cutout).
+// This is the self-validating golden for SDF text: rather than a brittle per-pixel
+// golden over an all-AA frame, it asserts the structural properties that the GL<->
+// Dawn parity run confirmed (glyphs land, are the text color, are anti-aliased).
+// Needs the test font; skips gracefully without it.
+#include "parity_golden.hpp"
 
 #include "dc/text/GlyphAtlas.hpp"
 
 #include <cstdio>
+#include <cstdint>
 #include <string>
 #include <vector>
 
-using dc::parity::BufferData;
-using dc::parity::compareScene;
-using dc::parity::ParityResult;
-using dc::parity::Tolerance;
+using dc::golden::BufferData;
+using dc::golden::GoldenFrame;
+using dc::golden::renderDawn;
+
+static int g_passed = 0;
+static int g_failed = 0;
+static void check(bool cond, const char* name) {
+  if (cond) { std::printf("  PASS: %s\n", name); ++g_passed; }
+  else { std::fprintf(stderr, "  FAIL: %s\n", name); ++g_failed; }
+}
 
 int main() {
 #ifndef FONT_PATH
   std::printf("parity-text: SKIPPED (no FONT_PATH)\n");
   return 0;
 #else
-  std::printf("=== ENC-510 GL<->Dawn parity: textSDF@1 ===\n");
+  std::printf("=== ENC-501 Dawn-only golden: textSDF@1 ===\n");
   constexpr int W = 128, H = 64;
 
   dc::GlyphAtlas atlas;
@@ -43,11 +52,7 @@ int main() {
   }
   atlas.ensureAscii();
 
-  // Build the glyph instance buffer ("Hi") ONCE; both backends consume the same
-  // bytes. NOTE on baseline sign: both Renderer (GL) and the Dawn backends apply
-  // the SAME u_transform to glyph quads; the only y convention difference is the
-  // readback origin, which the harness's row-flip mapping already accounts for.
-  // So we place "Hi" near clip center and let the harness align the rows.
+  // Build the glyph instance buffer ("Hi") — the SAME placement the parity test used.
   const char* text = "Hi";
   const float fontSize = 0.6f;
   const float baselineY = -0.15f;
@@ -70,7 +75,7 @@ int main() {
 
   std::vector<float> instCopy = inst;
   int gc = glyphCount;
-  dc::parity::SceneBuilder builder =
+  dc::golden::SceneBuilder builder =
       [instCopy, gc](dc::CommandProcessor& cp, dc::Scene&) -> std::vector<BufferData> {
     cp.applyJsonText(R"({"cmd":"createPane","id":1})");
     cp.applyJsonText(R"({"cmd":"createLayer","id":2,"paneId":1})");
@@ -87,19 +92,40 @@ int main() {
     return {BufferData(10, instCopy.data(), instCopy.size() * sizeof(float))};
   };
 
-  // SDF coverage: moderate channel tolerance (filtering/smoothstep round-off)
-  // and a higher allowed mismatch% (most glyph pixels are AA fringe).
-  Tolerance text_tol;
-  text_tol.channelTol = 60;
-  text_tol.maxMismatchPct = 14.0;
-
-  ParityResult r = compareScene("axis-text/textSDF", builder, W, H, text_tol, &atlas);
-  if (r.skipped) {
-    std::printf("parity-text: SKIPPED (%s)\n", r.skipReason.c_str());
+  GoldenFrame f = renderDawn("axis-text/textSDF", builder, W, H, &atlas);
+  if (f.skipped) {
+    std::printf("parity-text: SKIPPED (%s)\n", f.skipReason.c_str());
     return 0;
   }
-  std::printf("=== parity-text: %s (glyphs=%d) ===\n",
-              r.passed ? "PASS" : "FAIL", glyphCount);
-  return r.passed ? 0 : 1;
+  std::printf("dawn=%s glyphs=%d\n", f.dawnBackend.c_str(), glyphCount);
+
+  // Scan the readback for SDF-text structure (the self-validating golden — the GL<->
+  // Dawn parity run confirmed the glyphs land, are cyan, and are anti-aliased).
+  int strongStroke = 0;   // text color, full intensity (SDF alpha ~1 inside glyph)
+  int edgePartial = 0;    // text color present but partial (AA fringe)
+  int background = 0;     // clear/near-black (no spurious coverage)
+  int contaminated = 0;   // unexpected red leakage
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      const std::uint8_t* px = f.at(x, y);
+      const int r = px[0], g = px[1], b = px[2];
+      if (g > 200 && b > 200 && r < 40) ++strongStroke;       // strong cyan
+      else if ((g > 40 && b > 40) && g < 200 && b < 200 && r < 40)
+        ++edgePartial;                                          // partial cyan
+      if (r < 16 && g < 16 && b < 16) ++background;
+      if (r > 60 && g < 30 && b < 30) ++contaminated;          // stray red
+    }
+  }
+  std::printf("strongStroke=%d edgePartial=%d background=%d contaminated=%d\n",
+              strongStroke, edgePartial, background, contaminated);
+
+  check(glyphCount == 2, "2 visible glyphs for 'Hi'");
+  check(strongStroke > 20, "glyph stroke pixels are the text color (SDF alpha ~1 inside)");
+  check(edgePartial > 5, "SDF edge produces partial-coverage (anti-aliased) pixels");
+  check(background > strongStroke, "background/outside-glyph pixels are clear");
+  check(contaminated == 0, "no red contamination (atlas sampled correctly)");
+
+  std::printf("=== parity-text: %d passed, %d failed ===\n", g_passed, g_failed);
+  return g_failed > 0 ? 1 : 0;
 #endif
 }

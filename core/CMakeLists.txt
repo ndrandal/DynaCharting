@@ -2175,70 +2175,59 @@ if (DC_BUILD_TESTS)
     endif()
     add_test(NAME dc_d50_dawn_scene_renderer COMMAND dc_d50_dawn_scene_renderer)
 
-    # ENC-510 (P5.0b) — GL<->Dawn parity harness + conformance coverage. Renders
-    # the SAME scenes through BOTH the GL backend (Renderer + OsMesaContext) and
-    # the Dawn backend (DawnSceneRenderer) and compares the RGBA readbacks pixel
-    # by pixel within a per-feature tolerance (parity_harness.hpp). This proves
-    # the Dawn backend matches GL across the conformance feature areas (render
-    # core, transforms, pipelines, scissor/clip, blend, AA/dashed lines, rounded
-    # rect, gradient, volume/candle, frustum cull, and — font permitting — text)
-    # before the ENC-500 cutover. Needs dc_gl (GL path + GpuBufferManager) AND
-    # dc_gpu (Dawn path); both render paths exist in the Dawn build because
-    # OSMesa is present. Skips gracefully if either backend is unavailable.
-    if (TARGET dc_gl)
-      add_executable(dc_parity_conformance
-        "${CMAKE_CURRENT_SOURCE_DIR}/tests/parity_conformance.cpp"
-      )
-      target_link_libraries(dc_parity_conformance PRIVATE dc_gpu dc_gl)
-      add_test(NAME dc_parity_conformance COMMAND dc_parity_conformance)
+    # ENC-501 (P5 cutover) — Dawn-only golden conformance coverage. Formerly the
+    # ENC-510/511/512/500 GL<->Dawn parity tests (rendered each scene through BOTH
+    # the GL backend (Renderer + OsMesaContext) and the Dawn backend and compared
+    # the readbacks). Dawn is now the proven default renderer and dc_gl is being
+    # deleted, so these render ONLY via Dawn (parity_golden.hpp) and assert the
+    # readback against captured GOLDEN probe pixels (the same Dawn pixels that
+    # matched GL within tolerance while dc_gl existed). They link ONLY dc_gpu — no
+    # dc_gl / OSMesa — and skip gracefully if Dawn is unavailable.
+    add_executable(dc_parity_conformance
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/parity_conformance.cpp"
+    )
+    target_link_libraries(dc_parity_conformance PRIVATE dc_gpu)
+    add_test(NAME dc_parity_conformance COMMAND dc_parity_conformance)
 
-      add_executable(dc_parity_text
-        "${CMAKE_CURRENT_SOURCE_DIR}/tests/parity_text.cpp"
+    add_executable(dc_parity_text
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/parity_text.cpp"
+    )
+    target_link_libraries(dc_parity_text PRIVATE dc_gpu)
+    if (EXISTS "${DC_TEST_FONT}")
+      target_compile_definitions(dc_parity_text PRIVATE
+        FONT_PATH="${DC_TEST_FONT}"
       )
-      target_link_libraries(dc_parity_text PRIVATE dc_gpu dc_gl)
-      if (EXISTS "${DC_TEST_FONT}")
-        target_compile_definitions(dc_parity_text PRIVATE
-          FONT_PATH="${DC_TEST_FONT}"
-        )
-      endif()
-      add_test(NAME dc_parity_text COMMAND dc_parity_text)
-
-      # ENC-511 (P5.0c) — multi-pane parity: per-pane clear colors + D78 pane
-      # borders/separators (DawnSceneRenderer vs GL Renderer). Same Scene + same
-      # RenderStyle through both backends; diffs the RGBA readbacks.
-      add_executable(dc_parity_multipane
-        "${CMAKE_CURRENT_SOURCE_DIR}/tests/parity_multipane.cpp"
-      )
-      target_link_libraries(dc_parity_multipane PRIVATE dc_gpu dc_gl)
-      add_test(NAME dc_parity_multipane COMMAND dc_parity_multipane)
-
-      # ENC-512 (P5.0d) — extended parity: texturedQuad@1 (same texture to BOTH
-      # backends via TextureManager / TextureSource), GPU picking (decoded id-
-      # buffer parity, GL renderPick vs Dawn DawnSceneRenderer::renderPick),
-      # indexed-gather (D26 index/order buffer filtering instanced draws), and a
-      # recipe-driven full chart (CandleRecipe + LineRecipe). Closes the remaining
-      # conformance areas before the ENC-500 cutover. Links dc_gpu + dc_gl (Dawn +
-      # GL render paths) and the recipe sources are in dc.
-      add_executable(dc_parity_extended
-        "${CMAKE_CURRENT_SOURCE_DIR}/tests/parity_extended.cpp"
-      )
-      target_link_libraries(dc_parity_extended PRIVATE dc_gpu dc_gl)
-      add_test(NAME dc_parity_extended COMMAND dc_parity_extended)
-
-      # ENC-500 (P5.1) — JsonHost-via-Dawn conformance + streaming perf sweep.
-      # Drives the JsonHost embedding pipeline (parseSceneDocument ->
-      # SceneReconciler -> IngestProcessor -> store -> render -> readback) on BOTH
-      # backends and asserts the Dawn readback matches the GL JsonHost baseline
-      # within the parity tolerance — the cutover conformance proof. Also times N
-      # writeRange+uploadDirty cycles on GL vs Dawn (streaming perf sanity).
-      add_executable(dc_d79_dawn_json_host
-        "${CMAKE_CURRENT_SOURCE_DIR}/tests/d79_dawn_json_host.cpp"
-      )
-      target_link_libraries(dc_d79_dawn_json_host PRIVATE dc_gpu dc_gl)
-      add_test(NAME dc_d79_dawn_json_host COMMAND dc_d79_dawn_json_host)
-    else()
-      message(STATUS
-        "Skipping ENC-510 parity tests (need dc_gl for the GL render path)")
     endif()
+    add_test(NAME dc_parity_text COMMAND dc_parity_text)
+
+    # ENC-501 (was ENC-511) — Dawn-only golden multi-pane: per-pane clear colors +
+    # D78 pane borders/separators (DawnSceneRenderer), probe-pixel goldens.
+    add_executable(dc_parity_multipane
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/parity_multipane.cpp"
+    )
+    target_link_libraries(dc_parity_multipane PRIVATE dc_gpu)
+    add_test(NAME dc_parity_multipane COMMAND dc_parity_multipane)
+
+    # ENC-501 (was ENC-512) — Dawn-only golden extended: texturedQuad@1 (texture
+    # via TextureSource), GPU picking (decoded id-buffer self-validation),
+    # indexed-gather (D26 index/order buffer filtering instanced draws), and a
+    # recipe-driven full chart (CandleRecipe + LineRecipe). Recipe sources are in
+    # dc (linked by dc_gpu).
+    add_executable(dc_parity_extended
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/parity_extended.cpp"
+    )
+    target_link_libraries(dc_parity_extended PRIVATE dc_gpu)
+    add_test(NAME dc_parity_extended COMMAND dc_parity_extended)
+
+    # ENC-501 (was ENC-500) — Dawn-only JsonHost golden conformance + streaming
+    # sweep. Drives the JsonHost embedding pipeline (parseSceneDocument ->
+    # SceneReconciler -> IngestProcessor -> store -> render -> readback) on the Dawn
+    # backend and asserts the readback against captured golden probe pixels, then
+    # times N writeRange+uploadDirty cycles on the Dawn streaming hot path.
+    add_executable(dc_d79_dawn_json_host
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/d79_dawn_json_host.cpp"
+    )
+    target_link_libraries(dc_d79_dawn_json_host PRIVATE dc_gpu)
+    add_test(NAME dc_d79_dawn_json_host COMMAND dc_d79_dawn_json_host)
   endif()
 endif()
