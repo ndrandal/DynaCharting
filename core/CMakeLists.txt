@@ -2037,6 +2037,22 @@ if (DC_BUILD_TESTS)
     target_link_libraries(dc_d28_1_dawn_lineaa PRIVATE dc_gpu)
     add_test(NAME dc_d28_1_dawn_lineaa COMMAND dc_d28_1_dawn_lineaa)
 
+    # ENC-493 (P3.1) — blend modes as immutable pipeline permutations (D29.1).
+    # WebGPU bakes blend state into the immutable pipeline (unlike GL's per-draw
+    # glBlendFunc), so the 4 per-DrawItem blend modes become pipeline VARIANTS
+    # behind a permutation cache keyed on (base pipeline, blendMode). Draws a base
+    # triSolid shape then an overlapping shape in each of Normal/Additive/Multiply/
+    # Screen through the backend registry with DeviceKind::Dawn into the headless
+    # DawnDevice (driving the mode via DawnDevice::setBlendMode, which the variant
+    # selection in bindPipeline honors), reads back the overlap region, and asserts
+    # the composited result matches each mode's math with known src/dst colors (vs
+    # the GL d29_1_blend_modes baseline). Links only dc_gpu.
+    add_executable(dc_d29_1_dawn_blend
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/d29_1_dawn_blend.cpp"
+    )
+    target_link_libraries(dc_d29_1_dawn_blend PRIVATE dc_gpu)
+    add_test(NAME dc_d29_1_dawn_blend COMMAND dc_d29_1_dawn_blend)
+
     # ENC-492 (P2.9) — textSDF@1 + glyph atlas upload on Dawn. The LAST Phase-2
     # pipeline: completes all 10 pipelines on WebGPU. Uploads the GlyphAtlas R8
     # SDF bitmap to a Dawn R8 texture (ENC-491 createTexture(R8) +

@@ -177,12 +177,26 @@ class DawnDevice final : public GpuDevice {
   std::vector<TextureEntry> textures_;
   TextureEntry* textureAt(TextureHandle h);
 
-  // Render pipelines. Each PipelineDesc -> one wgpu::RenderPipeline + its
-  // implicit bind-group layout (group 0) and a uniform-buffer size. Cached by
-  // the backend (it creates one per pipelineId and reuses it), so we never
-  // rebuild per draw.
+  // Render pipelines. Each PipelineDesc -> one base wgpu::RenderPipeline (built
+  // with the DrawItem's default Normal blend) + its implicit bind-group layout
+  // (group 0) and a uniform-buffer size. Cached by the backend (it creates one
+  // per pipelineId and reuses it), so we never rebuild per draw.
+  //
+  // ENC-493 (D29.1) — blend-mode permutation cache. WebGPU bakes blend state
+  // into the immutable pipeline (unlike GL's per-draw glBlendFunc), so the four
+  // per-DrawItem blend modes (Normal/Additive/Multiply/Screen) become pipeline
+  // VARIANTS of the same base pipeline. Each PipelineEntry caches up to four
+  // wgpu::RenderPipelines keyed by DeviceBlendMode; the Normal variant is the
+  // base built in createPipeline (byte-identical to pre-ENC-493 behavior). The
+  // Additive/Multiply/Screen variants are built LAZILY on first use (when
+  // bindPipeline is asked for that mode) and then cached — never rebuilt per
+  // frame. Building a variant reuses the already-compiled WGSL module and the
+  // pipeline layout/vertex layouts captured here, changing ONLY the baked
+  // wgpu::BlendState. NOTE(ENC-494): stencil clipping also turns createPipeline
+  // into a permutation source (ClipMode); it will extend this same variant model
+  // (the cache key grows to (blend, clip)). Keep the variant builder factored so
+  // ENC-494 can add the clip axis without re-plumbing.
   struct PipelineEntry {
-    wgpu::RenderPipeline pipeline;
     wgpu::BindGroupLayout bindGroupLayout;
     std::size_t uniformSize{0};  // bytes of the group-0 uniform buffer
     // ENC-491: when true the pipeline's group-0 layout adds a texture (binding
@@ -190,8 +204,34 @@ class DawnDevice final : public GpuDevice {
     // createBindGroup must supply the bound texture's view+sampler. Set when the
     // PipelineDesc declares a Sampler2D uniform (texturedQuad@1; future SDF text).
     bool hasTexture{false};
+
+    // ENC-493 variant cache + the immutable inputs needed to (re)build a variant.
+    // The four slots are indexed by DeviceBlendMode (Normal=0 .. Screen=3); a
+    // null slot has not been built yet. variants[Normal] is the base pipeline.
+    wgpu::RenderPipeline variants[4];
+    // Captured pipeline build inputs (shared by every blend variant): the
+    // compiled WGSL module, the group-0 pipeline layout, the topology, and a
+    // self-owned snapshot of the vertex buffer layouts (the original
+    // PipelineDesc arrays are caller-owned and not valid after createPipeline,
+    // so the variant builder owns its own copy that the wgpu layouts point into).
+    wgpu::ShaderModule module;
+    wgpu::PipelineLayout pipelineLayout;
+    wgpu::PrimitiveTopology topology{wgpu::PrimitiveTopology::TriangleList};
+    std::vector<wgpu::VertexBufferLayout> vbLayouts;
+    std::vector<std::vector<wgpu::VertexAttribute>> vbAttrStorage;
   };
   std::vector<PipelineEntry> pipelines_;
+
+  // ENC-493: lazily build (and cache) the wgpu::RenderPipeline variant of `pe`
+  // for blend mode `mode`, returning it. The Normal variant is built eagerly in
+  // createPipeline; the rest are built here on first request. Reuses pe.module /
+  // pe.pipelineLayout / pe.topology / pe.vbLayouts and bakes only the BlendState.
+  wgpu::RenderPipeline& pipelineVariant(PipelineEntry& pe, DeviceBlendMode mode);
+
+  // The blend mode selected by the most recent setBlendMode(); applied by
+  // bindPipeline() to pick the matching pipeline variant. Defaults to Normal so
+  // a backend that never calls setBlendMode gets the byte-identical base.
+  DeviceBlendMode currentBlendMode_{DeviceBlendMode::Normal};
 
   // Bind groups. A bind group owns a small uniform buffer (the packed
   // transform+color) plus the wgpu::BindGroup referencing it, and records the

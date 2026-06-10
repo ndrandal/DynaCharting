@@ -420,6 +420,64 @@ namespace {
 // declare a larger PipelineDesc::uniformBytes; see the name-driven packing in
 // createBindGroup.
 constexpr std::size_t kBaseUniformSize = 64;  // 4 * vec4<f32>
+
+// ENC-493 (D29.1) — translate a DeviceBlendMode to the wgpu::BlendState baked
+// into a pipeline variant. These are the exact WebGPU equivalents of the GL
+// blend funcs in Renderer/GlDevice::setBlendMode:
+//
+//   Normal   glBlendFunc(SRC_ALPHA, ONE_MINUS_SRC_ALPHA)
+//            color & alpha: src*SrcAlpha + dst*(1-SrcAlpha)  — standard src-over.
+//            BYTE-IDENTICAL to the ENC-488 default BlendState, so the existing
+//            10 Dawn tests' Normal-blended output is unchanged.
+//   Additive glBlendFunc(SRC_ALPHA, ONE)
+//            color & alpha: src*SrcAlpha + dst*1            — brightens toward sum.
+//   Multiply glBlendFuncSeparate(DST_COLOR, ZERO, ONE, ONE_MINUS_SRC_ALPHA)
+//            color: src*Dst + dst*0 = src*dst              — darkens toward product.
+//            alpha: src*1   + dst*(1-SrcAlpha)             — standard src-over alpha.
+//   Screen   glBlendFuncSeparate(ONE, ONE_MINUS_SRC_COLOR, ONE, ONE_MINUS_SRC_ALPHA)
+//            color: src*1 + dst*(1-Src) = src + dst - src*dst — lightens.
+//            alpha: src*1 + dst*(1-SrcAlpha)               — standard src-over alpha.
+//
+// All ops are Add (GL_FUNC_ADD, GL's implicit default). Multiply/Screen need
+// SEPARATE color vs alpha BlendComponents (the GL funcs use glBlendFuncSeparate);
+// Normal/Additive use the same factors for color and alpha.
+wgpu::BlendState blendStateFor(DeviceBlendMode mode) {
+  wgpu::BlendState bs = {};
+  bs.color.operation = wgpu::BlendOperation::Add;
+  bs.alpha.operation = wgpu::BlendOperation::Add;
+  switch (mode) {
+    case DeviceBlendMode::Normal:
+      bs.color.srcFactor = wgpu::BlendFactor::SrcAlpha;
+      bs.color.dstFactor = wgpu::BlendFactor::OneMinusSrcAlpha;
+      bs.alpha.srcFactor = wgpu::BlendFactor::SrcAlpha;
+      bs.alpha.dstFactor = wgpu::BlendFactor::OneMinusSrcAlpha;
+      break;
+    case DeviceBlendMode::Additive:
+      bs.color.srcFactor = wgpu::BlendFactor::SrcAlpha;
+      bs.color.dstFactor = wgpu::BlendFactor::One;
+      bs.alpha.srcFactor = wgpu::BlendFactor::SrcAlpha;
+      bs.alpha.dstFactor = wgpu::BlendFactor::One;
+      break;
+    case DeviceBlendMode::Multiply:
+      bs.color.srcFactor = wgpu::BlendFactor::Dst;   // GL_DST_COLOR
+      bs.color.dstFactor = wgpu::BlendFactor::Zero;  // GL_ZERO
+      bs.alpha.srcFactor = wgpu::BlendFactor::One;   // GL_ONE
+      bs.alpha.dstFactor = wgpu::BlendFactor::OneMinusSrcAlpha;
+      break;
+    case DeviceBlendMode::Screen:
+      bs.color.srcFactor = wgpu::BlendFactor::One;            // GL_ONE
+      bs.color.dstFactor = wgpu::BlendFactor::OneMinusSrc;    // GL_ONE_MINUS_SRC_COLOR
+      bs.alpha.srcFactor = wgpu::BlendFactor::One;            // GL_ONE
+      bs.alpha.dstFactor = wgpu::BlendFactor::OneMinusSrcAlpha;
+      break;
+  }
+  return bs;
+}
+
+// Index a PipelineEntry::variants[] slot by blend mode (Normal=0 .. Screen=3).
+constexpr std::size_t blendIndex(DeviceBlendMode mode) {
+  return static_cast<std::size_t>(mode);
+}
 }  // namespace
 
 PipelineHandle DawnDevice::createPipeline(const PipelineDesc& desc) {
@@ -533,57 +591,85 @@ PipelineHandle DawnDevice::createPipeline(const PipelineDesc& desc) {
     case PrimitiveTopology::Points:    topo = wgpu::PrimitiveTopology::PointList;    break;
   }
 
-  // Color target matches the offscreen RGBA8Unorm framebuffer.
+  // ENC-493: stash the immutable build inputs on the PipelineEntry so blend
+  // variants can be built lazily later without recompiling the WGSL or
+  // re-deriving the layout. The wgpu::VertexBufferLayout structs point into
+  // attrStorage (caller-owned VertexAttribute arrays are NOT valid after this
+  // call), so the entry OWNS its own copy of both the attribute arrays and the
+  // layouts that reference them; we rebuild the layout->attribute pointers after
+  // the move so they point at the entry-owned storage.
+  PipelineEntry entry;
+  entry.bindGroupLayout = std::move(bgl);
+  entry.uniformSize = uniformSize;
+  entry.hasTexture = desc.sampledTexture;
+  entry.module = std::move(module);
+  entry.pipelineLayout = std::move(layout);
+  entry.topology = topo;
+  entry.vbAttrStorage = std::move(attrStorage);
+  entry.vbLayouts = std::move(vbLayouts);
+  for (std::size_t b = 0; b < entry.vbLayouts.size(); ++b) {
+    entry.vbLayouts[b].attributes = entry.vbAttrStorage[b].data();
+    entry.vbLayouts[b].attributeCount = entry.vbAttrStorage[b].size();
+  }
+
+  pipelines_.push_back(std::move(entry));
+  PipelineHandle h;
+  h.id = static_cast<std::uint32_t>(pipelines_.size());  // 1-based
+
+  // Eagerly build the Normal variant (the base pipeline). This is the
+  // byte-identical equivalent of the pre-ENC-493 single CreateRenderPipeline:
+  // same module / layout / topology / vertex layouts, and blendStateFor(Normal)
+  // == the old hardcoded SrcAlpha/OneMinusSrcAlpha BlendState. The other three
+  // modes are built lazily by pipelineVariant() on first bindPipeline request.
+  pipelineVariant(pipelines_.back(), DeviceBlendMode::Normal);
+  return h;
+}
+
+// ENC-493 — lazily build + cache one blend-mode variant of a base pipeline.
+wgpu::RenderPipeline& DawnDevice::pipelineVariant(PipelineEntry& pe,
+                                                  DeviceBlendMode mode) {
+  wgpu::RenderPipeline& slot = pe.variants[blendIndex(mode)];
+  if (slot) return slot;  // already built
+
+  // Color target matches the offscreen RGBA8Unorm framebuffer. The BlendState is
+  // the per-mode permutation (the ONLY thing that differs between variants);
+  // everything else (module / layout / topology / vertex layouts) is shared.
+  wgpu::BlendState blend = blendStateFor(mode);
   wgpu::ColorTargetState colorTarget = {};
   colorTarget.format = wgpu::TextureFormat::RGBA8Unorm;
   colorTarget.writeMask = wgpu::ColorWriteMask::All;
-
-  // Default Normal alpha blending — matches GL's globally-enabled
-  // glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA). Required so alpha<1
-  // fragments (AA fringes, rounded-rect corners per D28.2, SDF text) composite
-  // against the target instead of overwriting it with their RGB. Opaque
-  // geometry (alpha==1) is unaffected. The other per-draw-item blend modes
-  // (Additive/Multiply/Screen) become pipeline permutations in ENC-493.
-  wgpu::BlendState blend = {};
-  blend.color.srcFactor = wgpu::BlendFactor::SrcAlpha;
-  blend.color.dstFactor = wgpu::BlendFactor::OneMinusSrcAlpha;
-  blend.color.operation = wgpu::BlendOperation::Add;
-  blend.alpha.srcFactor = wgpu::BlendFactor::SrcAlpha;
-  blend.alpha.dstFactor = wgpu::BlendFactor::OneMinusSrcAlpha;
-  blend.alpha.operation = wgpu::BlendOperation::Add;
   colorTarget.blend = &blend;
 
   wgpu::FragmentState fragment = {};
-  fragment.module = module;
+  fragment.module = pe.module;
   fragment.entryPoint = "fs_main";
   fragment.targetCount = 1;
   fragment.targets = &colorTarget;
 
   wgpu::RenderPipelineDescriptor rpd = {};
-  rpd.label = desc.debugName ? desc.debugName : "dc_pipeline";
-  rpd.layout = layout;
-  rpd.vertex.module = module;
+  rpd.label = "dc_pipeline";
+  rpd.layout = pe.pipelineLayout;
+  rpd.vertex.module = pe.module;
   rpd.vertex.entryPoint = "vs_main";
-  rpd.vertex.bufferCount = static_cast<std::uint32_t>(vbLayouts.size());
-  rpd.vertex.buffers = vbLayouts.empty() ? nullptr : vbLayouts.data();
-  rpd.primitive.topology = topo;
+  rpd.vertex.bufferCount = static_cast<std::uint32_t>(pe.vbLayouts.size());
+  rpd.vertex.buffers = pe.vbLayouts.empty() ? nullptr : pe.vbLayouts.data();
+  rpd.primitive.topology = pe.topology;
   rpd.fragment = &fragment;
   // Single-sampled, no depth/stencil (flat 2D, painter's order).
 
-  wgpu::RenderPipeline pipeline = device_.CreateRenderPipeline(&rpd);
-
-  pipelines_.push_back(PipelineEntry{std::move(pipeline), std::move(bgl),
-                                     uniformSize, desc.sampledTexture});
-  PipelineHandle h;
-  h.id = static_cast<std::uint32_t>(pipelines_.size());  // 1-based
-  return h;
+  slot = device_.CreateRenderPipeline(&rpd);
+  return slot;
 }
 
 void DawnDevice::destroyPipeline(PipelineHandle pipe) {
   PipelineEntry* e = pipelineAt(pipe);
   if (!e) return;
-  e->pipeline = nullptr;
+  for (auto& v : e->variants) v = nullptr;  // ENC-493: release all blend variants
   e->bindGroupLayout = nullptr;
+  e->module = nullptr;
+  e->pipelineLayout = nullptr;
+  e->vbLayouts.clear();
+  e->vbAttrStorage.clear();
 }
 
 BindGroupHandle DawnDevice::createBindGroup(const BindGroupDesc& desc) {
@@ -757,9 +843,16 @@ void DawnDevice::destroyBindGroup(BindGroupHandle group) {
 void DawnDevice::bindPipeline(PipelineHandle pipe) {
   boundPipeline_ = pipe;
   PipelineEntry* pe = pipelineAt(pipe);
-  if (pass_ && pe && pe->pipeline) {
-    pass_.SetPipeline(pe->pipeline);
-  }
+  if (!pass_ || !pe) return;
+  // ENC-493 (D29.1): WebGPU bakes blend state into the immutable pipeline, so
+  // honoring the per-DrawItem blend mode means selecting the matching pipeline
+  // VARIANT at bind time rather than mutating global state. currentBlendMode_ is
+  // whatever the dispatcher last requested via setBlendMode() (Normal by default
+  // if the backend never calls it). pipelineVariant() returns the cached variant
+  // for that mode, building it lazily on first use. ENC-494 (stencil clipping)
+  // will likewise select on ClipMode here.
+  wgpu::RenderPipeline& variant = pipelineVariant(*pe, currentBlendMode_);
+  if (variant) pass_.SetPipeline(variant);
 }
 
 DeviceDrawStats DawnDevice::draw(BindGroupHandle group,
@@ -918,8 +1011,15 @@ void DawnDevice::setScissorRect(const ScissorRect& rect) {
 // On Dawn these select an immutable pipeline variant rather than mutate global
 // state (see GpuDevice.hpp note 3). Implemented with the draw path.
 
-void DawnDevice::setBlendMode(DeviceBlendMode) {
-  // TODO(ENC-484/ENC-493)
+void DawnDevice::setBlendMode(DeviceBlendMode mode) {
+  // ENC-493 (D29.1): on WebGPU this does NOT mutate global blend state (there is
+  // none — blend is baked into the immutable pipeline). It records the mode the
+  // next bindPipeline() should select the variant for. The dispatcher calls this
+  // before binding/drawing each DrawItem (Renderer sets it from di.blendMode);
+  // bindPipeline() then resolves (basePipeline, currentBlendMode_) -> the cached
+  // wgpu::RenderPipeline variant. Defaults to Normal, so a backend that never
+  // calls setBlendMode keeps the byte-identical base pipeline.
+  currentBlendMode_ = mode;
 }
 void DawnDevice::setClipState(ClipMode) {
   // TODO(ENC-484/ENC-493)
