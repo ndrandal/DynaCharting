@@ -389,12 +389,18 @@ endif()
 # ENC-479 (P0.1): an (almost) empty static library so future WebGPU backend
 # work has a real, linkable target. Built only when Dawn is available.
 if (DC_HAS_DAWN)
-  add_library(dc_gpu STATIC
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/gpu/placeholder.cpp"
-  )
+  # All gpu/ sources are globbed in (placeholder.cpp + ENC-480 DawnDevice.cpp +
+  # future Dawn backend sources).
+  file(GLOB DC_GPU_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/gpu/*.cpp")
+  add_library(dc_gpu STATIC ${DC_GPU_SOURCES})
   target_include_directories(dc_gpu PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
   )
+  # Dawn's public C++ wrapper (webgpu_cpp.h) requires C++20 (it uses `requires`
+  # expressions and concepts in its callback helpers). dc / dc_gl stay C++17 —
+  # only dc_gpu and anything including the Dawn headers (the ENC-480 test) need
+  # C++20. PUBLIC so consumers (the test) inherit it.
+  target_compile_features(dc_gpu PUBLIC cxx_std_20)
   # Link the Dawn monolithic WebGPU target. Prefer the namespaced alias.
   if (TARGET dawn::webgpu_dawn)
     target_link_libraries(dc_gpu PUBLIC dc dawn::webgpu_dawn)
@@ -1900,5 +1906,18 @@ if (DC_BUILD_TESTS)
     )
     target_link_libraries(dc_d81_3_range_upload PRIVATE dc_gl)
     add_test(NAME dc_d81_3_range_upload COMMAND dc_d81_3_range_upload)
+  endif()
+
+  # ENC-480 (P0.2) Headless Dawn device: clear an offscreen target to a known
+  # color and read the center pixel back synchronously. Guarded by DC_HAS_DAWN
+  # like dc_gpu itself. On this headless box the test may need the lavapipe
+  # software Vulkan ICD: set
+  #   VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json
+  if (DC_HAS_DAWN)
+    add_executable(dc_d2_0_dawn_clear
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/d2_0_dawn_clear.cpp"
+    )
+    target_link_libraries(dc_d2_0_dawn_clear PRIVATE dc_gpu)
+    add_test(NAME dc_d2_0_dawn_clear COMMAND dc_d2_0_dawn_clear)
   endif()
 endif()
