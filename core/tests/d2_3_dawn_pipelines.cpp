@@ -36,7 +36,7 @@
 #include "dc/scene/Scene.hpp"
 #include "dc/scene/ResourceRegistry.hpp"
 #include "dc/commands/CommandProcessor.hpp"
-#include "dc/gl/GpuBufferManager.hpp"
+#include "dc/render/CpuBufferStore.hpp"
 
 #include <cstdint>
 #include <cstdio>
@@ -65,7 +65,7 @@ constexpr std::uint32_t H = 64;
 // Render a single DrawItem through the registry into a freshly-cleared offscreen
 // target and return the draw-call count.
 std::uint32_t renderOne(dc::DawnDevice& dev, dc::BackendRegistry& backends,
-                        dc::Scene& scene, dc::GpuBufferManager& gpuBufs,
+                        dc::Scene& scene, dc::CpuBufferStore& gpuBufs,
                         dc::Id drawItemId) {
   dc::RenderPassDesc rp;
   rp.target = {};
@@ -135,7 +135,7 @@ int main() {
   dc::Scene scene;
   dc::ResourceRegistry reg;
   dc::CommandProcessor cp(scene, reg);
-  dc::GpuBufferManager gpuBufs;
+  dc::CpuBufferStore gpuBufs;
 
   // --- 2. Register the Dawn line2d + points backends. ---------------------
   dc::DawnLine2dBackend line2d;

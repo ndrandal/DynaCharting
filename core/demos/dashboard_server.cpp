@@ -22,9 +22,8 @@
 #include "dc/scene/ResourceRegistry.hpp"
 #include "dc/commands/CommandProcessor.hpp"
 #include "dc/ingest/IngestProcessor.hpp"
-#include "dc/gl/OsMesaContext.hpp"
-#include "dc/gl/GpuBufferManager.hpp"
-#include "dc/gl/Renderer.hpp"
+#include "dc/render/CpuBufferStore.hpp"
+#include "dawn_server_util.hpp"  // ENC-501: Dawn render + top-down readback
 #include "dc/math/Normalize.hpp"
 
 #include <rapidjson/document.h>
@@ -63,8 +62,8 @@ static void writeFrame(const std::uint8_t* pixels, int w, int h) {
   std::uint32_t height = static_cast<std::uint32_t>(h);
   std::fwrite(&width, 4, 1, stdout);
   std::fwrite(&height, 4, 1, stdout);
-  for (int y = h - 1; y >= 0; y--)
-    std::fwrite(pixels + y * w * 4, 1, static_cast<std::size_t>(w) * 4, stdout);
+  // ENC-501: Dawn readback is already TOP-DOWN, write rows in order.
+  std::fwrite(pixels, 1, static_cast<std::size_t>(w) * h * 4, stdout);
   std::fflush(stdout);
 }
 
@@ -90,7 +89,7 @@ static void uploadBuf(dc::IngestProcessor& ingest, dc::Id bufId,
             static_cast<std::uint32_t>(data.size() * sizeof(float)));
 }
 static void syncGpuBuf(dc::IngestProcessor& ingest,
-                       dc::GpuBufferManager& gpuBufs, dc::Id bufId) {
+                       dc::CpuBufferStore& gpuBufs, dc::Id bufId) {
   const auto* data = ingest.getBufferData(bufId);
   auto size = ingest.getBufferSize(bufId);
   if (data && size > 0) gpuBufs.setCpuData(bufId, data, size);
@@ -409,10 +408,6 @@ int main() {
   std::freopen("/dev/null", "w", stderr);
 
   int W = 1200, H = 800;
-
-  // ---- 1. Create OSMesa context ----
-  auto ctx = std::make_unique<dc::OsMesaContext>();
-  if (!ctx->init(W, H)) return 1;
 
   dc::Scene scene;
   dc::ResourceRegistry reg;
@@ -941,13 +936,13 @@ int main() {
   // ========================================================================
   // SYNC ALL BUFFERS TO GPU + RENDER
   // ========================================================================
-  auto gpuBufs = std::make_unique<dc::GpuBufferManager>();
-  auto renderer = std::make_unique<dc::Renderer>();
-  renderer->init();
+  auto gpuBufs = std::make_unique<dc::CpuBufferStore>();
+  auto renderer = std::make_unique<dc::DawnSceneRenderer>();
+  if (!renderer->init()) return 1;
+  std::vector<std::uint8_t> pixels;
 
   for (dc::Id bid : g_allBufferIds)
     syncGpuBuf(ingest, *gpuBufs, bid);
-  gpuBufs->uploadDirty();
 
   // ========================================================================
   // TEXT OVERLAY
@@ -1052,9 +1047,7 @@ int main() {
   // ========================================================================
   // INITIAL RENDER
   // ========================================================================
-  renderer->render(scene, *gpuBufs, W, H);
-  ctx->swapBuffers();
-  auto pixels = ctx->readPixels();
+  dc::demo::renderTopDown(*renderer, scene, *gpuBufs, W, H, pixels);
   std::string textJson = buildTextOverlay();
   writeTextJson(textJson);
   writeFrame(pixels.data(), W, H);
@@ -1151,11 +1144,10 @@ int main() {
       int newH = doc.HasMember("h") ? doc["h"].GetInt() : H;
       if (newW != W || newH != H) {
         W = newW; H = newH;
-        ctx = std::make_unique<dc::OsMesaContext>();
-        if (!ctx->init(W, H)) break;
-        renderer = std::make_unique<dc::Renderer>();
-        renderer->init();
-        gpuBufs = std::make_unique<dc::GpuBufferManager>();
+        // ENC-501: Dawn recreates its offscreen target lazily at the new (W,H).
+        renderer = std::make_unique<dc::DawnSceneRenderer>();
+        if (!renderer->init()) break;
+        gpuBufs = std::make_unique<dc::CpuBufferStore>();
 
         candleVp.pixW = W; candleVp.pixH = H;
         volVp.pixW = W; volVp.pixH = H;
@@ -1191,10 +1183,7 @@ int main() {
     }
 
     if (needsRender) {
-      gpuBufs->uploadDirty();
-      renderer->render(scene, *gpuBufs, W, H);
-      ctx->swapBuffers();
-      pixels = ctx->readPixels();
+      dc::demo::renderTopDown(*renderer, scene, *gpuBufs, W, H, pixels);
       textJson = buildTextOverlay();
       writeTextJson(textJson);
       writeFrame(pixels.data(), W, H);

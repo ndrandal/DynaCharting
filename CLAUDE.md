@@ -6,14 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 DynaCharting is a high-performance real-time charting engine intended as an embeddable library for internal use. The long-term target is C++ doing the heavy lifting for both data processing and rendering. The TypeScript/WebGL2 frontend served as a prototype to prove out concepts (scene graph, pipelines, data ingestion) and will be progressively replaced as the C++ core gains rendering capability.
 
-**Current milestone:** First render from the C++ side (D2.1 — achieved).
+**Current milestone:** WebGPU/Dawn is the C++ renderer (`dc_gpu`). The original OpenGL backend has been removed (ENC-501); the full pipeline set renders headless through Dawn with offscreen readback. Windowed/on-screen presentation is next (ENC-497).
 
 ## Repository Layout
 
-- **`core/`** — C++17 static libraries (`dc` and `dc_gl`). Scene graph, command processor, resource registry, pipeline catalog, and GL rendering backend. This is where most new work happens. Built with CMake.
-  - `dc` — Pure C++ core (no GL deps). Scene graph, commands, pipelines.
-  - `dc_gl` — OpenGL rendering backend. Links against `dc`, GLAD, and OSMesa. Contains `GlContext`, `OsMesaContext`, `ShaderProgram`, `GpuBufferManager`, `Renderer`.
-  - `dc_gpu` — WebGPU/Dawn rendering backend (scaffold, OFF by default). Built only with `-DDC_FETCH_DAWN=ON`; links `dc` and `dawn::webgpu_dawn`. See the WebGPU/Dawn section under Build & Development Commands.
+- **`core/`** — C++17 static libraries (`dc` and `dc_gpu`). Scene graph, command processor, resource registry, pipeline catalog, and the WebGPU/Dawn rendering backend. This is where most new work happens. Built with CMake.
+  - `dc` — Pure C++ core (no graphics-API deps). Scene graph, commands, pipelines, plus the backend-agnostic CPU-side buffer base `CpuBufferStore` (`dc/render/`).
+  - `dc_gpu` — WebGPU/Dawn rendering backend — **THE renderer**. Built only with `-DDC_FETCH_DAWN=ON` (building Dawn is heavy); links `dc` and `dawn::webgpu_dawn`. Contains `DawnDevice`, `DawnSceneRenderer`, and the 10 per-pipeline Dawn backends. See the WebGPU/Dawn section under Build & Development Commands.
+  - The OpenGL backend (`dc_gl`) and its deps (GLAD, OSMesa, GLFW) were **removed** in the WebGPU/Dawn migration (ENC-501). On-screen/windowed presentation on Dawn is a separate ticket (ENC-497).
 - **`packages/engine-host/`** — TypeScript WebGL2 rendering host (`@repo/engine-host`). Prototype renderer — reference implementation for pipeline specs, glyph atlas, data ingestion.
 - **`packages/chart-controller/`** — High-level chart API (`@repo/chart-controller`). Recipe lifecycle and transform management. Depends on engine-host.
 - **`apps/demos/hello-engine/`** — Vite demo app. Useful as a reference for how the pieces connect.
@@ -31,32 +31,38 @@ pnpm --filter @repo/demo-hello-engine dev           # run Vite dev server (port 
 
 ```bash
 cmake -B build -DTHIRD_PARTY_ROOT=./third_party     # configure (RapidJSON required)
-cmake --build build                                  # build library + tests
-ctest --test-dir build                               # run all C++ tests
+cmake --build build                                  # build library + logic tests
+ctest --test-dir build                               # run the logic tests
 ctest --test-dir build -R dc_d1_1_smoke              # run a single test by name
 ```
 
+The **default** build (no `-DDC_FETCH_DAWN`) builds `dc` + the pure-logic tests only — no renderer, fast, and needs no graphics API. To get the renderer + render/golden tests, opt into Dawn (see below).
+
 CMake options: `DC_BUILD_TESTS` (default ON), `DC_WARNINGS_AS_ERRORS` (default OFF), `DC_FETCH_DAWN` (default OFF — see below).
 
-**Note:** Third-party deps (RapidJSON, GLAD) need to be present under `./third_party` (or path set via `-DTHIRD_PARTY_ROOT`). OSMesa (`libosmesa6-dev`) must be installed for `dc_gl` and the D2.1 render test. If OSMesa is not found, `dc_gl` is gracefully skipped.
+**Note:** Only RapidJSON is needed under `./third_party` (or via `-DTHIRD_PARTY_ROOT`) for the default build. There are no longer any GLAD / OSMesa / GLFW dependencies — the GL backend was removed.
 
 ### WebGPU / Dawn backend (`dc_gpu`)
 
-The WebGPU/Dawn rendering backend (`dc_gpu`) is **OFF by default**. Normal `dc` / `dc_gl` builds and CI for other tickets are completely unaffected unless you explicitly opt in.
+`dc_gpu` is the renderer, but Dawn is **OFF by default** because building it from source is heavy. The default `dc` build + logic tests are unaffected unless you opt in.
 
-Enable Dawn (fetches and builds it from source via CMake `FetchContent`):
+Enable Dawn (fetches and builds it from source via CMake `FetchContent`). Use Ninja:
 
 ```bash
-cmake -B build-dawn -DTHIRD_PARTY_ROOT=./third_party -DDC_FETCH_DAWN=ON
-cmake --build build-dawn --target dc_gpu -j$(nproc)
+cmake -B build-dawn -G Ninja -DTHIRD_PARTY_ROOT=./third_party -DDC_BUILD_TESTS=ON -DDC_FETCH_DAWN=ON
+cmake --build build-dawn -j$(nproc)
+# Dawn render tests need a real Vulkan ICD; on a headless box use the lavapipe fallback:
+VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json ctest --test-dir build-dawn -j$(nproc)
 ```
+
+The Dawn build adds `dc_gpu`, the `dc_json_host` embedding host, the headless render servers (`dc_showcase_server`, `dc_live_server`, `dc_dashboard_server`, `dc_gallery`), the per-pipeline Dawn render tests, and the Dawn-golden parity tests.
 
 - **Pinned Dawn revision:** commit `58263faefe3c52fac4656825c6d55f85ee3c7536` — the immutable tip of branch `chromium/7880` as of **2026-06-09**. We pin an explicit commit hash (never a moving branch) for reproducibility. Update this hash deliberately when bumping Dawn.
 - **Source:** `https://dawn.googlesource.com/dawn`. Dawn's own dependencies are fetched with its `fetch_dawn_dependencies.py` helper (`DAWN_FETCH_DEPENDENCIES=ON`), so `depot_tools` is **not** required.
 - **Build cost (heads-up):** build-from-source is **slow** — the first configure clones ~3-4 GB of Dawn + its third-party deps, and a full compile takes **30-60+ minutes** and needs `python3` and `ninja`. Subsequent incremental builds are fast. The full Dawn build is validated in CI (ENC-499).
 - **Lean build:** Dawn samples, tests, benchmarks, fuzzers, node bindings, install rules, and Tint command-line tools/tests are all disabled. Dawn is built as a single monolithic static library.
-- **Linked target:** `dc_gpu` links the Dawn monolithic WebGPU target `dawn::webgpu_dawn` (alias of `webgpu_dawn`) plus `dc`. When `DC_FETCH_DAWN=OFF` (or Dawn is unavailable), `DC_HAS_DAWN` is FALSE and `dc_gpu` is gracefully skipped — exactly like the OSMesa/GLFW/`dc_gl` skip behavior.
-- `dc_gpu` currently contains only a placeholder translation unit (`core/src/gpu/placeholder.cpp`) and a public header (`core/include/gpu/Gpu.hpp`); the real backend lands in later P0/P1 tickets.
+- **Linked target:** `dc_gpu` links the Dawn monolithic WebGPU target `dawn::webgpu_dawn` (alias of `webgpu_dawn`) plus `dc`. When `DC_FETCH_DAWN=OFF` (or Dawn is unavailable), `DC_HAS_DAWN` is FALSE and `dc_gpu` (and everything that needs it — the host, the servers, the render tests) is gracefully skipped; the default `dc` + logic-test build is unaffected.
+- `dc_gpu` is the full WebGPU/Dawn renderer: `DawnDevice` (offscreen target + readback), `DawnSceneRenderer` (the scene-walk mirror of the old GL `Renderer::render`), and the 10 per-pipeline backends (triSolid/triGradient/triAA/line2d/lineAA/points/instancedRect/instancedCandle/textSDF/texturedQuad) + picking.
 
 ## Architecture
 
@@ -103,17 +109,17 @@ Pipeline types (defined in TS prototype at `packages/engine-host/src/pipelines.t
 - `ResourceRegistry` — Manages GPU resource metadata.
 - `PipelineCatalog` — Registers and resolves pipeline types.
 
-### C++ GL Classes (`dc_gl`)
+- `CpuBufferStore` (`dc/render/`) — Backend-agnostic CPU-side buffer store: per-id CPU bytes, capacity, dirty-range coalescing, `UploadStats`. The Dawn upload path drives it through `GpuDevice` + a `BufferHandleResolver`. (This was the device-neutral half of the old GL `GpuBufferManager`.)
 
-- `GlContext` — Abstract interface for GL context creation (`init`, `swapBuffers`, `readPixels`).
-- `OsMesaContext` — Headless OSMesa implementation of `GlContext`. Creates GL 3.3 core profile context, loads GLAD via `OSMesaGetProcAddress`.
-- `ShaderProgram` — Shader compile/link wrapper with uniform setters.
-- `GpuBufferManager` — Stores CPU bytes per buffer ID, manages VBO upload. Connects to Scene via buffer IDs.
-- `Renderer` — Walks the scene graph and dispatches GL draw calls. Currently supports `triSolid@1` pipeline.
+### C++ Dawn Renderer Classes (`dc_gpu`)
+
+- `DawnDevice` — Headless WebGPU/Dawn device: offscreen render target + synchronous pixel readback (`readPixel`, top-down origin), buffers/textures/samplers, pipeline + bind-group creation, blend/clip permutations.
+- `DawnSceneRenderer` — Walks the whole Scene and dispatches every DrawItem through the registered Dawn backends (clear, per-pane scissor, per-item frustum-cull + blend + clip + transform, pane borders/separators). The Dawn mirror of the old GL `Renderer::render`. Exposes `render(scene, store, W, H)` and `renderPick(...)`.
+- Per-pipeline backends — one `IRendererBackend` per pipeline (`DawnTriSolidBackend`, `DawnLine2dBackend`, `DawnInstancedRectBackend`, `DawnTextSdfBackend`, `DawnTexturedQuadBackend`, …) plus `DawnPickBackend`, all reading CPU bytes from `CpuBufferStore`.
 
 ## Conventions
 
-- C++17 required. Third-party C++ deps: RapidJSON (header-only, JSON parsing), GLAD (GL loader, vendored in `third_party/glad/`). System dep: `libosmesa6-dev` (headless GL for `dc_gl`).
+- C++17 required for `dc`; `dc_gpu` and anything including Dawn headers needs C++20 (Dawn's C++ wrapper). Third-party C++ deps: RapidJSON (header-only, JSON parsing). The renderer dep is Dawn, fetched from source when `-DDC_FETCH_DAWN=ON` (see WebGPU/Dawn section). No GLAD / OSMesa / GLFW.
 - All TypeScript packages use ESM (`"type": "module"`).
 - Workspace packages reference each other via `"workspace:*"` protocol.
 - Library packages export directly from `./src/index.ts` (no build step; consumed by Vite).

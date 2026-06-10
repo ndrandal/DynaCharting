@@ -4,18 +4,12 @@
 //
 // Usage: dc_json_host <chart.json>
 //
-// ENC-500 (P5.1) — Dawn cutover. The embedding/render path is now Dawn by
-// DEFAULT: when the WebGPU/Dawn backend is available (DC_HAS_DAWN), JsonHost
-// renders through DawnDevice + CpuBufferStore + DawnSceneRenderer and reads the
-// frame back via DawnDevice::readPixel. When Dawn is OFF (DC_HAS_DAWN undefined)
-// it falls back to the original GL path (OsMesaContext + GpuBufferManager +
-// Renderer + OSMesa readPixels), so JsonHost still builds and works without
-// Dawn. The two paths are isolated behind a single HostRenderBackend interface;
-// everything else (parse, reconcile, ingest, bindings, viewports, the input
-// loop) is backend-agnostic and shared.
-//
-// GL is the conformance reference (ENC-509..512); deleting dc_gl is a SEPARATE
-// ticket (ENC-501).
+// ENC-501 (P5 cutover) — Dawn-only. dc_gl has been deleted; JsonHost now REQUIRES
+// the WebGPU/Dawn backend (DC_HAS_DAWN). It renders through DawnDevice +
+// CpuBufferStore + DawnSceneRenderer and reads the frame back via
+// DawnDevice::readPixel. Everything else (parse, reconcile, ingest, bindings,
+// viewports, the input loop) is backend-agnostic and shared. The host is only
+// built when Dawn is available (see core/CMakeLists.txt).
 
 #include "dc/document/SceneDocument.hpp"
 #include "dc/document/SceneReconciler.hpp"
@@ -35,16 +29,9 @@
 // the store the Dawn render path uses directly).
 #include "dc/render/CpuBufferStore.hpp"
 
-#if DC_HAS_DAWN
-// ENC-500 default render path: Dawn (WebGPU native).
+// Dawn (WebGPU native) render path — the only render backend.
 #include "dc/gpu/DawnDevice.hpp"
 #include "dc/gpu/DawnSceneRenderer.hpp"
-#else
-// Fallback render path: GL (OSMesa).
-#include "dc/gl/OsMesaContext.hpp"
-#include "dc/gl/GpuBufferManager.hpp"
-#include "dc/gl/Renderer.hpp"
-#endif
 
 #include <rapidjson/document.h>
 
@@ -117,16 +104,16 @@ static void writeTextOverlay(const dc::DocTextOverlay& overlay, int W, int H) {
 //   * GPU-pick at a top-down pixel and return the hit DrawItem id,
 //   * resize to a new (W,H),
 //   * push CPU buffer bytes into the backend's buffer store.
-// Two concrete backends implement it: Dawn (default, DC_HAS_DAWN) and GL
-// (fallback). Both expose a CpuBufferStore-derived store so the shared buffer-
-// sync helpers below stay backend-neutral.
+// The only concrete backend is Dawn (ENC-501: the GL fallback was removed). The
+// interface is retained as the seam future on-screen surfaces (ENC-497) can slot
+// into. It exposes a CpuBufferStore so the shared buffer-sync helpers below stay
+// backend-neutral.
 // ---------------------------------------------------------------------------
 
 struct HostRenderBackend {
   virtual ~HostRenderBackend() = default;
 
-  // The backend's CPU-side buffer store (GpuBufferManager for GL, CpuBufferStore
-  // for Dawn). setCpuData/getCpuData live on the shared base.
+  // The backend's CPU-side buffer store. setCpuData/getCpuData live on the base.
   virtual dc::CpuBufferStore& store() = 0;
 
   // Render `scene` at (W,H) into `outRgba` as TOP-DOWN, row-major RGBA
@@ -145,8 +132,7 @@ struct HostRenderBackend {
   virtual bool resize(int W, int H) = 0;
 };
 
-#if DC_HAS_DAWN
-// --- Dawn render backend (DEFAULT) -----------------------------------------
+// --- Dawn render backend (the only backend) --------------------------------
 //
 // Owns a DawnSceneRenderer (which owns a DawnDevice + all 10 pipeline backends)
 // and a CpuBufferStore. The scene's CPU buffer bytes are pushed into the store;
@@ -209,63 +195,6 @@ class DawnHostBackend final : public HostRenderBackend {
   std::unique_ptr<dc::DawnSceneRenderer> renderer_;
   dc::CpuBufferStore store_;
 };
-#else
-// --- GL render backend (FALLBACK, Dawn OFF) --------------------------------
-//
-// The original D79 path: OsMesaContext + GpuBufferManager + Renderer, OSMesa
-// readback (bottom-up) flipped to top-down here so the rest of the host sees the
-// same convention as the Dawn path.
-class GlHostBackend final : public HostRenderBackend {
- public:
-  bool init(int W, int H) {
-    ctx_ = std::make_unique<dc::OsMesaContext>();
-    if (!ctx_->init(W, H)) return false;
-    renderer_ = std::make_unique<dc::Renderer>();
-    return renderer_->init();
-  }
-
-  dc::CpuBufferStore& store() override { return gpuBufs_; }
-
-  void render(const dc::Scene& scene, int W, int H,
-              std::vector<std::uint8_t>& outRgba) override {
-    gpuBufs_.uploadDirty();
-    renderer_->render(scene, gpuBufs_, W, H);
-    ctx_->swapBuffers();
-    auto pixels = ctx_->readPixels();  // bottom-up RGBA
-    // Flip to top-down so writeFrame/PNG see the same origin as Dawn.
-    outRgba.assign(static_cast<std::size_t>(W) * H * 4, 0);
-    for (int y = 0; y < H; ++y) {
-      std::memcpy(&outRgba[(static_cast<std::size_t>(y) * W) * 4],
-                  &pixels[(static_cast<std::size_t>(H - 1 - y) * W) * 4],
-                  static_cast<std::size_t>(W) * 4);
-    }
-  }
-
-  dc::Id pick(const dc::Scene& scene, int W, int H, int px, int pyTop,
-              dc::EventBus* /*bus*/) override {
-    gpuBufs_.uploadDirty();
-    // GL pick target is bottom-up; convert the top-down probe row.
-    int pickY = H - 1 - pyTop;
-    auto r = renderer_->renderPick(scene, gpuBufs_, W, H, px, pickY);
-    return r.drawItemId;
-  }
-
-  bool resize(int W, int H) override {
-    ctx_ = std::make_unique<dc::OsMesaContext>();
-    if (!ctx_->init(W, H)) return false;
-    renderer_ = std::make_unique<dc::Renderer>();
-    if (!renderer_->init()) return false;
-    // A fresh GpuBufferManager (new GL context => new VBOs); caller re-syncs.
-    gpuBufs_ = dc::GpuBufferManager();
-    return true;
-  }
-
- private:
-  std::unique_ptr<dc::OsMesaContext> ctx_;
-  std::unique_ptr<dc::Renderer> renderer_;
-  dc::GpuBufferManager gpuBufs_;
-};
-#endif
 
 // Write a TOP-DOWN RGBA frame as a FRME message (the protocol's native order).
 static void writeFrame(const std::uint8_t* topDownRgba, int w, int h) {
@@ -380,14 +309,9 @@ int main(int argc, char* argv[]) {
   int W = doc.viewportWidth > 0 ? doc.viewportWidth : 900;
   int H = doc.viewportHeight > 0 ? doc.viewportHeight : 600;
 
-  // ---- 3. Init the render backend (Dawn by default; GL fallback) ----
-#if DC_HAS_DAWN
+  // ---- 3. Init the render backend (Dawn) ----
   auto backend = std::make_unique<DawnHostBackend>();
   if (!backend->init()) return 1;
-#else
-  auto backend = std::make_unique<GlHostBackend>();
-  if (!backend->init(W, H)) return 1;
-#endif
 
   // ---- 4. Set up engine ----
   dc::Scene scene;

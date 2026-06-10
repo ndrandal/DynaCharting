@@ -1,5 +1,5 @@
 // D56.1 — BatchBuilder: verify grouping and ordering
-#include "dc/gl/BatchBuilder.hpp"
+#include "dc/scene/BatchBuilder.hpp"
 #include "dc/scene/Scene.hpp"
 #include "dc/scene/ResourceRegistry.hpp"
 #include "dc/commands/CommandProcessor.hpp"

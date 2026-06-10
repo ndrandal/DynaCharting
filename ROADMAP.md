@@ -45,9 +45,12 @@ All engine-level primitives from the original roadmap have been implemented (D1�
 
 ## Next Up
 
+### Renderer
+- ✅ **WebGPU/Dawn cutover** (ENC-479…501) — `dc_gpu` (Dawn) is now THE renderer. The OpenGL backend (`dc_gl`) plus GLAD / OSMesa / GLFW were deleted (ENC-501). The headless render servers (`dc_showcase_server`, `dc_live_server`, `dc_dashboard_server`, `dc_gallery`) render via `DawnSceneRenderer` + `DawnDevice` readback. Rendering regression coverage is the Dawn render tests + Dawn-golden parity tests.
+- **On-screen Dawn surface** (ENC-497) — windowed/interactive presentation on Dawn. The old GLFW demos (`hello_glfw`, `d2_7`, `d5_7`, `d6_3`, …) were removed pending this; they needed an on-screen GL surface.
+
 ### Infrastructure
-- **CI/CD Pipeline** — GitHub Actions for build + test (OSMesa headless GL in CI)
-- ✅ **GLFW Live Window** (ENC-91) — `core/demos/hello_glfw.cpp` is the canonical embedding template; `dc_d2_7_demo`, `dc_d5_7_interactive_demo`, `dc_d6_3_live_demo` exercise more interactive paths. Build with `find_package(glfw3)` available; binary is `dc_hello_glfw`.
+- **CI/CD Pipeline** — GitHub Actions for build + test (Dawn render tests need a Vulkan ICD; lavapipe fallback)
 - **Embedding Example** — Minimal C++ app or WebAssembly build demonstrating library integration
 
 ### Reactive Bindings (D80, retroactively documented)
@@ -59,7 +62,7 @@ All engine-level primitives from the original roadmap have been implemented (D1�
 - **Streaming Backpressure** — Flow control for high-frequency data sources
 
 ### Potential New Features
-- **Multi-Window Support** — Multiple GL contexts rendering shared scene data
+- **Multi-Window Support** — Multiple Dawn surfaces rendering shared scene data (after ENC-497)
 - **Custom Shader Hot-Reload** — Live shader editing for custom pipeline development
 - **Scene Diffing / Snapshots** — Incremental scene updates over network
 - **WebAssembly Target** — Emscripten build for browser embedding

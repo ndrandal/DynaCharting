@@ -11,10 +11,9 @@
 #include "dc/scene/ResourceRegistry.hpp"
 #include "dc/commands/CommandProcessor.hpp"
 #include "dc/ingest/IngestProcessor.hpp"
-#include "dc/gl/OsMesaContext.hpp"
-#include "dc/gl/GpuBufferManager.hpp"
-#include "dc/gl/Renderer.hpp"
+#include "dc/render/CpuBufferStore.hpp"
 #include "dc/math/Normalize.hpp"
+#include "dawn_server_util.hpp"  // ENC-501: Dawn render + top-down readback
 
 #include <cstdio>
 #include <cstdlib>
@@ -49,9 +48,8 @@ static void writeFrame(const std::uint8_t* pixels, int w, int h) {
   std::uint32_t height = static_cast<std::uint32_t>(h);
   std::fwrite(&width, 4, 1, stdout);
   std::fwrite(&height, 4, 1, stdout);
-  for (int y = h - 1; y >= 0; y--) {
-    std::fwrite(pixels + y * w * 4, 1, static_cast<std::size_t>(w) * 4, stdout);
-  }
+  // ENC-501: Dawn readback is already TOP-DOWN, write rows in order.
+  std::fwrite(pixels, 1, static_cast<std::size_t>(w) * h * 4, stdout);
   std::fflush(stdout);
 }
 
@@ -85,7 +83,7 @@ static void setVertexCount(dc::CommandProcessor& cp, dc::Id geomId,
 }
 
 static void syncGpuBuf(dc::IngestProcessor& ingest,
-                       dc::GpuBufferManager& gpuBufs, dc::Id bufId) {
+                       dc::CpuBufferStore& gpuBufs, dc::Id bufId) {
   const auto* data = ingest.getBufferData(bufId);
   auto size = ingest.getBufferSize(bufId);
   if (data && size > 0) gpuBufs.setCpuData(bufId, data, size);
@@ -436,11 +434,7 @@ int main() {
 
   int W = 900, H = 600;
 
-  // ---- 1. Create OSMesa context ----
-  auto ctx = std::make_unique<dc::OsMesaContext>();
-  if (!ctx->init(W, H)) return 1;
-
-  // ---- 2. Set up engine ----
+  // ---- 1. Set up engine ----
   dc::Scene scene;
   dc::ResourceRegistry reg;
   dc::CommandProcessor cp(scene, reg);
@@ -754,9 +748,10 @@ int main() {
   // ========================================================================
   // Sync all buffers to GPU
   // ========================================================================
-  auto gpuBufs = std::make_unique<dc::GpuBufferManager>();
-  auto renderer = std::make_unique<dc::Renderer>();
-  renderer->init();
+  auto gpuBufs = std::make_unique<dc::CpuBufferStore>();
+  auto renderer = std::make_unique<dc::DawnSceneRenderer>();
+  if (!renderer->init()) return 1;
+  std::vector<std::uint8_t> pixels;
 
   // Sync line chart buffers
   syncGpuBuf(ingest, *gpuBufs, LC_GRID_BUF);
@@ -775,8 +770,6 @@ int main() {
   syncGpuBuf(ingest, *gpuBufs, TBL_ROW_BUF);
   syncGpuBuf(ingest, *gpuBufs, TBL_GRID_BUF);
 
-  gpuBufs->uploadDirty();
-
   // ========================================================================
   // Build text overlay
   // ========================================================================
@@ -794,9 +787,7 @@ int main() {
   // ========================================================================
   // Render initial frame
   // ========================================================================
-  renderer->render(scene, *gpuBufs, W, H);
-  ctx->swapBuffers();
-  auto pixels = ctx->readPixels();
+  dc::demo::renderTopDown(*renderer, scene, *gpuBufs, W, H, pixels);
   writeTextJson(textJson);
   writeFrame(pixels.data(), W, H);
 
@@ -826,11 +817,11 @@ int main() {
         if (newW > 0 && newH > 0 && (newW != W || newH != H)) {
           W = newW;
           H = newH;
-          ctx = std::make_unique<dc::OsMesaContext>();
-          if (!ctx->init(W, H)) break;
-          renderer = std::make_unique<dc::Renderer>();
-          renderer->init();
-          gpuBufs = std::make_unique<dc::GpuBufferManager>();
+          // Dawn recreates its offscreen target lazily at the new (W,H); just
+          // make a fresh renderer + store and re-sync the buffers below.
+          renderer = std::make_unique<dc::DawnSceneRenderer>();
+          if (!renderer->init()) break;
+          gpuBufs = std::make_unique<dc::CpuBufferStore>();
 
           // Re-tessellate pie for new viewport dimensions (fringe + aspect ratio)
           {
@@ -878,10 +869,7 @@ int main() {
         }
       }
 
-      gpuBufs->uploadDirty();
-      renderer->render(scene, *gpuBufs, W, H);
-      ctx->swapBuffers();
-      pixels = ctx->readPixels();
+      dc::demo::renderTopDown(*renderer, scene, *gpuBufs, W, H, pixels);
       writeTextJson(textJson);
       writeFrame(pixels.data(), W, H);
     }

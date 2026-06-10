@@ -1,5 +1,5 @@
 // D56: Render state batching — group consecutive draw items by pipeline/blend/texture
-#include "dc/gl/BatchBuilder.hpp"
+#include "dc/scene/BatchBuilder.hpp"
 #include <algorithm>
 
 namespace dc {

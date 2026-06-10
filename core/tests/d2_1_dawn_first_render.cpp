@@ -30,7 +30,7 @@
 #include "dc/scene/Scene.hpp"
 #include "dc/scene/ResourceRegistry.hpp"
 #include "dc/commands/CommandProcessor.hpp"
-#include "dc/gl/GpuBufferManager.hpp"
+#include "dc/render/CpuBufferStore.hpp"
 
 #include <cstdint>
 #include <cstdio>
@@ -94,7 +94,7 @@ int main() {
      0.5f, -0.5f,
      0.0f,  0.5f,
   };
-  dc::GpuBufferManager gpuBufs;
+  dc::CpuBufferStore gpuBufs;
   gpuBufs.setCpuData(3, verts, sizeof(verts));  // CPU bytes only; no GL upload.
 
   // --- 3. Register the Dawn triSolid backend in the registry. -------------

@@ -10,12 +10,8 @@
 #include "dc/scene/ResourceRegistry.hpp"
 #include "dc/commands/CommandProcessor.hpp"
 #include "dc/ingest/IngestProcessor.hpp"
-#include "dc/gl/GpuBufferManager.hpp"
-#include "dc/gl/Renderer.hpp"
-
-#ifdef DC_HAS_OSMESA
-#include "dc/gl/OsMesaContext.hpp"
-#endif
+#include "dc/render/CpuBufferStore.hpp"
+#include "dawn_server_util.hpp"  // ENC-501: Dawn render + top-down readback
 
 #include <cassert>
 #include <cstdio>
@@ -49,7 +45,8 @@ static void appendRecord(std::vector<std::uint8_t>& batch,
 static void writePPM(const char* path, int w, int h, const std::vector<std::uint8_t>& rgba) {
   std::ofstream f(path, std::ios::binary);
   f << "P6\n" << w << " " << h << "\n255\n";
-  for (int y = h - 1; y >= 0; --y) {
+  // ENC-501: Dawn readback is already TOP-DOWN, write rows in order.
+  for (int y = 0; y < h; ++y) {
     for (int x = 0; x < w; ++x) {
       std::size_t idx = static_cast<std::size_t>((y * w + x) * 4);
       f.put(static_cast<char>(rgba[idx + 0]));
@@ -309,20 +306,16 @@ static GalleryCard kCards[] = {
 // --- Main ---
 
 int main() {
-#ifndef DC_HAS_OSMESA
-  std::printf("Gallery demo requires OSMesa — skipping.\n");
-  return 0;
-#else
   const int W = 400, H = 300;
 
-  dc::OsMesaContext ctx;
-  if (!ctx.init(W, H)) {
-    std::fprintf(stderr, "Failed to init OSMesa context\n");
+  // ENC-501: Dawn renderer (one device renders every card scene).
+  dc::DawnSceneRenderer renderer;
+  if (!renderer.init()) {
+    std::fprintf(stderr, "Failed to init Dawn renderer: %s\n",
+                 renderer.errorMessage().c_str());
     return 1;
   }
-
-  dc::Renderer renderer;
-  renderer.init();
+  std::vector<std::uint8_t> pixels;
 
   const int numCards = static_cast<int>(sizeof(kCards) / sizeof(kCards[0]));
   int rendered = 0;
@@ -337,7 +330,7 @@ int main() {
     dc::CommandProcessor cp(scene, reg);
     dc::IngestProcessor ingest;
     cp.setIngestProcessor(&ingest);
-    dc::GpuBufferManager gpuBuf;
+    dc::CpuBufferStore gpuBuf;
 
     // Parse JSON
     dc::SceneDocument doc;
@@ -358,19 +351,15 @@ int main() {
     // Fill vertex data
     card.fillData(ingest);
 
-    // Upload to GPU
+    // Push CPU bytes into the store.
     for (dc::Id bid : scene.bufferIds()) {
       if (ingest.getBufferSize(bid) > 0) {
         gpuBuf.setCpuData(bid, ingest.getBufferData(bid), ingest.getBufferSize(bid));
       }
     }
-    gpuBuf.uploadDirty();
 
-    // Render
-    renderer.render(scene, gpuBuf, W, H);
-
-    // Read pixels and write PPM
-    auto pixels = ctx.readPixels();
+    // Render through Dawn and read back (top-down).
+    dc::demo::renderTopDown(renderer, scene, gpuBuf, W, H, pixels);
     std::string path = std::string(card.name) + ".ppm";
     writePPM(path.c_str(), W, H, pixels);
 
@@ -393,5 +382,4 @@ int main() {
               100.0 * (1.0 - static_cast<double>(compact.size()) / static_cast<double>(full.size())));
 
   return 0;
-#endif
 }

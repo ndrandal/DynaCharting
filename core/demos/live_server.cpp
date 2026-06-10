@@ -8,9 +8,8 @@
 #include "dc/scene/ResourceRegistry.hpp"
 #include "dc/commands/CommandProcessor.hpp"
 #include "dc/ingest/IngestProcessor.hpp"
-#include "dc/gl/OsMesaContext.hpp"
-#include "dc/gl/GpuBufferManager.hpp"
-#include "dc/gl/Renderer.hpp"
+#include "dc/render/CpuBufferStore.hpp"
+#include "dawn_server_util.hpp"  // ENC-501: Dawn render + top-down readback
 #include "dc/viewport/Viewport.hpp"
 #include "dc/recipe/CandleRecipe.hpp"
 #include "dc/recipe/VolumeRecipe.hpp"
@@ -55,10 +54,8 @@ static void writeFrame(const std::uint8_t* pixels, int w, int h) {
   std::uint32_t height = static_cast<std::uint32_t>(h);
   std::fwrite(&width, 4, 1, stdout);
   std::fwrite(&height, 4, 1, stdout);
-  // OSMesa readPixels is bottom-up; write top-down
-  for (int y = h - 1; y >= 0; y--) {
-    std::fwrite(pixels + y * w * 4, 1, static_cast<std::size_t>(w) * 4, stdout);
-  }
+  // ENC-501: Dawn readback is already TOP-DOWN, write rows in order.
+  std::fwrite(pixels, 1, static_cast<std::size_t>(w) * h * 4, stdout);
   std::fflush(stdout);
 }
 
@@ -205,7 +202,7 @@ static void setVertexCount(dc::CommandProcessor& cp, dc::Id geomId,
 }
 
 static void syncGpuBuf(dc::IngestProcessor& ingest,
-                       dc::GpuBufferManager& gpuBufs, dc::Id bufId) {
+                       dc::CpuBufferStore& gpuBufs, dc::Id bufId) {
   const auto* data = ingest.getBufferData(bufId);
   auto size = ingest.getBufferSize(bufId);
   if (data && size > 0) gpuBufs.setCpuData(bufId, data, size);
@@ -219,7 +216,7 @@ static void recomputeAndUploadAxis(
     const dc::GlyphAtlas& atlas,
     dc::IngestProcessor& ingest,
     dc::CommandProcessor& cp,
-    dc::GpuBufferManager& gpuBufs,
+    dc::CpuBufferStore& gpuBufs,
     float yMin, float yMax, float xMin, float xMax,
     float clipYMin, float clipYMax,
     float clipXMin, float clipXMax) {
@@ -278,7 +275,7 @@ static void recomputeAndUploadAxis(
 // Sync all known ingest buffers to GPU (used after resize / context recreate)
 static void syncAllBuffers(
     dc::IngestProcessor& ingest,
-    dc::GpuBufferManager& gpuBufs,
+    dc::CpuBufferStore& gpuBufs,
     const dc::CandleRecipe& candleRecipe,
     const dc::VolumeRecipe& volRecipe,
     const dc::AxisRecipe& priceAxisRecipe,
@@ -330,11 +327,7 @@ int main() {
 
   int W = 900, H = 600;
 
-  // ---- 1. Create OSMesa context ----
-  auto ctx = std::make_unique<dc::OsMesaContext>();
-  if (!ctx->init(W, H)) return 1;
-
-  // ---- 2. Load font ----
+  // ---- 1. Load font ----
   dc::GlyphAtlas atlas;
   bool fontOk = atlas.loadFontFile("third_party/test_font.ttf");
   if (!fontOk) {
@@ -583,10 +576,12 @@ int main() {
   syncTransform(cp, 51, volVp);
 
   // ---- 14. Initialize renderer and GPU buffers ----
-  auto gpuBufs = std::make_unique<dc::GpuBufferManager>();
-  auto renderer = std::make_unique<dc::Renderer>();
-  renderer->init();
-  if (fontOk) renderer->setGlyphAtlas(&atlas);
+  // ENC-501: Dawn renderer. Text labels are suppressed below (drawn by the HTML
+  // overlay), so no GlyphAtlas is wired into the renderer.
+  auto gpuBufs = std::make_unique<dc::CpuBufferStore>();
+  auto renderer = std::make_unique<dc::DawnSceneRenderer>();
+  if (!renderer->init()) return 1;
+  std::vector<std::uint8_t> pixels;
 
   // ---- 15. Compute and upload axis data (grid/ticks/spine only, no GL text) ----
   if (fontOk) {
@@ -612,12 +607,8 @@ int main() {
   syncGpuBuf(ingest, *gpuBufs, candleRecipe.bufferId());
   syncGpuBuf(ingest, *gpuBufs, volRecipe.bufferId());
 
-  gpuBufs->uploadDirty();
-
   // ---- 16. Render initial frame ----
-  renderer->render(scene, *gpuBufs, W, H);
-  ctx->swapBuffers();
-  auto pixels = ctx->readPixels();
+  dc::demo::renderTopDown(*renderer, scene, *gpuBufs, W, H, pixels);
   writeTextOverlay(priceVp, volVp, axisCfg, volAxisCfg, W, H);
   writeFrame(pixels.data(), W, H);
 
@@ -754,17 +745,11 @@ int main() {
         W = newW;
         H = newH;
 
-        // Recreate OSMesa context at new size
-        ctx = std::make_unique<dc::OsMesaContext>();
-        if (!ctx->init(W, H)) break;
-
-        // Re-init renderer (new GL context invalidates old programs/VAOs)
-        renderer = std::make_unique<dc::Renderer>();
-        renderer->init();
-        if (fontOk) renderer->setGlyphAtlas(&atlas);
-
-        // Re-create GPU buffers (old VBOs invalidated by new context)
-        gpuBufs = std::make_unique<dc::GpuBufferManager>();
+        // ENC-501: Dawn recreates its offscreen target lazily at the new (W,H);
+        // make a fresh renderer + store and re-sync the buffers below.
+        renderer = std::make_unique<dc::DawnSceneRenderer>();
+        if (!renderer->init()) break;
+        gpuBufs = std::make_unique<dc::CpuBufferStore>();
 
         // Update pixel dimensions on viewports
         priceVp.setPixelViewport(W, H);
@@ -803,10 +788,7 @@ int main() {
         setVertexCount(cp, volAxisRecipe.labelGeomId(), 0);
       }
 
-      gpuBufs->uploadDirty();
-      renderer->render(scene, *gpuBufs, W, H);
-      ctx->swapBuffers();
-      pixels = ctx->readPixels();
+      dc::demo::renderTopDown(*renderer, scene, *gpuBufs, W, H, pixels);
       writeTextOverlay(priceVp, volVp, axisCfg, volAxisCfg, W, H);
       writeFrame(pixels.data(), W, H);
     }
