@@ -1,0 +1,8 @@
+{
+  "id": "ecg",
+  "title": "ECG monitor — PQRST trace",
+  "tier": "composed",
+  "referenceTool": "medical / ECG monitor",
+  "blurb": "A clean green-on-dark ECG trace — the 250 Hz, 72 bpm PQRST waveform from the synthetic dataset, baked into a line2d@1 vertex buffer and framed by one affine transform. Same vector renderer as the candles; a different domain entirely.",
+  "datasetId": "ecg"
+}
