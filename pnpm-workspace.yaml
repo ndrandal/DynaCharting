@@ -2,5 +2,8 @@ packages:
   - apps/**
   - packages/**
 
-ignoredBuiltDependencies:
-  - esbuild
+# esbuild ships prebuilt binaries; its postinstall build script is not needed.
+# Explicitly deny it so pnpm v10 stops prompting (the malformed "set this to
+# true or false" placeholder it otherwise writes breaks `pnpm install`).
+allowBuilds:
+  esbuild: false
