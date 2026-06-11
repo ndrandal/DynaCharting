@@ -1,0 +1,34 @@
+{
+  "kind": "market",
+  "durationMs": 20000,
+  "symbols": [
+    {
+      "symbol": "AAPL",
+      "datasetId": "AAPL",
+      "file": "AAPL.json",
+      "updates": 8750,
+      "fields": 57
+    },
+    {
+      "symbol": "MSFT",
+      "datasetId": "MSFT",
+      "file": "MSFT.json",
+      "updates": 8750,
+      "fields": 57
+    },
+    {
+      "symbol": "NVDA",
+      "datasetId": "NVDA",
+      "file": "NVDA.json",
+      "updates": 8750,
+      "fields": 57
+    },
+    {
+      "symbol": "TSLA",
+      "datasetId": "TSLA",
+      "file": "TSLA.json",
+      "updates": 8750,
+      "fields": 57
+    }
+  ]
+}
