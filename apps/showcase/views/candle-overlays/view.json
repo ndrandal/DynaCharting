@@ -1,0 +1,10 @@
+{
+  "id": "candle-overlays",
+  "title": "Candles + Volume — AAPL",
+  "tier": "native",
+  "referenceTool": "TradingView",
+  "blurb": "Per-second AAPL candles with a cumulative-volume sub-pane — multiple coordinated series across two panes from one JSON manifest (SMA(20) captured for a future multi-series run).",
+  "datasetId": "AAPL",
+  "transform": { "sx": 0.011333333, "sy": 0.085, "tx": -0.85, "ty": -34.715 },
+  "xAnchor": true
+}
