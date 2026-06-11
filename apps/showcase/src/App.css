@@ -1,0 +1,85 @@
+:root {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: #0b0d12;
+  color: #e0e0e0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica,
+    Arial, sans-serif;
+}
+
+.showcase-root {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.showcase-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.55rem 1rem;
+  background: linear-gradient(180deg, #11141b 0%, #0d1016 100%);
+  border-bottom: 1px solid #1d212b;
+  user-select: none;
+}
+
+.showcase-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.showcase-title .accent {
+  color: #4caf50;
+}
+
+.showcase-status {
+  font-size: 0.78rem;
+  color: #8a8f99;
+  font-variant-numeric: tabular-nums;
+}
+
+.showcase-status .dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 0.4rem;
+  background: #555;
+  vertical-align: middle;
+}
+
+.showcase-status .dot.ready {
+  background: #4caf50;
+}
+
+.showcase-status .dot.error {
+  background: #ef5350;
+}
+
+.showcase-canvas-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.showcase-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}

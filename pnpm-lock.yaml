@@ -43,6 +43,34 @@ importers:
         specifier: ^5.4.0
         version: 5.4.21
 
+  apps/showcase:
+    dependencies:
+      '@repo/dc-wasm':
+        specifier: workspace:*
+        version: link:../../packages/dc-wasm
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
+      react-dom:
+        specifier: ^18.3.1
+        version: 18.3.1(react@18.3.1)
+    devDependencies:
+      '@types/react':
+        specifier: ^18.3.0
+        version: 18.3.28
+      '@types/react-dom':
+        specifier: ^18.3.0
+        version: 18.3.7(@types/react@18.3.28)
+      '@vitejs/plugin-react':
+        specifier: ^4.3.0
+        version: 4.7.0(vite@5.4.21)
+      typescript:
+        specifier: ^5.5.0
+        version: 5.9.3
+      vite:
+        specifier: ^5.4.0
+        version: 5.4.21
+
   packages/dc-wasm:
     devDependencies:
       typescript:
