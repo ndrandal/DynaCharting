@@ -47,11 +47,13 @@ All engine-level primitives from the original roadmap have been implemented (D1�
 
 ### Renderer
 - ✅ **WebGPU/Dawn cutover** (ENC-479…501) — `dc_gpu` (Dawn) is now THE renderer. The OpenGL backend (`dc_gl`) plus GLAD / OSMesa / GLFW were deleted (ENC-501). The headless render servers (`dc_showcase_server`, `dc_live_server`, `dc_dashboard_server`, `dc_gallery`) render via `DawnSceneRenderer` + `DawnDevice` readback. Rendering regression coverage is the Dawn render tests + Dawn-golden parity tests.
+- ✅ **WASM + WebGPU browser package** (ENC-506) — `@repo/dc-wasm` compiles the C++ `dc` core to WebAssembly and renders via WebGPU, exposing an `EngineHost` TS surface. customer-layer was cut over to it (ENC-507).
+- ✅ **TypeScript/WebGL2 prototype retired** (ENC-508) — `packages/engine-host`, `packages/chart-controller`, and `apps/demos/hello-engine` are **deleted**. The C++ core (`dc`/`dc_gpu`) owns rendering; `@repo/dc-wasm` is the browser/WASM path. The WebGPU/Dawn migration is complete.
 - **On-screen Dawn surface** (ENC-497) — windowed/interactive presentation on Dawn. The old GLFW demos (`hello_glfw`, `d2_7`, `d5_7`, `d6_3`, …) were removed pending this; they needed an on-screen GL surface.
 
 ### Infrastructure
 - **CI/CD Pipeline** — GitHub Actions for build + test (Dawn render tests need a Vulkan ICD; lavapipe fallback)
-- **Embedding Example** — Minimal C++ app or WebAssembly build demonstrating library integration
+- **Embedding Example** — Minimal C++ app demonstrating library integration (the WebAssembly browser embedding is now `@repo/dc-wasm`, ENC-506)
 
 ### Reactive Bindings (D80, retroactively documented)
 - **BindingEvaluator** — Reactive bindings between scene elements (selection / hover / viewport / data triggers → filter / range / visibility / color effects). See `docs/binding-evaluator.md` (ENC-88).
@@ -65,4 +67,4 @@ All engine-level primitives from the original roadmap have been implemented (D1�
 - **Multi-Window Support** — Multiple Dawn surfaces rendering shared scene data (after ENC-497)
 - **Custom Shader Hot-Reload** — Live shader editing for custom pipeline development
 - **Scene Diffing / Snapshots** — Incremental scene updates over network
-- **WebAssembly Target** — Emscripten build for browser embedding
+- ✅ **WebAssembly Target** — Emscripten build for browser embedding, shipped as `@repo/dc-wasm` (ENC-506)

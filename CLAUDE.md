@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-DynaCharting is a high-performance real-time charting engine intended as an embeddable library for internal use. The long-term target is C++ doing the heavy lifting for both data processing and rendering. The TypeScript/WebGL2 frontend served as a prototype to prove out concepts (scene graph, pipelines, data ingestion) and will be progressively replaced as the C++ core gains rendering capability.
+DynaCharting is a high-performance real-time charting engine intended as an embeddable library for internal use. The C++ core does the heavy lifting for both data processing and rendering. The TypeScript/WebGL2 frontend served as a prototype to prove out concepts (scene graph, pipelines, data ingestion); it has been **fully retired** (ENC-508) now that the C++ core owns rendering. The browser/WASM path is `@repo/dc-wasm` (C++ core compiled to WebAssembly, rendering via WebGPU).
 
-**Current milestone:** WebGPU/Dawn is the C++ renderer (`dc_gpu`). The original OpenGL backend has been removed (ENC-501); the full pipeline set renders headless through Dawn with offscreen readback. Windowed/on-screen presentation is next (ENC-497).
+**Current milestone:** WebGPU/Dawn is the C++ renderer (`dc_gpu`). The original OpenGL backend has been removed (ENC-501); the full pipeline set renders headless through Dawn with offscreen readback. The TypeScript/WebGL2 prototype (`engine-host`/`chart-controller`/`hello-engine`) has been retired (ENC-508) — `@repo/dc-wasm` is the browser path. Windowed/on-screen presentation is next (ENC-497).
 
 ## Repository Layout
 
@@ -14,9 +14,9 @@ DynaCharting is a high-performance real-time charting engine intended as an embe
   - `dc` — Pure C++ core (no graphics-API deps). Scene graph, commands, pipelines, plus the backend-agnostic CPU-side buffer base `CpuBufferStore` (`dc/render/`).
   - `dc_gpu` — WebGPU/Dawn rendering backend — **THE renderer**. Built only with `-DDC_FETCH_DAWN=ON` (building Dawn is heavy); links `dc` and `dawn::webgpu_dawn`. Contains `DawnDevice`, `DawnSceneRenderer`, and the 10 per-pipeline Dawn backends. See the WebGPU/Dawn section under Build & Development Commands.
   - The OpenGL backend (`dc_gl`) and its deps (GLAD, OSMesa, GLFW) were **removed** in the WebGPU/Dawn migration (ENC-501). On-screen/windowed presentation on Dawn is a separate ticket (ENC-497).
-- **`packages/engine-host/`** — TypeScript WebGL2 rendering host (`@repo/engine-host`). Prototype renderer — reference implementation for pipeline specs, glyph atlas, data ingestion.
-- **`packages/chart-controller/`** — High-level chart API (`@repo/chart-controller`). Recipe lifecycle and transform management. Depends on engine-host.
-- **`apps/demos/hello-engine/`** — Vite demo app. Useful as a reference for how the pieces connect.
+- **`packages/dc-wasm/`** — WASM + WebGPU browser package (`@repo/dc-wasm`). **THE browser/WASM path.** Compiles the C++ `dc` core to WebAssembly and renders via WebGPU, exposing an `EngineHost` TS surface. This is what customer-layer consumes.
+  - The original TypeScript/WebGL2 prototype (`@repo/engine-host`, `@repo/chart-controller`, and the `apps/demos/hello-engine` demo) is **RETIRED** (ENC-508). It proved out the scene graph, pipelines, glyph atlas, and data-ingestion concepts; those are now owned by the C++ core (`dc`/`dc_gpu`) and surfaced to the browser through `@repo/dc-wasm`.
+- **`apps/live-viewer/`** — Standalone live-stream viewer (`@repo/live-viewer`). Independent of the renderer packages; talks to a headless render server.
 
 ## Build & Development Commands
 
@@ -24,7 +24,8 @@ DynaCharting is a high-performance real-time charting engine intended as an embe
 
 ```bash
 pnpm install                                        # install all workspace deps
-pnpm --filter @repo/demo-hello-engine dev           # run Vite dev server (port 5173)
+pnpm --filter @repo/dc-wasm build                   # type-check the WASM+WebGPU browser package
+pnpm --filter @repo/live-viewer build               # build the live-stream viewer
 ```
 
 ### C++ Core (CMake)
@@ -73,12 +74,12 @@ The C++ core owns the scene graph and will own rendering. The intended flow is:
 Data Source → C++ Processing → Scene Graph → C++ Rendering
 ```
 
-### Current Prototype Data Flow (TypeScript)
+### Browser Data Flow (`@repo/dc-wasm`, WASM + WebGPU)
 
-The TypeScript side demonstrates the target architecture in the browser:
+The browser path runs the C++ `dc` core compiled to WebAssembly and renders through WebGPU. The retired TypeScript/WebGL2 prototype proved out this flow; `@repo/dc-wasm` now realizes it for real:
 ```
-Worker (ingest.worker.ts)  →  ArrayBuffer batches  →  Main Thread Queue
-  →  CoreIngestStub (binary parsing)  →  GPU Buffer Sync  →  WebGL Draw Calls
+Worker (ingest)  →  ArrayBuffer batches  →  Main Thread Queue
+  →  dc core (WASM, binary parsing)  →  GPU Buffer Sync  →  WebGPU Draw Calls
 ```
 
 ### Binary Ingestion Format (per record)
@@ -89,7 +90,7 @@ Op codes: 1 = append, 2 = updateRange.
 
 ### Rendering Pipelines
 
-Pipeline types (defined in TS prototype at `packages/engine-host/src/pipelines.ts`, to be ported to C++):
+Pipeline types (owned by the C++ core's `PipelineCatalog`; the retired TS prototype's `pipelines.ts` was the original reference):
 - `triSolid@1`, `line2d@1`, `points@1` — vertex-based
 - `instancedRect@1`, `instancedCandle@1` — instanced geometry (bars, OHLC)
 - `textSDF@1` — SDF text rendering with glyph atlas
