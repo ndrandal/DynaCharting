@@ -80,6 +80,15 @@ export function resetScene(host: EngineHost, prev: SceneManifest | null): void {
  * resetScene).
  */
 export function applyManifest(host: EngineHost, manifest: SceneManifest): SceneManifest {
+  // Producer-rasterized textures first, so a texturedQuad drawItem in the frame
+  // finds its pixels at render time (ENC-532 setTexturePixels escape hatch).
+  for (const t of manifest.textures ?? []) {
+    const bin = atob(t.pixelsB64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    host.setTexturePixels(t.textureId, bytes, t.width, t.height, t.format ?? 1);
+  }
+
   host.applyControl({ cmd: 'beginFrame' });
   for (const c of manifest.commands) {
     const r = host.applyControl(c);
