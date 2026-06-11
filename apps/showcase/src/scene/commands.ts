@@ -40,8 +40,14 @@ export interface SceneManifest {
   label: string;
   /** Ordered control commands (applied inside one frame). */
   commands: SceneCommand[];
-  /** Binary buffer uploads (applied via the data plane after the frame). */
-  uploads: BufferUpload[];
+  /**
+   * Binary buffer uploads applied via the data plane after the frame. OPTIONAL:
+   * catalog views (capture/replay model, CONTRACT-view-catalog.md) carry NO
+   * uploads — their data arrives at runtime via useReplay over enqueueData. Only
+   * the legacy in-app/static-data path (sampleManifest) sets uploads. Treated as
+   * `[]` when absent.
+   */
+  uploads?: BufferUpload[];
 }
 
 const OP_APPEND = 1;

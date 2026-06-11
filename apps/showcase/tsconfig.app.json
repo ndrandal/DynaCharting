@@ -14,8 +14,9 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "strict": true,
+    "resolveJsonModule": true,
     "noFallthroughCasesInSwitch": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src"]
+  "include": ["src", "views"]
 }
