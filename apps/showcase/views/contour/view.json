@@ -1,0 +1,8 @@
+{
+  "id": "contour",
+  "title": "Contour — iso-bands",
+  "tier": "walled",
+  "referenceTool": "Topographic isolines",
+  "blurb": "Marching-squares on a scalar field: CPU-extracted iso-bands + crisp isolines, rasterized to a topographic colormap and drawn as one textured quad. Shown precomputed; live GPU isoline extraction is the frontier.",
+  "datasetId": "heatmap"
+}

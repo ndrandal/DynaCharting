@@ -1,0 +1,7 @@
+{
+  "id": "static-spectrogram",
+  "note": "Static texture view (walled tier) — NO embassy capture. A synthesized signal's short-time FFT magnitude grid is CPU-computed and rasterized to an RGBA8 viridis colormap at build time (see manifest.ts textures[]); records.json is an empty stub. This file is a placeholder for the per-view directory convention.",
+  "sessionId": "showcase",
+  "subscriptions": [],
+  "visualization": { "recipe": "static-texture-v1", "bindings": [], "buffers": [] }
+}

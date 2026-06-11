@@ -1,0 +1,8 @@
+{
+  "id": "density-heatmap",
+  "title": "Density Heatmap — KDE glow",
+  "tier": "walled",
+  "referenceTool": "Bookmap liquidity heatmap",
+  "blurb": "A 2D Gaussian-KDE density field over a scattered point cloud, rasterized to a cyan→white glow colormap and drawn as a single textured quad. Shown precomputed; live per-pixel GPU density is the frontier.",
+  "datasetId": "heatmap"
+}
