@@ -1,0 +1,7 @@
+{
+  "id": "static-density-heatmap",
+  "note": "Static texture view (walled tier) — NO embassy capture. The density field is CPU-computed and rasterized to an RGBA8 colormap at build time (see manifest.ts textures[]); records.json is an empty stub. This file is a placeholder for the per-view directory convention.",
+  "sessionId": "showcase",
+  "subscriptions": [],
+  "visualization": { "recipe": "static-texture-v1", "bindings": [], "buffers": [] }
+}

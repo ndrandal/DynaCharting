@@ -1,0 +1,8 @@
+{
+  "id": "spectrogram",
+  "title": "Spectrogram — frequency × time",
+  "tier": "walled",
+  "referenceTool": "Audio spectrogram",
+  "blurb": "A short-time FFT magnitude grid of a synthesized chirp+tone signal, rasterized to a viridis colormap and drawn as a single textured quad. Shown precomputed; live GPU FFT + interpolation is the frontier.",
+  "datasetId": "heatmap"
+}
