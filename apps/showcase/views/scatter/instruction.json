@@ -1,0 +1,18 @@
+{
+  "id": "showcase-scatter",
+  "sessionId": "showcase",
+  "subscriptions": [
+    {"id":"r-x","streamKey":"AAPL","field":"lastPrice"},
+    {"id":"r-y","streamKey":"AAPL","field":"volume"}
+  ],
+  "visualization": {
+    "recipe": "showcase-explicit-v1",
+    "bindings": [
+      {"slot":"point.x","requestId":"r-x","bufferId":700,"mode":"compound","stride":8,"intraOffset":0,"slotBit":0},
+      {"slot":"point.y","requestId":"r-y","bufferId":700,"mode":"compound","stride":8,"intraOffset":4,"slotBit":1}
+    ],
+    "buffers": [
+      {"bufferId":700,"stride":8,"fullMask":3,"staticFields":[]}
+    ]
+  }
+}
