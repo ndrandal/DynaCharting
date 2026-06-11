@@ -1,38 +1,107 @@
 /* apps/showcase/views/scatter/manifest.ts
  *
- * The scatter view's SceneManifest (CONTRACT-view-catalog.md). A points@1
- * scatter plot: two correlated AAPL series — lastPrice (x) and volume (y) —
- * joined into ONE pos2_clip point per tick and drawn as GPU points.
+ * The scatter view's SceneManifest (CONTRACT-view-catalog.md). A scatter plot of
+ * two correlated AAPL series — lastPrice (x) and cumulative volume (y) — joined
+ * into ONE (x,y) record per tick.
  *
  * The join is the showcase-explicit-v1 "dual-dynamic-slot" trick (DESIGN-
- * buffer-binding.md): a single compound buffer (700, stride 8) where BOTH
- * lanes are dynamic — x = lastPrice at intraOffset 0 / slotBit 0, y = volume
- * at intraOffset 4 / slotBit 1, fullMask 0b11. embassy's routeCompound emits
- * one APPEND of an 8-byte (x,y) record only when BOTH subscriptions have
- * fired for the tick, so the two streams literally join into one point record
- * (pos2_clip). No staticFields — both lanes carry real data, not recordIndex.
+ * buffer-binding.md): a single compound buffer (700, stride 8) where BOTH lanes
+ * are dynamic — x = lastPrice, y = volume — and embassy emits one 8-byte (x,y)
+ * APPEND per tick only when BOTH subscriptions have fired. The captured cloud is
+ * in records.json.
  *
- * Like the candle view, the point buffer (700) is grown record-by-record at
- * replay time by useReplay (GROWTH below): the points@1 backend caches its GPU
- * buffer per geometryId (ENC-558), so growth = fresh-geometry rebind as records
- * land. There are no `uploads` — data arrives via the captured records.json.
+ * MARKERS — instancedRect@1, mirroring sports-shot-chart (ENC-564): the brief
+ * called for points@1 (pos2_clip), but points@1 on WebGPU is a 1px PointList
+ * with NO size control (di.pointSize is ignored — see DawnPointsBackend), so the
+ * streamed single-pixel dots are effectively invisible at gallery scale. To make
+ * the cloud crisp we tessellate each captured (x,y) point into a small AXIS-
+ * ALIGNED SQUARE (rect4: x0,y0,x1,y1) at module-eval time — decoding records.json
+ * exactly like the renko view decodes its AAPL series — and draw the whole cloud
+ * as ONE static instancedRect@1 draw item. Same scatter geometry, just visible.
  *
- * Transform framing (data→clip) lives in view.json (`transform`), baked from
- * the OBSERVED (x,y) range in records.json. xAnchor is OFF: x is lastPrice (a
- * dynamic field), not a record index, so we bake a full static affine that maps
- * the captured price×volume cloud into the pane's clip box.
+ * The marker half-size is authored in CLIP space (≈7px at 1k canvas) and inverted
+ * through the view.json transform per-axis into DATA space, so every square is
+ * the same on-screen size regardless of the price/volume scales. Framing
+ * (data→clip) stays in view.json (`transform`), and the chrome overlay maps its
+ * axes (price X, volume Y) through that same transform.
+ *
+ * No `growth` export: the cloud is fully resolved at build time (like
+ * sports-shot-chart / renko). useReplay still streams the captured frames into
+ * buffer 700, but no geometry is bound to it, so those appends are inert ambient
+ * data — the visible scatter is the static rect4 cloud below.
  */
 
-import type { SceneManifest } from '../../src/scene/commands';
-import type { GrowthSync } from '../../src/engine/useReplay';
+import type { SceneManifest, BufferUpload } from '../../src/scene/commands';
+import records from './records.json' with { type: 'json' };
 
 // --- structural IDs (local to this view; reused after scene reset) ---
 const PANE = 100;
 const LAYER = 101;
 export const TRANSFORM = 150;
-const POINT_BUFFER = 700; // pos2_clip 8B (x=lastPrice, y=volume) — MUST match instruction bufferId
 const POINT_GEOMETRY = 200;
 const POINT_DRAWITEM = 300;
+const MARKER_BUFFER = 701; // rect4 16B static marker squares (the visible cloud)
+
+// view.json transform (data→clip). Mirrored here only to invert clip-space
+// marker half-size into data space per axis; framing itself lives in view.json.
+const SX = 0.1705381; // x = lastPrice → clip   (mirrors view.json transform)
+const SY = 0.000009792795; // y = volume → clip
+const TX = -70.348033;
+const TY = -0.770121;
+
+// Marker half-size in CLIP units (~7px on a 1024px canvas), inverted per axis so
+// every square renders the same on-screen size despite the price/volume scales.
+const HALF_CLIP = 0.007;
+const HALF_X = HALF_CLIP / SX; // ≈ 0.041 price units
+const HALF_Y = HALF_CLIP / SY; // ≈ 715 volume units
+
+// --- build-time tessellation: decode the captured (x,y) cloud → rect squares ---
+const OP_APPEND = 1;
+const RECORD_HEADER_SIZE = 13;
+const POINT_BUFFER_ID = 700; // pos2_clip 8B (x=lastPrice, y=volume)
+
+function b64ToBytes(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+/** Decode every captured (lastPrice, volume) point from the records frames. */
+function decodePoints(): Array<[number, number]> {
+  const out: Array<[number, number]> = [];
+  for (const frame of records.frames) {
+    const bytes = b64ToBytes(frame.b64);
+    const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    let o = 0;
+    while (o + RECORD_HEADER_SIZE <= dv.byteLength) {
+      const op = dv.getUint8(o);
+      const bufId = dv.getUint32(o + 1, true);
+      const payloadBytes = dv.getUint32(o + 9, true);
+      o += RECORD_HEADER_SIZE;
+      if (o + payloadBytes > dv.byteLength) break;
+      if (op === OP_APPEND && bufId === POINT_BUFFER_ID) {
+        for (let p = 0; p + 8 <= payloadBytes; p += 8) {
+          out.push([dv.getFloat32(o + p, true), dv.getFloat32(o + p + 4, true)]);
+        }
+      }
+      o += payloadBytes;
+    }
+  }
+  return out;
+}
+
+/** Pack the decoded points as rect4 marker squares (x0,y0,x1,y1) in DATA space. */
+function markerRects(): BufferUpload {
+  const floats: number[] = [];
+  for (const [x, y] of decodePoints()) {
+    floats.push(x - HALF_X, y - HALF_Y, x + HALF_X, y + HALF_Y);
+  }
+  return { bufferId: MARKER_BUFFER, op: 'updateRange', offsetBytes: 0, floats };
+}
+
+const MARKERS = markerRects();
+const MARKER_COUNT = MARKERS.floats.length / 4;
 
 export const manifest: SceneManifest = {
   label: 'Scatter — Price × Volume',
@@ -43,54 +112,33 @@ export const manifest: SceneManifest = {
     { cmd: 'setPaneClearColor', id: PANE, r: 0.05, g: 0.05, b: 0.08, a: 1 },
     { cmd: 'createLayer', id: LAYER, paneId: PANE },
 
-    // Point buffer (grown at replay time) -> pos2_clip geometry -> drawItem.
-    { cmd: 'createBuffer', id: POINT_BUFFER, byteLength: 0 },
-    // vertexCount starts at 1 (pipelines reject 0); useReplay advances it to the
-    // real record count (bytes/8) as the joined (x,y) records arrive.
+    // Static marker cloud: each captured (x,y) point as a small rect4 square.
+    { cmd: 'createBuffer', id: MARKER_BUFFER, byteLength: MARKER_COUNT * 16 },
     {
       cmd: 'createGeometry',
       id: POINT_GEOMETRY,
-      vertexBufferId: POINT_BUFFER,
-      format: 'pos2_clip',
-      vertexCount: 1,
+      vertexBufferId: MARKER_BUFFER,
+      format: 'rect4',
+      vertexCount: MARKER_COUNT,
     },
 
-    // Data->clip transform. The baked sx/sy/tx/ty are seeded from view.json by
-    // the switch controller (here we create it; values set via setTransform).
+    // Data->clip transform. This view has no `growth` export, so the controller
+    // does NOT seed view.json.transform here — we set the same affine explicitly
+    // (like renko / sports-shot-chart). It still mirrors view.json so the chrome
+    // overlay's axes map through the identical mapping.
     { cmd: 'createTransform', id: TRANSFORM },
+    { cmd: 'setTransform', id: TRANSFORM, sx: SX, sy: SY, tx: TX, ty: TY },
 
     { cmd: 'createDrawItem', id: POINT_DRAWITEM, layerId: LAYER },
-    { cmd: 'bindDrawItem', drawItemId: POINT_DRAWITEM, pipeline: 'points@1', geometryId: POINT_GEOMETRY },
-    // Bright green points on the near-black pane (the showcase accent).
+    { cmd: 'bindDrawItem', drawItemId: POINT_DRAWITEM, pipeline: 'instancedRect@1', geometryId: POINT_GEOMETRY },
+    // Bright green markers on the near-black pane (the showcase accent).
     {
       cmd: 'setDrawItemStyle',
       drawItemId: POINT_DRAWITEM,
-      colorR: 0.24, colorG: 0.86, colorB: 0.52, colorA: 0.9,
+      r: 0.24, g: 0.86, b: 0.52, a: 0.9,
     },
     { cmd: 'attachTransform', drawItemId: POINT_DRAWITEM, transformId: TRANSFORM },
   ],
-  // No uploads — data arrives via useReplay (CONTRACT-view-catalog.md).
-};
-
-/**
- * Growth descriptor for the points geometry. useReplay draws
- * geometry.vertexCount points and the dataplane only grows the buffer's bytes,
- * so it advances vertexCount = floor(byteLength / 8) via fresh-geometry rebind
- * (ENC-558 backend-caching workaround) as joined (x,y) records land.
- *
- * xField = 0 is the byte offset of the x lane (lastPrice) within a record; it
- * feeds useReplay's optional X-anchor. This view does NOT set view.json.xAnchor
- * (x is a price, not a record index), so the anchor path is inert and the baked
- * static transform from view.json frames the cloud.
- */
-export const growth: GrowthSync = {
-  bufferId: POINT_BUFFER,
-  geometryId: POINT_GEOMETRY,
-  drawItemId: POINT_DRAWITEM,
-  layerId: LAYER,
-  stride: 8, // pos2_clip: [x, y] = 2×f32
-  format: 'pos2_clip',
-  pipeline: 'points@1',
-  transformId: TRANSFORM,
-  xField: 0, // byte offset of x (lastPrice) within a pos2_clip record
+  // STATIC: the whole price×volume cloud, tessellated to rect4 squares once.
+  uploads: [MARKERS],
 };

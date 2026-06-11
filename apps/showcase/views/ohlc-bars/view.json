@@ -6,5 +6,15 @@
   "blurb": "Per-second OHLC bars for AAPL — the same compound OHLC join as the candlestick, rendered as thin instanced bars instead of filled bodies.",
   "datasetId": "AAPL",
   "transform": { "sx": 0.011333333, "sy": 0.088333333, "tx": -0.85, "ty": -36.481667 },
-  "xAnchor": true
+  "xAnchor": true,
+  "chrome": {
+    "axes": {
+      "y": { "label": "Price", "min": 408, "max": 418, "format": "price", "ticks": 5, "grid": true },
+      "x": { "label": "Index", "min": 4, "max": 160, "format": "index", "ticks": 6, "grid": true }
+    },
+    "legend": [
+      { "label": "Up bar", "color": [0.2, 0.75, 0.45, 1], "kind": "bar" },
+      { "label": "Down bar", "color": [0.85, 0.3, 0.3, 1], "kind": "bar" }
+    ]
+  }
 }

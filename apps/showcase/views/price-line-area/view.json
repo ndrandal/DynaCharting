@@ -6,5 +6,14 @@
   "blurb": "AAPL lastPrice streamed tick-by-tick and drawn as a filled baseline-area band via a compound rect4 join — one scalar field, one instancedRect pipeline.",
   "datasetId": "AAPL",
   "transform": { "sx": 0.011333333, "sy": 0.121428571, "tx": -0.85, "ty": -50.028571 },
-  "xAnchor": true
+  "xAnchor": true,
+  "chrome": {
+    "axes": {
+      "y": { "label": "Price", "min": 406, "max": 418, "format": "price", "ticks": 6, "grid": true },
+      "x": { "label": "Index", "min": 4, "max": 160, "format": "index", "ticks": 6, "grid": true }
+    },
+    "legend": [
+      { "label": "Price area", "color": [0.24, 0.86, 0.52, 0.65], "kind": "area" }
+    ]
+  }
 }

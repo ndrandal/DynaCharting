@@ -4,5 +4,15 @@
   "tier": "composed",
   "referenceTool": "Sierra Chart / ToS TPO",
   "blurb": "A horizontal volume-by-price histogram — a vertical column of 24 price buckets, each a horizontal bar ∝ traded volume — driven by a 24-way scalar-fan of fixed-mode subscriptions overwriting one pre-sized buffer in place each tick.",
-  "datasetId": "AAPL"
+  "datasetId": "AAPL",
+  "transform": { "sx": 0.0321, "sy": 0.075, "tx": -12.78, "ty": -0.9 },
+  "chrome": {
+    "axes": {
+      "y": { "label": "Price bucket", "min": 0, "max": 24, "format": "index", "ticks": 6, "grid": true },
+      "x": { "label": "Volume", "min": 398, "max": 425, "format": "number", "ticks": 5, "grid": true }
+    },
+    "legend": [
+      { "label": "Volume @ price", "color": [0.38, 0.55, 0.92, 0.9], "kind": "bar" }
+    ]
+  }
 }

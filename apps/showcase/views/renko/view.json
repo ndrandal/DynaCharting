@@ -4,5 +4,16 @@
   "tier": "composed",
   "referenceTool": "Renko / Point & Figure",
   "blurb": "A time-less fixed-brick chart of AAPL — one green up-brick or red down-brick per brick-sized price move — tessellated to axis-aligned rects at manifest-build time and drawn as static instancedRect geometry.",
-  "datasetId": "AAPL"
+  "datasetId": "AAPL",
+  "transform": { "sx": 0.072, "sy": 0.361333, "tx": -0.9, "ty": -66.892536 },
+  "chrome": {
+    "axes": {
+      "y": { "label": "Price", "min": 182.77, "max": 187.48, "format": "price", "ticks": 5, "grid": true },
+      "x": { "label": "Brick", "min": 0, "max": 25, "format": "index", "ticks": 5, "grid": true }
+    },
+    "legend": [
+      { "label": "Up brick", "color": [0.2, 0.75, 0.45, 1], "kind": "bar" },
+      { "label": "Down brick", "color": [0.85, 0.3, 0.3, 1], "kind": "bar" }
+    ]
+  }
 }
