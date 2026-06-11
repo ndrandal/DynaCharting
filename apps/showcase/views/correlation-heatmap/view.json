@@ -4,5 +4,21 @@
   "tier": "composed",
   "referenceTool": "correlation matrix",
   "blurb": "An N×N correlation matrix of the four symbols' return series, coloured cell-by-cell on a diverging blue↔red scale. Per-cell colour is beyond the instanced path, so the colormap is rasterized to an RGBA8 texture at manifest-build time and blitted onto a pane-covering quad via the texturedQuad@1 escape hatch.",
-  "datasetId": "AAPL"
+  "datasetId": "AAPL",
+  "chrome": {
+    "colorbar": {
+      "label": "Pearson r",
+      "min": -1,
+      "max": 1,
+      "stops": [
+        { "at": 0, "color": [0.13, 0.4, 0.78, 1] },
+        { "at": 0.5, "color": [0.96, 0.96, 0.96, 1] },
+        { "at": 1, "color": [0.84, 0.19, 0.19, 1] }
+      ],
+      "categories": {
+        "x": ["AAPL", "MSFT", "NVDA", "TSLA"],
+        "y": ["AAPL", "MSFT", "NVDA", "TSLA"]
+      }
+    }
+  }
 }

@@ -7,7 +7,7 @@
  * canvas is the shared engine portaled into `slotRef` by App.
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { VIEWS, type ShowcaseView } from '../views/registry';
 import { ExplainerPanel } from './ExplainerPanel';
 import { Transport, type TransportProps } from './Transport';
@@ -17,9 +17,11 @@ interface SingleViewProps {
   onSelect: (id: string) => void;
   onSlot: (el: HTMLElement | null) => void;
   transport: TransportProps;
+  /** Logical-chart chrome overlay, composited over the canvas region. */
+  chrome?: ReactNode;
 }
 
-export function SingleView({ view, onSelect, onSlot, transport }: SingleViewProps) {
+export function SingleView({ view, onSelect, onSlot, transport, chrome }: SingleViewProps) {
   const slotRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     onSlot(slotRef.current);
@@ -32,7 +34,9 @@ export function SingleView({ view, onSelect, onSlot, transport }: SingleViewProp
 
   return (
     <div className="single">
-      <div className="single-canvas-region" ref={slotRef} aria-label={`${view.meta.title} live view`} />
+      <div className="single-canvas-region" ref={slotRef} aria-label={`${view.meta.title} live view`}>
+        {chrome}
+      </div>
 
       <aside className="single-explainer" aria-label="Explainer">
         <ExplainerPanel view={view} />

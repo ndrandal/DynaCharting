@@ -32,13 +32,18 @@ import { Report } from './components/Report';
 import { Unsupported } from './components/Unsupported';
 import { EngineCanvas } from './components/EngineCanvas';
 import type { TransportProps } from './components/Transport';
+import { ChromeOverlay } from './chrome/ChromeOverlay';
+import './chrome/chrome.css';
 
 const FLAGSHIP_ID = VIEWS.find((v) => v.meta.tier === 'native')?.id ?? VIEWS[0]?.id ?? '';
 
 export default function App() {
   const webgpu = useMemo(() => isWebGPUSupported(), []);
   const { route, navigate } = useRouter();
-  const { canvasRef, host, status, error } = useShowcaseEngine();
+  const { canvasRef, host, status, error, statsHub } = useShowcaseEngine();
+
+  // FPS HUD visibility, toggled with the 'F' key (ENC-563). Default on.
+  const [fpsVisible, setFpsVisible] = useState(true);
 
   // Which view is live in the shared engine. On the hero we render the flagship;
   // in single-view the routed view; elsewhere we keep the last view warm.
@@ -82,6 +87,8 @@ export default function App() {
         setPlaying(!playing);
       } else if (e.key === 'r' || e.key === 'R') {
         restart();
+      } else if (e.key === 'f' || e.key === 'F') {
+        setFpsVisible((v) => !v);
       } else if (route.name === 'view' && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
         const idx = VIEWS.findIndex((v) => v.id === route.id);
         const next = e.key === 'ArrowRight' ? idx + 1 : idx - 1;
@@ -104,6 +111,13 @@ export default function App() {
 
   // The global transport shows in single-view + frontier (per §3.1).
   const showTransport = webgpu && (route.name === 'view' || route.name === 'frontier');
+
+  // The logical-chart chrome overlay (axes/gridlines/legend/colorbar) + FPS HUD,
+  // composited over the canvas in whichever slot is active. Driven by the active
+  // view's `chrome` metadata + its baked transform (data→clip→pixel).
+  const chromeOverlay = view ? (
+    <ChromeOverlay view={view} statsHub={statsHub} fpsVisible={fpsVisible} />
+  ) : null;
 
   if (!webgpu) {
     return (
@@ -142,7 +156,7 @@ export default function App() {
       {/* Hidden keep-alive host so the canvas stays mounted off-route. */}
       <div ref={keepAliveRef} style={{ position: 'fixed', width: 1, height: 1, left: -9999, top: -9999, overflow: 'hidden' }} aria-hidden />
 
-      {route.name === 'home' && <Hero onNavigate={navigate} onSlot={setSlot} />}
+      {route.name === 'home' && <Hero onNavigate={navigate} onSlot={setSlot} chrome={chromeOverlay} />}
 
       {route.name === 'gallery' && <Gallery currentId={routeViewId} onOpen={onSelectView} />}
 
@@ -153,6 +167,7 @@ export default function App() {
             onSelect={onSelectView}
             onSlot={setSlot}
             transport={{ ...transport, variant: 'full', onScrub: undefined }}
+            chrome={chromeOverlay}
           />
         ) : (
           <div className="page">
