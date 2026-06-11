@@ -1,0 +1,491 @@
+{
+  "id": "showcase-depth-ladder",
+  "sessionId": "showcase",
+  "subscriptions": [
+    {
+      "id": "r-bid-0",
+      "streamKey": "AAPL",
+      "field": "depth.bid.0.size"
+    },
+    {
+      "id": "r-bid-1",
+      "streamKey": "AAPL",
+      "field": "depth.bid.1.size"
+    },
+    {
+      "id": "r-bid-2",
+      "streamKey": "AAPL",
+      "field": "depth.bid.2.size"
+    },
+    {
+      "id": "r-bid-3",
+      "streamKey": "AAPL",
+      "field": "depth.bid.3.size"
+    },
+    {
+      "id": "r-bid-4",
+      "streamKey": "AAPL",
+      "field": "depth.bid.4.size"
+    },
+    {
+      "id": "r-bid-5",
+      "streamKey": "AAPL",
+      "field": "depth.bid.5.size"
+    },
+    {
+      "id": "r-bid-6",
+      "streamKey": "AAPL",
+      "field": "depth.bid.6.size"
+    },
+    {
+      "id": "r-bid-7",
+      "streamKey": "AAPL",
+      "field": "depth.bid.7.size"
+    },
+    {
+      "id": "r-bid-8",
+      "streamKey": "AAPL",
+      "field": "depth.bid.8.size"
+    },
+    {
+      "id": "r-bid-9",
+      "streamKey": "AAPL",
+      "field": "depth.bid.9.size"
+    },
+    {
+      "id": "r-bid-10",
+      "streamKey": "AAPL",
+      "field": "depth.bid.10.size"
+    },
+    {
+      "id": "r-bid-11",
+      "streamKey": "AAPL",
+      "field": "depth.bid.11.size"
+    },
+    {
+      "id": "r-bid-12",
+      "streamKey": "AAPL",
+      "field": "depth.bid.12.size"
+    },
+    {
+      "id": "r-bid-13",
+      "streamKey": "AAPL",
+      "field": "depth.bid.13.size"
+    },
+    {
+      "id": "r-bid-14",
+      "streamKey": "AAPL",
+      "field": "depth.bid.14.size"
+    },
+    {
+      "id": "r-bid-15",
+      "streamKey": "AAPL",
+      "field": "depth.bid.15.size"
+    },
+    {
+      "id": "r-bid-16",
+      "streamKey": "AAPL",
+      "field": "depth.bid.16.size"
+    },
+    {
+      "id": "r-bid-17",
+      "streamKey": "AAPL",
+      "field": "depth.bid.17.size"
+    },
+    {
+      "id": "r-bid-18",
+      "streamKey": "AAPL",
+      "field": "depth.bid.18.size"
+    },
+    {
+      "id": "r-bid-19",
+      "streamKey": "AAPL",
+      "field": "depth.bid.19.size"
+    },
+    {
+      "id": "r-ask-0",
+      "streamKey": "AAPL",
+      "field": "depth.ask.0.size"
+    },
+    {
+      "id": "r-ask-1",
+      "streamKey": "AAPL",
+      "field": "depth.ask.1.size"
+    },
+    {
+      "id": "r-ask-2",
+      "streamKey": "AAPL",
+      "field": "depth.ask.2.size"
+    },
+    {
+      "id": "r-ask-3",
+      "streamKey": "AAPL",
+      "field": "depth.ask.3.size"
+    },
+    {
+      "id": "r-ask-4",
+      "streamKey": "AAPL",
+      "field": "depth.ask.4.size"
+    },
+    {
+      "id": "r-ask-5",
+      "streamKey": "AAPL",
+      "field": "depth.ask.5.size"
+    },
+    {
+      "id": "r-ask-6",
+      "streamKey": "AAPL",
+      "field": "depth.ask.6.size"
+    },
+    {
+      "id": "r-ask-7",
+      "streamKey": "AAPL",
+      "field": "depth.ask.7.size"
+    },
+    {
+      "id": "r-ask-8",
+      "streamKey": "AAPL",
+      "field": "depth.ask.8.size"
+    },
+    {
+      "id": "r-ask-9",
+      "streamKey": "AAPL",
+      "field": "depth.ask.9.size"
+    },
+    {
+      "id": "r-ask-10",
+      "streamKey": "AAPL",
+      "field": "depth.ask.10.size"
+    },
+    {
+      "id": "r-ask-11",
+      "streamKey": "AAPL",
+      "field": "depth.ask.11.size"
+    },
+    {
+      "id": "r-ask-12",
+      "streamKey": "AAPL",
+      "field": "depth.ask.12.size"
+    },
+    {
+      "id": "r-ask-13",
+      "streamKey": "AAPL",
+      "field": "depth.ask.13.size"
+    },
+    {
+      "id": "r-ask-14",
+      "streamKey": "AAPL",
+      "field": "depth.ask.14.size"
+    },
+    {
+      "id": "r-ask-15",
+      "streamKey": "AAPL",
+      "field": "depth.ask.15.size"
+    },
+    {
+      "id": "r-ask-16",
+      "streamKey": "AAPL",
+      "field": "depth.ask.16.size"
+    },
+    {
+      "id": "r-ask-17",
+      "streamKey": "AAPL",
+      "field": "depth.ask.17.size"
+    },
+    {
+      "id": "r-ask-18",
+      "streamKey": "AAPL",
+      "field": "depth.ask.18.size"
+    },
+    {
+      "id": "r-ask-19",
+      "streamKey": "AAPL",
+      "field": "depth.ask.19.size"
+    }
+  ],
+  "visualization": {
+    "recipe": "showcase-explicit-v1",
+    "bindings": [
+      {
+        "slot": "depth.bid.0.size",
+        "requestId": "r-bid-0",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 8
+      },
+      {
+        "slot": "depth.bid.1.size",
+        "requestId": "r-bid-1",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 24
+      },
+      {
+        "slot": "depth.bid.2.size",
+        "requestId": "r-bid-2",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 40
+      },
+      {
+        "slot": "depth.bid.3.size",
+        "requestId": "r-bid-3",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 56
+      },
+      {
+        "slot": "depth.bid.4.size",
+        "requestId": "r-bid-4",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 72
+      },
+      {
+        "slot": "depth.bid.5.size",
+        "requestId": "r-bid-5",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 88
+      },
+      {
+        "slot": "depth.bid.6.size",
+        "requestId": "r-bid-6",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 104
+      },
+      {
+        "slot": "depth.bid.7.size",
+        "requestId": "r-bid-7",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 120
+      },
+      {
+        "slot": "depth.bid.8.size",
+        "requestId": "r-bid-8",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 136
+      },
+      {
+        "slot": "depth.bid.9.size",
+        "requestId": "r-bid-9",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 152
+      },
+      {
+        "slot": "depth.bid.10.size",
+        "requestId": "r-bid-10",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 168
+      },
+      {
+        "slot": "depth.bid.11.size",
+        "requestId": "r-bid-11",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 184
+      },
+      {
+        "slot": "depth.bid.12.size",
+        "requestId": "r-bid-12",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 200
+      },
+      {
+        "slot": "depth.bid.13.size",
+        "requestId": "r-bid-13",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 216
+      },
+      {
+        "slot": "depth.bid.14.size",
+        "requestId": "r-bid-14",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 232
+      },
+      {
+        "slot": "depth.bid.15.size",
+        "requestId": "r-bid-15",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 248
+      },
+      {
+        "slot": "depth.bid.16.size",
+        "requestId": "r-bid-16",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 264
+      },
+      {
+        "slot": "depth.bid.17.size",
+        "requestId": "r-bid-17",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 280
+      },
+      {
+        "slot": "depth.bid.18.size",
+        "requestId": "r-bid-18",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 296
+      },
+      {
+        "slot": "depth.bid.19.size",
+        "requestId": "r-bid-19",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 312
+      },
+      {
+        "slot": "depth.ask.0.size",
+        "requestId": "r-ask-0",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 8
+      },
+      {
+        "slot": "depth.ask.1.size",
+        "requestId": "r-ask-1",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 24
+      },
+      {
+        "slot": "depth.ask.2.size",
+        "requestId": "r-ask-2",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 40
+      },
+      {
+        "slot": "depth.ask.3.size",
+        "requestId": "r-ask-3",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 56
+      },
+      {
+        "slot": "depth.ask.4.size",
+        "requestId": "r-ask-4",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 72
+      },
+      {
+        "slot": "depth.ask.5.size",
+        "requestId": "r-ask-5",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 88
+      },
+      {
+        "slot": "depth.ask.6.size",
+        "requestId": "r-ask-6",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 104
+      },
+      {
+        "slot": "depth.ask.7.size",
+        "requestId": "r-ask-7",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 120
+      },
+      {
+        "slot": "depth.ask.8.size",
+        "requestId": "r-ask-8",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 136
+      },
+      {
+        "slot": "depth.ask.9.size",
+        "requestId": "r-ask-9",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 152
+      },
+      {
+        "slot": "depth.ask.10.size",
+        "requestId": "r-ask-10",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 168
+      },
+      {
+        "slot": "depth.ask.11.size",
+        "requestId": "r-ask-11",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 184
+      },
+      {
+        "slot": "depth.ask.12.size",
+        "requestId": "r-ask-12",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 200
+      },
+      {
+        "slot": "depth.ask.13.size",
+        "requestId": "r-ask-13",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 216
+      },
+      {
+        "slot": "depth.ask.14.size",
+        "requestId": "r-ask-14",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 232
+      },
+      {
+        "slot": "depth.ask.15.size",
+        "requestId": "r-ask-15",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 248
+      },
+      {
+        "slot": "depth.ask.16.size",
+        "requestId": "r-ask-16",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 264
+      },
+      {
+        "slot": "depth.ask.17.size",
+        "requestId": "r-ask-17",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 280
+      },
+      {
+        "slot": "depth.ask.18.size",
+        "requestId": "r-ask-18",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 296
+      },
+      {
+        "slot": "depth.ask.19.size",
+        "requestId": "r-ask-19",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 312
+      }
+    ]
+  }
+}

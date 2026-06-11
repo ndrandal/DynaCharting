@@ -1,0 +1,8 @@
+{
+  "id": "volume-profile",
+  "title": "Volume Profile — volume by price",
+  "tier": "composed",
+  "referenceTool": "Sierra Chart / ToS TPO",
+  "blurb": "A horizontal volume-by-price histogram — a vertical column of 24 price buckets, each a horizontal bar ∝ traded volume — driven by a 24-way scalar-fan of fixed-mode subscriptions overwriting one pre-sized buffer in place each tick.",
+  "datasetId": "AAPL"
+}

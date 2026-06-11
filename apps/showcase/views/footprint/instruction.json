@@ -1,0 +1,1931 @@
+{
+  "id": "showcase-footprint",
+  "sessionId": "showcase",
+  "subscriptions": [
+    {
+      "id": "r-bid-0-0",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.0.0"
+    },
+    {
+      "id": "r-bid-0-1",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.0.1"
+    },
+    {
+      "id": "r-bid-0-2",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.0.2"
+    },
+    {
+      "id": "r-bid-0-3",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.0.3"
+    },
+    {
+      "id": "r-bid-0-4",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.0.4"
+    },
+    {
+      "id": "r-bid-0-5",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.0.5"
+    },
+    {
+      "id": "r-bid-0-6",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.0.6"
+    },
+    {
+      "id": "r-bid-0-7",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.0.7"
+    },
+    {
+      "id": "r-bid-1-0",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.1.0"
+    },
+    {
+      "id": "r-bid-1-1",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.1.1"
+    },
+    {
+      "id": "r-bid-1-2",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.1.2"
+    },
+    {
+      "id": "r-bid-1-3",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.1.3"
+    },
+    {
+      "id": "r-bid-1-4",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.1.4"
+    },
+    {
+      "id": "r-bid-1-5",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.1.5"
+    },
+    {
+      "id": "r-bid-1-6",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.1.6"
+    },
+    {
+      "id": "r-bid-1-7",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.1.7"
+    },
+    {
+      "id": "r-bid-2-0",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.2.0"
+    },
+    {
+      "id": "r-bid-2-1",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.2.1"
+    },
+    {
+      "id": "r-bid-2-2",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.2.2"
+    },
+    {
+      "id": "r-bid-2-3",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.2.3"
+    },
+    {
+      "id": "r-bid-2-4",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.2.4"
+    },
+    {
+      "id": "r-bid-2-5",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.2.5"
+    },
+    {
+      "id": "r-bid-2-6",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.2.6"
+    },
+    {
+      "id": "r-bid-2-7",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.2.7"
+    },
+    {
+      "id": "r-bid-3-0",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.3.0"
+    },
+    {
+      "id": "r-bid-3-1",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.3.1"
+    },
+    {
+      "id": "r-bid-3-2",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.3.2"
+    },
+    {
+      "id": "r-bid-3-3",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.3.3"
+    },
+    {
+      "id": "r-bid-3-4",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.3.4"
+    },
+    {
+      "id": "r-bid-3-5",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.3.5"
+    },
+    {
+      "id": "r-bid-3-6",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.3.6"
+    },
+    {
+      "id": "r-bid-3-7",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.3.7"
+    },
+    {
+      "id": "r-bid-4-0",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.4.0"
+    },
+    {
+      "id": "r-bid-4-1",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.4.1"
+    },
+    {
+      "id": "r-bid-4-2",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.4.2"
+    },
+    {
+      "id": "r-bid-4-3",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.4.3"
+    },
+    {
+      "id": "r-bid-4-4",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.4.4"
+    },
+    {
+      "id": "r-bid-4-5",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.4.5"
+    },
+    {
+      "id": "r-bid-4-6",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.4.6"
+    },
+    {
+      "id": "r-bid-4-7",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.4.7"
+    },
+    {
+      "id": "r-bid-5-0",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.5.0"
+    },
+    {
+      "id": "r-bid-5-1",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.5.1"
+    },
+    {
+      "id": "r-bid-5-2",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.5.2"
+    },
+    {
+      "id": "r-bid-5-3",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.5.3"
+    },
+    {
+      "id": "r-bid-5-4",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.5.4"
+    },
+    {
+      "id": "r-bid-5-5",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.5.5"
+    },
+    {
+      "id": "r-bid-5-6",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.5.6"
+    },
+    {
+      "id": "r-bid-5-7",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.5.7"
+    },
+    {
+      "id": "r-bid-6-0",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.6.0"
+    },
+    {
+      "id": "r-bid-6-1",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.6.1"
+    },
+    {
+      "id": "r-bid-6-2",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.6.2"
+    },
+    {
+      "id": "r-bid-6-3",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.6.3"
+    },
+    {
+      "id": "r-bid-6-4",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.6.4"
+    },
+    {
+      "id": "r-bid-6-5",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.6.5"
+    },
+    {
+      "id": "r-bid-6-6",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.6.6"
+    },
+    {
+      "id": "r-bid-6-7",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.6.7"
+    },
+    {
+      "id": "r-bid-7-0",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.7.0"
+    },
+    {
+      "id": "r-bid-7-1",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.7.1"
+    },
+    {
+      "id": "r-bid-7-2",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.7.2"
+    },
+    {
+      "id": "r-bid-7-3",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.7.3"
+    },
+    {
+      "id": "r-bid-7-4",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.7.4"
+    },
+    {
+      "id": "r-bid-7-5",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.7.5"
+    },
+    {
+      "id": "r-bid-7-6",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.7.6"
+    },
+    {
+      "id": "r-bid-7-7",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.7.7"
+    },
+    {
+      "id": "r-bid-8-0",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.8.0"
+    },
+    {
+      "id": "r-bid-8-1",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.8.1"
+    },
+    {
+      "id": "r-bid-8-2",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.8.2"
+    },
+    {
+      "id": "r-bid-8-3",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.8.3"
+    },
+    {
+      "id": "r-bid-8-4",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.8.4"
+    },
+    {
+      "id": "r-bid-8-5",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.8.5"
+    },
+    {
+      "id": "r-bid-8-6",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.8.6"
+    },
+    {
+      "id": "r-bid-8-7",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.8.7"
+    },
+    {
+      "id": "r-bid-9-0",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.9.0"
+    },
+    {
+      "id": "r-bid-9-1",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.9.1"
+    },
+    {
+      "id": "r-bid-9-2",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.9.2"
+    },
+    {
+      "id": "r-bid-9-3",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.9.3"
+    },
+    {
+      "id": "r-bid-9-4",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.9.4"
+    },
+    {
+      "id": "r-bid-9-5",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.9.5"
+    },
+    {
+      "id": "r-bid-9-6",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.9.6"
+    },
+    {
+      "id": "r-bid-9-7",
+      "streamKey": "AAPL",
+      "field": "footprint.bid.9.7"
+    },
+    {
+      "id": "r-ask-0-0",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.0.0"
+    },
+    {
+      "id": "r-ask-0-1",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.0.1"
+    },
+    {
+      "id": "r-ask-0-2",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.0.2"
+    },
+    {
+      "id": "r-ask-0-3",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.0.3"
+    },
+    {
+      "id": "r-ask-0-4",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.0.4"
+    },
+    {
+      "id": "r-ask-0-5",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.0.5"
+    },
+    {
+      "id": "r-ask-0-6",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.0.6"
+    },
+    {
+      "id": "r-ask-0-7",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.0.7"
+    },
+    {
+      "id": "r-ask-1-0",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.1.0"
+    },
+    {
+      "id": "r-ask-1-1",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.1.1"
+    },
+    {
+      "id": "r-ask-1-2",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.1.2"
+    },
+    {
+      "id": "r-ask-1-3",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.1.3"
+    },
+    {
+      "id": "r-ask-1-4",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.1.4"
+    },
+    {
+      "id": "r-ask-1-5",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.1.5"
+    },
+    {
+      "id": "r-ask-1-6",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.1.6"
+    },
+    {
+      "id": "r-ask-1-7",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.1.7"
+    },
+    {
+      "id": "r-ask-2-0",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.2.0"
+    },
+    {
+      "id": "r-ask-2-1",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.2.1"
+    },
+    {
+      "id": "r-ask-2-2",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.2.2"
+    },
+    {
+      "id": "r-ask-2-3",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.2.3"
+    },
+    {
+      "id": "r-ask-2-4",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.2.4"
+    },
+    {
+      "id": "r-ask-2-5",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.2.5"
+    },
+    {
+      "id": "r-ask-2-6",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.2.6"
+    },
+    {
+      "id": "r-ask-2-7",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.2.7"
+    },
+    {
+      "id": "r-ask-3-0",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.3.0"
+    },
+    {
+      "id": "r-ask-3-1",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.3.1"
+    },
+    {
+      "id": "r-ask-3-2",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.3.2"
+    },
+    {
+      "id": "r-ask-3-3",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.3.3"
+    },
+    {
+      "id": "r-ask-3-4",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.3.4"
+    },
+    {
+      "id": "r-ask-3-5",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.3.5"
+    },
+    {
+      "id": "r-ask-3-6",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.3.6"
+    },
+    {
+      "id": "r-ask-3-7",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.3.7"
+    },
+    {
+      "id": "r-ask-4-0",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.4.0"
+    },
+    {
+      "id": "r-ask-4-1",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.4.1"
+    },
+    {
+      "id": "r-ask-4-2",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.4.2"
+    },
+    {
+      "id": "r-ask-4-3",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.4.3"
+    },
+    {
+      "id": "r-ask-4-4",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.4.4"
+    },
+    {
+      "id": "r-ask-4-5",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.4.5"
+    },
+    {
+      "id": "r-ask-4-6",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.4.6"
+    },
+    {
+      "id": "r-ask-4-7",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.4.7"
+    },
+    {
+      "id": "r-ask-5-0",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.5.0"
+    },
+    {
+      "id": "r-ask-5-1",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.5.1"
+    },
+    {
+      "id": "r-ask-5-2",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.5.2"
+    },
+    {
+      "id": "r-ask-5-3",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.5.3"
+    },
+    {
+      "id": "r-ask-5-4",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.5.4"
+    },
+    {
+      "id": "r-ask-5-5",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.5.5"
+    },
+    {
+      "id": "r-ask-5-6",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.5.6"
+    },
+    {
+      "id": "r-ask-5-7",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.5.7"
+    },
+    {
+      "id": "r-ask-6-0",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.6.0"
+    },
+    {
+      "id": "r-ask-6-1",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.6.1"
+    },
+    {
+      "id": "r-ask-6-2",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.6.2"
+    },
+    {
+      "id": "r-ask-6-3",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.6.3"
+    },
+    {
+      "id": "r-ask-6-4",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.6.4"
+    },
+    {
+      "id": "r-ask-6-5",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.6.5"
+    },
+    {
+      "id": "r-ask-6-6",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.6.6"
+    },
+    {
+      "id": "r-ask-6-7",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.6.7"
+    },
+    {
+      "id": "r-ask-7-0",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.7.0"
+    },
+    {
+      "id": "r-ask-7-1",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.7.1"
+    },
+    {
+      "id": "r-ask-7-2",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.7.2"
+    },
+    {
+      "id": "r-ask-7-3",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.7.3"
+    },
+    {
+      "id": "r-ask-7-4",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.7.4"
+    },
+    {
+      "id": "r-ask-7-5",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.7.5"
+    },
+    {
+      "id": "r-ask-7-6",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.7.6"
+    },
+    {
+      "id": "r-ask-7-7",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.7.7"
+    },
+    {
+      "id": "r-ask-8-0",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.8.0"
+    },
+    {
+      "id": "r-ask-8-1",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.8.1"
+    },
+    {
+      "id": "r-ask-8-2",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.8.2"
+    },
+    {
+      "id": "r-ask-8-3",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.8.3"
+    },
+    {
+      "id": "r-ask-8-4",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.8.4"
+    },
+    {
+      "id": "r-ask-8-5",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.8.5"
+    },
+    {
+      "id": "r-ask-8-6",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.8.6"
+    },
+    {
+      "id": "r-ask-8-7",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.8.7"
+    },
+    {
+      "id": "r-ask-9-0",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.9.0"
+    },
+    {
+      "id": "r-ask-9-1",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.9.1"
+    },
+    {
+      "id": "r-ask-9-2",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.9.2"
+    },
+    {
+      "id": "r-ask-9-3",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.9.3"
+    },
+    {
+      "id": "r-ask-9-4",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.9.4"
+    },
+    {
+      "id": "r-ask-9-5",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.9.5"
+    },
+    {
+      "id": "r-ask-9-6",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.9.6"
+    },
+    {
+      "id": "r-ask-9-7",
+      "streamKey": "AAPL",
+      "field": "footprint.ask.9.7"
+    }
+  ],
+  "visualization": {
+    "recipe": "showcase-explicit-v1",
+    "bindings": [
+      {
+        "slot": "footprint.bid.0.0",
+        "requestId": "r-bid-0-0",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 8
+      },
+      {
+        "slot": "footprint.bid.0.1",
+        "requestId": "r-bid-0-1",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 24
+      },
+      {
+        "slot": "footprint.bid.0.2",
+        "requestId": "r-bid-0-2",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 40
+      },
+      {
+        "slot": "footprint.bid.0.3",
+        "requestId": "r-bid-0-3",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 56
+      },
+      {
+        "slot": "footprint.bid.0.4",
+        "requestId": "r-bid-0-4",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 72
+      },
+      {
+        "slot": "footprint.bid.0.5",
+        "requestId": "r-bid-0-5",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 88
+      },
+      {
+        "slot": "footprint.bid.0.6",
+        "requestId": "r-bid-0-6",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 104
+      },
+      {
+        "slot": "footprint.bid.0.7",
+        "requestId": "r-bid-0-7",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 120
+      },
+      {
+        "slot": "footprint.bid.1.0",
+        "requestId": "r-bid-1-0",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 136
+      },
+      {
+        "slot": "footprint.bid.1.1",
+        "requestId": "r-bid-1-1",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 152
+      },
+      {
+        "slot": "footprint.bid.1.2",
+        "requestId": "r-bid-1-2",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 168
+      },
+      {
+        "slot": "footprint.bid.1.3",
+        "requestId": "r-bid-1-3",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 184
+      },
+      {
+        "slot": "footprint.bid.1.4",
+        "requestId": "r-bid-1-4",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 200
+      },
+      {
+        "slot": "footprint.bid.1.5",
+        "requestId": "r-bid-1-5",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 216
+      },
+      {
+        "slot": "footprint.bid.1.6",
+        "requestId": "r-bid-1-6",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 232
+      },
+      {
+        "slot": "footprint.bid.1.7",
+        "requestId": "r-bid-1-7",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 248
+      },
+      {
+        "slot": "footprint.bid.2.0",
+        "requestId": "r-bid-2-0",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 264
+      },
+      {
+        "slot": "footprint.bid.2.1",
+        "requestId": "r-bid-2-1",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 280
+      },
+      {
+        "slot": "footprint.bid.2.2",
+        "requestId": "r-bid-2-2",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 296
+      },
+      {
+        "slot": "footprint.bid.2.3",
+        "requestId": "r-bid-2-3",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 312
+      },
+      {
+        "slot": "footprint.bid.2.4",
+        "requestId": "r-bid-2-4",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 328
+      },
+      {
+        "slot": "footprint.bid.2.5",
+        "requestId": "r-bid-2-5",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 344
+      },
+      {
+        "slot": "footprint.bid.2.6",
+        "requestId": "r-bid-2-6",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 360
+      },
+      {
+        "slot": "footprint.bid.2.7",
+        "requestId": "r-bid-2-7",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 376
+      },
+      {
+        "slot": "footprint.bid.3.0",
+        "requestId": "r-bid-3-0",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 392
+      },
+      {
+        "slot": "footprint.bid.3.1",
+        "requestId": "r-bid-3-1",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 408
+      },
+      {
+        "slot": "footprint.bid.3.2",
+        "requestId": "r-bid-3-2",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 424
+      },
+      {
+        "slot": "footprint.bid.3.3",
+        "requestId": "r-bid-3-3",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 440
+      },
+      {
+        "slot": "footprint.bid.3.4",
+        "requestId": "r-bid-3-4",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 456
+      },
+      {
+        "slot": "footprint.bid.3.5",
+        "requestId": "r-bid-3-5",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 472
+      },
+      {
+        "slot": "footprint.bid.3.6",
+        "requestId": "r-bid-3-6",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 488
+      },
+      {
+        "slot": "footprint.bid.3.7",
+        "requestId": "r-bid-3-7",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 504
+      },
+      {
+        "slot": "footprint.bid.4.0",
+        "requestId": "r-bid-4-0",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 520
+      },
+      {
+        "slot": "footprint.bid.4.1",
+        "requestId": "r-bid-4-1",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 536
+      },
+      {
+        "slot": "footprint.bid.4.2",
+        "requestId": "r-bid-4-2",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 552
+      },
+      {
+        "slot": "footprint.bid.4.3",
+        "requestId": "r-bid-4-3",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 568
+      },
+      {
+        "slot": "footprint.bid.4.4",
+        "requestId": "r-bid-4-4",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 584
+      },
+      {
+        "slot": "footprint.bid.4.5",
+        "requestId": "r-bid-4-5",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 600
+      },
+      {
+        "slot": "footprint.bid.4.6",
+        "requestId": "r-bid-4-6",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 616
+      },
+      {
+        "slot": "footprint.bid.4.7",
+        "requestId": "r-bid-4-7",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 632
+      },
+      {
+        "slot": "footprint.bid.5.0",
+        "requestId": "r-bid-5-0",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 648
+      },
+      {
+        "slot": "footprint.bid.5.1",
+        "requestId": "r-bid-5-1",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 664
+      },
+      {
+        "slot": "footprint.bid.5.2",
+        "requestId": "r-bid-5-2",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 680
+      },
+      {
+        "slot": "footprint.bid.5.3",
+        "requestId": "r-bid-5-3",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 696
+      },
+      {
+        "slot": "footprint.bid.5.4",
+        "requestId": "r-bid-5-4",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 712
+      },
+      {
+        "slot": "footprint.bid.5.5",
+        "requestId": "r-bid-5-5",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 728
+      },
+      {
+        "slot": "footprint.bid.5.6",
+        "requestId": "r-bid-5-6",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 744
+      },
+      {
+        "slot": "footprint.bid.5.7",
+        "requestId": "r-bid-5-7",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 760
+      },
+      {
+        "slot": "footprint.bid.6.0",
+        "requestId": "r-bid-6-0",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 776
+      },
+      {
+        "slot": "footprint.bid.6.1",
+        "requestId": "r-bid-6-1",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 792
+      },
+      {
+        "slot": "footprint.bid.6.2",
+        "requestId": "r-bid-6-2",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 808
+      },
+      {
+        "slot": "footprint.bid.6.3",
+        "requestId": "r-bid-6-3",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 824
+      },
+      {
+        "slot": "footprint.bid.6.4",
+        "requestId": "r-bid-6-4",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 840
+      },
+      {
+        "slot": "footprint.bid.6.5",
+        "requestId": "r-bid-6-5",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 856
+      },
+      {
+        "slot": "footprint.bid.6.6",
+        "requestId": "r-bid-6-6",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 872
+      },
+      {
+        "slot": "footprint.bid.6.7",
+        "requestId": "r-bid-6-7",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 888
+      },
+      {
+        "slot": "footprint.bid.7.0",
+        "requestId": "r-bid-7-0",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 904
+      },
+      {
+        "slot": "footprint.bid.7.1",
+        "requestId": "r-bid-7-1",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 920
+      },
+      {
+        "slot": "footprint.bid.7.2",
+        "requestId": "r-bid-7-2",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 936
+      },
+      {
+        "slot": "footprint.bid.7.3",
+        "requestId": "r-bid-7-3",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 952
+      },
+      {
+        "slot": "footprint.bid.7.4",
+        "requestId": "r-bid-7-4",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 968
+      },
+      {
+        "slot": "footprint.bid.7.5",
+        "requestId": "r-bid-7-5",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 984
+      },
+      {
+        "slot": "footprint.bid.7.6",
+        "requestId": "r-bid-7-6",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 1000
+      },
+      {
+        "slot": "footprint.bid.7.7",
+        "requestId": "r-bid-7-7",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 1016
+      },
+      {
+        "slot": "footprint.bid.8.0",
+        "requestId": "r-bid-8-0",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 1032
+      },
+      {
+        "slot": "footprint.bid.8.1",
+        "requestId": "r-bid-8-1",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 1048
+      },
+      {
+        "slot": "footprint.bid.8.2",
+        "requestId": "r-bid-8-2",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 1064
+      },
+      {
+        "slot": "footprint.bid.8.3",
+        "requestId": "r-bid-8-3",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 1080
+      },
+      {
+        "slot": "footprint.bid.8.4",
+        "requestId": "r-bid-8-4",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 1096
+      },
+      {
+        "slot": "footprint.bid.8.5",
+        "requestId": "r-bid-8-5",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 1112
+      },
+      {
+        "slot": "footprint.bid.8.6",
+        "requestId": "r-bid-8-6",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 1128
+      },
+      {
+        "slot": "footprint.bid.8.7",
+        "requestId": "r-bid-8-7",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 1144
+      },
+      {
+        "slot": "footprint.bid.9.0",
+        "requestId": "r-bid-9-0",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 1160
+      },
+      {
+        "slot": "footprint.bid.9.1",
+        "requestId": "r-bid-9-1",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 1176
+      },
+      {
+        "slot": "footprint.bid.9.2",
+        "requestId": "r-bid-9-2",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 1192
+      },
+      {
+        "slot": "footprint.bid.9.3",
+        "requestId": "r-bid-9-3",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 1208
+      },
+      {
+        "slot": "footprint.bid.9.4",
+        "requestId": "r-bid-9-4",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 1224
+      },
+      {
+        "slot": "footprint.bid.9.5",
+        "requestId": "r-bid-9-5",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 1240
+      },
+      {
+        "slot": "footprint.bid.9.6",
+        "requestId": "r-bid-9-6",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 1256
+      },
+      {
+        "slot": "footprint.bid.9.7",
+        "requestId": "r-bid-9-7",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 1272
+      },
+      {
+        "slot": "footprint.ask.0.0",
+        "requestId": "r-ask-0-0",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 8
+      },
+      {
+        "slot": "footprint.ask.0.1",
+        "requestId": "r-ask-0-1",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 24
+      },
+      {
+        "slot": "footprint.ask.0.2",
+        "requestId": "r-ask-0-2",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 40
+      },
+      {
+        "slot": "footprint.ask.0.3",
+        "requestId": "r-ask-0-3",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 56
+      },
+      {
+        "slot": "footprint.ask.0.4",
+        "requestId": "r-ask-0-4",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 72
+      },
+      {
+        "slot": "footprint.ask.0.5",
+        "requestId": "r-ask-0-5",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 88
+      },
+      {
+        "slot": "footprint.ask.0.6",
+        "requestId": "r-ask-0-6",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 104
+      },
+      {
+        "slot": "footprint.ask.0.7",
+        "requestId": "r-ask-0-7",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 120
+      },
+      {
+        "slot": "footprint.ask.1.0",
+        "requestId": "r-ask-1-0",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 136
+      },
+      {
+        "slot": "footprint.ask.1.1",
+        "requestId": "r-ask-1-1",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 152
+      },
+      {
+        "slot": "footprint.ask.1.2",
+        "requestId": "r-ask-1-2",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 168
+      },
+      {
+        "slot": "footprint.ask.1.3",
+        "requestId": "r-ask-1-3",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 184
+      },
+      {
+        "slot": "footprint.ask.1.4",
+        "requestId": "r-ask-1-4",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 200
+      },
+      {
+        "slot": "footprint.ask.1.5",
+        "requestId": "r-ask-1-5",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 216
+      },
+      {
+        "slot": "footprint.ask.1.6",
+        "requestId": "r-ask-1-6",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 232
+      },
+      {
+        "slot": "footprint.ask.1.7",
+        "requestId": "r-ask-1-7",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 248
+      },
+      {
+        "slot": "footprint.ask.2.0",
+        "requestId": "r-ask-2-0",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 264
+      },
+      {
+        "slot": "footprint.ask.2.1",
+        "requestId": "r-ask-2-1",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 280
+      },
+      {
+        "slot": "footprint.ask.2.2",
+        "requestId": "r-ask-2-2",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 296
+      },
+      {
+        "slot": "footprint.ask.2.3",
+        "requestId": "r-ask-2-3",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 312
+      },
+      {
+        "slot": "footprint.ask.2.4",
+        "requestId": "r-ask-2-4",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 328
+      },
+      {
+        "slot": "footprint.ask.2.5",
+        "requestId": "r-ask-2-5",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 344
+      },
+      {
+        "slot": "footprint.ask.2.6",
+        "requestId": "r-ask-2-6",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 360
+      },
+      {
+        "slot": "footprint.ask.2.7",
+        "requestId": "r-ask-2-7",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 376
+      },
+      {
+        "slot": "footprint.ask.3.0",
+        "requestId": "r-ask-3-0",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 392
+      },
+      {
+        "slot": "footprint.ask.3.1",
+        "requestId": "r-ask-3-1",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 408
+      },
+      {
+        "slot": "footprint.ask.3.2",
+        "requestId": "r-ask-3-2",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 424
+      },
+      {
+        "slot": "footprint.ask.3.3",
+        "requestId": "r-ask-3-3",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 440
+      },
+      {
+        "slot": "footprint.ask.3.4",
+        "requestId": "r-ask-3-4",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 456
+      },
+      {
+        "slot": "footprint.ask.3.5",
+        "requestId": "r-ask-3-5",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 472
+      },
+      {
+        "slot": "footprint.ask.3.6",
+        "requestId": "r-ask-3-6",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 488
+      },
+      {
+        "slot": "footprint.ask.3.7",
+        "requestId": "r-ask-3-7",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 504
+      },
+      {
+        "slot": "footprint.ask.4.0",
+        "requestId": "r-ask-4-0",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 520
+      },
+      {
+        "slot": "footprint.ask.4.1",
+        "requestId": "r-ask-4-1",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 536
+      },
+      {
+        "slot": "footprint.ask.4.2",
+        "requestId": "r-ask-4-2",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 552
+      },
+      {
+        "slot": "footprint.ask.4.3",
+        "requestId": "r-ask-4-3",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 568
+      },
+      {
+        "slot": "footprint.ask.4.4",
+        "requestId": "r-ask-4-4",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 584
+      },
+      {
+        "slot": "footprint.ask.4.5",
+        "requestId": "r-ask-4-5",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 600
+      },
+      {
+        "slot": "footprint.ask.4.6",
+        "requestId": "r-ask-4-6",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 616
+      },
+      {
+        "slot": "footprint.ask.4.7",
+        "requestId": "r-ask-4-7",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 632
+      },
+      {
+        "slot": "footprint.ask.5.0",
+        "requestId": "r-ask-5-0",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 648
+      },
+      {
+        "slot": "footprint.ask.5.1",
+        "requestId": "r-ask-5-1",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 664
+      },
+      {
+        "slot": "footprint.ask.5.2",
+        "requestId": "r-ask-5-2",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 680
+      },
+      {
+        "slot": "footprint.ask.5.3",
+        "requestId": "r-ask-5-3",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 696
+      },
+      {
+        "slot": "footprint.ask.5.4",
+        "requestId": "r-ask-5-4",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 712
+      },
+      {
+        "slot": "footprint.ask.5.5",
+        "requestId": "r-ask-5-5",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 728
+      },
+      {
+        "slot": "footprint.ask.5.6",
+        "requestId": "r-ask-5-6",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 744
+      },
+      {
+        "slot": "footprint.ask.5.7",
+        "requestId": "r-ask-5-7",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 760
+      },
+      {
+        "slot": "footprint.ask.6.0",
+        "requestId": "r-ask-6-0",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 776
+      },
+      {
+        "slot": "footprint.ask.6.1",
+        "requestId": "r-ask-6-1",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 792
+      },
+      {
+        "slot": "footprint.ask.6.2",
+        "requestId": "r-ask-6-2",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 808
+      },
+      {
+        "slot": "footprint.ask.6.3",
+        "requestId": "r-ask-6-3",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 824
+      },
+      {
+        "slot": "footprint.ask.6.4",
+        "requestId": "r-ask-6-4",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 840
+      },
+      {
+        "slot": "footprint.ask.6.5",
+        "requestId": "r-ask-6-5",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 856
+      },
+      {
+        "slot": "footprint.ask.6.6",
+        "requestId": "r-ask-6-6",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 872
+      },
+      {
+        "slot": "footprint.ask.6.7",
+        "requestId": "r-ask-6-7",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 888
+      },
+      {
+        "slot": "footprint.ask.7.0",
+        "requestId": "r-ask-7-0",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 904
+      },
+      {
+        "slot": "footprint.ask.7.1",
+        "requestId": "r-ask-7-1",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 920
+      },
+      {
+        "slot": "footprint.ask.7.2",
+        "requestId": "r-ask-7-2",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 936
+      },
+      {
+        "slot": "footprint.ask.7.3",
+        "requestId": "r-ask-7-3",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 952
+      },
+      {
+        "slot": "footprint.ask.7.4",
+        "requestId": "r-ask-7-4",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 968
+      },
+      {
+        "slot": "footprint.ask.7.5",
+        "requestId": "r-ask-7-5",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 984
+      },
+      {
+        "slot": "footprint.ask.7.6",
+        "requestId": "r-ask-7-6",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 1000
+      },
+      {
+        "slot": "footprint.ask.7.7",
+        "requestId": "r-ask-7-7",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 1016
+      },
+      {
+        "slot": "footprint.ask.8.0",
+        "requestId": "r-ask-8-0",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 1032
+      },
+      {
+        "slot": "footprint.ask.8.1",
+        "requestId": "r-ask-8-1",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 1048
+      },
+      {
+        "slot": "footprint.ask.8.2",
+        "requestId": "r-ask-8-2",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 1064
+      },
+      {
+        "slot": "footprint.ask.8.3",
+        "requestId": "r-ask-8-3",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 1080
+      },
+      {
+        "slot": "footprint.ask.8.4",
+        "requestId": "r-ask-8-4",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 1096
+      },
+      {
+        "slot": "footprint.ask.8.5",
+        "requestId": "r-ask-8-5",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 1112
+      },
+      {
+        "slot": "footprint.ask.8.6",
+        "requestId": "r-ask-8-6",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 1128
+      },
+      {
+        "slot": "footprint.ask.8.7",
+        "requestId": "r-ask-8-7",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 1144
+      },
+      {
+        "slot": "footprint.ask.9.0",
+        "requestId": "r-ask-9-0",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 1160
+      },
+      {
+        "slot": "footprint.ask.9.1",
+        "requestId": "r-ask-9-1",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 1176
+      },
+      {
+        "slot": "footprint.ask.9.2",
+        "requestId": "r-ask-9-2",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 1192
+      },
+      {
+        "slot": "footprint.ask.9.3",
+        "requestId": "r-ask-9-3",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 1208
+      },
+      {
+        "slot": "footprint.ask.9.4",
+        "requestId": "r-ask-9-4",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 1224
+      },
+      {
+        "slot": "footprint.ask.9.5",
+        "requestId": "r-ask-9-5",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 1240
+      },
+      {
+        "slot": "footprint.ask.9.6",
+        "requestId": "r-ask-9-6",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 1256
+      },
+      {
+        "slot": "footprint.ask.9.7",
+        "requestId": "r-ask-9-7",
+        "bufferId": 602,
+        "mode": "fixed",
+        "offset": 1272
+      }
+    ]
+  }
+}

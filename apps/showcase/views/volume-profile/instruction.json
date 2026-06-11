@@ -1,0 +1,299 @@
+{
+  "id": "showcase-volume-profile",
+  "sessionId": "showcase",
+  "subscriptions": [
+    {
+      "id": "r-vp-0",
+      "streamKey": "AAPL",
+      "field": "profile.bucket.0"
+    },
+    {
+      "id": "r-vp-1",
+      "streamKey": "AAPL",
+      "field": "profile.bucket.1"
+    },
+    {
+      "id": "r-vp-2",
+      "streamKey": "AAPL",
+      "field": "profile.bucket.2"
+    },
+    {
+      "id": "r-vp-3",
+      "streamKey": "AAPL",
+      "field": "profile.bucket.3"
+    },
+    {
+      "id": "r-vp-4",
+      "streamKey": "AAPL",
+      "field": "profile.bucket.4"
+    },
+    {
+      "id": "r-vp-5",
+      "streamKey": "AAPL",
+      "field": "profile.bucket.5"
+    },
+    {
+      "id": "r-vp-6",
+      "streamKey": "AAPL",
+      "field": "profile.bucket.6"
+    },
+    {
+      "id": "r-vp-7",
+      "streamKey": "AAPL",
+      "field": "profile.bucket.7"
+    },
+    {
+      "id": "r-vp-8",
+      "streamKey": "AAPL",
+      "field": "profile.bucket.8"
+    },
+    {
+      "id": "r-vp-9",
+      "streamKey": "AAPL",
+      "field": "profile.bucket.9"
+    },
+    {
+      "id": "r-vp-10",
+      "streamKey": "AAPL",
+      "field": "profile.bucket.10"
+    },
+    {
+      "id": "r-vp-11",
+      "streamKey": "AAPL",
+      "field": "profile.bucket.11"
+    },
+    {
+      "id": "r-vp-12",
+      "streamKey": "AAPL",
+      "field": "profile.bucket.12"
+    },
+    {
+      "id": "r-vp-13",
+      "streamKey": "AAPL",
+      "field": "profile.bucket.13"
+    },
+    {
+      "id": "r-vp-14",
+      "streamKey": "AAPL",
+      "field": "profile.bucket.14"
+    },
+    {
+      "id": "r-vp-15",
+      "streamKey": "AAPL",
+      "field": "profile.bucket.15"
+    },
+    {
+      "id": "r-vp-16",
+      "streamKey": "AAPL",
+      "field": "profile.bucket.16"
+    },
+    {
+      "id": "r-vp-17",
+      "streamKey": "AAPL",
+      "field": "profile.bucket.17"
+    },
+    {
+      "id": "r-vp-18",
+      "streamKey": "AAPL",
+      "field": "profile.bucket.18"
+    },
+    {
+      "id": "r-vp-19",
+      "streamKey": "AAPL",
+      "field": "profile.bucket.19"
+    },
+    {
+      "id": "r-vp-20",
+      "streamKey": "AAPL",
+      "field": "profile.bucket.20"
+    },
+    {
+      "id": "r-vp-21",
+      "streamKey": "AAPL",
+      "field": "profile.bucket.21"
+    },
+    {
+      "id": "r-vp-22",
+      "streamKey": "AAPL",
+      "field": "profile.bucket.22"
+    },
+    {
+      "id": "r-vp-23",
+      "streamKey": "AAPL",
+      "field": "profile.bucket.23"
+    }
+  ],
+  "visualization": {
+    "recipe": "showcase-explicit-v1",
+    "bindings": [
+      {
+        "slot": "profile.bucket.0",
+        "requestId": "r-vp-0",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 8
+      },
+      {
+        "slot": "profile.bucket.1",
+        "requestId": "r-vp-1",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 24
+      },
+      {
+        "slot": "profile.bucket.2",
+        "requestId": "r-vp-2",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 40
+      },
+      {
+        "slot": "profile.bucket.3",
+        "requestId": "r-vp-3",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 56
+      },
+      {
+        "slot": "profile.bucket.4",
+        "requestId": "r-vp-4",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 72
+      },
+      {
+        "slot": "profile.bucket.5",
+        "requestId": "r-vp-5",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 88
+      },
+      {
+        "slot": "profile.bucket.6",
+        "requestId": "r-vp-6",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 104
+      },
+      {
+        "slot": "profile.bucket.7",
+        "requestId": "r-vp-7",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 120
+      },
+      {
+        "slot": "profile.bucket.8",
+        "requestId": "r-vp-8",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 136
+      },
+      {
+        "slot": "profile.bucket.9",
+        "requestId": "r-vp-9",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 152
+      },
+      {
+        "slot": "profile.bucket.10",
+        "requestId": "r-vp-10",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 168
+      },
+      {
+        "slot": "profile.bucket.11",
+        "requestId": "r-vp-11",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 184
+      },
+      {
+        "slot": "profile.bucket.12",
+        "requestId": "r-vp-12",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 200
+      },
+      {
+        "slot": "profile.bucket.13",
+        "requestId": "r-vp-13",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 216
+      },
+      {
+        "slot": "profile.bucket.14",
+        "requestId": "r-vp-14",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 232
+      },
+      {
+        "slot": "profile.bucket.15",
+        "requestId": "r-vp-15",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 248
+      },
+      {
+        "slot": "profile.bucket.16",
+        "requestId": "r-vp-16",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 264
+      },
+      {
+        "slot": "profile.bucket.17",
+        "requestId": "r-vp-17",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 280
+      },
+      {
+        "slot": "profile.bucket.18",
+        "requestId": "r-vp-18",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 296
+      },
+      {
+        "slot": "profile.bucket.19",
+        "requestId": "r-vp-19",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 312
+      },
+      {
+        "slot": "profile.bucket.20",
+        "requestId": "r-vp-20",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 328
+      },
+      {
+        "slot": "profile.bucket.21",
+        "requestId": "r-vp-21",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 344
+      },
+      {
+        "slot": "profile.bucket.22",
+        "requestId": "r-vp-22",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 360
+      },
+      {
+        "slot": "profile.bucket.23",
+        "requestId": "r-vp-23",
+        "bufferId": 601,
+        "mode": "fixed",
+        "offset": 376
+      }
+    ]
+  }
+}
