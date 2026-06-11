@@ -49,16 +49,20 @@ export interface UseViewSwitch {
   setPlaying: (p: boolean) => void;
   /** Restart the current view's replay from the first frame. */
   restart: () => void;
+  /** Whether the replay loops on completion (ambient motion). */
+  loop: boolean;
+  setLoop: (l: boolean) => void;
 }
 
 /**
  * Switch to `view` on `host`, apply its scene, and loop-replay its records.
  * `loop` (default true) drives ambient motion. Returns replay transport state.
  */
-export function useViewSwitch(host: EngineHost | null, view: ShowcaseView | null, loop = true): UseViewSwitch {
+export function useViewSwitch(host: EngineHost | null, view: ShowcaseView | null, initialLoop = true): UseViewSwitch {
   const appliedRef = useRef<SceneManifest | null>(null);
   const [progress, setProgress] = useState(0);
   const [playing, setPlaying] = useState(true);
+  const [loop, setLoop] = useState(initialLoop);
   // Bumping this key re-arms useReplay (a fresh timeline pass) after we reset
   // the scene — used for both the loop and explicit restart.
   const [epoch, setEpoch] = useState(0);
@@ -105,7 +109,7 @@ export function useViewSwitch(host: EngineHost | null, view: ShowcaseView | null
     xAnchor: view?.xAnchor,
   });
 
-  return { progress, playing, setPlaying, restart };
+  return { progress, playing, setPlaying, restart, loop, setLoop };
 }
 
 /**
