@@ -1,0 +1,10 @@
+{
+  "id": "candles-aapl",
+  "title": "Candlestick — AAPL",
+  "tier": "native",
+  "referenceTool": "TradingView",
+  "blurb": "Per-second OHLC candles for AAPL, streamed over the live data path and drawn as instanced GPU geometry straight from a JSON manifest.",
+  "datasetId": "AAPL",
+  "transform": { "sx": 0.011333333, "sy": 0.10625, "tx": -0.895333333, "ty": -43.88125 },
+  "xAnchor": true
+}

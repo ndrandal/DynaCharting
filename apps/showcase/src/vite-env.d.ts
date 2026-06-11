@@ -7,3 +7,9 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+/** Explainer markdown imported as a raw string (Vite ?raw). */
+declare module '*.md?raw' {
+  const content: string;
+  export default content;
+}

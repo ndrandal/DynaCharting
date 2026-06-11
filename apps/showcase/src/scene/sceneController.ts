@@ -91,7 +91,7 @@ export function applyManifest(host: EngineHost, manifest: SceneManifest): SceneM
   }
   host.applyControl({ cmd: 'commitFrame' });
 
-  for (const u of manifest.uploads) {
+  for (const u of manifest.uploads ?? []) {
     host.enqueueData(encodeUpload(u));
   }
   host.markDirty();
