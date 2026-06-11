@@ -1778,3 +1778,75 @@ if (EMSCRIPTEN)
   )
   message(STATUS "dc_wasm (Emscripten WASM binding skeleton) enabled")
 endif()
+
+# =======================
+# dc_webgpu (ENC-503) — Emscripten/emdawnwebgpu build of the dc_gpu triSolid
+# render path: the FIRST browser WebGPU render in the migration (P6.2).
+# =======================
+# Compiles the SAME dc_gpu rendering code that runs on native Dawn — DawnDevice's
+# webgpu_cpp render path (pipelines/buffers/draw/copy-to-buffer readback + WGSL)
+# and DawnTriSolidBackend — but against Emscripten's emdawnwebgpu port instead of
+# native dawn::webgpu_dawn. This proves the Dawn/webgpu_cpp rendering code is
+# browser-portable. Only DEVICE ACQUISITION + the readback event-pump differ
+# in-browser; both are #ifdef __EMSCRIPTEN__ branches inside DawnDevice (browser
+# RequestAdapter/RequestDevice off navigator.gpu; emscripten_sleep pump).
+#
+# Gated on Emscripten like dc_wasm so it never affects the native build. It does
+# NOT use DC_FETCH_DAWN/dc_gpu (those build native Dawn from source); instead it
+# compiles the two needed gpu/ translation units directly and links emdawnwebgpu.
+if (EMSCRIPTEN)
+  # The dc_gpu render code we exercise: DawnDevice (device + render pass + draw +
+  # readback) and the triSolid backend. We compile these TUs into the executable
+  # directly (rather than building the whole dc_gpu library, which globs every
+  # backend) — triSolid is the first-render slice this ticket targets.
+  add_executable(dc_webgpu
+    "${CMAKE_CURRENT_SOURCE_DIR}/wasm/dc_webgpu.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/gpu/DawnDevice.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/gpu/DawnTriSolidBackend.cpp"
+  )
+  target_link_libraries(dc_webgpu PRIVATE dc)
+  target_include_directories(dc_webgpu PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  )
+  # webgpu_cpp.h needs C++20 (concepts/requires in its callback helpers), same as
+  # the native dc_gpu library.
+  target_compile_features(dc_webgpu PRIVATE cxx_std_20)
+
+  # emdawnwebgpu provides <webgpu/webgpu_cpp.h> backed by navigator.gpu. The port
+  # flag must be on BOTH compile and link (it injects the JS library + headers).
+  target_compile_options(dc_webgpu PRIVATE
+    "--use-port=emdawnwebgpu"
+    -fexceptions
+  )
+  # Emscripten link flags:
+  #   --use-port=emdawnwebgpu : link the emdawnwebgpu runtime (navigator.gpu).
+  #   -sASYNCIFY              : let DawnDevice::init() + readback yield to the JS
+  #                             event loop (emscripten_sleep) so the synchronous
+  #                             native API shape works in-browser. REQUIRED.
+  #   MODULARIZE/EXPORT_ES6   : ES6 module factory (default export) named
+  #                             createDcWebGpu — mirrors dc_wasm (ENC-502).
+  #   EXPORTED_RUNTIME_METHODS: ccall (the page awaits dc_webgpu_render async) +
+  #                             HEAPU8 (the page reads the framebuffer bytes).
+  #   EXPORTED_FUNCTIONS      : keep the C render entry point + malloc/free.
+  #   ENVIRONMENT=node,web    : load under node (module-instantiation check) + web
+  #                             (the real browser render).
+  target_link_options(dc_webgpu PRIVATE
+    "--use-port=emdawnwebgpu"
+    "--bind"
+    "-fexceptions"
+    "-sASYNCIFY=1"
+    "-sMODULARIZE=1"
+    "-sEXPORT_ES6=1"
+    "-sEXPORT_NAME=createDcWebGpu"
+    "-sENVIRONMENT=node,web"
+    "-sALLOW_MEMORY_GROWTH=1"
+    "-sDISABLE_EXCEPTION_CATCHING=0"
+    "-sEXPORTED_RUNTIME_METHODS=ccall,cwrap,HEAPU8"
+    "-sEXPORTED_FUNCTIONS=_dc_webgpu_render,_malloc,_free"
+  )
+  set_target_properties(dc_webgpu PROPERTIES
+    OUTPUT_NAME "dc_webgpu"
+    SUFFIX ".js"
+  )
+  message(STATUS "dc_webgpu (Emscripten emdawnwebgpu triSolid render) enabled")
+endif()

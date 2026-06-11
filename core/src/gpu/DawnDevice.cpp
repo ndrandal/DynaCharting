@@ -10,6 +10,12 @@
 #include <utility>
 #include <vector>
 
+#ifdef __EMSCRIPTEN__
+// ENC-503: emscripten_sleep — the ASYNCIFY yield used by waitUntil() to let the
+// browser run WebGPU's async work (adapter/device request, buffer map).
+#include <emscripten/emscripten.h>
+#endif
+
 namespace dc {
 namespace {
 
@@ -62,6 +68,94 @@ DawnDevice::~DawnDevice() {
 
 // --- lifecycle -------------------------------------------------------------
 
+#ifdef __EMSCRIPTEN__
+// ENC-503 (P6.2) — Browser device acquisition via emdawnwebgpu (navigator.gpu).
+//
+// The native init() below uses dawn::native::Instance + EnumerateAdapters +
+// a SYNCHRONOUS CreateDevice, none of which exist in the browser. emdawnwebgpu
+// exposes the standard WebGPU async surface: wgpu::CreateInstance, then
+// Instance::RequestAdapter and Adapter::RequestDevice, each completing via a
+// Future. We keep the existing `bool init()` shape (so DawnSceneRenderer / the
+// backends / the harness drive the device identically to native) by turning the
+// two async requests into blocking calls with ASYNCIFY: the callback runs in
+// AllowProcessEvents mode, and waitUntil() yields to the JS event loop
+// (emscripten_sleep) + flushes futures (emInstance_.ProcessEvents()) until the
+// callback fires. This REQUIRES the module be linked with -sASYNCIFY.
+bool DawnDevice::init() {
+  if (inited_) return true;
+
+  // 1. Instance from emdawnwebgpu (wired to navigator.gpu in JS).
+  wgpu::InstanceDescriptor instanceDesc = {};
+  emInstance_ = wgpu::CreateInstance(&instanceDesc);
+  if (!emInstance_) {
+    errorMessage_ =
+        "DawnDevice(browser): wgpu::CreateInstance failed (navigator.gpu "
+        "unavailable? this browser may not support WebGPU)";
+    return false;
+  }
+
+  // 2. RequestAdapter (async -> blocking via the ASYNCIFY pump in waitUntil).
+  struct AdapterReq {
+    bool done = false;
+    bool ok = false;
+    wgpu::Adapter adapter;
+    std::string message;
+  } areq;
+  wgpu::RequestAdapterOptions adapterOpts = {};
+  emInstance_.RequestAdapter(
+      &adapterOpts, wgpu::CallbackMode::AllowProcessEvents,
+      [](wgpu::RequestAdapterStatus status, wgpu::Adapter adapter,
+         wgpu::StringView msg, AdapterReq* req) {
+        req->ok = (status == wgpu::RequestAdapterStatus::Success) && adapter;
+        req->adapter = std::move(adapter);
+        req->message = toStdString(msg);
+        req->done = true;
+      },
+      &areq);
+  waitUntil(&areq.done);
+  if (!areq.ok) {
+    errorMessage_ = "DawnDevice(browser): RequestAdapter failed: " + areq.message;
+    return false;
+  }
+
+  {
+    wgpu::AdapterInfo info = {};
+    areq.adapter.GetInfo(&info);
+    backendName_ = backendTypeName(info.backendType);
+    adapterName_ = toStdString(info.device);
+    if (adapterName_.empty()) adapterName_ = toStdString(info.description);
+  }
+
+  // 3. RequestDevice (async -> blocking via the same pump).
+  struct DeviceReq {
+    bool done = false;
+    bool ok = false;
+    wgpu::Device device;
+    std::string message;
+  } dreq;
+  wgpu::DeviceDescriptor deviceDesc = {};
+  areq.adapter.RequestDevice(
+      &deviceDesc, wgpu::CallbackMode::AllowProcessEvents,
+      [](wgpu::RequestDeviceStatus status, wgpu::Device device,
+         wgpu::StringView msg, DeviceReq* req) {
+        req->ok = (status == wgpu::RequestDeviceStatus::Success) && device;
+        req->device = std::move(device);
+        req->message = toStdString(msg);
+        req->done = true;
+      },
+      &dreq);
+  waitUntil(&dreq.done);
+  if (!dreq.ok) {
+    errorMessage_ = "DawnDevice(browser): RequestDevice failed: " + dreq.message;
+    return false;
+  }
+
+  device_ = std::move(dreq.device);
+  queue_ = device_.GetQueue();
+  inited_ = true;
+  return true;
+}
+#else  // !__EMSCRIPTEN__  (native dawn::native path — unchanged from ENC-480)
 bool DawnDevice::init() {
   if (inited_) return true;
 
@@ -123,6 +217,7 @@ bool DawnDevice::init() {
   inited_ = true;
   return true;
 }
+#endif  // __EMSCRIPTEN__
 
 // --- handle <-> slot helpers -----------------------------------------------
 // 1-based opaque handles index these vectors; id 0 == null. Matches GlDevice.
@@ -1297,8 +1392,20 @@ void DawnDevice::setClipState(ClipMode mode) {
 // --- synchronous readback --------------------------------------------------
 
 void DawnDevice::waitUntil(const bool* done) {
-  // Pump the native instance until *done flips. Tick the device too so its
-  // internal queues advance (the copy must complete before the map callback
+#ifdef __EMSCRIPTEN__
+  // BROWSER (ENC-503): the WebGPU work (adapter/device requests, buffer map)
+  // completes on the JS event loop, not on a thread we control. With ASYNCIFY,
+  // emscripten_sleep(0) unwinds the C++ stack, yields to the browser so it can
+  // run the WebGPU promises + microtasks, then rewinds. We also flush the
+  // instance's AllowProcessEvents futures each tick so the callbacks that set
+  // *done actually fire. REQUIRES -sASYNCIFY at link (see CMake dc_webgpu).
+  while (!*done) {
+    if (emInstance_) emInstance_.ProcessEvents();
+    emscripten_sleep(0);
+  }
+#else
+  // NATIVE: pump the native instance until *done flips. Tick the device too so
+  // its internal queues advance (the copy must complete before the map callback
   // fires). AllowProcessEvents-mode futures are serviced by ProcessEvents.
   while (!*done) {
     device_.Tick();
@@ -1306,6 +1413,7 @@ void DawnDevice::waitUntil(const bool* done) {
     // its underlying WGPUInstance.
     wgpuInstanceProcessEvents(instance_->Get());
   }
+#endif
 }
 
 void DawnDevice::readPixel(std::int32_t x, std::int32_t y,
@@ -1386,6 +1494,78 @@ void DawnDevice::readPixel(std::int32_t x, std::int32_t y,
     }
     readback.Unmap();
   }
+}
+
+// ENC-503 (P6.2) — full-framebuffer readback for the browser harness canvas blit.
+// Same CopyTextureToBuffer + async-map machinery as readPixel, but copies the
+// whole active target out (de-padding the 256-byte-aligned rows into a tight
+// W*H*4 image). Used by dc_webgpu.cpp to draw the rendered triangle onto the
+// page's <canvas>. Pure webgpu_cpp: identical on native Dawn and emdawnwebgpu.
+bool DawnDevice::readFramebufferRGBA(std::uint8_t* out, std::size_t outBytes,
+                                     std::uint32_t* outW, std::uint32_t* outH) {
+  RenderTarget* rt = targetAt(activeTarget_);
+  if (!rt || !rt->colorTexture) return false;
+  if (outW) *outW = targetW_;
+  if (outH) *outH = targetH_;
+  const std::size_t needed =
+      static_cast<std::size_t>(targetW_) * targetH_ * 4u;
+  if (!out || outBytes < needed) return false;
+
+  const std::uint32_t kBytesPerPixel = 4;
+  const std::uint32_t unpaddedRow = targetW_ * kBytesPerPixel;
+  const std::uint32_t kAlign = 256;
+  const std::uint32_t paddedRow = (unpaddedRow + (kAlign - 1)) & ~(kAlign - 1);
+  const std::uint64_t bufSize =
+      static_cast<std::uint64_t>(paddedRow) * targetH_;
+
+  wgpu::BufferDescriptor bd = {};
+  bd.label = "dc_readback_full";
+  bd.size = bufSize;
+  bd.usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead;
+  wgpu::Buffer readback = device_.CreateBuffer(&bd);
+
+  wgpu::CommandEncoder enc = device_.CreateCommandEncoder();
+  wgpu::TexelCopyTextureInfo src = {};
+  src.texture = rt->colorTexture;
+  src.mipLevel = 0;
+  src.origin = {0, 0, 0};
+  src.aspect = wgpu::TextureAspect::All;
+  wgpu::TexelCopyBufferInfo dst = {};
+  dst.buffer = readback;
+  dst.layout.offset = 0;
+  dst.layout.bytesPerRow = paddedRow;
+  dst.layout.rowsPerImage = targetH_;
+  wgpu::Extent3D copySize = {targetW_, targetH_, 1};
+  enc.CopyTextureToBuffer(&src, &dst, &copySize);
+  wgpu::CommandBuffer cmd = enc.Finish();
+  queue_.Submit(1, &cmd);
+
+  struct MapState {
+    bool done = false;
+    bool ok = false;
+  } mapState;
+  readback.MapAsync(
+      wgpu::MapMode::Read, 0, bufSize, wgpu::CallbackMode::AllowProcessEvents,
+      [](wgpu::MapAsyncStatus status, wgpu::StringView, MapState* st) {
+        st->ok = (status == wgpu::MapAsyncStatus::Success);
+        st->done = true;
+      },
+      &mapState);
+  waitUntil(&mapState.done);
+  if (!mapState.ok) return false;
+
+  const auto* base =
+      static_cast<const std::uint8_t*>(readback.GetConstMappedRange(0, bufSize));
+  bool ok = false;
+  if (base) {
+    for (std::uint32_t row = 0; row < targetH_; ++row) {
+      std::memcpy(out + static_cast<std::size_t>(row) * unpaddedRow,
+                  base + static_cast<std::size_t>(row) * paddedRow, unpaddedRow);
+    }
+    ok = true;
+  }
+  readback.Unmap();
+  return ok;
 }
 
 }  // namespace dc

@@ -39,6 +39,11 @@ build/
 build-*/
 cmake-build-*/
 out/
+# ENC-503: WASM/WebGPU output bundle (reproducible from `cmake --build`).
+dist-webgpu/
+# ENC-503: rapidjson headers are provisioned locally for the WASM build
+# (cloned into third_party/rapidjson); never commit the vendored copy.
+third_party/rapidjson/
 
 CMakeFiles/
 CMakeCache.txt

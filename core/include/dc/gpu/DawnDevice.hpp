@@ -31,7 +31,19 @@
 
 #include "dc/render/GpuDevice.hpp"
 
+// ENC-503 (P6.2): Browser/Emscripten build path. The DEVICE-ACQUISITION half of
+// DawnDevice is the only part that is backend-specific: native uses
+// dawn::native::Instance + EnumerateAdapters + a synchronous CreateDevice, which
+// only exists in a native Dawn build. In the browser (emdawnwebgpu) the same
+// device is obtained from navigator.gpu via the ASYNC RequestAdapter /
+// RequestDevice on a wgpu::Instance, and the readback event-pump yields to the
+// JS event loop (ASYNCIFY) instead of calling the native ProcessEvents entry.
+// Everything else — the WGSL, pipelines, buffers, draws, copy-to-buffer readback
+// — is identical webgpu_cpp and compiles unchanged against emdawnwebgpu. So
+// <dawn/native/DawnNative.h> (a native-only header) is included ONLY off-browser.
+#ifndef __EMSCRIPTEN__
 #include <dawn/native/DawnNative.h>
+#endif
 #include <webgpu/webgpu_cpp.h>
 
 #include <cstdint>
@@ -104,6 +116,16 @@ class DawnDevice final : public GpuDevice {
   void readPixel(std::int32_t x, std::int32_t y,
                  std::uint8_t* outRgba) override;
 
+  // ENC-503 (P6.2) — full-framebuffer RGBA8 readback (top-down, tightly packed,
+  // W*H*4 bytes) from the target bound by the most recent beginRenderPass. Same
+  // copy-to-buffer + async-map path as readPixel, but returns the whole image so
+  // the browser harness can blit it onto a <canvas> via putImageData. `out` must
+  // hold W*H*4 bytes; W/H are the active target size. Returns false if no target
+  // is bound or `out` is too small. Single full copy (vs N readPixel calls) keeps
+  // the canvas display cheap. Identical webgpu_cpp on native and emdawnwebgpu.
+  bool readFramebufferRGBA(std::uint8_t* out, std::size_t outBytes,
+                           std::uint32_t* outW, std::uint32_t* outH);
+
   // ENC-485 — Synchronous buffer readback for streaming-upload verification.
   // Copies [offsetBytes, offsetBytes+bytes) of `buf` into a MapRead staging
   // buffer and blocks until mapped, then copies the bytes into `out` (which must
@@ -172,11 +194,19 @@ class DawnDevice final : public GpuDevice {
   std::string backendName_;
   std::string adapterName_;
 
-  // Dawn owns the instance; it must outlive every wgpu object below. Held by
-  // unique_ptr because dawn::native::Instance is non-copyable/non-assignable
+#ifndef __EMSCRIPTEN__
+  // NATIVE: Dawn owns the instance; it must outlive every wgpu object below. Held
+  // by unique_ptr because dawn::native::Instance is non-copyable/non-assignable
   // (RAII over the underlying instance), so it can't be default-constructed as
   // a member and reassigned in init().
   std::unique_ptr<dawn::native::Instance> instance_;
+#else
+  // BROWSER (ENC-503): the wgpu::Instance from emdawnwebgpu (wgpu::CreateInstance,
+  // backed by navigator.gpu). It owns the futures serviced by the readback pump,
+  // so it must outlive the device/queue/buffers — same lifetime role as the
+  // native instance_ above.
+  wgpu::Instance emInstance_;
+#endif
   wgpu::Device device_;
   wgpu::Queue queue_;
 

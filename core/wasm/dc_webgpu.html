@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<!--
+  dc_webgpu.html — ENC-503 (P6.2) browser harness for the dc_gpu triSolid render
+  path on Emscripten/emdawnwebgpu (navigator.gpu).
+
+  Open this in a real WebGPU browser (Chrome/Edge on a machine where
+  navigator.gpu is available). It:
+    1. loads the dc_webgpu ES6 module (emdawnwebgpu wired to navigator.gpu),
+    2. acquires a WebGPU device + renders one red triSolid@1 triangle into an
+       offscreen RGBA8 target (the SAME dc_gpu code path as native Dawn),
+    3. reads back the rendered framebuffer + the center pixel,
+    4. blits the framebuffer onto the <canvas> (so you SEE the triangle), and
+    5. prints an unambiguous PASS/FAIL + the center-pixel RGB into the page.
+
+  Serve over http (WebGPU + ES modules need an origin), e.g.:
+      python3 -m http.server 8000
+  then open http://localhost:8000/dc_webgpu.html
+  (Opening via file:// will fail to load the ES module in most browsers.)
+
+  Requires dc_webgpu.js + dc_webgpu.wasm alongside this file.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>dc_webgpu — ENC-503 triSolid first render</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 24px; background:#111; color:#eee; }
+    h1 { font-size: 18px; }
+    #result { font-size: 20px; font-weight: 700; margin: 12px 0; }
+    .pass { color: #41d160; }
+    .fail { color: #ff5b5b; }
+    .pending { color: #f5c542; }
+    #detail, #log { font-family: ui-monospace, monospace; font-size: 13px; white-space: pre-wrap; }
+    #log { color:#9aa; margin-top:16px; max-height:240px; overflow:auto; border-top:1px solid #333; padding-top:8px; }
+    canvas { image-rendering: pixelated; border:1px solid #444; margin-top:12px; width:256px; height:256px; background:#000; }
+    .swatch { display:inline-block; width:18px; height:18px; vertical-align:middle; border:1px solid #666; }
+  </style>
+</head>
+<body>
+  <h1>DynaCharting dc_gpu — triSolid@1 first render on emdawnwebgpu (ENC-503)</h1>
+  <div id="result" class="pending">Status: initializing…</div>
+  <div id="detail"></div>
+  <canvas id="canvas" width="256" height="256"></canvas>
+  <div id="log"></div>
+
+  <script type="module">
+    const resultEl = document.getElementById('result');
+    const detailEl = document.getElementById('detail');
+    const logEl = document.getElementById('log');
+    const canvas = document.getElementById('canvas');
+
+    function log(msg) { logEl.textContent += msg + '\n'; }
+    function fail(msg) {
+      resultEl.className = 'fail';
+      resultEl.textContent = 'FAIL: ' + msg;
+    }
+
+    async function main() {
+      // 0. WebGPU availability check (this box's stack must expose navigator.gpu).
+      if (!('gpu' in navigator)) {
+        fail('navigator.gpu is undefined — this browser/stack does not expose ' +
+             'WebGPU. Open in Chrome/Edge on a machine with WebGPU enabled.');
+        log('navigator.gpu missing — cannot run the render.');
+        return;
+      }
+      log('navigator.gpu present — loading dc_webgpu module…');
+
+      // 1. Load the Emscripten/emdawnwebgpu ES6 module.
+      let mod;
+      try {
+        const factory = (await import('./dc_webgpu.js')).default;
+        mod = await factory();
+      } catch (e) {
+        fail('module load failed: ' + (e && e.message ? e.message : e));
+        return;
+      }
+      log('module instantiated.');
+
+      // 2. Render (async: acquires device via navigator.gpu, draws triSolid,
+      //    reads back). ASYNCIFY surfaces dc_webgpu_render as a Promise<int>.
+      const W = 256, H = 256;
+      resultEl.className = 'pending';
+      resultEl.textContent = 'Status: rendering…';
+      let status;
+      try {
+        status = await mod.ccall('dc_webgpu_render', 'number',
+                                 ['number', 'number'], [W, H], { async: true });
+      } catch (e) {
+        fail('render threw: ' + (e && e.message ? e.message : e));
+        return;
+      }
+
+      // 3. Read result fields back through the Embind getters.
+      const message = mod.dcMessage();
+      const cr = mod.dcCenterR(), cg = mod.dcCenterG(),
+            cb = mod.dcCenterB(), ca = mod.dcCenterA();
+      const isFill = mod.dcCenterIsFill();
+      log('dc_webgpu_render status=' + status);
+      log('message: ' + message);
+
+      // 4. Blit the rendered framebuffer onto the canvas (so the triangle is
+      //    visible). The C++ side left a tight W*H*4 RGBA buffer in WASM memory.
+      const fbPtr = mod.dcFramebufferPtr();
+      const fbSize = mod.dcFramebufferSize();
+      const fbW = mod.dcFramebufferWidth();
+      const fbH = mod.dcFramebufferHeight();
+      if (fbPtr && fbSize === fbW * fbH * 4 && fbW > 0 && fbH > 0) {
+        canvas.width = fbW; canvas.height = fbH;
+        const bytes = mod.HEAPU8.slice(fbPtr, fbPtr + fbSize); // copy out of HEAP
+        const img = new ImageData(new Uint8ClampedArray(bytes), fbW, fbH);
+        canvas.getContext('2d').putImageData(img, 0, 0);
+        log('framebuffer blitted to canvas (' + fbW + 'x' + fbH + ').');
+      } else {
+        log('framebuffer unavailable (ptr=' + fbPtr + ' size=' + fbSize + ').');
+      }
+
+      // 5. Unambiguous PASS/FAIL + center RGB.
+      const swatch = `<span class="swatch" style="background:rgb(${cr},${cg},${cb})"></span>`;
+      detailEl.innerHTML =
+        `center pixel = (R=${cr}, G=${cg}, B=${cb}, A=${ca}) ${swatch}\n` +
+        `backend message: ${message}`;
+      if (status === 1 && isFill) {
+        resultEl.className = 'pass';
+        resultEl.textContent = `PASS  center=(${cr},${cg},${cb})`;
+      } else if (status === 1) {
+        resultEl.className = 'fail';
+        resultEl.textContent =
+          `FAIL: rendered, but center=(${cr},${cg},${cb}) is not the red fill — check the canvas`;
+      } else {
+        resultEl.className = 'fail';
+        resultEl.textContent = `FAIL (status=${status}): ${message}`;
+      }
+    }
+
+    main().catch(e => fail('unexpected: ' + (e && e.message ? e.message : e)));
+  </script>
+</body>
+</html>
