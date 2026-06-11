@@ -8,8 +8,14 @@
  * Chrome (Playwright, headless:false on DISPLAY=:0) and, for EACH view in the
  * registry, navigates to its single-view route (`#/view/<id>`), waits for the
  * loop-replay to populate/settle, samples the live canvas to classify the
- * render as full / partial / none, and writes a PNG screenshot of the canvas to
+ * render as full / partial / none, and writes a PNG screenshot of the FULL view
+ * region — the engine canvas PLUS the logical-chart chrome overlay (axes /
+ * gridlines / legend / colorbar) and the FPS HUD composited over it — to
  *   apps/showcase/stills/<view-id>.png
+ *
+ * The render classifier still samples the bare <canvas> (the GPU render proof),
+ * but the screenshot is taken of the `.single-canvas-region` container so the
+ * stills read as logical charts (ENC-567).
  *
  * It then assembles a CONTACT SHEET — apps/showcase/stills/contact-sheet.html —
  * a tiered, tiled grid of every still with title + tier badge + render verdict,
@@ -269,10 +275,15 @@ async function main() {
       await page.goto(URL + '#/view/' + v.id, { waitUntil: 'load' });
       await page.waitForTimeout(WAIT); // engine bring-up + manifest apply + replay settle
       pix = await sampleCanvas(page);
-      // Screenshot the live canvas element specifically (the render proof).
-      const canvas = page.locator('canvas').first();
+      // Screenshot the FULL view region — the engine canvas PLUS the composited
+      // chrome overlay (axes/gridlines/legend/colorbar) + FPS HUD — so the still
+      // reads as the logical chart, not the bare canvas. The `.single-canvas-region`
+      // container is the slot the shared canvas portals into and the chrome
+      // overlay mounts over; falls back to the canvas if it's not found.
       const out = join(OUTDIR, `${v.id}.png`);
-      await canvas.screenshot({ path: out });
+      const region = page.locator('.single-canvas-region').first();
+      const target = (await region.count()) > 0 ? region : page.locator('canvas').first();
+      await target.screenshot({ path: out });
       still = true;
     } catch (e) {
       logs.push('CAPTURE_ERR: ' + (e && e.message));

@@ -1,9 +1,9 @@
 {
-  "capturedAt": "2026-06-11T22:13:59.862Z",
+  "capturedAt": "2026-06-11T23:32:47.501Z",
   "total": 22,
   "tally": {
     "full": 21,
-    "none": 1
+    "partial": 1
   },
   "views": [
     {
@@ -12,8 +12,8 @@
       "tier": "native",
       "verdict": "full",
       "autoVerdict": "full",
-      "coverage": 0.039186928523959025,
-      "chroma": 0.039186928523959025,
+      "coverage": 0.0395306735110113,
+      "chroma": 0.0395306735110113,
       "distinctColors": 5
     },
     {
@@ -32,8 +32,8 @@
       "tier": "native",
       "verdict": "full",
       "autoVerdict": "full",
-      "coverage": 0.026605861997845866,
-      "chroma": 0.026605861997845866,
+      "coverage": 0.02685794165501753,
+      "chroma": 0.02685794165501753,
       "distinctColors": 4
     },
     {
@@ -42,19 +42,19 @@
       "tier": "native",
       "verdict": "full",
       "autoVerdict": "full",
-      "coverage": 0.328895203611614,
-      "chroma": 0.328895203611614,
-      "distinctColors": 3
+      "coverage": 0.3254348374086211,
+      "chroma": 0.3254348374086211,
+      "distinctColors": 4
     },
     {
       "id": "scatter",
       "title": "Scatter — Price × Volume",
       "tier": "native",
-      "verdict": "none",
-      "autoVerdict": "none",
-      "coverage": 0.0002749959896418177,
-      "chroma": 0,
-      "distinctColors": 3
+      "verdict": "partial",
+      "autoVerdict": "partial",
+      "coverage": 0.012535233861172859,
+      "chroma": 0.012535233861172859,
+      "distinctColors": 4
     },
     {
       "id": "audio-waveform",
@@ -182,8 +182,8 @@
       "tier": "composed",
       "verdict": "full",
       "autoVerdict": "full",
-      "coverage": 0.18037445287256226,
-      "chroma": 0.18037445287256226,
+      "coverage": 0.18213901047276393,
+      "chroma": 0.18213901047276393,
       "distinctColors": 3
     },
     {

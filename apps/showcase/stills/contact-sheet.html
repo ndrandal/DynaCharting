@@ -41,8 +41,8 @@
   <p class="lede">Every showcase view, captured live from the built app through a faithful data path and a real WebGPU renderer. Tiers: <b style="color:#3ddc84">native</b> (rendered straight from the manifest), <b style="color:#4c9bf5">composed</b> (manifest + upstream precompute), <b style="color:#f5b14c">walled</b> (precomputed output; live-GPU compute is the frontier).</p>
   <div class="tally">
     <span class="chip" style="--c:#3ddc84">fully rendered 21/22</span>
-    <span class="chip" style="--c:#f5b14c">partial 0/22</span>
-    <span class="chip" style="--c:#e5534b">none 1/22</span>
+    <span class="chip" style="--c:#f5b14c">partial 1/22</span>
+    <span class="chip" style="--c:#e5534b">none 0/22</span>
   </div>
 </header>
 <main class="grid">
@@ -57,7 +57,7 @@
           <span class="ref">TradingView</span>
           <span class="badge verdict" style="--c:#3ddc84">full</span>
         </div>
-        <div class="row meta"><code>candle-overlays</code><span>coverage 3.9%</span></div>
+        <div class="row meta"><code>candle-overlays</code><span>coverage 4.0%</span></div>
       </figcaption>
     </figure>
     <figure class="card" data-tier="native" data-verdict="full">
@@ -99,10 +99,10 @@
           <span class="ref">TradingView baseline/area</span>
           <span class="badge verdict" style="--c:#3ddc84">full</span>
         </div>
-        <div class="row meta"><code>price-line-area</code><span>coverage 32.9%</span></div>
+        <div class="row meta"><code>price-line-area</code><span>coverage 32.5%</span></div>
       </figcaption>
     </figure>
-    <figure class="card" data-tier="native" data-verdict="none">
+    <figure class="card" data-tier="native" data-verdict="partial">
       <div class="frame"><img src="./scatter.png" alt="Scatter — Price × Volume" loading="lazy" /></div>
       <figcaption>
         <div class="row">
@@ -111,9 +111,9 @@
         </div>
         <div class="row sub">
           <span class="ref">data-viz / sports analytics</span>
-          <span class="badge verdict" style="--c:#e5534b">none</span>
+          <span class="badge verdict" style="--c:#f5b14c">partial</span>
         </div>
-        <div class="row meta"><code>scatter</code><span>coverage 0.0%</span></div>
+        <div class="row meta"><code>scatter</code><span>coverage 1.3%</span></div>
       </figcaption>
     </figure>
     <figure class="card" data-tier="composed" data-verdict="full">
@@ -295,7 +295,7 @@
           <span class="ref">Sierra Chart / ToS TPO</span>
           <span class="badge verdict" style="--c:#3ddc84">full</span>
         </div>
-        <div class="row meta"><code>volume-profile</code><span>coverage 18.0%</span></div>
+        <div class="row meta"><code>volume-profile</code><span>coverage 18.2%</span></div>
       </figcaption>
     </figure>
     <figure class="card" data-tier="composed" data-verdict="full">

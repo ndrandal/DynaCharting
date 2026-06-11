@@ -27,9 +27,15 @@ This report synthesizes the per-view explainers (`apps/showcase/views/*/explaine
 
 ## 2. Capture method (how the proof was made)
 
-The showcase was built (`pnpm --filter @repo/showcase build`), served (`vite preview`), and driven through a **real WebGPU Chrome** (Playwright, `headless:false` on `DISPLAY=:0`, `--enable-unsafe-webgpu --use-vulkan --ignore-gpu-blocklist`). For every view in the auto-discovered registry, the harness (`apps/showcase/tools/snap-stills.mjs`) navigates to its single-view route (`#/view/<id>`), waits ~8.5 s for the loop-replay to populate and settle, samples the live canvas (coverage + chroma), and screenshots the canvas element to `apps/showcase/stills/<view-id>.png`. It then assembles the [contact sheet](../../apps/showcase/stills/contact-sheet.html) and writes [`render-tally.json`](../../apps/showcase/stills/render-tally.json).
+The showcase was built (`pnpm --filter @repo/showcase build`), served (`vite preview`), and driven through a **real WebGPU Chrome** (Playwright, `headless:false` on `DISPLAY=:0`, `--enable-unsafe-webgpu --use-vulkan --ignore-gpu-blocklist`). For every view in the auto-discovered registry, the harness (`apps/showcase/tools/snap-stills.mjs`) navigates to its single-view route (`#/view/<id>`), waits ~8.5 s for the loop-replay to populate and settle, samples the live canvas (coverage + chroma) to classify the render, and screenshots the **full view region** — the engine canvas **plus** the composited logical-chart chrome and FPS HUD — to `apps/showcase/stills/<view-id>.png`. It then assembles the [contact sheet](../../apps/showcase/stills/contact-sheet.html) and writes [`render-tally.json`](../../apps/showcase/stills/render-tally.json).
 
 The capture is the showcase's visual proof. The stills below are the same pixels a viewer sees in the live gallery — not mockups.
+
+### 2.1 The stills now read as logical charts — chrome + live FPS (ENC-562/563/564/565/566/567)
+
+Every view now carries a **logical-chart chrome** overlay composited over the live canvas — driven entirely by the view's `chrome` metadata (`apps/showcase/views/*/view.json`), data-only per view: **axes** (gridlines + tick labels), **legends**, and **colorbars** (with the diverging/viridis ramps and their dB / Pearson-R scales). A small **FPS HUD** (toggle `F`, on by default) is pinned to each view, reading the EngineHost's own frame metrics inside the existing rAF loop — it reads **~60 fps · 16.7 ms** across the captures, the proof the renderer holds frame budget while the chrome composites over it.
+
+The capture harness screenshots the `.single-canvas-region` container (canvas + chrome overlay together) rather than the bare canvas, so the stills and the [contact sheet](../../apps/showcase/stills/contact-sheet.png) now show each view as the **logical chart a reader recognizes** — e.g. the candlesticks under a `$`-denominated price axis with an up/down legend, the correlation matrix beside its Pearson-R colorbar, the spectrogram framed by time / frequency axes and a magnitude-dB colorbar. The render tally is unchanged (the classifier still samples the bare canvas as the GPU render proof): **21 / 22 full, 1 partial (scatter), 0 none.**
 
 ## 3. Render tally — 21 / 22 fully rendered
 
