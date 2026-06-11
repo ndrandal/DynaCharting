@@ -4,5 +4,17 @@
   "tier": "composed",
   "referenceTool": "D3 / Observable ridgeline",
   "blurb": "Four overlapping price-density bands — one smoothed lastPrice distribution per symbol, stacked and allowed to overlap — tessellated to gradient-filled triangle strips at manifest-build time and drawn as per-vertex-colored triGradient geometry.",
-  "datasetId": "AAPL"
+  "datasetId": "AAPL",
+  "transform": { "sx": 1, "sy": 0.46, "tx": 0, "ty": -0.82 },
+  "chrome": {
+    "axes": {
+      "y": { "label": "Density", "min": 0, "max": 1, "format": "number", "ticks": 4, "grid": false }
+    },
+    "legend": [
+      { "label": "AAPL", "color": [0.38, 0.72, 0.55, 1], "kind": "area" },
+      { "label": "MSFT", "color": [0.36, 0.55, 0.92, 1], "kind": "area" },
+      { "label": "NVDA", "color": [0.78, 0.55, 0.30, 1], "kind": "area" },
+      { "label": "TSLA", "color": [0.82, 0.40, 0.55, 1], "kind": "area" }
+    ]
+  }
 }
