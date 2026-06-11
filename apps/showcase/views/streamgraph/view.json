@@ -4,5 +4,17 @@
   "tier": "composed",
   "referenceTool": "streamgraph / stacked area",
   "blurb": "Four per-symbol volume series stacked into flowing bands around a wandering wiggle baseline — tessellated to gradient-filled ribbons at manifest-build time and drawn as per-vertex-colored triGradient geometry.",
-  "datasetId": "AAPL"
+  "datasetId": "AAPL",
+  "transform": { "sx": 0.046153846, "sy": 1, "tx": -0.9, "ty": 0 },
+  "chrome": {
+    "axes": {
+      "x": { "label": "Time bucket", "min": 0, "max": 39, "format": "index", "ticks": 6, "grid": false }
+    },
+    "legend": [
+      { "label": "AAPL", "color": [0.38, 0.72, 0.55, 1], "kind": "area" },
+      { "label": "MSFT", "color": [0.36, 0.55, 0.92, 1], "kind": "area" },
+      { "label": "NVDA", "color": [0.80, 0.58, 0.32, 1], "kind": "area" },
+      { "label": "TSLA", "color": [0.82, 0.40, 0.55, 1], "kind": "area" }
+    ]
+  }
 }

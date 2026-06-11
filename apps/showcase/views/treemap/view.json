@@ -4,5 +4,13 @@
   "tier": "composed",
   "referenceTool": "Finviz market map",
   "blurb": "A squarified, two-level market map — four symbols sized by traded volume, each split into time-bucket leaf tiles colored green/red by price performance — fully tessellated at manifest-build time and drawn as per-vertex-colored triGradient triangles.",
-  "datasetId": "AAPL"
+  "datasetId": "AAPL",
+  "chrome": {
+    "legend": [
+      { "label": "Gain (green, brighter = larger)", "color": [0.16, 0.82, 0.32, 1], "kind": "swatch" },
+      { "label": "Loss (red, brighter = larger)", "color": [0.87, 0.26, 0.26, 1], "kind": "swatch" },
+      { "label": "Sector = symbol (sized by volume)", "color": [0.5, 0.55, 0.62, 1], "kind": "swatch" },
+      { "label": "Leaf tile = time bucket", "color": [0.32, 0.36, 0.42, 1], "kind": "swatch" }
+    ]
+  }
 }
