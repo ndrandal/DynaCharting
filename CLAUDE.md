@@ -65,6 +65,26 @@ The Dawn build adds `dc_gpu`, the `dc_json_host` embedding host, the headless re
 - **Linked target:** `dc_gpu` links the Dawn monolithic WebGPU target `dawn::webgpu_dawn` (alias of `webgpu_dawn`) plus `dc`. When `DC_FETCH_DAWN=OFF` (or Dawn is unavailable), `DC_HAS_DAWN` is FALSE and `dc_gpu` (and everything that needs it — the host, the servers, the render tests) is gracefully skipped; the default `dc` + logic-test build is unaffected.
 - `dc_gpu` is the full WebGPU/Dawn renderer: `DawnDevice` (offscreen target + readback), `DawnSceneRenderer` (the scene-walk mirror of the old GL `Renderer::render`), and the 10 per-pipeline backends (triSolid/triGradient/triAA/line2d/lineAA/points/instancedRect/instancedCandle/textSDF/texturedQuad) + picking.
 
+#### Windowed (on-screen) presentation — `DC_DAWN_WINDOWED` (ENC-497)
+
+The default Dawn build is **headless** (offscreen render + readback). On-screen presentation is an **additive, opt-in** build path enabled with `-DDC_DAWN_WINDOWED=ON` (default OFF, so the headless build — the 169 tests + the WASM/browser targets — stays lean and needs no windowing system).
+
+```bash
+cmake -B build-win -G Ninja -DTHIRD_PARTY_ROOT=./third_party \
+  -DDC_FETCH_DAWN=ON -DDC_DAWN_WINDOWED=ON \
+  -DFETCHCONTENT_SOURCE_DIR_DAWN=~/dawn-src
+cmake --build build-win --target dc_gpu dc_dawn_window_demo
+# Run on the display (force lavapipe if no HW adapter):
+DISPLAY=:0 ./build-win/core/dc_dawn_window_demo --frames 30 --out /tmp/dawn_window.png
+```
+
+What `DC_DAWN_WINDOWED=ON` changes:
+- Re-enables Dawn's **X11 Vulkan surface** (`DAWN_USE_X11=ON`). Wayland and Dawn's *bundled* GLFW stay OFF — we use the **system GLFW** (`find_package(glfw3)`, else the system lib + headers) and force the X11/XWayland backend at runtime (`glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_X11)`), matching how Chrome runs WebGPU here (`--ozone-platform=x11`).
+- Compiles `core/src/gpu/DawnWindowContext.{hpp,cpp}` into `dc_gpu`, links the system GLFW, and defines `DC_DAWN_WINDOWED=1`.
+- Builds `dc_dawn_window_demo` (the canonical embedding template that replaces the deleted GL `hello_glfw`).
+
+- `DawnWindowContext` — owns a GLFW X11 window + a `wgpu::Surface`/swapchain bound to a `DawnDevice`. Surface is built from `glfwGetX11Display()`/`glfwGetX11Window()` via `wgpu::SurfaceSourceXlibWindow` (mirroring Dawn's own `webgpu_glfw` utils), configured `Fifo`/vsync at the window size. Each `presentFrame()`: renders the Scene through `DawnSceneRenderer` into the device's offscreen target (id 0, **unchanged** headless path), then runs a fullscreen-triangle **blit** pass sampling that target's color view into the swapchain texture (`surface.GetCurrentTexture()`), then `surface.Present()` + `glfwPollEvents()`. The blit (vs. baking pipelines per surface format) keeps the RGBA8Unorm scene pipelines untouched while the swapchain is its native BGRA8Unorm. `readSceneToPng()` (and the static `writeRgbaPng`) dumps the rendered target to a self-contained PNG (no zlib/stb dep) as a pixel proof of the windowed pipeline.
+
 ## Architecture
 
 ### Target Data Flow (C++ core)

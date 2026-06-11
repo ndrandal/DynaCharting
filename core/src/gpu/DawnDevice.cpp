@@ -64,6 +64,13 @@ DawnDevice::~DawnDevice() {
   targets_.clear();  // ENC-495: releases every target's color/stencil resources
   queue_ = nullptr;
   device_ = nullptr;
+#ifndef __EMSCRIPTEN__
+  // ENC-497: release the retained adapter before the native instance is torn down
+  // (members are destroyed in reverse declaration order; adapter_ is declared
+  // just after instance_, so it would otherwise outlive nothing problematic — but
+  // clear it explicitly for symmetry with device_/queue_ above).
+  adapter_ = nullptr;
+#endif
 }
 
 // --- lifecycle -------------------------------------------------------------
@@ -194,10 +201,20 @@ bool DawnDevice::init() {
   }
   if (chosen == nullptr) chosen = &adapters.front();
 
+  // ENC-497: retain the chosen adapter (the local `adapters` vector that owns it
+  // goes out of scope at the end of init(), but the windowed presentation path
+  // needs the adapter later for Surface::GetCapabilities). chosen->Get() is a
+  // BORROWED WGPUAdapter; bump its refcount via the C entry point and Acquire that
+  // new ref so adapter_ owns its own reference (the C++ wrapper's AddRef is
+  // private in this Dawn revision, so we go through the C API + Acquire).
+  if (WGPUAdapter ca = chosen->Get()) {
+    wgpuAdapterAddRef(ca);
+    adapter_ = wgpu::Adapter::Acquire(ca);
+  }
+
   {
-    wgpu::Adapter wa(chosen->Get());
     wgpu::AdapterInfo info = {};
-    wa.GetInfo(&info);
+    adapter_.GetInfo(&info);
     backendName_ = backendTypeName(info.backendType);
     adapterName_ = toStdString(info.device);
     if (adapterName_.empty()) adapterName_ = toStdString(info.description);

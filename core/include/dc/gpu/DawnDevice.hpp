@@ -126,6 +126,37 @@ class DawnDevice final : public GpuDevice {
   bool readFramebufferRGBA(std::uint8_t* out, std::size_t outBytes,
                            std::uint32_t* outW, std::uint32_t* outH);
 
+  // ENC-497 (P4.1) — windowed presentation accessors. The Dawn surface +
+  // swapchain (DawnWindowContext) lives OUTSIDE DawnDevice (it owns the GLFW
+  // window + wgpu::Surface), but it needs the device's underlying wgpu objects to
+  // build the surface, query its capabilities, and run the per-frame blit that
+  // copies the offscreen scene target onto the swapchain texture. These return the
+  // live wgpu handles (empty/null before init()). They are pure getters — the
+  // headless offscreen path is unchanged. Available on native; the windowed path
+  // (DawnWindowContext) is itself native-only.
+  wgpu::Device& wgpuDevice() { return device_; }
+  wgpu::Queue& wgpuQueue() { return queue_; }
+#ifndef __EMSCRIPTEN__
+  // The native dawn::native::Instance's underlying WGPUInstance — surface
+  // creation (instance.CreateSurface) and GetCapabilities go through the same
+  // instance that owns the device.
+  WGPUInstance wgpuInstance() const {
+    return instance_ ? instance_->Get() : nullptr;
+  }
+  // The adapter chosen by init() (retained for SurfaceCapabilities queries, which
+  // are adapter-scoped). Null before init().
+  wgpu::Adapter& wgpuAdapter() { return adapter_; }
+#endif
+  // The color TextureView of render target `id` (0 == the main scene target), or
+  // null if that target hasn't been created yet (call render()/beginRenderPass on
+  // it first). The windowed blit samples this as its input. The target's color
+  // texture already carries TextureBinding usage (ensureRenderTarget), so its view
+  // is sampleable.
+  wgpu::TextureView colorViewForTarget(std::uint32_t id) {
+    RenderTarget* rt = targetAt(id);
+    return rt ? rt->colorView : wgpu::TextureView{};
+  }
+
   // ENC-485 — Synchronous buffer readback for streaming-upload verification.
   // Copies [offsetBytes, offsetBytes+bytes) of `buf` into a MapRead staging
   // buffer and blocks until mapped, then copies the bytes into `out` (which must
@@ -200,6 +231,11 @@ class DawnDevice final : public GpuDevice {
   // (RAII over the underlying instance), so it can't be default-constructed as
   // a member and reassigned in init().
   std::unique_ptr<dawn::native::Instance> instance_;
+  // ENC-497: the adapter init() selected, retained so the windowed presentation
+  // path can query the surface's adapter-scoped capabilities (GetCapabilities).
+  // Headless-only code never touches it. wgpu::Adapter is ref-counted, so holding
+  // it here keeps the adapter alive past EnumerateAdapters' local vector.
+  wgpu::Adapter adapter_;
 #else
   // BROWSER (ENC-503): the wgpu::Instance from emdawnwebgpu (wgpu::CreateInstance,
   // backed by navigator.gpu). It owns the futures serviced by the readback pump,

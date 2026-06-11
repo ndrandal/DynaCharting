@@ -136,12 +136,14 @@ endif()
 # Dawn path). They are built only when Dawn is available — see the
 # "Headless demo servers (Dawn)" block after the dc_gpu definition below.
 #
-# REMOVED demos (pending ENC-497, Dawn on-screen surface): hello_glfw and the
-# windowed/interactive demos (d2_7_candle_demo, d3_5_recipe_demo, d4_6_full_demo,
-# d5_7_interactive_demo, d6_3_live_demo) needed an on-screen GL/GLFW surface;
-# building a windowed Dawn surface is out of scope here. The OSMesa-only headless
-# showcase demos (d76_showcase, d77_declarative, d78_showcase) were also removed —
-# their coverage is carried by the migrated servers + the Dawn render/golden tests.
+# REMOVED demos: hello_glfw and the windowed/interactive demos (d2_7_candle_demo,
+# d3_5_recipe_demo, d4_6_full_demo, d5_7_interactive_demo, d6_3_live_demo) needed
+# an on-screen GL/GLFW surface. ENC-497 lands the Dawn on-screen surface: the
+# canonical replacement for hello_glfw is dc_dawn_window_demo (built with
+# -DDC_DAWN_WINDOWED=ON; see the DawnWindowContext block after dc_gpu). The OSMesa-
+# only headless showcase demos (d76_showcase, d77_declarative, d78_showcase) were
+# also removed — their coverage is carried by the migrated servers + the Dawn
+# render/golden tests.
 
 # =======================
 # Dawn (WebGPU native backend) — build-from-source via FetchContent
@@ -161,6 +163,20 @@ endif()
 # The full Dawn build is slow (30-60+ min first build, needs python3 + ninja);
 # it is validated in CI (ENC-499), not necessarily locally.
 option(DC_FETCH_DAWN "Fetch and build Dawn (WebGPU) from source for dc_gpu" OFF)
+
+# ENC-497 (P4.1) — windowed (on-screen) presentation build path.
+#
+# OFF by default so the headless build stays lean (the 169 tests + WASM/browser
+# stuff only need the offscreen path). When ON, the build:
+#   * re-enables Dawn's X11 Vulkan SURFACE support (DAWN_USE_X11=ON below) so a
+#     wgpu::Surface can be created from an Xlib window — Wayland and Dawn's own
+#     bundled GLFW stay OFF (we use the SYSTEM glfw for the window, and force the
+#     X11/XWayland backend at runtime, matching how Chrome runs WebGPU here),
+#   * links the system GLFW into dc_gpu + compiles DawnWindowContext.cpp,
+#   * builds the dawn_window_demo (the canonical embedding template that replaces
+#     the deleted GL hello_glfw).
+# Requires -DDC_FETCH_DAWN=ON (it extends the Dawn render path).
+option(DC_DAWN_WINDOWED "Build the on-screen windowed Dawn surface path (ENC-497)" OFF)
 
 set(DC_HAS_DAWN FALSE)
 if (DC_FETCH_DAWN)
@@ -186,11 +202,18 @@ if (DC_FETCH_DAWN)
   # in a wayland-scanner requirement that fails on bare Linux CI runners.
   set(DAWN_USE_GLFW             OFF CACHE BOOL "" FORCE)
   set(DAWN_USE_WAYLAND          OFF CACHE BOOL "" FORCE)
-  # No X11 surface support either. dc_gpu is headless for now (offscreen render +
-  # readback), so it needs no windowing system — and disabling X11 avoids Dawn's
-  # X11/Xlib-xcb.h build requirement. Re-enable the surface we actually want when
-  # windowed presentation lands (ENC-497).
-  set(DAWN_USE_X11              OFF CACHE BOOL "" FORCE)
+  # X11 surface support. The HEADLESS build (offscreen render + readback) needs no
+  # windowing system, and disabling X11 avoids Dawn's X11/Xlib-xcb.h build
+  # requirement — so X11 is OFF by default. ENC-497: the WINDOWED build path
+  # (DC_DAWN_WINDOWED=ON) re-enables the X11 Vulkan surface (Xlib) so a
+  # wgpu::Surface can be created from a GLFW X11 window. Wayland + Dawn's bundled
+  # GLFW stay OFF either way (we use the SYSTEM glfw and force X11/XWayland).
+  if (DC_DAWN_WINDOWED)
+    set(DAWN_USE_X11            ON  CACHE BOOL "" FORCE)
+    message(STATUS "DC_DAWN_WINDOWED=ON: re-enabling Dawn X11 Vulkan surface (DAWN_USE_X11=ON)")
+  else()
+    set(DAWN_USE_X11            OFF CACHE BOOL "" FORCE)
+  endif()
   # Don't build Dawn's experimental C++20-modules bindings (dawncpp_module).
   # Dawn's own probe is a false positive on GCC 13.x (its `-fmodules-ts` test
   # compiles, so DAWN_SUPPORTS_CXX_MODULES=True), but CMake's Ninja generator
@@ -252,6 +275,11 @@ if (DC_HAS_DAWN)
   # All gpu/ sources are globbed in (placeholder.cpp + ENC-480 DawnDevice.cpp +
   # future Dawn backend sources).
   file(GLOB DC_GPU_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/gpu/*.cpp")
+  # ENC-497: DawnWindowContext.cpp (the on-screen surface/swapchain) pulls in GLFW
+  # + X11 headers, so it is compiled ONLY in the windowed build (added back below
+  # with the GLFW link). Exclude it from the default headless glob so the lean
+  # build (and the browser/WASM globs that reuse src/gpu/*.cpp) never see it.
+  list(FILTER DC_GPU_SOURCES EXCLUDE REGEX ".*/DawnWindowContext\\.cpp$")
   add_library(dc_gpu STATIC ${DC_GPU_SOURCES})
   target_include_directories(dc_gpu PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -279,9 +307,62 @@ if (DC_HAS_DAWN)
     endif()
   endif()
 
+  # ENC-497 (P4.1) — windowed (on-screen) presentation. When DC_DAWN_WINDOWED is
+  # ON, add the DawnWindowContext TU (the wgpu::Surface/swapchain + GLFW X11 window
+  # + per-frame blit-to-swapchain) to dc_gpu, link the SYSTEM GLFW, and define
+  # DC_DAWN_WINDOWED so the header/TU compile their GLFW/X11 includes. The X11
+  # Vulkan surface itself was re-enabled in Dawn above (DAWN_USE_X11=ON under the
+  # same option). The headless build never enters this branch — the offscreen path
+  # (and the 169 tests / WASM targets) is untouched.
+  if (DC_DAWN_WINDOWED)
+    # Prefer the CMake config package; fall back to locating the lib + headers.
+    find_package(glfw3 QUIET)
+    if (TARGET glfw)
+      set(DC_GLFW_TARGET glfw)
+      message(STATUS "DC_DAWN_WINDOWED: using glfw3 CMake package")
+    else()
+      find_library(DC_GLFW_LIB NAMES glfw glfw3)
+      find_path(DC_GLFW_INCLUDE_DIR NAMES GLFW/glfw3.h)
+      if (NOT DC_GLFW_LIB OR NOT DC_GLFW_INCLUDE_DIR)
+        message(FATAL_ERROR
+          "DC_DAWN_WINDOWED=ON but the system GLFW (libglfw + GLFW/glfw3.h) was not "
+          "found. Install glfw (e.g. glfw-devel) or set CMAKE_PREFIX_PATH.")
+      endif()
+      add_library(dc_glfw_system UNKNOWN IMPORTED)
+      set_target_properties(dc_glfw_system PROPERTIES
+        IMPORTED_LOCATION "${DC_GLFW_LIB}"
+        INTERFACE_INCLUDE_DIRECTORIES "${DC_GLFW_INCLUDE_DIR}")
+      set(DC_GLFW_TARGET dc_glfw_system)
+      message(STATUS "DC_DAWN_WINDOWED: using system GLFW lib=${DC_GLFW_LIB} include=${DC_GLFW_INCLUDE_DIR}")
+    endif()
+
+    target_sources(dc_gpu PRIVATE
+      "${CMAKE_CURRENT_SOURCE_DIR}/src/gpu/DawnWindowContext.cpp")
+    target_link_libraries(dc_gpu PUBLIC ${DC_GLFW_TARGET})
+    # PUBLIC so the demo (and any embedder) that includes DawnWindowContext.hpp +
+    # the GLFW native header sees the flag and the X11 expose macros line up.
+    target_compile_definitions(dc_gpu PUBLIC DC_DAWN_WINDOWED=1)
+    message(STATUS "dc_gpu: windowed Dawn surface path enabled (DC_DAWN_WINDOWED)")
+  endif()
+
   message(STATUS "dc_gpu (WebGPU/Dawn) enabled")
 else()
   message(STATUS "Skipping dc_gpu (requires DC_FETCH_DAWN=ON + Dawn available)")
+endif()
+
+# =======================
+# dawn_window_demo (ENC-497) — on-screen windowed Dawn demo
+# =======================
+# The canonical embedding template that replaces the deleted GL hello_glfw: opens
+# a GLFW X11 window, builds the d50 multi-pipeline scene, and runs the present loop
+# (render -> blit to swapchain -> Present). Also reads the rendered scene back to a
+# PNG for headless proof of the windowed render pipeline. Built only in the
+# windowed Dawn build.
+if (DC_HAS_DAWN AND DC_DAWN_WINDOWED)
+  add_executable(dc_dawn_window_demo
+    "${CMAKE_CURRENT_SOURCE_DIR}/demos/dawn_window_demo.cpp")
+  target_link_libraries(dc_dawn_window_demo PRIVATE dc_gpu)
+  message(STATUS "dc_dawn_window_demo (ENC-497 windowed demo) enabled")
 endif()
 
 # =======================
@@ -1874,6 +1955,8 @@ endif()
 if (EMSCRIPTEN)
   file(GLOB DC_WEBGPU_ALL_GPU_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/gpu/*.cpp")
   list(FILTER DC_WEBGPU_ALL_GPU_SOURCES EXCLUDE REGEX ".*/placeholder\\.cpp$")
+  # ENC-497: DawnWindowContext (GLFW/X11 on-screen surface) is native-windowed only.
+  list(FILTER DC_WEBGPU_ALL_GPU_SOURCES EXCLUDE REGEX ".*/DawnWindowContext\\.cpp$")
 
   add_executable(dc_webgpu_all
     "${CMAKE_CURRENT_SOURCE_DIR}/wasm/dc_webgpu_all.cpp"
@@ -1934,6 +2017,8 @@ endif()
 if (EMSCRIPTEN)
   file(GLOB DC_ENGINE_HOST_GPU_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/gpu/*.cpp")
   list(FILTER DC_ENGINE_HOST_GPU_SOURCES EXCLUDE REGEX ".*/placeholder\\.cpp$")
+  # ENC-497: DawnWindowContext (GLFW/X11 on-screen surface) is native-windowed only.
+  list(FILTER DC_ENGINE_HOST_GPU_SOURCES EXCLUDE REGEX ".*/DawnWindowContext\\.cpp$")
 
   add_executable(dc_engine_host
     "${CMAKE_CURRENT_SOURCE_DIR}/wasm/dc_engine_host.cpp"
