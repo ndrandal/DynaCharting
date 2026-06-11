@@ -2,8 +2,9 @@ packages:
   - apps/**
   - packages/**
 
-# esbuild ships prebuilt binaries; its postinstall build script is not needed.
-# Explicitly deny it so pnpm v10 stops prompting (the malformed "set this to
-# true or false" placeholder it otherwise writes breaks `pnpm install`).
+# Approve esbuild's postinstall build. pnpm v11 requires an explicit
+# allowBuilds decision per package with a build script; without `true` here it
+# emits ERR_PNPM_IGNORED_BUILDS, fails `pnpm install` (exit 1), and leaves
+# esbuild (vite's bundler) unset so the showcase build breaks.
 allowBuilds:
-  esbuild: false
+  esbuild: true
