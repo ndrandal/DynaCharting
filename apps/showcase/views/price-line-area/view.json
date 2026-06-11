@@ -1,0 +1,10 @@
+{
+  "id": "price-line-area",
+  "title": "Price Area — AAPL",
+  "tier": "native",
+  "referenceTool": "TradingView baseline/area",
+  "blurb": "AAPL lastPrice streamed tick-by-tick and drawn as a filled baseline-area band via a compound rect4 join — one scalar field, one instancedRect pipeline.",
+  "datasetId": "AAPL",
+  "transform": { "sx": 0.011333333, "sy": 0.121428571, "tx": -0.85, "ty": -50.028571 },
+  "xAnchor": true
+}

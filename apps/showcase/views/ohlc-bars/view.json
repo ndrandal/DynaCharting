@@ -1,0 +1,10 @@
+{
+  "id": "ohlc-bars",
+  "title": "OHLC Bars — AAPL",
+  "tier": "native",
+  "referenceTool": "Bloomberg / most platforms",
+  "blurb": "Per-second OHLC bars for AAPL — the same compound OHLC join as the candlestick, rendered as thin instanced bars instead of filled bodies.",
+  "datasetId": "AAPL",
+  "transform": { "sx": 0.011333333, "sy": 0.088333333, "tx": -0.85, "ty": -36.481667 },
+  "xAnchor": true
+}

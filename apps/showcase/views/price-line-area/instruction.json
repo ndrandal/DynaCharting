@@ -1,0 +1,20 @@
+{
+  "id": "slice-price-line-area",
+  "sessionId": "showcase",
+  "subscriptions": [
+    {"id":"r-last","streamKey":"AAPL","field":"lastPrice"}
+  ],
+  "visualization": {
+    "recipe": "showcase-explicit-v1",
+    "bindings": [
+      {"slot":"price.last","requestId":"r-last","bufferId":10110,"mode":"compound","stride":16,"intraOffset":12,"slotBit":0}
+    ],
+    "buffers": [
+      {"bufferId":10110,"stride":16,"fullMask":1,"staticFields":[
+        {"intraOffset":0,"kind":"recordIndexPlusConst","value":-0.5},
+        {"intraOffset":4,"kind":"const","value":405.0},
+        {"intraOffset":8,"kind":"recordIndexPlusConst","value":0.5}
+      ]}
+    ]
+  }
+}
