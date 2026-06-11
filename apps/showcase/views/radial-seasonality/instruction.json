@@ -1,0 +1,10 @@
+{
+  "id": "radial-seasonality",
+  "sessionId": "static",
+  "subscriptions": [],
+  "visualization": {
+    "recipe": "showcase-explicit-v1",
+    "bindings": [],
+    "buffers": []
+  }
+}

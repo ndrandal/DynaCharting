@@ -1,0 +1,8 @@
+{
+  "id": "radial-seasonality",
+  "title": "Radial Seasonality Clock — polar projection",
+  "tier": "composed",
+  "referenceTool": "polar / radial seasonality clock",
+  "blurb": "A polar seasonality clock — average per-tick return by cyclic phase bin, drawn as a radial line loop with spokes and a baseline ring. The engine has no native polar transform; (angle, radius) is projected to cartesian (x=r·cosθ, y=r·sinθ) at manifest-build time and drawn with the ordinary line2d@1 pipeline.",
+  "datasetId": "AAPL"
+}
