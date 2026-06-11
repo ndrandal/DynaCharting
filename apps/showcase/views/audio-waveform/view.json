@@ -4,5 +4,15 @@
   "tier": "composed",
   "referenceTool": "audio editor waveform",
   "blurb": "A dense, mirrored audio-editor waveform — a synthesized amplitude envelope drawn as a filled area by triGradient@1, brightening at the peaks. The candle renderer's gradient-fill pipeline, in a totally different domain.",
-  "datasetId": "audio"
+  "datasetId": "audio",
+  "transform": { "sx": 0.47, "sy": 0.8, "tx": -0.94, "ty": 0 },
+  "chrome": {
+    "axes": {
+      "x": { "label": "Time", "min": 0, "max": 4, "format": "time", "ticks": 4, "grid": true },
+      "y": { "label": "Amplitude", "min": -1, "max": 1, "format": "number", "ticks": 4, "grid": true }
+    },
+    "legend": [
+      { "label": "Waveform (mirrored envelope)", "color": [0.15, 0.73, 0.77, 1], "kind": "area" }
+    ]
+  }
 }

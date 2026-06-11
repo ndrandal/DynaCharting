@@ -4,5 +4,12 @@
   "tier": "composed",
   "referenceTool": "NBA shot chart",
   "blurb": "A half-court basketball shot chart — made (green) and missed (red) shots scattered across the court, with the court lines drawn underneath. Two instanced-marker clouds plus a line2d court, all baked. Markets nowhere in sight.",
-  "datasetId": "shots"
+  "datasetId": "shots",
+  "chrome": {
+    "legend": [
+      { "label": "Made (152)", "color": [0.2, 0.85, 0.4, 0.95], "kind": "point" },
+      { "label": "Missed (168)", "color": [0.9, 0.3, 0.3, 0.95], "kind": "point" },
+      { "label": "Half court", "color": [0.55, 0.45, 0.32, 1], "kind": "line" }
+    ]
+  }
 }
