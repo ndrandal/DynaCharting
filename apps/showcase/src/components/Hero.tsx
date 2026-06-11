@@ -9,17 +9,19 @@
  * The live canvas is the shared engine portaled into `slotRef` by App.
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import type { Route } from '../router';
 
 interface HeroProps {
   onNavigate: (r: Route) => void;
   onSlot: (el: HTMLElement | null) => void;
+  /** Logical-chart chrome overlay (FPS HUD + flagship chrome), over the canvas. */
+  chrome?: ReactNode;
 }
 
 const SPINE = ['Mock GMA', 'embassy', 'dataplane WS', 'dc-wasm / WebGPU'];
 
-export function Hero({ onNavigate, onSlot }: HeroProps) {
+export function Hero({ onNavigate, onSlot, chrome }: HeroProps) {
   const slotRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     onSlot(slotRef.current);
@@ -63,7 +65,9 @@ export function Hero({ onNavigate, onSlot }: HeroProps) {
             </div>
           </div>
 
-          <div className="hero-canvas" ref={slotRef} aria-label="Live engine view" />
+          <div className="hero-canvas" ref={slotRef} aria-label="Live engine view">
+            {chrome}
+          </div>
         </div>
       </div>
     </div>

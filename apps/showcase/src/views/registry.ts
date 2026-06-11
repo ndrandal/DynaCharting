@@ -21,6 +21,9 @@
 
 import type { SceneManifest } from '../scene/commands';
 import type { Records, GrowthSync, XAnchorSpec } from '../engine/useReplay';
+import type { ChromeSpec } from '../chrome/types';
+
+export type { ChromeSpec, AxisSpec, LegendItem, ColorbarSpec, AxisFormat, LegendKind, RGBA } from '../chrome/types';
 
 /** Tier semantics + colors per DESIGN-showcase-ui.md (native green / composed blue / walled amber). */
 export type ViewTier = 'native' | 'composed' | 'walled';
@@ -49,6 +52,18 @@ export interface ViewMeta {
   transform?: ViewTransform;
   /** Re-anchor the transform's X to the first replayed record's recordIndex. */
   xAnchor?: boolean;
+  /**
+   * Optional 'logical chart' chrome — axes/gridlines/tick labels, a legend, and
+   * (for heatmaps) a colorbar — rendered as a crisp HTML/SVG overlay over the
+   * WebGPU canvas (NOT in-engine text). The overlay maps data→clip→pixel the
+   * SAME way the engine does, driven by this view's baked `transform` + the
+   * static data ranges declared here, so ticks/gridlines align with the rendered
+   * geometry. All sub-blocks are optional; a view sets whichever apply
+   * (cartesian charts → axes + legend; heatmaps → colorbar; treemap → legend
+   * only). See apps/showcase/src/chrome/types.ts for the full field shapes and
+   * candles-aapl / correlation-heatmap for reference usage.
+   */
+  chrome?: ChromeSpec;
 }
 
 /**
@@ -72,6 +87,8 @@ export interface ShowcaseView {
   growth?: GrowthSync;
   /** X-anchor framing derived from view.json (window/clip + baked Y), when xAnchor. */
   xAnchor?: XAnchorSpec;
+  /** Logical-chart chrome (axes/legend/colorbar) from view.json, when present. */
+  chrome?: ChromeSpec;
 }
 
 /** What a view's manifest.ts module is expected to export. */
@@ -111,6 +128,7 @@ export function defineView(parts: {
     explainer,
     growth: module.growth,
     xAnchor,
+    chrome: meta.chrome,
   };
 }
 

@@ -14,6 +14,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { EngineHost } from '@repo/dc-wasm';
+import { FrameStatsHub, makeHudSink } from '../chrome/frameStats';
 
 export type EngineStatus = 'init' | 'ready' | 'error';
 
@@ -26,6 +27,8 @@ export interface UseShowcaseEngine {
   status: EngineStatus;
   /** Last error message, if status === 'error'. */
   error: string | null;
+  /** Live frame-stats (fps / frameMs) sink for the FPS HUD. Stable identity. */
+  statsHub: FrameStatsHub;
 }
 
 /**
@@ -38,6 +41,10 @@ export function useShowcaseEngine(onReady?: (host: EngineHost) => void): UseShow
   const resizeObsRef = useRef<ResizeObserver | null>(null);
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
+  // The frame-stats hub bridges the EngineHost HUD sink (fps/frameMs, emitted
+  // from inside the engine's own rAF loop) to the FPS HUD — stable identity.
+  const statsHubRef = useRef<FrameStatsHub | null>(null);
+  if (!statsHubRef.current) statsHubRef.current = new FrameStatsHub();
 
   const [host, setHost] = useState<EngineHost | null>(null);
   const [status, setStatus] = useState<EngineStatus>('init');
@@ -69,7 +76,9 @@ export function useShowcaseEngine(onReady?: (host: EngineHost) => void): UseShow
         canvasElRef.current = canvas;
         sizeCanvas(canvas);
         try {
-          const h = new EngineHost();
+          // Pass a HUD sink so the engine reports fps/frameMs into the hub from
+          // inside its existing rAF loop (no extra timers → no render perturbation).
+          const h = new EngineHost({ hud: makeHudSink(statsHubRef.current!) });
           h.init(canvas);
           h.start();
           hostRef.current = h;
@@ -128,5 +137,5 @@ export function useShowcaseEngine(onReady?: (host: EngineHost) => void): UseShow
     };
   }, []);
 
-  return { canvasRef, host, status, error };
+  return { canvasRef, host, status, error, statsHub: statsHubRef.current };
 }
