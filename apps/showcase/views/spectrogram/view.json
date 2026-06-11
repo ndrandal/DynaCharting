@@ -4,5 +4,24 @@
   "tier": "walled",
   "referenceTool": "Audio spectrogram",
   "blurb": "A short-time FFT magnitude grid of a synthesized chirp+tone signal, rasterized to a viridis colormap and drawn as a single textured quad. Shown precomputed; live GPU FFT + interpolation is the frontier.",
-  "datasetId": "heatmap"
+  "datasetId": "heatmap",
+  "transform": { "sx": 0.475, "sy": 0.00092773, "tx": -0.95, "ty": -0.95 },
+  "chrome": {
+    "axes": {
+      "x": { "label": "Time", "min": 0, "max": 4, "format": "time", "ticks": 4, "grid": true },
+      "y": { "label": "Frequency (Hz)", "min": 0, "max": 2048, "format": "number", "ticks": 4, "grid": true }
+    },
+    "colorbar": {
+      "label": "Magnitude (dB) · PRECOMPUTED — live-GPU FFT is the wall",
+      "min": -80,
+      "max": 0,
+      "stops": [
+        { "at": 0, "color": [0.267, 0.004, 0.329, 1] },
+        { "at": 0.35, "color": [0.212, 0.424, 0.584, 1] },
+        { "at": 0.6, "color": [0.129, 0.569, 0.549, 1] },
+        { "at": 0.8, "color": [0.369, 0.788, 0.384, 1] },
+        { "at": 1, "color": [0.992, 0.906, 0.145, 1] }
+      ]
+    }
+  }
 }

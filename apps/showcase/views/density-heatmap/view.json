@@ -4,5 +4,19 @@
   "tier": "walled",
   "referenceTool": "Bookmap liquidity heatmap",
   "blurb": "A 2D Gaussian-KDE density field over a scattered point cloud, rasterized to a cyan→white glow colormap and drawn as a single textured quad. Shown precomputed; live per-pixel GPU density is the frontier.",
-  "datasetId": "heatmap"
+  "datasetId": "heatmap",
+  "chrome": {
+    "colorbar": {
+      "label": "Density (KDE) · PRECOMPUTED — live-GPU KDE is the wall",
+      "min": 0,
+      "max": 1,
+      "stops": [
+        { "at": 0, "color": [0.016, 0.024, 0.09, 1] },
+        { "at": 0.35, "color": [0.043, 0.094, 0.333, 1] },
+        { "at": 0.6, "color": [0.118, 0.569, 0.82, 1] },
+        { "at": 0.8, "color": [0.369, 0.886, 0.933, 1] },
+        { "at": 1, "color": [0.961, 1, 1, 1] }
+      ]
+    }
+  }
 }

@@ -4,5 +4,19 @@
   "tier": "walled",
   "referenceTool": "Topographic isolines",
   "blurb": "Marching-squares on a scalar field: CPU-extracted iso-bands + crisp isolines, rasterized to a topographic colormap and drawn as one textured quad. Shown precomputed; live GPU isoline extraction is the frontier.",
-  "datasetId": "heatmap"
+  "datasetId": "heatmap",
+  "chrome": {
+    "colorbar": {
+      "label": "Elevation (iso-band) · PRECOMPUTED — live marching-squares is the wall",
+      "min": 0,
+      "max": 9,
+      "stops": [
+        { "at": 0, "color": [0.039, 0.118, 0.188, 1] },
+        { "at": 0.3, "color": [0.078, 0.322, 0.361, 1] },
+        { "at": 0.55, "color": [0.298, 0.569, 0.38, 1] },
+        { "at": 0.8, "color": [0.553, 0.659, 0.365, 1] },
+        { "at": 1, "color": [0.961, 0.98, 0.941, 1] }
+      ]
+    }
+  }
 }

@@ -4,5 +4,15 @@
   "tier": "composed",
   "referenceTool": "medical / ECG monitor",
   "blurb": "A clean green-on-dark ECG trace — the 250 Hz, 72 bpm PQRST waveform from the synthetic dataset, baked into a line2d@1 vertex buffer and framed by one affine transform. Same vector renderer as the candles; a different domain entirely.",
-  "datasetId": "ecg"
+  "datasetId": "ecg",
+  "transform": { "sx": 0.2301159, "sy": 0.994655, "tx": -0.92, "ty": -0.335291 },
+  "chrome": {
+    "axes": {
+      "x": { "label": "Time", "min": 0, "max": 8, "format": "time", "ticks": 8, "grid": true },
+      "y": { "label": "Amplitude (mV)", "min": -0.4, "max": 1.2, "format": "number", "ticks": 8, "grid": true }
+    },
+    "legend": [
+      { "label": "ECG trace (250 Hz · 72 bpm)", "color": [0.18, 0.95, 0.42, 1], "kind": "line" }
+    ]
+  }
 }
