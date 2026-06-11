@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<!--
+  dc_webgpu_all.html — ENC-504 (P6.3) browser harness for the FULL DynaCharting
+  renderer (DawnSceneRenderer + ALL 10 Dawn pipeline backends) on
+  Emscripten/emdawnwebgpu (navigator.gpu).
+
+  Open this in a real WebGPU browser (Chrome/Edge on a machine where
+  navigator.gpu is available). It:
+    1. loads the dc_webgpu_all ES6 module (emdawnwebgpu wired to navigator.gpu),
+    2. acquires a WebGPU device + renders a MULTI-PIPELINE scene
+       (triSolid + instancedRect + line2d + instancedCandle) in ONE
+       DawnSceneRenderer.render() walk into an offscreen RGBA8 target — the SAME
+       dc_gpu scene-walk code path the native d50_dawn_scene_renderer test uses,
+    3. reads back each region + the full framebuffer,
+    4. blits the framebuffer onto the <canvas> (so you SEE the scene), and
+    5. prints a per-region PASS/FAIL table (triSolid=(255,0,0) PASS,
+       instancedRect=(0,255,0) PASS, line2d present PASS, ...) into the page.
+
+  Serve over http (WebGPU + ES modules need an origin), e.g.:
+      python3 -m http.server 8000
+  then open http://localhost:8000/dc_webgpu_all.html
+  (Opening via file:// will fail to load the ES module in most browsers.)
+
+  Requires dc_webgpu_all.js + dc_webgpu_all.wasm alongside this file.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>dc_webgpu_all — ENC-504 full renderer (all 10 pipelines)</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 24px; background:#111; color:#eee; }
+    h1 { font-size: 18px; }
+    #result { font-size: 20px; font-weight: 700; margin: 12px 0; }
+    .pass { color: #41d160; }
+    .fail { color: #ff5b5b; }
+    .pending { color: #f5c542; }
+    #detail, #log { font-family: ui-monospace, monospace; font-size: 13px; white-space: pre-wrap; }
+    #log { color:#9aa; margin-top:16px; max-height:240px; overflow:auto; border-top:1px solid #333; padding-top:8px; }
+    canvas { image-rendering: pixelated; border:1px solid #444; margin-top:12px; width:384px; height:256px; background:#000; }
+    table { border-collapse: collapse; margin-top:12px; font-family: ui-monospace, monospace; font-size:13px; }
+    td, th { border:1px solid #444; padding:4px 8px; text-align:left; }
+    .swatch { display:inline-block; width:18px; height:18px; vertical-align:middle; border:1px solid #666; }
+    .rp { color:#41d160; font-weight:700; }
+    .rf { color:#ff5b5b; font-weight:700; }
+  </style>
+</head>
+<body>
+  <h1>DynaCharting dc_gpu — FULL renderer (all 10 pipelines) on emdawnwebgpu (ENC-504)</h1>
+  <div id="result" class="pending">Status: initializing…</div>
+  <div id="detail"></div>
+  <table id="regions"><thead><tr><th>region</th><th>read RGBA</th><th>PASS</th></tr></thead><tbody></tbody></table>
+  <canvas id="canvas" width="384" height="256"></canvas>
+  <div id="log"></div>
+
+  <script type="module">
+    const resultEl = document.getElementById('result');
+    const detailEl = document.getElementById('detail');
+    const logEl = document.getElementById('log');
+    const canvas = document.getElementById('canvas');
+    const tbody = document.querySelector('#regions tbody');
+
+    function log(msg) { logEl.textContent += msg + '\n'; }
+    function fail(msg) {
+      resultEl.className = 'fail';
+      resultEl.textContent = 'FAIL: ' + msg;
+    }
+
+    async function main() {
+      // 0. WebGPU availability check.
+      if (!('gpu' in navigator)) {
+        fail('navigator.gpu is undefined — this browser/stack does not expose ' +
+             'WebGPU. Open in Chrome/Edge on a machine with WebGPU enabled.');
+        log('navigator.gpu missing — cannot run the render.');
+        return;
+      }
+      log('navigator.gpu present — loading dc_webgpu_all module…');
+
+      // 1. Load the Emscripten/emdawnwebgpu ES6 module (FULL renderer).
+      let mod;
+      try {
+        const factory = (await import('./dc_webgpu_all.js')).default;
+        mod = await factory();
+      } catch (e) {
+        fail('module load failed: ' + (e && e.message ? e.message : e));
+        return;
+      }
+      log('module instantiated.');
+
+      // 2. Render the multi-pipeline scene (async: acquires device via
+      //    navigator.gpu, walks the whole Scene, reads back). ASYNCIFY surfaces
+      //    dc_webgpu_render_all as a Promise<int status>.
+      const W = 384, H = 256;
+      resultEl.className = 'pending';
+      resultEl.textContent = 'Status: rendering multi-pipeline scene…';
+      let status;
+      try {
+        status = await mod.ccall('dc_webgpu_render_all', 'number',
+                                 ['number', 'number'], [W, H], { async: true });
+      } catch (e) {
+        fail('render threw: ' + (e && e.message ? e.message : e));
+        return;
+      }
+
+      const message = mod.dcMessage();
+      const backend = mod.dcBackend();
+      const drawCalls = mod.dcDrawCalls();
+      log('dc_webgpu_render_all status=' + status);
+      log('backend: ' + backend + '  drawCalls=' + drawCalls);
+      log('message: ' + message);
+
+      // 3. Per-region PASS/FAIL table.
+      const n = mod.dcRegionCount();
+      let allCorePass = true;
+      for (let i = 0; i < n; ++i) {
+        const name = mod.dcRegionName(i);
+        const r = mod.dcRegionR(i), g = mod.dcRegionG(i),
+              b = mod.dcRegionB(i), a = mod.dcRegionA(i);
+        const pass = mod.dcRegionPass(i);
+        // The first three regions (triSolid/instancedRect/line2d) are the core
+        // parity pipelines; gate the headline PASS on those.
+        if (i < 3 && !pass) allCorePass = false;
+        const tr = document.createElement('tr');
+        const swatch = `<span class="swatch" style="background:rgb(${r},${g},${b})"></span>`;
+        tr.innerHTML =
+          `<td>${name}</td>` +
+          `<td>(${r},${g},${b},${a}) ${swatch}</td>` +
+          `<td class="${pass ? 'rp' : 'rf'}">${pass ? 'PASS' : 'FAIL'}</td>`;
+        tbody.appendChild(tr);
+      }
+
+      // 4. Blit the rendered framebuffer onto the canvas.
+      const fbPtr = mod.dcFramebufferPtr();
+      const fbSize = mod.dcFramebufferSize();
+      const fbW = mod.dcFramebufferWidth();
+      const fbH = mod.dcFramebufferHeight();
+      if (fbPtr && fbSize === fbW * fbH * 4 && fbW > 0 && fbH > 0) {
+        canvas.width = fbW; canvas.height = fbH;
+        const bytes = mod.HEAPU8.slice(fbPtr, fbPtr + fbSize);
+        const img = new ImageData(new Uint8ClampedArray(bytes), fbW, fbH);
+        canvas.getContext('2d').putImageData(img, 0, 0);
+        log('framebuffer blitted to canvas (' + fbW + 'x' + fbH + ').');
+      } else {
+        log('framebuffer unavailable (ptr=' + fbPtr + ' size=' + fbSize + ').');
+      }
+
+      detailEl.innerHTML =
+        `backend: ${backend}   draw calls: ${drawCalls}\n` +
+        `message: ${message}`;
+
+      // 5. Headline PASS/FAIL — gated on the 3 core pipelines + a clean render.
+      if (status === 1 && allCorePass) {
+        resultEl.className = 'pass';
+        resultEl.textContent =
+          `PASS  multi-pipeline scene rendered (${drawCalls} draw calls on ${backend})`;
+      } else if (status === 1) {
+        resultEl.className = 'fail';
+        resultEl.textContent =
+          `RENDERED but some core regions FAILED — check the table + canvas`;
+      } else {
+        resultEl.className = 'fail';
+        resultEl.textContent = `FAIL (status=${status}): ${message}`;
+      }
+    }
+
+    main().catch(e => fail('unexpected: ' + (e && e.message ? e.message : e)));
+  </script>
+</body>
+</html>

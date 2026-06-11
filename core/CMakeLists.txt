@@ -1850,3 +1850,68 @@ if (EMSCRIPTEN)
   )
   message(STATUS "dc_webgpu (Emscripten emdawnwebgpu triSolid render) enabled")
 endif()
+
+# =======================
+# dc_webgpu_all (ENC-504) — Emscripten/emdawnwebgpu build of the FULL renderer:
+# DawnSceneRenderer + ALL 10 Dawn pipeline backends. Browser pipeline parity (P6.3).
+# =======================
+# ENC-503 (dc_webgpu above) compiled only the triSolid slice (DawnDevice +
+# DawnTriSolidBackend). This extends that to the WHOLE renderer: it compiles
+# DawnSceneRenderer + EVERY gpu/ backend translation unit (triSolid / triGradient
+# / triAA / line2d / lineAA / points / instancedRect / instancedCandle / textSDF /
+# texturedQuad + pick + post-process) against emdawnwebgpu. The KEY RESULT is that
+# all 10 pipeline backends compile + link for the browser — i.e. the entire Dawn
+# renderer is browser-portable, not just the first-render triSolid path.
+#
+# The harness (dc_webgpu_all.cpp) drives a multi-pipeline Scene through
+# DawnSceneRenderer::render() — the same scene-walk the native
+# d50_dawn_scene_renderer test uses — and reads back each region.
+#
+# Like dc_webgpu it is gated on Emscripten (never affects the native build) and
+# does NOT use DC_FETCH_DAWN/dc_gpu (those build native Dawn from source);
+# instead it globs the gpu/ TUs directly and links emdawnwebgpu. placeholder.cpp
+# is excluded (it pulls gpu/Gpu.hpp, a non-renderer stub).
+if (EMSCRIPTEN)
+  file(GLOB DC_WEBGPU_ALL_GPU_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/gpu/*.cpp")
+  list(FILTER DC_WEBGPU_ALL_GPU_SOURCES EXCLUDE REGEX ".*/placeholder\\.cpp$")
+
+  add_executable(dc_webgpu_all
+    "${CMAKE_CURRENT_SOURCE_DIR}/wasm/dc_webgpu_all.cpp"
+    ${DC_WEBGPU_ALL_GPU_SOURCES}
+  )
+  target_link_libraries(dc_webgpu_all PRIVATE dc)
+  target_include_directories(dc_webgpu_all PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  )
+  # webgpu_cpp.h needs C++20 (same as the native dc_gpu library).
+  target_compile_features(dc_webgpu_all PRIVATE cxx_std_20)
+
+  # emdawnwebgpu provides <webgpu/webgpu_cpp.h> backed by navigator.gpu. The port
+  # flag must be on BOTH compile and link.
+  target_compile_options(dc_webgpu_all PRIVATE
+    "--use-port=emdawnwebgpu"
+    -fexceptions
+  )
+  # Same link flags as dc_webgpu (ASYNCIFY device acquisition + readback pump,
+  # ES6 module factory, ccall/HEAPU8 runtime methods), with the new C entry
+  # point dc_webgpu_render_all and module factory createDcWebGpuAll.
+  target_link_options(dc_webgpu_all PRIVATE
+    "--use-port=emdawnwebgpu"
+    "--bind"
+    "-fexceptions"
+    "-sASYNCIFY=1"
+    "-sMODULARIZE=1"
+    "-sEXPORT_ES6=1"
+    "-sEXPORT_NAME=createDcWebGpuAll"
+    "-sENVIRONMENT=node,web"
+    "-sALLOW_MEMORY_GROWTH=1"
+    "-sDISABLE_EXCEPTION_CATCHING=0"
+    "-sEXPORTED_RUNTIME_METHODS=ccall,cwrap,HEAPU8"
+    "-sEXPORTED_FUNCTIONS=_dc_webgpu_render_all,_malloc,_free"
+  )
+  set_target_properties(dc_webgpu_all PROPERTIES
+    OUTPUT_NAME "dc_webgpu_all"
+    SUFFIX ".js"
+  )
+  message(STATUS "dc_webgpu_all (Emscripten emdawnwebgpu FULL renderer — all 10 pipelines) enabled")
+endif()
