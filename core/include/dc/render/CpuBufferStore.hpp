@@ -134,6 +134,16 @@ class CpuBufferStore {
   const std::uint8_t* getCpuData(Id bufferId) const;
   std::uint32_t getCpuDataSize(Id bufferId) const;
 
+  // ENC-558: monotonically increasing per-buffer version. Bumps on EVERY CPU
+  // mutation (setCpuData / reserve / writeRange), regardless of whether the size
+  // changed. A backend that caches a derived GPU buffer (e.g. the instanced
+  // candle/rect gather buffers) can stash the version it last built from and
+  // cheaply detect "the CPU bytes changed since I last looked" — including
+  // same-size in-place edits that a size check alone would miss — to know when to
+  // re-upload/grow. Returns 0 for an unknown buffer id (and the first real
+  // mutation produces version 1, so a cached value of 0 always looks stale).
+  std::uint64_t getCpuDataVersion(Id bufferId) const;
+
  protected:
   struct DirtyRange {
     std::uint32_t offset{0};
@@ -144,6 +154,7 @@ class CpuBufferStore {
     std::uint32_t gpuCapacity{0};
     bool needsFullUpload{false};
     std::vector<DirtyRange> dirty;     // sorted ascending, non-overlapping
+    std::uint64_t version{0};          // ENC-558: bumps on every CPU mutation
   };
 
   // Coalesce [offset, offset+length) into e.dirty (merging adjacent/overlapping
