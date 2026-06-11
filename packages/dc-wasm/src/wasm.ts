@@ -35,6 +35,18 @@ export interface DcEngineStatsRaw {
 export interface DcEngineHostInstance {
   applyControl(jsonText: string): DcControlResult;
   applyDataBatch(bytes: Uint8Array): void;
+  /**
+   * Upload CPU pixels for a logical textureId so the texturedQuad@1 pipeline can
+   * sample them (heatmap/spectrogram/weather colormaps). `format` is a
+   * dc::TextureFormat code: 0 = R8, 1 = RGBA8. (ENC-532)
+   */
+  setTexturePixels(
+    textureId: number,
+    pixels: Uint8Array,
+    w: number,
+    h: number,
+    format: number,
+  ): void;
   render(w: number, h: number): number | Promise<number>;
   pick(w: number, h: number, x: number, y: number): number | Promise<number>;
   dispose(): void;
