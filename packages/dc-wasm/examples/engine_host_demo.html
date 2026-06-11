@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<!--
+  engine_host_demo.html — ENC-506 (P6.5) browser harness for @repo/dc-wasm.
+
+  Drives the EXACT EngineHost flow the package implements, in a real WebGPU
+  browser:  new EngineHost();  host.init(canvas);  host.applyControl(scene);
+  host.applyDataBatch(verts);  render  -> the WASM Dawn renderer renders the
+  scene OFFSCREEN, reads it back, and EngineHost.blitFramebuffer() paints it
+  onto the caller's <canvas> via putImageData.
+
+  Because the package's EngineHost.ts is TypeScript consumed from source (no
+  build step), this page loads the SAME WASM module (dc_engine_host.js) and the
+  SAME pipeline of calls the TS EngineHost makes internally, so a green render
+  here validates the dc-wasm render path end-to-end.
+
+  Serve over http (WebGPU + ES modules need an origin):
+      cd packages/dc-wasm/examples
+      python3 -m http.server 8080
+  then open  http://localhost:8080/engine_host_demo.html
+  in Chrome with WebGPU enabled. On this box the orchestrator launches Chrome as:
+      chrome --ozone-platform=x11 --enable-unsafe-webgpu --ignore-gpu-blocklist \
+             --enable-features=Vulkan --use-vulkan
+
+  Requires ../wasm/dc_engine_host.js + ../wasm/dc_engine_host.wasm.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>@repo/dc-wasm — EngineHost demo (ENC-506)</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 24px; background:#111; color:#eee; }
+    h1 { font-size: 18px; }
+    #result { font-size: 20px; font-weight: 700; margin: 12px 0; }
+    .pass { color: #41d160; } .fail { color: #ff5b5b; } .pending { color: #f5c542; }
+    #log { font-family: ui-monospace, monospace; font-size: 13px; white-space: pre-wrap;
+           color:#9aa; margin-top:16px; max-height:260px; overflow:auto;
+           border-top:1px solid #333; padding-top:8px; }
+    canvas { image-rendering: pixelated; border:1px solid #444; margin-top:12px;
+             width:384px; height:256px; background:#000; }
+  </style>
+</head>
+<body>
+  <h1>@repo/dc-wasm EngineHost — WebGPU/Dawn render (ENC-506)</h1>
+  <div id="result" class="pending">Status: initializing…</div>
+  <canvas id="canvas" width="384" height="256"></canvas>
+  <div id="log"></div>
+
+  <script type="module">
+    const resultEl = document.getElementById('result');
+    const logEl = document.getElementById('log');
+    const canvas = document.getElementById('canvas');
+    const log = (m) => { logEl.textContent += m + '\n'; };
+    const fail = (m) => { resultEl.className = 'fail'; resultEl.textContent = 'FAIL: ' + m; log('FAIL: ' + m); };
+
+    async function main() {
+      if (!('gpu' in navigator)) {
+        fail('navigator.gpu is undefined — open in Chrome/Edge with WebGPU enabled.');
+        return;
+      }
+      log('navigator.gpu present — loading dc_engine_host module…');
+
+      // 1. Load the WASM module + construct the EngineHost core (what
+      //    EngineHost.init(canvas) does internally).
+      let Module, host;
+      try {
+        const factory = (await import('../wasm/dc_engine_host.js')).default;
+        Module = await factory();
+        host = new Module.DcEngineHost();
+      } catch (e) {
+        fail('module load failed: ' + (e?.message ?? e));
+        return;
+      }
+      log('module instantiated; DcEngineHost created.');
+
+      // 2. applyControl: build a multi-pipeline scene (triSolid RED triangle +
+      //    GREEN instancedRect + BLUE line2d) — the same shape dc_webgpu_all uses.
+      const ctrl = (o) => {
+        const r = host.applyControl(JSON.stringify(o));
+        if (!r.ok) log('  applyControl rejected: ' + r.error + '  ' + JSON.stringify(o));
+        return r.ok;
+      };
+      ctrl({ cmd: 'createPane', id: 1, name: 'P' });
+      ctrl({ cmd: 'createLayer', id: 2, paneId: 1 });
+
+      // triSolid@1 (RED) in the left third — verts fed via applyDataBatch below.
+      ctrl({ cmd: 'createDrawItem', id: 3, layerId: 2 });
+      ctrl({ cmd: 'createBuffer', id: 10, byteLength: 24 });
+      ctrl({ cmd: 'createGeometry', id: 100, vertexBufferId: 10, vertexCount: 3, format: 'pos2_clip' });
+      ctrl({ cmd: 'bindDrawItem', drawItemId: 3, pipeline: 'triSolid@1', geometryId: 100 });
+      ctrl({ cmd: 'setDrawItemColor', drawItemId: 3, r: 1, g: 0, b: 0, a: 1 });
+
+      // instancedRect@1 (GREEN) in the middle.
+      ctrl({ cmd: 'createDrawItem', id: 4, layerId: 2 });
+      ctrl({ cmd: 'createBuffer', id: 11, byteLength: 16 });
+      ctrl({ cmd: 'createGeometry', id: 101, vertexBufferId: 11, vertexCount: 1, format: 'rect4' });
+      ctrl({ cmd: 'bindDrawItem', drawItemId: 4, pipeline: 'instancedRect@1', geometryId: 101 });
+      ctrl({ cmd: 'setDrawItemColor', drawItemId: 4, r: 0, g: 1, b: 0, a: 1 });
+
+      // line2d@1 (BLUE) across the right third.
+      ctrl({ cmd: 'createDrawItem', id: 5, layerId: 2 });
+      ctrl({ cmd: 'createBuffer', id: 12, byteLength: 16 });
+      ctrl({ cmd: 'createGeometry', id: 102, vertexBufferId: 12, vertexCount: 2, format: 'pos2_clip' });
+      ctrl({ cmd: 'bindDrawItem', drawItemId: 5, pipeline: 'line2d@1', geometryId: 102 });
+      ctrl({ cmd: 'setDrawItemColor', drawItemId: 5, r: 0, g: 0, b: 1, a: 1 });
+      log('scene built via applyControl (triSolid + instancedRect + line2d).');
+
+      // 3. applyDataBatch: feed the geometry bytes as binary records (the data
+      //    plane). Wire format: [1B op][4B bufferId LE][4B offset LE][4B len LE][payload].
+      const OP_APPEND = 1;
+      function record(bufferId, floats) {
+        const payload = new Uint8Array(new Float32Array(floats).buffer);
+        const buf = new Uint8Array(13 + payload.length);
+        const dv = new DataView(buf.buffer);
+        dv.setUint8(0, OP_APPEND);
+        dv.setUint32(1, bufferId, true);
+        dv.setUint32(5, 0, true);
+        dv.setUint32(9, payload.length, true);
+        buf.set(payload, 13);
+        return buf;
+      }
+      host.applyDataBatch(record(10, [-0.9, -0.7, -0.3, -0.7, -0.6, 0.7]));     // tri
+      host.applyDataBatch(record(11, [-0.2, 0.1, 0.2, 0.6]));                   // rect4
+      host.applyDataBatch(record(12, [0.35, 0.0, 0.9, 0.0]));                   // line
+      log('geometry bytes fed via applyDataBatch.');
+
+      // 4. render: the WASM Dawn renderer renders offscreen + reads back; we blit
+      //    to the canvas (what EngineHost.renderOnce + blitFramebuffer do).
+      const W = 384, H = 256;
+      resultEl.className = 'pending';
+      resultEl.textContent = 'Status: rendering…';
+      let status;
+      try {
+        status = await host.render(W, H);   // ASYNCIFY: returns a Promise<int>
+      } catch (e) {
+        fail('render threw: ' + (e?.message ?? e));
+        return;
+      }
+      const msg = host.renderMessage();
+      const backend = host.backend();
+      const s = host.stats();
+      log('render status=' + status + '  backend=' + backend + '  drawCalls=' + s.drawCalls);
+      log('message: ' + msg);
+
+      if (status !== 1) { fail('render failed (status=' + status + '): ' + msg); return; }
+
+      // Blit framebuffer -> canvas.
+      const fbW = host.framebufferWidth(), fbH = host.framebufferHeight();
+      const view = host.framebuffer();
+      const bytes = new Uint8ClampedArray(view.slice(0, fbW * fbH * 4));
+      canvas.width = fbW; canvas.height = fbH;
+      canvas.getContext('2d').putImageData(new ImageData(bytes, fbW, fbH), 0, 0);
+      log('framebuffer blitted to canvas (' + fbW + 'x' + fbH + ').');
+
+      // Sample a couple of pixels to confirm non-black output (sanity, not the
+      // authoritative pixel check — the orchestrator eyeballs the canvas).
+      const sampleRed = canvas.getContext('2d').getImageData((W * 12 / 96) | 0, H / 2, 1, 1).data;
+      log('sample @ left-third = rgba(' + sampleRed.join(',') + ')');
+
+      if (s.drawCalls >= 3) {
+        resultEl.className = 'pass';
+        resultEl.textContent = `PASS — EngineHost rendered ${s.drawCalls} draw calls on ${backend}`;
+      } else {
+        resultEl.className = 'fail';
+        resultEl.textContent = `RENDERED but only ${s.drawCalls} draw calls — check the canvas`;
+      }
+
+      host.dispose();
+    }
+
+    main().catch(e => fail('unexpected: ' + (e?.message ?? e)));
+  </script>
+</body>
+</html>

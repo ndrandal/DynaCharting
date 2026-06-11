@@ -1915,3 +1915,61 @@ if (EMSCRIPTEN)
   )
   message(STATUS "dc_webgpu_all (Emscripten emdawnwebgpu FULL renderer — all 10 pipelines) enabled")
 endif()
+
+# =======================
+# dc_engine_host (ENC-506) — Emscripten/emdawnwebgpu build of the EngineHost-
+# shaped WASM module: DcCore (applyControl + applyDataBatch) + the FULL Dawn
+# renderer (DawnSceneRenderer + all backends) + pick, behind ONE Embind class
+# (DcEngineHost) the @repo/dc-wasm TS EngineHost wrapper drives. (P6.5)
+# =======================
+# This is the WASM artifact @repo/dc-wasm ships. Unlike dc_webgpu_all (a fixed
+# demo scene), dc_engine_host is STATEFUL and DATA-DRIVEN: JS feeds it JSON
+# commands (applyControl) + binary record batches (applyDataBatch), then asks it
+# to render() the live scene / pick(). It compiles the same gpu/ TUs + emdawnwebgpu
+# as dc_webgpu_all (the whole renderer is browser-portable), plus the new
+# wasm/dc_engine_host.cpp binding. The browser canvas is bound JS-side: the TS
+# EngineHost blits the read-back framebuffer onto the caller's <canvas>.
+#
+# Gated on Emscripten like dc_wasm / dc_webgpu_all — never affects the native build.
+if (EMSCRIPTEN)
+  file(GLOB DC_ENGINE_HOST_GPU_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/gpu/*.cpp")
+  list(FILTER DC_ENGINE_HOST_GPU_SOURCES EXCLUDE REGEX ".*/placeholder\\.cpp$")
+
+  add_executable(dc_engine_host
+    "${CMAKE_CURRENT_SOURCE_DIR}/wasm/dc_engine_host.cpp"
+    ${DC_ENGINE_HOST_GPU_SOURCES}
+  )
+  target_link_libraries(dc_engine_host PRIVATE dc)
+  target_include_directories(dc_engine_host PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  )
+  # webgpu_cpp.h needs C++20 (same as the native dc_gpu library).
+  target_compile_features(dc_engine_host PRIVATE cxx_std_20)
+
+  target_compile_options(dc_engine_host PRIVATE
+    "--use-port=emdawnwebgpu"
+    -fexceptions
+  )
+  # Same link shape as dc_webgpu_all (ASYNCIFY device acquisition + readback pump,
+  # ES6 module factory, ccall/HEAPU8 runtime methods). EXPORT_NAME createDcEngineHost;
+  # no extra C entry point (the surface is the Embind DcEngineHost class).
+  target_link_options(dc_engine_host PRIVATE
+    "--use-port=emdawnwebgpu"
+    "--bind"
+    "-fexceptions"
+    "-sASYNCIFY=1"
+    "-sMODULARIZE=1"
+    "-sEXPORT_ES6=1"
+    "-sEXPORT_NAME=createDcEngineHost"
+    "-sENVIRONMENT=node,web"
+    "-sALLOW_MEMORY_GROWTH=1"
+    "-sDISABLE_EXCEPTION_CATCHING=0"
+    "-sEXPORTED_RUNTIME_METHODS=ccall,cwrap,HEAPU8"
+    "-sEXPORTED_FUNCTIONS=_malloc,_free"
+  )
+  set_target_properties(dc_engine_host PROPERTIES
+    OUTPUT_NAME "dc_engine_host"
+    SUFFIX ".js"
+  )
+  message(STATUS "dc_engine_host (Emscripten emdawnwebgpu EngineHost module — ENC-506) enabled")
+endif()
