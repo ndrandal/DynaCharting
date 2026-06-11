@@ -1626,6 +1626,17 @@ if (DC_BUILD_TESTS)
     target_link_libraries(dc_d14_6_dawn_candle PRIVATE dc_gpu)
     add_test(NAME dc_d14_6_dawn_candle COMMAND dc_d14_6_dawn_candle)
 
+    # ENC-558 — instanced backends re-upload/grow their cached GPU instance
+    # buffer when the streaming CpuBufferStore buffer GROWS (candle + rect).
+    # Regression for the showcase slice's frozen-first-frame bug: render one
+    # instance, grow the geometry to three (same geometryId), render again, and
+    # assert the new instances are drawn (previously-clear pixels become lit).
+    add_executable(dc_d_enc558_instanced_grow
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/d_enc558_instanced_grow.cpp"
+    )
+    target_link_libraries(dc_d_enc558_instanced_grow PRIVATE dc_gpu)
+    add_test(NAME dc_d_enc558_instanced_grow COMMAND dc_d_enc558_instanced_grow)
+
     # ENC-490 (P2.7) — lineAA@1 (anti-aliased thick lines) + dash patterns
     # (D28.1) on Dawn. Quad-expands each segment into a thick AA quad in the
     # vertex shader and does AA coverage falloff + dash on/off in the fragment

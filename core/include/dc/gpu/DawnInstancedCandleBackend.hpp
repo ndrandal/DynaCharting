@@ -68,11 +68,29 @@ class DawnInstancedCandleBackend final : public IRendererBackend {
   // non-indexed path uploads the geometry's candle6 vertex bytes directly; the
   // indexed (D26) path uploads a CPU-gathered scratch buffer of only the selected
   // instances.
+  //
+  // ENC-558: we also remember the CpuBufferStore versions (+ byte sizes) of the
+  // source vertex/index buffers this GPU buffer was last built from. On each
+  // render ensureGeoBuffers() re-checks them; if the streaming ingest grew or
+  // edited the CPU buffer (version bump / size change), we re-gather and
+  // re-upload so live data keeps rendering past the first frame. Unchanged
+  // geometry stays a pure cache hit (no per-frame re-upload).
   struct GeoBuffers {
     BufferHandle instanceBuffer{};   // per-instance candle6 records (a_c0/a_c1)
     std::uint32_t instanceCount{0};  // candles drawn (gathered count when indexed)
+    std::size_t bufferCapacity{0};   // byte size of instanceBuffer
+    std::uint64_t vtxVersion{0};     // CpuBufferStore version of vertexBufferId
+    std::uint64_t idxVersion{0};     // CpuBufferStore version of indexBufferId
+    bool built{false};               // false until first successful (re)build
   };
   std::vector<std::pair<std::uint32_t, GeoBuffers>> geoBuffers_;
+
+  // (Re)gather + (re)upload gb's instance buffer from the geometry's current CPU
+  // bytes. Grows/recreates the device buffer when needed. Records the source
+  // versions/sizes so a subsequent unchanged frame is a no-op.
+  void buildGeoBuffers(GpuDevice& device, const Scene& scene,
+                       CpuBufferStore& gpu, std::uint32_t geometryId,
+                       GeoBuffers& gb);
 
   GeoBuffers& ensureGeoBuffers(GpuDevice& device, const Scene& scene,
                                CpuBufferStore& gpu, std::uint32_t geometryId);

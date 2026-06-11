@@ -41,6 +41,7 @@ BufferHandle DeviceBufferResolver::ensureCapacity(Id bufferId,
 void CpuBufferStore::setCpuData(Id bufferId, const void* data,
                                 std::uint32_t bytes) {
   auto& e = entries_[bufferId];
+  ++e.version;  // ENC-558: any full replace is a content change.
   if (!data || bytes == 0) {
     e.cpuData.clear();
     e.dirty.clear();
@@ -63,6 +64,12 @@ void CpuBufferStore::setCpuData(Id bufferId, const void* data,
 
 void CpuBufferStore::reserve(Id bufferId, std::uint32_t totalBytes) {
   auto& e = entries_[bufferId];
+  if (totalBytes != e.cpuData.size()) {
+    // ENC-558: a reserve that actually resizes the CPU buffer changes the byte
+    // count a derived-buffer consumer sees, so it's a version-visible event. A
+    // no-op reserve (same size) leaves the version untouched.
+    ++e.version;
+  }
   if (totalBytes < e.cpuData.size()) {
     // Shrink: force full reupload, discard any pending dirty ranges.
     e.cpuData.resize(totalBytes);
@@ -79,6 +86,7 @@ void CpuBufferStore::writeRange(Id bufferId, std::uint32_t offset,
                                 const void* data, std::uint32_t bytes) {
   if (bytes == 0) return;
   auto& e = entries_[bufferId];
+  ++e.version;  // ENC-558: the live-tick append/edit path — a content change.
   std::uint32_t needed = offset + bytes;
   if (needed > e.cpuData.size()) {
     e.cpuData.resize(needed, 0);
@@ -169,6 +177,12 @@ std::uint32_t CpuBufferStore::getCpuDataSize(Id bufferId) const {
   auto it = entries_.find(bufferId);
   if (it == entries_.end()) return 0;
   return static_cast<std::uint32_t>(it->second.cpuData.size());
+}
+
+std::uint64_t CpuBufferStore::getCpuDataVersion(Id bufferId) const {
+  auto it = entries_.find(bufferId);
+  if (it == entries_.end()) return 0;
+  return it->second.version;
 }
 
 }  // namespace dc
