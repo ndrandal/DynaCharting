@@ -1,0 +1,8 @@
+{
+  "id": "ridgeline",
+  "title": "Ridgeline — density bands",
+  "tier": "composed",
+  "referenceTool": "D3 / Observable ridgeline",
+  "blurb": "Four overlapping price-density bands — one smoothed lastPrice distribution per symbol, stacked and allowed to overlap — tessellated to gradient-filled triangle strips at manifest-build time and drawn as per-vertex-colored triGradient geometry.",
+  "datasetId": "AAPL"
+}

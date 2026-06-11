@@ -1,0 +1,8 @@
+{
+  "id": "streamgraph",
+  "title": "Streamgraph — volume flow",
+  "tier": "composed",
+  "referenceTool": "streamgraph / stacked area",
+  "blurb": "Four per-symbol volume series stacked into flowing bands around a wandering wiggle baseline — tessellated to gradient-filled ribbons at manifest-build time and drawn as per-vertex-colored triGradient geometry.",
+  "datasetId": "AAPL"
+}

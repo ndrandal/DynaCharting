@@ -1,0 +1,8 @@
+{
+  "id": "renko",
+  "title": "Renko — fixed-brick",
+  "tier": "composed",
+  "referenceTool": "Renko / Point & Figure",
+  "blurb": "A time-less fixed-brick chart of AAPL — one green up-brick or red down-brick per brick-sized price move — tessellated to axis-aligned rects at manifest-build time and drawn as static instancedRect geometry.",
+  "datasetId": "AAPL"
+}
