@@ -14,7 +14,7 @@ import type { EngineHost } from '@repo/dc-wasm';
 import { useShowcaseEngine } from './engine/ShowcaseEngine';
 import { useAgentStream } from './engine/useAgentStream';
 import { applyManifest, resetScene } from './scene/sceneController';
-import { SAMPLE_MANIFEST } from './scene/sampleManifest';
+import { CANDLE_MANIFEST, CANDLE_GROWTH } from './scene/candleManifest';
 import type { SceneManifest } from './scene/commands';
 
 export default function App() {
@@ -23,13 +23,15 @@ export default function App() {
 
   const onReady = useCallback((host: EngineHost) => {
     resetScene(host, appliedRef.current);
-    appliedRef.current = applyManifest(host, SAMPLE_MANIFEST);
+    appliedRef.current = applyManifest(host, CANDLE_MANIFEST);
   }, []);
 
   const { canvasRef, host, status, error } = useShowcaseEngine(onReady);
 
-  // Inert unless VITE_SHOWCASE_AGENT_URL is configured.
-  useAgentStream(host);
+  // Feeds live candle6 records from embassy into the data plane and keeps the
+  // candle geometry's vertexCount in step with the growing buffer. Inert unless
+  // VITE_SHOWCASE_AGENT_URL is configured.
+  useAgentStream(host, CANDLE_GROWTH);
 
   const statusLabel =
     status === 'ready'
@@ -42,7 +44,7 @@ export default function App() {
     <div className="showcase-root">
       <header className="showcase-titlebar">
         <span className="showcase-title">
-          <span className="accent">DynaCharting</span> Showcase
+          <span className="accent">DynaCharting</span> Showcase — AAPL Candles (live)
         </span>
         <span className="showcase-status">
           <span className={`dot ${status === 'ready' ? 'ready' : status === 'error' ? 'error' : ''}`} />

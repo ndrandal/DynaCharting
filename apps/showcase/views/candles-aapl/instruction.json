@@ -1,0 +1,25 @@
+{
+  "id": "slice-candles-aapl",
+  "sessionId": "showcase",
+  "subscriptions": [
+    {"id":"r-open","streamKey":"AAPL","field":"open"},
+    {"id":"r-high","streamKey":"AAPL","field":"high"},
+    {"id":"r-low","streamKey":"AAPL","field":"low"},
+    {"id":"r-close","streamKey":"AAPL","field":"close"}
+  ],
+  "visualization": {
+    "recipe": "showcase-explicit-v1",
+    "bindings": [
+      {"slot":"ohlc.open","requestId":"r-open","bufferId":10100,"mode":"compound","stride":24,"intraOffset":4,"slotBit":0},
+      {"slot":"ohlc.high","requestId":"r-high","bufferId":10100,"mode":"compound","stride":24,"intraOffset":8,"slotBit":1},
+      {"slot":"ohlc.low","requestId":"r-low","bufferId":10100,"mode":"compound","stride":24,"intraOffset":12,"slotBit":2},
+      {"slot":"ohlc.close","requestId":"r-close","bufferId":10100,"mode":"compound","stride":24,"intraOffset":16,"slotBit":3}
+    ],
+    "buffers": [
+      {"bufferId":10100,"stride":24,"fullMask":15,"staticFields":[
+        {"intraOffset":0,"kind":"recordIndex"},
+        {"intraOffset":20,"kind":"const","value":0.4}
+      ]}
+    ]
+  }
+}

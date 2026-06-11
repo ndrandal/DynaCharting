@@ -110,6 +110,13 @@ export class EngineHost {
   private running = false;
   private raf = 0;
   private frameDirty = true;
+  // True while an async core.render() is in flight. The WASM/WebGPU renderer
+  // permits only ONE async GPU op at a time; under a high-rate data plane the
+  // rAF tick can re-enter renderOnce() before the prior render resolves, which
+  // aborts the runtime ("multiple async operations in flight"). This guard
+  // serializes renders — a frame that arrives mid-render just leaves frameDirty
+  // set so the next tick redraws.
+  private rendering = false;
 
   // Commands/batches buffered until the WASM module is ready (init is async).
   private pendingControl: string[] = [];
@@ -248,7 +255,12 @@ export class EngineHost {
   // -------------------- data plane --------------------
   /** Queue a binary batch; drained into the WASM core each frame. */
   enqueueData(batch: ArrayBuffer): void {
-    if (this.ready && this.core) {
+    // Defer while a render is in flight: the WASM core uses ASYNCIFY, which
+    // permits only ONE async op at a time. core.render() suspends mid-await;
+    // touching the core (applyDataBatch) during that window aborts the runtime
+    // ("multiple async operations in flight"). Queued batches are drained after
+    // the render resolves (see renderOnce + drainQueued).
+    if (this.ready && this.core && !this.rendering) {
       this.core.applyDataBatch(new Uint8Array(batch));
       this.frameDirty = true;
       return;
@@ -289,7 +301,10 @@ export class EngineHost {
 
     this.frameDirty = true;
 
-    if (!this.ready || !this.core) {
+    // Buffer until ready, or while a render is in flight (ASYNCIFY single-op
+    // constraint — see enqueueData). Buffered control replays in order after the
+    // render resolves (drainQueued).
+    if (!this.ready || !this.core || this.rendering) {
       this.pendingControl.push(json);
       return { ok: true };
     }
@@ -342,7 +357,10 @@ export class EngineHost {
 
   /** Read back a buffer's CPU bytes (engine-host parity; reads WASM ingest). */
   getBufferBytes(bufferId: number): Uint8Array {
-    if (!this.core) return new Uint8Array(0);
+    // Never touch the core while a render is in flight — the ASYNCIFY runtime is
+    // parked mid-await and any WASM entry aborts it ("multiple async operations
+    // in flight"). Callers just retry (returns empty meanwhile).
+    if (!this.core || this.rendering) return new Uint8Array(0);
     // getBufferBytes returns a typed_memory_view into the WASM heap; copy it.
     return Uint8Array.from(this.core.getBufferBytes(bufferId));
   }
@@ -422,7 +440,10 @@ export class EngineHost {
 
   private readonly tick = (t: number): void => {
     if (!this.running) return;
-    if (this.frameDirty && this.ready) {
+    // Skip if a render is still in flight — re-entering core.render() while the
+    // prior async GPU op is pending aborts the runtime. frameDirty stays set so
+    // the next tick (after the in-flight render resolves) redraws.
+    if (this.frameDirty && this.ready && !this.rendering) {
       this.frameDirty = false;
       void this.renderOnce();
     }
@@ -435,11 +456,25 @@ export class EngineHost {
     const core = this.core;
     const canvas = this.canvas;
     if (!core || !canvas) return;
+    // Single-flight guard: never start a render while one is in flight (the
+    // WASM/WebGPU runtime aborts on overlapping async GPU ops).
+    if (this.rendering) {
+      this.frameDirty = true;
+      return;
+    }
+    this.rendering = true;
 
     const w = Math.max(1, canvas.width || canvas.clientWidth || 1);
     const h = Math.max(1, canvas.height || canvas.clientHeight || 1);
 
-    const status = await core.render(w, h);
+    let status: number;
+    try {
+      status = await core.render(w, h);
+    } finally {
+      this.rendering = false;
+      // Drain any control/data that arrived while the render was suspended.
+      this.drainQueued();
+    }
     if (status !== 1) {
       this.lastErrors.push({
         code: "VALIDATION_NO_GEOMETRY",
@@ -465,6 +500,31 @@ export class EngineHost {
     this.stats.frameMsP95 = percentile(this.frameWindow, 0.95);
 
     this.hud?.setStats?.(this.getStats());
+  }
+
+  /**
+   * Flush control commands + data batches buffered while the core was busy
+   * (loading, or a render in flight). Applied in order: control before data, so
+   * a geometry/buffer exists before its bytes land. Safe to call only when no
+   * render is in flight (the caller guarantees this).
+   */
+  private drainQueued(): void {
+    if (!this.ready || !this.core || this.rendering) return;
+    if (this.pendingControl.length === 0 && this.dataQueue.length === 0) return;
+    if (this.pendingControl.length > 0) {
+      const ctrl = this.pendingControl;
+      this.pendingControl = [];
+      for (const json of ctrl) {
+        const r = this.core.applyControl(json);
+        if (!r.ok) this.lastErrors.push({ code: "CONTROL_REJECTED", message: r.error });
+      }
+    }
+    if (this.dataQueue.length > 0) {
+      const batches = this.dataQueue;
+      this.dataQueue = [];
+      for (const batch of batches) this.core.applyDataBatch(new Uint8Array(batch));
+    }
+    this.frameDirty = true;
   }
 
   /** Blit the WASM framebuffer bytes onto the caller's canvas 2D context. */
