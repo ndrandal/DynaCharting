@@ -1,0 +1,10 @@
+{
+  "id": "scatter",
+  "title": "Scatter — Price × Volume",
+  "tier": "native",
+  "referenceTool": "data-viz / sports analytics",
+  "blurb": "AAPL lastPrice plotted against cumulative volume as GPU points — two live streams joined into one (x,y) record per tick by a dual-dynamic-slot compound buffer.",
+  "datasetId": "AAPL",
+  "transform": { "sx": 0.1705381, "sy": 0.000009792795, "tx": -70.348033, "ty": -0.770121 },
+  "xAnchor": false
+}

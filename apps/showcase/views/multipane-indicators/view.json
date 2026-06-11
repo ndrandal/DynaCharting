@@ -1,0 +1,10 @@
+{
+  "id": "multipane-indicators",
+  "title": "Multi-pane — Price · RSI · MACD",
+  "tier": "native",
+  "referenceTool": "ThinkorSwim / TradingView",
+  "blurb": "A 3-pane indicator chart from one JSON manifest — AAPL price candles over an RSI line and a MACD pane (macd + signal lines with a histogram), each pane its own clip band and transform.",
+  "datasetId": "AAPL",
+  "transform": { "sx": 0.006391, "sy": 0.10625, "tx": -0.875564, "ty": -43.88125 },
+  "xAnchor": true
+}
