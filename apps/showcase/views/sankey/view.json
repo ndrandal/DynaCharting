@@ -1,0 +1,8 @@
+{
+  "id": "sankey",
+  "title": "Fund-Flow Sankey — ribbon tessellation",
+  "tier": "composed",
+  "referenceTool": "fund-flow Sankey",
+  "blurb": "Weighted flow ribbons between two node columns — a fund-flow Sankey whose ribbons and node bars are tessellated at manifest-build time into a colored-triangle list (triGradient@1) from a flow matrix synthesized from the four symbols' volume and price drift.",
+  "datasetId": "AAPL"
+}

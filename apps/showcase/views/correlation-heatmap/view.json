@@ -1,0 +1,8 @@
+{
+  "id": "correlation-heatmap",
+  "title": "Correlation Heatmap — texture escape hatch",
+  "tier": "composed",
+  "referenceTool": "correlation matrix",
+  "blurb": "An N×N correlation matrix of the four symbols' return series, coloured cell-by-cell on a diverging blue↔red scale. Per-cell colour is beyond the instanced path, so the colormap is rasterized to an RGBA8 texture at manifest-build time and blitted onto a pane-covering quad via the texturedQuad@1 escape hatch.",
+  "datasetId": "AAPL"
+}
