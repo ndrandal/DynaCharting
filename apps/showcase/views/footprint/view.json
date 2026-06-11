@@ -4,5 +4,16 @@
   "tier": "composed",
   "referenceTool": "order-flow footprint",
   "blurb": "An order-flow footprint over price×time — bid (green) and ask (red) volume per cell — driven by a 160-way scalar-fan of fixed-mode subscriptions. The 2D-grid-with-per-cell-magnitude case maps the frontier: it ships as a flattened 80-level bid/ask volume stack (see explainer).",
-  "datasetId": "AAPL"
+  "datasetId": "AAPL",
+  "transform": { "sx": 0.0321, "sy": 0.023, "tx": -12.78, "ty": -0.92 },
+  "chrome": {
+    "axes": {
+      "y": { "label": "Price·time level", "min": 0, "max": 80, "format": "index", "ticks": 8, "grid": true },
+      "x": { "label": "Volume", "min": 398, "max": 425, "format": "number", "ticks": 5, "grid": true }
+    },
+    "legend": [
+      { "label": "Bid volume", "color": [0.2, 0.75, 0.45, 0.9], "kind": "bar" },
+      { "label": "Ask volume", "color": [0.85, 0.3, 0.3, 0.9], "kind": "bar" }
+    ]
+  }
 }

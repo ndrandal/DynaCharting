@@ -6,5 +6,17 @@
   "blurb": "Per-second AAPL candles with a cumulative-volume sub-pane — multiple coordinated series across two panes from one JSON manifest (SMA(20) captured for a future multi-series run).",
   "datasetId": "AAPL",
   "transform": { "sx": 0.011333333, "sy": 0.085, "tx": -0.85, "ty": -34.715 },
-  "xAnchor": true
+  "xAnchor": true,
+  "chrome": {
+    "axes": {
+      "y": { "label": "Price", "min": 408, "max": 418, "format": "price", "ticks": 5, "grid": true },
+      "x": { "label": "Index", "min": 4, "max": 160, "format": "index", "ticks": 6, "grid": true }
+    },
+    "legend": [
+      { "label": "Up candle", "color": [0.2, 0.75, 0.45, 1], "kind": "candle" },
+      { "label": "Down candle", "color": [0.85, 0.3, 0.3, 1], "kind": "candle" },
+      { "label": "SMA(20)", "color": [0.95, 0.78, 0.3, 1], "kind": "line" },
+      { "label": "Volume (sub-pane)", "color": [0.32, 0.45, 0.78, 0.8], "kind": "bar" }
+    ]
+  }
 }

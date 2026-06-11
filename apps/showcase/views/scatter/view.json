@@ -6,5 +6,14 @@
   "blurb": "AAPL lastPrice plotted against cumulative volume as GPU points — two live streams joined into one (x,y) record per tick by a dual-dynamic-slot compound buffer.",
   "datasetId": "AAPL",
   "transform": { "sx": 0.1705381, "sy": 0.000009792795, "tx": -70.348033, "ty": -0.770121 },
-  "xAnchor": false
+  "xAnchor": false,
+  "chrome": {
+    "axes": {
+      "x": { "label": "Last price", "min": 408, "max": 417, "format": "price", "ticks": 6, "grid": true },
+      "y": { "label": "Cumulative volume", "min": 0, "max": 160000, "format": "number", "ticks": 5, "grid": true }
+    },
+    "legend": [
+      { "label": "Price × Volume", "color": [0.24, 0.86, 0.52, 0.9], "kind": "point" }
+    ]
+  }
 }

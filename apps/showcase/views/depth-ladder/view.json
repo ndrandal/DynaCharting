@@ -4,5 +4,15 @@
   "tier": "composed",
   "referenceTool": "Bookmap / DOM",
   "blurb": "A 20-level-per-side order book rendered as a split horizontal-bar ladder — bid (green) below the mid, ask (red) above, bar length ∝ resting size — driven by a 40-way scalar-fan of fixed-mode subscriptions overwriting one pre-sized buffer in place each tick.",
-  "datasetId": "AAPL"
+  "datasetId": "AAPL",
+  "transform": { "sx": 0.0321, "sy": -0.0438, "tx": -12.78, "ty": 0 },
+  "chrome": {
+    "axes": {
+      "x": { "label": "Resting size", "min": 398, "max": 425, "format": "number", "ticks": 5, "grid": true }
+    },
+    "legend": [
+      { "label": "Bid", "color": [0.2, 0.75, 0.45, 0.92], "kind": "bar" },
+      { "label": "Ask", "color": [0.85, 0.3, 0.3, 0.92], "kind": "bar" }
+    ]
+  }
 }
