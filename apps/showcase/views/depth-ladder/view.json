@@ -1,0 +1,8 @@
+{
+  "id": "depth-ladder",
+  "title": "Depth Ladder — order book",
+  "tier": "composed",
+  "referenceTool": "Bookmap / DOM",
+  "blurb": "A 20-level-per-side order book rendered as a split horizontal-bar ladder — bid (green) below the mid, ask (red) above, bar length ∝ resting size — driven by a 40-way scalar-fan of fixed-mode subscriptions overwriting one pre-sized buffer in place each tick.",
+  "datasetId": "AAPL"
+}
