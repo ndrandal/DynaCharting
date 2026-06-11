@@ -1727,3 +1727,54 @@ if (DC_BUILD_TESTS)
     add_test(NAME dc_d79_dawn_json_host COMMAND dc_d79_dawn_json_host)
   endif()
 endif()
+
+# =======================
+# dc_wasm (ENC-502) — Emscripten/WASM binding skeleton for the `dc` logic core
+# =======================
+# Compiles the pure backend-agnostic `dc` core (scene graph, command processor,
+# ingest, recipes, document — NO graphics) to WebAssembly and exposes a minimal
+# JS/TS surface via Embind. This proves the dc logic runs in WASM and round-trips
+# a JSON command across the JS boundary. NO WebGPU here — the Dawn renderer
+# (dc_gpu on emdawnwebgpu) lands in ENC-503 on top of the same DcCore.
+#
+# Gated on Emscripten so it never affects the native build. The native default
+# build (no Emscripten toolchain) skips this entirely.
+if (EMSCRIPTEN)
+  # Single-threaded build (simplest that compiles): we do NOT pass -pthread, so
+  # the WASM module is built without SharedArrayBuffer/worker threads. The only
+  # std::thread user in pure `dc` is FakeDataSource (a demo data source the
+  # binding skeleton never touches); the scene/command/ingest/document logic the
+  # binding exposes is single-threaded. Under Emscripten, find_package(Threads)
+  # provides a Threads::Threads target that is a no-op without -pthread, so `dc`
+  # linking it does not force pthreads on.
+  add_executable(dc_wasm "${CMAKE_CURRENT_SOURCE_DIR}/wasm/dc_wasm.cpp")
+  target_link_libraries(dc_wasm PRIVATE dc)
+
+  # Emscripten link flags:
+  #   --bind            : enable Embind (the binding uses EMSCRIPTEN_BINDINGS)
+  #   MODULARIZE=1      : emit a factory function instead of a global Module
+  #   EXPORT_ES6=1      : emit an ES6 module (import the default export factory)
+  #   EXPORT_NAME       : name of the exported module factory
+  #   ENVIRONMENT       : node + web (this ticket validates under node)
+  #   ALLOW_MEMORY_GROWTH : let the heap grow (the core allocates scene state)
+  #   -sEXPORTED_RUNTIME_METHODS: not needed — Embind wires the class surface.
+  # No -pthread (single-threaded, see note above). Exceptions: dc uses C++
+  # exceptions internally (e.g. RapidJSON / std), so enable them on the link.
+  target_compile_options(dc_wasm PRIVATE -fexceptions)
+  target_link_options(dc_wasm PRIVATE
+    "--bind"
+    "-fexceptions"
+    "-sMODULARIZE=1"
+    "-sEXPORT_ES6=1"
+    "-sEXPORT_NAME=createDcCore"
+    "-sENVIRONMENT=node,web"
+    "-sALLOW_MEMORY_GROWTH=1"
+    "-sDISABLE_EXCEPTION_CATCHING=0"
+  )
+  # Emit dc_wasm.js (+ dc_wasm.wasm). With EXPORT_ES6 the .js is an ES module.
+  set_target_properties(dc_wasm PROPERTIES
+    OUTPUT_NAME "dc_wasm"
+    SUFFIX ".js"
+  )
+  message(STATUS "dc_wasm (Emscripten WASM binding skeleton) enabled")
+endif()
