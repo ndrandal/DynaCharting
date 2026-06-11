@@ -1297,7 +1297,13 @@ void DawnDevice::beginRenderPass(const RenderPassDesc& desc) {
   stencil.stencilLoadOp = clearStencil ? wgpu::LoadOp::Clear : wgpu::LoadOp::Load;
   stencil.stencilStoreOp = wgpu::StoreOp::Store;
   stencil.stencilClearValue = 0;
-  // Stencil8 has no depth aspect: leave depth load/store Undefined.
+  // Stencil8 has no depth aspect: leave depth load/store Undefined. But Dawn's
+  // default depthClearValue is NaN (its "unset" sentinel). Native Dawn tolerates
+  // that, but the BROWSER (emdawnwebgpu -> Chrome WebGPU validation) serializes
+  // the descriptor and rejects a non-finite depthClearValue ("The provided float
+  // value is non-finite"). Set a finite value so the same code validates in both;
+  // it's ignored functionally since there's no depth aspect.
+  stencil.depthClearValue = 1.0f;
 
   wgpu::RenderPassDescriptor rp = {};
   rp.colorAttachmentCount = 1;

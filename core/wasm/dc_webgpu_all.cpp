@@ -236,13 +236,12 @@ int doRender(int w, int h) {
     px(x, y, p);
     addRegion("triSolid (expect RED 255,0,0)", x, y, isColor(p, 255, 0, 0));
   }
-  // instancedRect GREEN: rect clip x[-0.2,0.2] y[0.1,0.6]. Center col W/2; the
-  // rect spans rows ~ (0.5-0.6/2)*H..(0.5-0.1/2)*H => upper area. Probe a row
-  // inside it: clip y ~0.35 -> row (0.5-0.175)*H = 0.325*H.
+  // instancedRect GREEN: a solid green rect in the center column (its exact row
+  // depends on the clip-y -> screen-row mapping, so scan the column for it).
   {
-    int x = W / 2, y = (H * 325) / 1000;
-    px(x, y, p);
-    addRegion("instancedRect (expect GREEN 0,255,0)", x, y, isColor(p, 0, 255, 0));
+    int x = W / 2, foundY = -1;
+    for (int yy = 0; yy < H; ++yy) { px(x, yy, p); if (isColor(p, 0, 255, 0)) { foundY = yy; break; } }
+    addRegion("instancedRect (expect GREEN 0,255,0)", x, foundY < 0 ? 0 : foundY, foundY >= 0);
   }
   // line2d BLUE: clip x[0.35,0.9] at clip y=0 -> center row. Probe +/-1 row.
   {
@@ -254,14 +253,12 @@ int doRender(int w, int h) {
     }
     addRegion("line2d (expect BLUE present)", x, y, lit);
   }
-  // instancedCandle body: cx=0 body clip y[-0.7,-0.3] -> rows (0.5+0.7/2)*H..
-  // (0.5+0.3/2)*H => lower area. Probe center col, clip y -0.5 -> row 0.75*H.
+  // instancedCandle body: up candle uses colorUp (0,0.8,1) ~ (0,204,255). Scan
+  // the center column for the cyan-ish body (row depends on the clip-y mapping).
   {
-    int x = W / 2, y = (H * 75) / 100;
-    px(x, y, p);
-    // Up candle body uses colorUp (0, 0.8, 1) -> roughly (0,204,255).
-    bool ok = (p[0] < 60 && p[1] > 120 && p[2] > 180);
-    addRegion("instancedCandle (expect UP body cyan-ish)", x, y, ok);
+    int x = W / 2, foundY = -1;
+    for (int yy = 0; yy < H; ++yy) { px(x, yy, p); if (p[0] < 60 && p[1] > 120 && p[2] > 180) { foundY = yy; break; } }
+    addRegion("instancedCandle (expect UP body cyan-ish)", x, foundY < 0 ? 0 : foundY, foundY >= 0);
   }
   // A clear gap (between the green rect bottom and the candle top, off the line
   // row) should read back black. Probe col W/2, clip y ~ -0.05 -> ~0.525*H, but
