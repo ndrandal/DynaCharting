@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>DynaCharting · Frontier — Contact Sheet (22 views)</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #0a0a12; color: #e8e8f0;
+         font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, sans-serif; }
+  header { padding: 28px 32px 12px; border-bottom: 1px solid #20202e; }
+  h1 { margin: 0 0 6px; font-size: 22px; font-weight: 650; letter-spacing: -0.01em; }
+  .lede { margin: 0; color: #9a9ab0; max-width: 70ch; }
+  .tally { margin: 14px 0 0; display: flex; gap: 10px; flex-wrap: wrap; }
+  .tally .chip { padding: 4px 12px; border-radius: 999px; font-size: 13px;
+                 border: 1px solid var(--c); color: var(--c); }
+  .grid { display: grid; gap: 18px; padding: 24px 32px 56px;
+          grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+  .card { margin: 0; background: #11111c; border: 1px solid #20202e;
+          border-radius: 12px; overflow: hidden; }
+  .frame { aspect-ratio: 11 / 7; background: #05050a; display: flex;
+           align-items: center; justify-content: center; }
+  .frame img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .missing { color: #e5534b; font-size: 13px; }
+  figcaption { padding: 10px 12px 12px; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .row.sub { margin-top: 3px; }
+  .row.meta { margin-top: 8px; color: #6f6f86; font-size: 12px; }
+  .title { font-weight: 600; }
+  .ref { color: #8a8aa0; font-size: 12.5px; }
+  code { color: #8a8aff; font-size: 12px; }
+  .badge { padding: 1px 9px; border-radius: 999px; font-size: 11px; font-weight: 600;
+           text-transform: uppercase; letter-spacing: 0.03em;
+           color: var(--c); border: 1px solid var(--c); }
+</style>
+</head>
+<body>
+<header>
+  <h1>DynaCharting · Frontier — Contact Sheet</h1>
+  <p class="lede">Every showcase view, captured live from the built app through a faithful data path and a real WebGPU renderer. Tiers: <b style="color:#3ddc84">native</b> (rendered straight from the manifest), <b style="color:#4c9bf5">composed</b> (manifest + upstream precompute), <b style="color:#f5b14c">walled</b> (precomputed output; live-GPU compute is the frontier).</p>
+  <div class="tally">
+    <span class="chip" style="--c:#3ddc84">fully rendered 21/22</span>
+    <span class="chip" style="--c:#f5b14c">partial 0/22</span>
+    <span class="chip" style="--c:#e5534b">none 1/22</span>
+  </div>
+</header>
+<main class="grid">
+    <figure class="card" data-tier="native" data-verdict="full">
+      <div class="frame"><img src="./candle-overlays.png" alt="Candles + Volume — AAPL" loading="lazy" /></div>
+      <figcaption>
+        <div class="row">
+          <span class="title">Candles + Volume — AAPL</span>
+          <span class="badge tier" style="--c:#3ddc84">native</span>
+        </div>
+        <div class="row sub">
+          <span class="ref">TradingView</span>
+          <span class="badge verdict" style="--c:#3ddc84">full</span>
+        </div>
+        <div class="row meta"><code>candle-overlays</code><span>coverage 3.9%</span></div>
+      </figcaption>
+    </figure>
+    <figure class="card" data-tier="native" data-verdict="full">
+      <div class="frame"><img src="./candles-aapl.png" alt="Candlestick — AAPL" loading="lazy" /></div>
+      <figcaption>
+        <div class="row">
+          <span class="title">Candlestick — AAPL</span>
+          <span class="badge tier" style="--c:#3ddc84">native</span>
+        </div>
+        <div class="row sub">
+          <span class="ref">TradingView</span>
+          <span class="badge verdict" style="--c:#3ddc84">full</span>
+        </div>
+        <div class="row meta"><code>candles-aapl</code><span>coverage 4.9%</span></div>
+      </figcaption>
+    </figure>
+    <figure class="card" data-tier="native" data-verdict="full">
+      <div class="frame"><img src="./ohlc-bars.png" alt="OHLC Bars — AAPL" loading="lazy" /></div>
+      <figcaption>
+        <div class="row">
+          <span class="title">OHLC Bars — AAPL</span>
+          <span class="badge tier" style="--c:#3ddc84">native</span>
+        </div>
+        <div class="row sub">
+          <span class="ref">Bloomberg / most platforms</span>
+          <span class="badge verdict" style="--c:#3ddc84">full</span>
+        </div>
+        <div class="row meta"><code>ohlc-bars</code><span>coverage 2.7%</span></div>
+      </figcaption>
+    </figure>
+    <figure class="card" data-tier="native" data-verdict="full">
+      <div class="frame"><img src="./price-line-area.png" alt="Price Area — AAPL" loading="lazy" /></div>
+      <figcaption>
+        <div class="row">
+          <span class="title">Price Area — AAPL</span>
+          <span class="badge tier" style="--c:#3ddc84">native</span>
+        </div>
+        <div class="row sub">
+          <span class="ref">TradingView baseline/area</span>
+          <span class="badge verdict" style="--c:#3ddc84">full</span>
+        </div>
+        <div class="row meta"><code>price-line-area</code><span>coverage 32.9%</span></div>
+      </figcaption>
+    </figure>
+    <figure class="card" data-tier="native" data-verdict="none">
+      <div class="frame"><img src="./scatter.png" alt="Scatter — Price × Volume" loading="lazy" /></div>
+      <figcaption>
+        <div class="row">
+          <span class="title">Scatter — Price × Volume</span>
+          <span class="badge tier" style="--c:#3ddc84">native</span>
+        </div>
+        <div class="row sub">
+          <span class="ref">data-viz / sports analytics</span>
+          <span class="badge verdict" style="--c:#e5534b">none</span>
+        </div>
+        <div class="row meta"><code>scatter</code><span>coverage 0.0%</span></div>
+      </figcaption>
+    </figure>
+    <figure class="card" data-tier="composed" data-verdict="full">
+      <div class="frame"><img src="./audio-waveform.png" alt="Audio waveform — mirrored amplitude" loading="lazy" /></div>
+      <figcaption>
+        <div class="row">
+          <span class="title">Audio waveform — mirrored amplitude</span>
+          <span class="badge tier" style="--c:#4c9bf5">composed</span>
+        </div>
+        <div class="row sub">
+          <span class="ref">audio editor waveform</span>
+          <span class="badge verdict" style="--c:#3ddc84">full</span>
+        </div>
+        <div class="row meta"><code>audio-waveform</code><span>coverage 33.6%</span></div>
+      </figcaption>
+    </figure>
+    <figure class="card" data-tier="composed" data-verdict="full">
+      <div class="frame"><img src="./correlation-heatmap.png" alt="Correlation Heatmap — texture escape hatch" loading="lazy" /></div>
+      <figcaption>
+        <div class="row">
+          <span class="title">Correlation Heatmap — texture escape hatch</span>
+          <span class="badge tier" style="--c:#4c9bf5">composed</span>
+        </div>
+        <div class="row sub">
+          <span class="ref">correlation matrix</span>
+          <span class="badge verdict" style="--c:#3ddc84">full</span>
+        </div>
+        <div class="row meta"><code>correlation-heatmap</code><span>coverage 72.2%</span></div>
+      </figcaption>
+    </figure>
+    <figure class="card" data-tier="composed" data-verdict="full">
+      <div class="frame"><img src="./depth-ladder.png" alt="Depth Ladder — order book" loading="lazy" /></div>
+      <figcaption>
+        <div class="row">
+          <span class="title">Depth Ladder — order book</span>
+          <span class="badge tier" style="--c:#4c9bf5">composed</span>
+        </div>
+        <div class="row sub">
+          <span class="ref">Bookmap / DOM</span>
+          <span class="badge verdict" style="--c:#3ddc84">full</span>
+        </div>
+        <div class="row meta"><code>depth-ladder</code><span>coverage 26.8%</span></div>
+      </figcaption>
+    </figure>
+    <figure class="card" data-tier="composed" data-verdict="full">
+      <div class="frame"><img src="./ecg.png" alt="ECG monitor — PQRST trace" loading="lazy" /></div>
+      <figcaption>
+        <div class="row">
+          <span class="title">ECG monitor — PQRST trace</span>
+          <span class="badge tier" style="--c:#4c9bf5">composed</span>
+        </div>
+        <div class="row sub">
+          <span class="ref">medical / ECG monitor</span>
+          <span class="badge verdict" style="--c:#3ddc84">full</span>
+        </div>
+        <div class="row meta"><code>ecg</code><span>coverage 2.6%</span></div>
+      </figcaption>
+    </figure>
+    <figure class="card" data-tier="composed" data-verdict="full">
+      <div class="frame"><img src="./footprint.png" alt="Footprint — bid×ask volume" loading="lazy" /></div>
+      <figcaption>
+        <div class="row">
+          <span class="title">Footprint — bid×ask volume</span>
+          <span class="badge tier" style="--c:#4c9bf5">composed</span>
+        </div>
+        <div class="row sub">
+          <span class="ref">order-flow footprint</span>
+          <span class="badge verdict" style="--c:#3ddc84">full</span>
+        </div>
+        <div class="row meta"><code>footprint</code><span>coverage 60.3%</span></div>
+      </figcaption>
+    </figure>
+    <figure class="card" data-tier="composed" data-verdict="full">
+      <div class="frame"><img src="./sankey.png" alt="Fund-Flow Sankey — ribbon tessellation" loading="lazy" /></div>
+      <figcaption>
+        <div class="row">
+          <span class="title">Fund-Flow Sankey — ribbon tessellation</span>
+          <span class="badge tier" style="--c:#4c9bf5">composed</span>
+        </div>
+        <div class="row sub">
+          <span class="ref">fund-flow Sankey</span>
+          <span class="badge verdict" style="--c:#3ddc84">full</span>
+        </div>
+        <div class="row meta"><code>sankey</code><span>coverage 54.3%</span></div>
+      </figcaption>
+    </figure>
+    <figure class="card" data-tier="composed" data-verdict="full">
+      <div class="frame"><img src="./radial-seasonality.png" alt="Radial Seasonality Clock — polar projection" loading="lazy" /></div>
+      <figcaption>
+        <div class="row">
+          <span class="title">Radial Seasonality Clock — polar projection</span>
+          <span class="badge tier" style="--c:#4c9bf5">composed</span>
+        </div>
+        <div class="row sub">
+          <span class="ref">polar / radial seasonality clock</span>
+          <span class="badge verdict" style="--c:#3ddc84">full</span>
+        </div>
+        <div class="row meta"><code>radial-seasonality</code><span>coverage 0.6%</span></div>
+      </figcaption>
+    </figure>
+    <figure class="card" data-tier="composed" data-verdict="full">
+      <div class="frame"><img src="./renko.png" alt="Renko — fixed-brick" loading="lazy" /></div>
+      <figcaption>
+        <div class="row">
+          <span class="title">Renko — fixed-brick</span>
+          <span class="badge tier" style="--c:#4c9bf5">composed</span>
+        </div>
+        <div class="row sub">
+          <span class="ref">Renko / Point & Figure</span>
+          <span class="badge verdict" style="--c:#3ddc84">full</span>
+        </div>
+        <div class="row meta"><code>renko</code><span>coverage 3.8%</span></div>
+      </figcaption>
+    </figure>
+    <figure class="card" data-tier="composed" data-verdict="full">
+      <div class="frame"><img src="./ridgeline.png" alt="Ridgeline — density bands" loading="lazy" /></div>
+      <figcaption>
+        <div class="row">
+          <span class="title">Ridgeline — density bands</span>
+          <span class="badge tier" style="--c:#4c9bf5">composed</span>
+        </div>
+        <div class="row sub">
+          <span class="ref">D3 / Observable ridgeline</span>
+          <span class="badge verdict" style="--c:#3ddc84">full</span>
+        </div>
+        <div class="row meta"><code>ridgeline</code><span>coverage 30.7%</span></div>
+      </figcaption>
+    </figure>
+    <figure class="card" data-tier="composed" data-verdict="full">
+      <div class="frame"><img src="./sports-shot-chart.png" alt="Shot chart — made/missed" loading="lazy" /></div>
+      <figcaption>
+        <div class="row">
+          <span class="title">Shot chart — made/missed</span>
+          <span class="badge tier" style="--c:#4c9bf5">composed</span>
+        </div>
+        <div class="row sub">
+          <span class="ref">NBA shot chart</span>
+          <span class="badge verdict" style="--c:#3ddc84">full</span>
+        </div>
+        <div class="row meta"><code>sports-shot-chart</code><span>coverage 4.1%</span></div>
+      </figcaption>
+    </figure>
+    <figure class="card" data-tier="composed" data-verdict="full">
+      <div class="frame"><img src="./streamgraph.png" alt="Streamgraph — volume flow" loading="lazy" /></div>
+      <figcaption>
+        <div class="row">
+          <span class="title">Streamgraph — volume flow</span>
+          <span class="badge tier" style="--c:#4c9bf5">composed</span>
+        </div>
+        <div class="row sub">
+          <span class="ref">streamgraph / stacked area</span>
+          <span class="badge verdict" style="--c:#3ddc84">full</span>
+        </div>
+        <div class="row meta"><code>streamgraph</code><span>coverage 62.0%</span></div>
+      </figcaption>
+    </figure>
+    <figure class="card" data-tier="composed" data-verdict="full">
+      <div class="frame"><img src="./treemap.png" alt="Treemap — market map" loading="lazy" /></div>
+      <figcaption>
+        <div class="row">
+          <span class="title">Treemap — market map</span>
+          <span class="badge tier" style="--c:#4c9bf5">composed</span>
+        </div>
+        <div class="row sub">
+          <span class="ref">Finviz market map</span>
+          <span class="badge verdict" style="--c:#3ddc84">full</span>
+        </div>
+        <div class="row meta"><code>treemap</code><span>coverage 74.7%</span></div>
+      </figcaption>
+    </figure>
+    <figure class="card" data-tier="composed" data-verdict="full">
+      <div class="frame"><img src="./volume-profile.png" alt="Volume Profile — volume by price" loading="lazy" /></div>
+      <figcaption>
+        <div class="row">
+          <span class="title">Volume Profile — volume by price</span>
+          <span class="badge tier" style="--c:#4c9bf5">composed</span>
+        </div>
+        <div class="row sub">
+          <span class="ref">Sierra Chart / ToS TPO</span>
+          <span class="badge verdict" style="--c:#3ddc84">full</span>
+        </div>
+        <div class="row meta"><code>volume-profile</code><span>coverage 18.0%</span></div>
+      </figcaption>
+    </figure>
+    <figure class="card" data-tier="composed" data-verdict="full">
+      <div class="frame"><img src="./weather-radar.png" alt="Weather radar — intensity field" loading="lazy" /></div>
+      <figcaption>
+        <div class="row">
+          <span class="title">Weather radar — intensity field</span>
+          <span class="badge tier" style="--c:#4c9bf5">composed</span>
+        </div>
+        <div class="row sub">
+          <span class="ref">weather radar / NEXRAD</span>
+          <span class="badge verdict" style="--c:#3ddc84">full</span>
+        </div>
+        <div class="row meta"><code>weather-radar</code><span>coverage 63.1%</span></div>
+      </figcaption>
+    </figure>
+    <figure class="card" data-tier="walled" data-verdict="full">
+      <div class="frame"><img src="./contour.png" alt="Contour — iso-bands" loading="lazy" /></div>
+      <figcaption>
+        <div class="row">
+          <span class="title">Contour — iso-bands</span>
+          <span class="badge tier" style="--c:#f5b14c">walled</span>
+        </div>
+        <div class="row sub">
+          <span class="ref">Topographic isolines</span>
+          <span class="badge verdict" style="--c:#3ddc84">full</span>
+        </div>
+        <div class="row meta"><code>contour</code><span>coverage 90.2%</span></div>
+      </figcaption>
+    </figure>
+    <figure class="card" data-tier="walled" data-verdict="full">
+      <div class="frame"><img src="./density-heatmap.png" alt="Density Heatmap — KDE glow" loading="lazy" /></div>
+      <figcaption>
+        <div class="row">
+          <span class="title">Density Heatmap — KDE glow</span>
+          <span class="badge tier" style="--c:#f5b14c">walled</span>
+        </div>
+        <div class="row sub">
+          <span class="ref">Bookmap liquidity heatmap</span>
+          <span class="badge verdict" style="--c:#3ddc84">full</span>
+        </div>
+        <div class="row meta"><code>density-heatmap</code><span>coverage 40.3%</span></div>
+      </figcaption>
+    </figure>
+    <figure class="card" data-tier="walled" data-verdict="full">
+      <div class="frame"><img src="./spectrogram.png" alt="Spectrogram — frequency × time" loading="lazy" /></div>
+      <figcaption>
+        <div class="row">
+          <span class="title">Spectrogram — frequency × time</span>
+          <span class="badge tier" style="--c:#f5b14c">walled</span>
+        </div>
+        <div class="row sub">
+          <span class="ref">Audio spectrogram</span>
+          <span class="badge verdict" style="--c:#3ddc84">full</span>
+        </div>
+        <div class="row meta"><code>spectrogram</code><span>coverage 90.2%</span></div>
+      </figcaption>
+    </figure>
+</main>
+</body>
+</html>

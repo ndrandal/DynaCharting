@@ -1,0 +1,230 @@
+{
+  "capturedAt": "2026-06-11T22:13:59.862Z",
+  "total": 22,
+  "tally": {
+    "full": 21,
+    "none": 1
+  },
+  "views": [
+    {
+      "id": "candle-overlays",
+      "title": "Candles + Volume — AAPL",
+      "tier": "native",
+      "verdict": "full",
+      "autoVerdict": "full",
+      "coverage": 0.039186928523959025,
+      "chroma": 0.039186928523959025,
+      "distinctColors": 5
+    },
+    {
+      "id": "candles-aapl",
+      "title": "Candlestick — AAPL",
+      "tier": "native",
+      "verdict": "full",
+      "autoVerdict": "full",
+      "coverage": 0.04899511882118386,
+      "chroma": 0.04899511882118386,
+      "distinctColors": 4
+    },
+    {
+      "id": "ohlc-bars",
+      "title": "OHLC Bars — AAPL",
+      "tier": "native",
+      "verdict": "full",
+      "autoVerdict": "full",
+      "coverage": 0.026605861997845866,
+      "chroma": 0.026605861997845866,
+      "distinctColors": 4
+    },
+    {
+      "id": "price-line-area",
+      "title": "Price Area — AAPL",
+      "tier": "native",
+      "verdict": "full",
+      "autoVerdict": "full",
+      "coverage": 0.328895203611614,
+      "chroma": 0.328895203611614,
+      "distinctColors": 3
+    },
+    {
+      "id": "scatter",
+      "title": "Scatter — Price × Volume",
+      "tier": "native",
+      "verdict": "none",
+      "autoVerdict": "none",
+      "coverage": 0.0002749959896418177,
+      "chroma": 0,
+      "distinctColors": 3
+    },
+    {
+      "id": "audio-waveform",
+      "title": "Audio waveform — mirrored amplitude",
+      "tier": "composed",
+      "verdict": "full",
+      "autoVerdict": "full",
+      "coverage": 0.33560968902536836,
+      "chroma": 0.33560968902536836,
+      "distinctColors": 1067
+    },
+    {
+      "id": "correlation-heatmap",
+      "title": "Correlation Heatmap — texture escape hatch",
+      "tier": "composed",
+      "verdict": "full",
+      "autoVerdict": "full",
+      "coverage": 0.7224832137864656,
+      "chroma": 0.5204069940646698,
+      "distinctColors": 90
+    },
+    {
+      "id": "depth-ladder",
+      "title": "Depth Ladder — order book",
+      "tier": "composed",
+      "verdict": "full",
+      "autoVerdict": "full",
+      "coverage": 0.2683502532254738,
+      "chroma": 0.2683502532254738,
+      "distinctColors": 4
+    },
+    {
+      "id": "ecg",
+      "title": "ECG monitor — PQRST trace",
+      "tier": "composed",
+      "verdict": "full",
+      "autoVerdict": "full",
+      "coverage": 0.026010037353621927,
+      "chroma": 0.026010037353621927,
+      "distinctColors": 3
+    },
+    {
+      "id": "footprint",
+      "title": "Footprint — bid×ask volume",
+      "tier": "composed",
+      "verdict": "full",
+      "autoVerdict": "full",
+      "coverage": 0.6029287072896854,
+      "chroma": 0.6029287072896854,
+      "distinctColors": 5
+    },
+    {
+      "id": "sankey",
+      "title": "Fund-Flow Sankey — ribbon tessellation",
+      "tier": "composed",
+      "verdict": "full",
+      "autoVerdict": "full",
+      "coverage": 0.5427275018905974,
+      "chroma": 0.5427275018905974,
+      "distinctColors": 16
+    },
+    {
+      "id": "radial-seasonality",
+      "title": "Radial Seasonality Clock — polar projection",
+      "tier": "composed",
+      "verdict": "full",
+      "autoVerdict": "partial",
+      "coverage": 0.005820748447418475,
+      "chroma": 0.005820748447418475,
+      "distinctColors": 3
+    },
+    {
+      "id": "renko",
+      "title": "Renko — fixed-brick",
+      "tier": "composed",
+      "verdict": "full",
+      "autoVerdict": "full",
+      "coverage": 0.03829319155762312,
+      "chroma": 0.03829319155762312,
+      "distinctColors": 4
+    },
+    {
+      "id": "ridgeline",
+      "title": "Ridgeline — density bands",
+      "tier": "composed",
+      "verdict": "full",
+      "autoVerdict": "full",
+      "coverage": 0.30733093475720147,
+      "chroma": 0.3051767995050072,
+      "distinctColors": 929
+    },
+    {
+      "id": "sports-shot-chart",
+      "title": "Shot chart — made/missed",
+      "tier": "composed",
+      "verdict": "full",
+      "autoVerdict": "full",
+      "coverage": 0.04131814744368311,
+      "chroma": 0.04131814744368311,
+      "distinctColors": 12
+    },
+    {
+      "id": "streamgraph",
+      "title": "Streamgraph — volume flow",
+      "tier": "composed",
+      "verdict": "full",
+      "autoVerdict": "full",
+      "coverage": 0.6204367852968811,
+      "chroma": 0.6204367852968811,
+      "distinctColors": 372
+    },
+    {
+      "id": "treemap",
+      "title": "Treemap — market map",
+      "tier": "composed",
+      "verdict": "full",
+      "autoVerdict": "full",
+      "coverage": 0.7468891078671769,
+      "chroma": 0.7468891078671769,
+      "distinctColors": 22
+    },
+    {
+      "id": "volume-profile",
+      "title": "Volume Profile — volume by price",
+      "tier": "composed",
+      "verdict": "full",
+      "autoVerdict": "full",
+      "coverage": 0.18037445287256226,
+      "chroma": 0.18037445287256226,
+      "distinctColors": 3
+    },
+    {
+      "id": "weather-radar",
+      "title": "Weather radar — intensity field",
+      "tier": "composed",
+      "verdict": "full",
+      "autoVerdict": "full",
+      "coverage": 0.6307491349084493,
+      "chroma": 0.6498384398560855,
+      "distinctColors": 1010
+    },
+    {
+      "id": "contour",
+      "title": "Contour — iso-bands",
+      "tier": "walled",
+      "verdict": "full",
+      "autoVerdict": "full",
+      "coverage": 0.9024680890070353,
+      "chroma": 0.8652290487430392,
+      "distinctColors": 679
+    },
+    {
+      "id": "density-heatmap",
+      "title": "Density Heatmap — KDE glow",
+      "tier": "walled",
+      "verdict": "full",
+      "autoVerdict": "full",
+      "coverage": 0.40330453514219583,
+      "chroma": 0.8828746247450558,
+      "distinctColors": 674
+    },
+    {
+      "id": "spectrogram",
+      "title": "Spectrogram — frequency × time",
+      "tier": "walled",
+      "verdict": "full",
+      "autoVerdict": "full",
+      "coverage": 0.9024680890070353,
+      "chroma": 0.9024680890070353,
+      "distinctColors": 781
+    }
+  ]
+}
