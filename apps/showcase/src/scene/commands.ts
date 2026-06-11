@@ -34,12 +34,36 @@ export interface BufferUpload {
   offsetBytes?: number;
 }
 
+/**
+ * A producer-rasterized texture supplied to a `texturedQuad@1` view (heatmaps,
+ * spectrograms, weather radar). The pipeline can't compute per-pixel colour from
+ * a JSON manifest (the frontier wall), so the COLORMAP is rasterized upstream
+ * (at manifest-build time) into RGBA8 bytes and uploaded via
+ * EngineHost.setTexturePixels. The manifest's drawItem references it by
+ * textureId (setDrawItemTexture). Purity preserved — the engine only blits.
+ */
+export interface ViewTexture {
+  textureId: number;
+  width: number;
+  height: number;
+  /** RGBA8 pixel bytes (width*height*4), base64-encoded. */
+  pixelsB64: string;
+  /** Texture format: 0 = R8, otherwise RGBA8 (default). */
+  format?: number;
+}
+
 /** A full manifest: structural/style commands + the binary data that feeds them. */
 export interface SceneManifest {
   /** Human-readable label (shown in the title bar). */
   label: string;
   /** Ordered control commands (applied inside one frame). */
   commands: SceneCommand[];
+  /**
+   * Optional producer-rasterized textures for `texturedQuad@1` views — applied
+   * via EngineHost.setTexturePixels when the manifest loads (the walled-tier
+   * escape hatch, ENC-532). Absent for non-texture views.
+   */
+  textures?: ViewTexture[];
   /**
    * Binary buffer uploads applied via the data plane after the frame. OPTIONAL:
    * catalog views (capture/replay model, CONTRACT-view-catalog.md) carry NO
