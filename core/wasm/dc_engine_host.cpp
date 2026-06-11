@@ -42,15 +42,56 @@
 #include <string>
 #include <vector>
 
+#include <cstring>
+#include <map>
+
 #include "dc/scene/Scene.hpp"
 #include "dc/scene/ResourceRegistry.hpp"
 #include "dc/commands/CommandProcessor.hpp"
 #include "dc/ingest/IngestProcessor.hpp"
 #include "dc/render/CpuBufferStore.hpp"
+#include "dc/render/GpuDevice.hpp"
 #include "dc/gpu/DawnSceneRenderer.hpp"
+#include "dc/gpu/DawnTexturedQuadBackend.hpp"
 #include "dc/debug/Stats.hpp"
 
 namespace {
+
+// ENC-532 (T3.6) — in-memory TextureSource for the WASM EngineHost. The
+// texturedQuad@1 pipeline (heatmap/spectrogram/weather colormaps) needs CPU
+// pixels for a logical textureId; the browser uploads them via
+// DcEngineHost::setTexturePixels and they are cached here keyed by textureId.
+// The DawnTexturedQuadBackend pulls them on first use (lazily) and uploads to a
+// wgpu::Texture. Mirrors core/tests/d36_1_dawn_texquad.cpp's MemTextureSource.
+class MemTextureSource final : public dc::TextureSource {
+public:
+  struct Tex {
+    std::vector<std::uint8_t> pixels;
+    std::uint32_t w{0};
+    std::uint32_t h{0};
+    dc::TextureFormat format{dc::TextureFormat::RGBA8};
+  };
+
+  void set(std::uint32_t id, std::vector<std::uint8_t> pixels, std::uint32_t w,
+           std::uint32_t h, dc::TextureFormat fmt) {
+    textures_[id] = Tex{std::move(pixels), w, h, fmt};
+  }
+
+  bool getTexturePixels(std::uint32_t id, const std::uint8_t** outData,
+                        std::uint32_t* outW, std::uint32_t* outH,
+                        dc::TextureFormat* outFmt) const override {
+    auto it = textures_.find(id);
+    if (it == textures_.end()) return false;
+    *outData = it->second.pixels.data();
+    *outW = it->second.w;
+    *outH = it->second.h;
+    *outFmt = it->second.format;
+    return true;
+  }
+
+private:
+  std::map<std::uint32_t, Tex> textures_;
+};
 
 // Result of applyControl — mirrors the TS EngineHost.applyControl return shape
 // ({ ok } | { ok:false, error }). Marshalled to a plain JS object via Embind.
@@ -122,6 +163,26 @@ public:
       else
         store_.setCpuData(id, nullptr, 0);
     }
+  }
+
+  // ---- textures: setTexturePixels(...) -> TextureSource -----------------
+  // ENC-532 (T3.6) — upload CPU pixels for a logical textureId so the
+  // texturedQuad@1 pipeline can sample them (heatmap/spectrogram/weather
+  // colormaps). The pixels cross the JS boundary as a Uint8Array
+  // (emscripten::val); we copy their raw bytes verbatim (NOT via std::string,
+  // which would UTF-8-mangle them) — the SAME marshalling applyDataBatch uses.
+  // `format` is a dc::TextureFormat code (0 = R8, 1 = RGBA8); anything other
+  // than R8 is treated as RGBA8. The DawnTexturedQuadBackend uploads these into
+  // a wgpu::Texture lazily on first use, so updating a textureId between renders
+  // is picked up on the next draw of any DrawItem bound to it via
+  // setDrawItemTexture (the texture cache keys on textureId).
+  void setTexturePixels(std::uint32_t textureId, emscripten::val pixels,
+                        std::uint32_t w, std::uint32_t h, std::uint32_t format) {
+    std::vector<std::uint8_t> bytes =
+        emscripten::convertJSArrayToNumberVector<std::uint8_t>(pixels);
+    dc::TextureFormat fmt = (format == 0) ? dc::TextureFormat::R8
+                                          : dc::TextureFormat::RGBA8;
+    textureSource_.set(textureId, std::move(bytes), w, h, fmt);
   }
 
   // ---- render: render(w,h) -> framebuffer readback ----------------------
@@ -244,7 +305,12 @@ private:
   // fails.
   bool ensureRenderer() {
     if (renderer_) return true;
-    renderer_ = std::make_unique<dc::DawnSceneRenderer>();
+    // ENC-532: supply the in-memory TextureSource so texturedQuad@1 registers
+    // and can sample browser-uploaded colormap pixels (setTexturePixels). The
+    // glyph atlas (textSDF@1) is still null. The source is owned by this host
+    // and outlives the renderer; the backend holds it non-owning.
+    renderer_ = std::make_unique<dc::DawnSceneRenderer>(
+        /*atlas=*/nullptr, &textureSource_);
     if (!renderer_->init()) {
       renderMessage_ =
           "DawnSceneRenderer::init failed: " + renderer_->errorMessage();
@@ -268,6 +334,10 @@ private:
   dc::CommandProcessor cp_;
   dc::IngestProcessor ingest_{};
   dc::CpuBufferStore store_{};
+  // ENC-532: CPU pixels for texturedQuad@1, keyed by textureId. Owned here so it
+  // outlives renderer_ (the backend references it non-owning). Declared BEFORE
+  // renderer_ so it is destroyed AFTER it.
+  MemTextureSource textureSource_{};
   std::unique_ptr<dc::DawnSceneRenderer> renderer_;
 
   std::vector<std::uint8_t> framebuffer_;
@@ -303,6 +373,7 @@ EMSCRIPTEN_BINDINGS(dc_engine_host) {
       .constructor<>()
       .function("applyControl", &DcEngineHost::applyControl)
       .function("applyDataBatch", &DcEngineHost::applyDataBatch)
+      .function("setTexturePixels", &DcEngineHost::setTexturePixels)
       .function("render", &DcEngineHost::render)
       .function("pick", &DcEngineHost::pick)
       .function("dispose", &DcEngineHost::dispose)

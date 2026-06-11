@@ -7,7 +7,7 @@
  * do not conflict with the engine-host surface.
  */
 
-export { EngineHost } from "./EngineHost";
+export { EngineHost, TextureFormat } from "./EngineHost";
 export type {
   EngineHostHudSink,
   EngineStats,

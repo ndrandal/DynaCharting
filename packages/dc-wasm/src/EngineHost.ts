@@ -75,6 +75,25 @@ export type TransformParams = {
   sy: number;
 };
 
+/**
+ * Texture pixel format for setTexturePixels — mirrors the C++ dc::TextureFormat
+ * codes (0 = R8 single-channel, 1 = RGBA8). RGBA8 is the default for the
+ * texturedQuad@1 colormap escape hatch. (ENC-532)
+ */
+export const enum TextureFormat {
+  R8 = 0,
+  RGBA8 = 1,
+}
+
+/** A texture upload buffered until the WASM module is ready (init is async). */
+type PendingTexture = {
+  textureId: number;
+  pixels: Uint8Array;
+  w: number;
+  h: number;
+  format: number;
+};
+
 type EngineErrorCode =
   | "UNKNOWN_PIPELINE"
   | "VALIDATION_NO_GEOMETRY"
@@ -114,6 +133,8 @@ export class EngineHost {
   // Commands/batches buffered until the WASM module is ready (init is async).
   private pendingControl: string[] = [];
   private dataQueue: ArrayBuffer[] = [];
+  // Texture uploads buffered until the WASM module is ready (ENC-532).
+  private pendingTextures: PendingTexture[] = [];
   private droppedBatches = 0;
   private readonly MAX_QUEUE = 512;
 
@@ -187,6 +208,13 @@ export class EngineHost {
     this.core = new mod.DcEngineHost();
     this.ready = true;
 
+    // Flush buffered texture uploads first so any control command / draw that
+    // references a textureId finds its pixels already present (ENC-532).
+    for (const t of this.pendingTextures) {
+      this.core.setTexturePixels(t.textureId, t.pixels, t.w, t.h, t.format);
+    }
+    this.pendingTextures = [];
+
     // Flush buffered control commands + data batches in order.
     for (const json of this.pendingControl) {
       const r = this.core.applyControl(json);
@@ -237,6 +265,7 @@ export class EngineHost {
     this.ctx2d = null;
     this.pendingControl = [];
     this.dataQueue = [];
+    this.pendingTextures = [];
     this.lastErrors = [];
   }
 
@@ -264,6 +293,44 @@ export class EngineHost {
   /** Same as enqueueData (engine-host parity). */
   applyDataBatch(batch: ArrayBuffer): void {
     this.enqueueData(batch);
+  }
+
+  // -------------------- textures (ENC-532) --------------------
+  /**
+   * Upload CPU pixels for a logical textureId so the texturedQuad@1 pipeline can
+   * sample them — the escape hatch that lets heatmap/spectrogram/weather views
+   * render a producer-rasterized colormap texture. Bind a DrawItem to the
+   * textureId via the `setDrawItemTexture` control command. The pixels are
+   * tightly packed (RGBA8 = 4 B/px, R8 = 1 B/px), row-major from row 0.
+   *
+   * Buffered until the WASM module is ready, then replayed (init is async).
+   *
+   * @param id      logical textureId referenced by setDrawItemTexture
+   * @param bytes   tightly-packed pixel bytes
+   * @param w       width in pixels
+   * @param h       height in pixels
+   * @param format  TextureFormat (default RGBA8)
+   */
+  setTexturePixels(
+    id: number,
+    bytes: Uint8Array,
+    w: number,
+    h: number,
+    format: TextureFormat = TextureFormat.RGBA8,
+  ): void {
+    this.frameDirty = true;
+    if (this.ready && this.core) {
+      this.core.setTexturePixels(id, bytes, w, h, format);
+      return;
+    }
+    // Copy the bytes so a caller-reused buffer can't mutate the buffered upload.
+    this.pendingTextures.push({
+      textureId: id,
+      pixels: bytes.slice(),
+      w,
+      h,
+      format,
+    });
   }
 
   // -------------------- control plane --------------------
