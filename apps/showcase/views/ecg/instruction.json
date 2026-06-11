@@ -1,0 +1,7 @@
+{
+  "id": "showcase-ecg",
+  "sessionId": "showcase",
+  "note": "STATIC computed view — no live subscriptions. The PQRST trace is baked into manifest.ts uploads from apps/showcase/data/synthetic/ecg.json at build time; there is no capture/embassy path. This stub exists only to satisfy the per-view directory contract.",
+  "subscriptions": [],
+  "visualization": { "recipe": "showcase-explicit-v1", "bindings": [], "buffers": [] }
+}

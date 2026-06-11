@@ -1,0 +1,8 @@
+{
+  "id": "weather-radar",
+  "title": "Weather radar — intensity field",
+  "tier": "composed",
+  "referenceTool": "weather radar / NEXRAD",
+  "blurb": "A NEXRAD-style weather radar sweep — a 16×16 intensity field rasterized into an RGBA8 radar colormap (green→yellow→red→magenta) and blitted onto a texturedQuad. The ViewTexture escape hatch, pointed at meteorology.",
+  "datasetId": "heatmap"
+}

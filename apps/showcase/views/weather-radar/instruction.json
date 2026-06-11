@@ -1,0 +1,7 @@
+{
+  "id": "showcase-weather-radar",
+  "sessionId": "showcase",
+  "note": "STATIC computed view — no live subscriptions. A representative frame of apps/showcase/data/synthetic/heatmap.json is rasterized into an RGBA8 radar colormap and baked into manifest.ts (textures + a texturedQuad uploads) at build time; there is no capture/embassy path. This stub exists only to satisfy the per-view directory contract.",
+  "subscriptions": [],
+  "visualization": { "recipe": "showcase-explicit-v1", "bindings": [], "buffers": [] }
+}
