@@ -30,6 +30,26 @@ struct TransformParams {
   float tx{0}, ty{0}, sx{1}, sy{1};
 };
 
+// ENC-613 (P2.3) — coordinate mode (RESEARCH §4.2/§4.3). The affine mat3 is a
+// CARTESIAN transform (data x,y -> clip x,y); it cannot express POLAR (data
+// angle,radius -> clip x,y = center + r*(cos theta, sin theta)). The polar slot
+// is therefore a distinct coords mode, applied by the encode pass at COMPILE time
+// (the renderer stays dumb — it only ever sees clip-space geometry). This is what
+// radial / pie / rose charts need.
+enum class CoordsMode : std::uint8_t {
+  Cartesian = 0,  // data (x,y) -> clip (x,y) via the affine mat3 (the default)
+  Polar     = 1,  // data (angle,radius) -> clip (cx + r*cos, cy + r*sin)
+};
+
+// ENC-613 — polar coordinate parameters: the clip-space center the angle/radius
+// is measured from. Angles are in RADIANS (0 = +x axis, CCW). The radius is in
+// CLIP units (so a unit circle r=1 fills the [-1,1] viewport). A scale upstream
+// maps the data radius column into clip radius; the angle column maps to radians.
+struct PolarParams {
+  float centerX{0.0f};  // clip-space center x
+  float centerY{0.0f};  // clip-space center y
+};
+
 struct Transform {
   Id id{0};
   TransformParams params{};

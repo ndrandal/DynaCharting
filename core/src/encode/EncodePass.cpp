@@ -3,6 +3,7 @@
 // See EncodePass.hpp for the contract.
 #include "dc/encode/EncodePass.hpp"
 
+#include <cmath>
 #include <cstring>
 
 namespace dc {
@@ -14,6 +15,8 @@ const char* toString(Mark m) {
     case Mark::Rect: return "rect";
     case Mark::Candle: return "candle";
     case Mark::RectColor: return "rectColor";
+    case Mark::PointColor: return "pointColor";
+    case Mark::Arc: return "arc";
   }
   return "unknown";
 }
@@ -54,6 +57,18 @@ MarkSpec markSpecOf(Mark mark, LineStyle lineStyle) {
       // RGBA8 + reserved scalar lane), one instance per row. Same position
       // channels as Rect; the per-row color rides Encoding::setColorField.
       return {"instancedRectColor@1", VertexFormat::Rect4Color,
+              {Channel::X, Channel::Y, Channel::X2, Channel::Y2}};
+    case Mark::PointColor:
+      // ENC-609 — instancedPointColor@1, Point4Color (pos2 + packed RGBA8 +
+      // size), one instance per row. Position channels x,y + a per-row Size
+      // (point diameter in pixels); the per-row color rides setColorField.
+      return {"instancedPointColor@1", VertexFormat::Point4Color,
+              {Channel::X, Channel::Y, Channel::Size}};
+    case Mark::Arc:
+      // ENC-613 — the polar wedge, tessellated to triGradient@1 (Pos2Color4).
+      // Channels are POLAR: X=theta, Y=r (inner radius), X2=theta2, Y2=r2 (outer
+      // radius). The compile path maps them to clip space and fans the wedge.
+      return {"triGradient@1", VertexFormat::Pos2Color4,
               {Channel::X, Channel::Y, Channel::X2, Channel::Y2}};
     case Mark::Candle:
       // instancedCandle@1 — Candle6 (x, open, high, low, close, halfWidth).
@@ -128,8 +143,16 @@ bool resolveRow(Mark mark, const Encoding& enc, std::size_t row,
     case Mark::Point:
     case Mark::Line:
       return get(Channel::X, rv.x) && get(Channel::Y, rv.y);
+    case Mark::PointColor:
+      // x,y position + a per-row size (point diameter, pixels).
+      return get(Channel::X, rv.x) && get(Channel::Y, rv.y) &&
+             get(Channel::Size, rv.size);
     case Mark::Rect:
     case Mark::RectColor:
+      return get(Channel::X, rv.x) && get(Channel::Y, rv.y) &&
+             get(Channel::X2, rv.x2) && get(Channel::Y2, rv.y2);
+    case Mark::Arc:
+      // POLAR: x=theta, y=r (inner), x2=theta2, y2=r2 (outer).
       return get(Channel::X, rv.x) && get(Channel::Y, rv.y) &&
              get(Channel::X2, rv.x2) && get(Channel::Y2, rv.y2);
     case Mark::Candle:
@@ -140,7 +163,71 @@ bool resolveRow(Mark mark, const Encoding& enc, std::size_t row,
   return false;
 }
 
+// ENC-613 — POLAR mapping: data (angle radians, radius clip) -> clip (x,y).
+//   x = cx + r * cos(theta) ,  y = cy + r * sin(theta)
+// The affine mat3 cannot express this; the encode pass bakes it at compile time
+// so the renderer only ever sees clip-space geometry. Returns the clip point.
+inline void polarToClip(const PolarParams& p, double theta, double r,
+                        float& outX, float& outY) {
+  outX = static_cast<float>(p.centerX + r * std::cos(theta));
+  outY = static_cast<float>(p.centerY + r * std::sin(theta));
+}
+
+// ENC-613 — tessellate ONE wedge spanning [theta0,theta1] x [r0,r1] into a
+// triangle list of Pos2Color4 vertices (pos2 + per-vertex RGBA), in `out`. The
+// wedge is split into `segs` angular slices; each slice is the quad between the
+// inner-arc and outer-arc samples (two triangles = 6 verts). A pie SLICE (r0==0)
+// degenerates to a triangle fan from the center — the inner samples all collapse
+// to the center, which the quad emission handles for free. Returns the number of
+// vertices emitted (segs * 6).
+inline std::uint32_t tessellateWedge(std::vector<std::uint8_t>& out,
+                                     const PolarParams& polar, double theta0,
+                                     double r0, double theta1, double r1,
+                                     const Rgba& col, int segs,
+                                     void (*pushF32)(std::vector<std::uint8_t>&,
+                                                     float)) {
+  if (segs < 1) segs = 1;
+  auto pushVert = [&](float x, float y) {
+    pushF32(out, x);
+    pushF32(out, y);
+    pushF32(out, col.r);
+    pushF32(out, col.g);
+    pushF32(out, col.b);
+    pushF32(out, col.a);
+  };
+  std::uint32_t verts = 0;
+  for (int s = 0; s < segs; ++s) {
+    const double ta = theta0 + (theta1 - theta0) * (double(s) / segs);
+    const double tb = theta0 + (theta1 - theta0) * (double(s + 1) / segs);
+    float iax, iay, ibx, iby, oax, oay, obx, oby;
+    polarToClip(polar, ta, r0, iax, iay);  // inner @ ta
+    polarToClip(polar, tb, r0, ibx, iby);  // inner @ tb
+    polarToClip(polar, ta, r1, oax, oay);  // outer @ ta
+    polarToClip(polar, tb, r1, obx, oby);  // outer @ tb
+    // quad (inner_a, outer_a, outer_b) + (inner_a, outer_b, inner_b)
+    pushVert(iax, iay); pushVert(oax, oay); pushVert(obx, oby);
+    pushVert(iax, iay); pushVert(obx, oby); pushVert(ibx, iby);
+    verts += 6;
+  }
+  return verts;
+}
+
 }  // namespace
+
+// ---------------------------------------------------------------------------
+// ENC-613 — the polar ARC/wedge compile. Each row is an INDEPENDENT wedge (no
+// adjacent-row coupling like lines), tessellated to a FIXED `segmentsPerArc * 6`
+// Pos2Color4 vertices, so the byte offset of row r's tail is regular (r * fixed
+// stride) and the incremental class-1 path works exactly like rect/point. Color
+// is the per-row resolved color (setColorField packed RGBA8 -> 0..1, or the
+// constant fallback), baked per-vertex into the gradient format.
+// ---------------------------------------------------------------------------
+static void compileArc(const PipelineCatalog& catalog, const Encoding& enc,
+                       const TableStore& tables, Id tableId,
+                       const BufferByteSource& src, Id geometryId, Id drawItemId,
+                       Id vertexBufferId, std::size_t fromRow,
+                       const RowIdentity* rowIds, const ArcOptions& arcOpts,
+                       CpuBufferStore* store, EncodeResult& res);
 
 // ---------------------------------------------------------------------------
 // The shared compile core. Packs rows [fromRow, totalRows) into `out` (bytes) and
@@ -369,6 +456,29 @@ static void compileCore(const PipelineCatalog& catalog, Mark mark,
       pushU32(out, 0u);
       ids.push_back(rowId(r));
     }
+  } else if (mark == Mark::PointColor) {
+    // ENC-609 — Point4Color: x, y (f32) + packed RGBA8 color (per row,
+    // pre-resolved) + size (f32, point diameter in pixels). The per-point sibling
+    // of RectColor; color rides setColorField, size rides the Size channel.
+    for (std::size_t r = packFrom; r < totalRows; ++r) {
+      RowVals rv;
+      if (!resolveRow(mark, enc, r, tables, tableId, src, rv, rowErr)) {
+        res.error = rowErr;
+        res.message = "row " + std::to_string(r) + ": " + toString(rowErr);
+        return;
+      }
+      auto rgba8 = enc.resolveColorRgba8(r, tables, tableId, src);
+      if (!rgba8) {
+        res.error = EncodeError::UnresolvableChannel;
+        res.message = "row " + std::to_string(r) + ": color column unresolvable";
+        return;
+      }
+      pushF32(out, static_cast<float>(rv.x));
+      pushF32(out, static_cast<float>(rv.y));
+      pushU32(out, *rgba8);                         // per-point packed RGBA8
+      pushF32(out, static_cast<float>(rv.size));    // per-point size (pixels)
+      ids.push_back(rowId(r));
+    }
   } else {  // Candle
     for (std::size_t r = packFrom; r < totalRows; ++r) {
       RowVals rv;
@@ -409,8 +519,15 @@ EncodeResult EncodePass::compile(Mark mark, const Encoding& enc,
                                  const BufferByteSource& src, Id geometryId,
                                  Id drawItemId, Id vertexBufferId,
                                  const RowIdentity* rowIds,
-                                 LineStyle lineStyle) const {
+                                 LineStyle lineStyle,
+                                 const ArcOptions& arc) const {
   EncodeResult res;
+  if (mark == Mark::Arc) {
+    compileArc(catalog_, enc, tables, tableId, src, geometryId, drawItemId,
+               vertexBufferId, /*fromRow=*/0, rowIds, arc, /*store=*/nullptr,
+               res);
+    return res;
+  }
   compileCore(catalog_, mark, enc, tables, tableId, src, geometryId, drawItemId,
               vertexBufferId, /*fromRow=*/0, rowIds, lineStyle,
               /*store=*/nullptr, res);
@@ -424,11 +541,136 @@ EncodeResult EncodePass::compileInto(Mark mark, const Encoding& enc,
                                      Id drawItemId, Id vertexBufferId,
                                      std::size_t fromRow,
                                      const RowIdentity* rowIds,
-                                     LineStyle lineStyle) const {
+                                     LineStyle lineStyle,
+                                     const ArcOptions& arc) const {
   EncodeResult res;
+  if (mark == Mark::Arc) {
+    compileArc(catalog_, enc, tables, tableId, src, geometryId, drawItemId,
+               vertexBufferId, fromRow, rowIds, arc, &store, res);
+    return res;
+  }
   compileCore(catalog_, mark, enc, tables, tableId, src, geometryId, drawItemId,
               vertexBufferId, fromRow, rowIds, lineStyle, &store, res);
   return res;
+}
+
+// ---------------------------------------------------------------------------
+// ENC-613 — compileArc implementation (declared above compileCore). Mirrors the
+// rect/point per-row loop but emits a FIXED-size tessellated wedge per row into
+// the Pos2Color4 (triGradient@1) format. The fixed per-wedge vertex count keeps
+// the incremental byte offsets regular (row r tail begins at r * wedgeStride).
+// ---------------------------------------------------------------------------
+static void compileArc(const PipelineCatalog& catalog, const Encoding& enc,
+                       const TableStore& tables, Id tableId,
+                       const BufferByteSource& src, Id geometryId, Id drawItemId,
+                       Id vertexBufferId, std::size_t fromRow,
+                       const RowIdentity* rowIds, const ArcOptions& arcOpts,
+                       CpuBufferStore* store, EncodeResult& res) {
+  res = EncodeResult{};
+  const MarkSpec spec = markSpecOf(Mark::Arc);
+
+  // ----- gate 1: pipeline exists ---------------------------------------------
+  const PipelineSpec* ps = catalog.find(spec.pipeline);
+  if (!ps) {
+    res.error = EncodeError::UnknownPipeline;
+    res.message = "pipeline not in catalog: " + spec.pipeline;
+    return;
+  }
+  // ----- gate 2: exact-stride (format == requiredVertexFormat) ----------------
+  if (spec.format != ps->requiredVertexFormat) {
+    res.error = EncodeError::FormatMismatch;
+    res.message = std::string("mark arc packs ") + toString(spec.format) +
+                  " but " + spec.pipeline + " requires " +
+                  toString(ps->requiredVertexFormat);
+    return;
+  }
+  // ----- gate 3: every required channel is bound ------------------------------
+  for (Channel ch : spec.required) {
+    if (!enc.has(ch)) {
+      res.error = EncodeError::MissingChannel;
+      res.message = std::string("mark arc requires channel ") + toString(ch);
+      return;
+    }
+  }
+  // ----- row count + lockstep -------------------------------------------------
+  if (!tables.rowCountConsistent(tableId, src)) {
+    res.error = EncodeError::RaggedTable;
+    res.message = "table columns disagree on row count (lockstep broken)";
+    return;
+  }
+  const std::size_t totalRows = tables.rowCount(tableId, src);
+
+  int segs = arcOpts.segmentsPerArc;
+  if (segs < 1) segs = 1;
+  // Fixed per-wedge geometry: segs angular slices * 6 verts/slice * 24B/vertex.
+  const std::uint32_t vertsPerWedge = static_cast<std::uint32_t>(segs) * 6u;
+  const std::uint32_t stride = strideOf(spec.format);  // 24B (Pos2Color4)
+  const std::uint32_t wedgeBytes = vertsPerWedge * stride;
+
+  // ----- geometry + draw-item descriptors (whole table) -----------------------
+  res.geometry.id = geometryId;
+  res.geometry.vertexBufferId = vertexBufferId;
+  res.geometry.format = spec.format;  // pos2_color4; satisfies the gate
+  res.geometry.vertexCount = static_cast<std::uint32_t>(totalRows) * vertsPerWedge;
+
+  res.drawItem.id = drawItemId;
+  res.drawItem.pipeline = spec.pipeline;
+  res.drawItem.geometryId = geometryId;
+  applyColors(enc, Mark::Arc, res.drawItem);  // uniform fallback (unused by frag)
+
+  res.instanceCount = 0;  // Triangles draw (vertex mark), not instanced.
+
+  std::size_t packFrom = fromRow;
+  if (packFrom > totalRows) packFrom = totalRows;
+  const std::uint32_t storeOffset =
+      static_cast<std::uint32_t>(packFrom) * wedgeBytes;
+
+  std::vector<std::uint8_t>& out = res.bytes;
+  out.clear();
+  std::vector<std::int32_t>& ids = res.instanceRowIds;
+  ids.clear();
+
+  auto rowId = [&](std::size_t row) -> std::int32_t {
+    if (!rowIds || !rowIds->bound()) return RowIdentity::kNoRowId;
+    return rowIds->idAt(src, row);
+  };
+
+  for (std::size_t r = packFrom; r < totalRows; ++r) {
+    RowVals rv;
+    EncodeError rowErr = EncodeError::Ok;
+    if (!resolveRow(Mark::Arc, enc, r, tables, tableId, src, rv, rowErr)) {
+      res.error = rowErr;
+      res.message = "row " + std::to_string(r) + ": " + toString(rowErr);
+      return;
+    }
+    // Per-row color: prefer the per-row packed RGBA8 (setColorField), else the
+    // constant color. Unpack to 0..1 floats for the per-vertex gradient format.
+    auto rgba8 = enc.resolveColorRgba8(r, tables, tableId, src);
+    if (!rgba8) {
+      res.error = EncodeError::UnresolvableChannel;
+      res.message = "row " + std::to_string(r) + ": color column unresolvable";
+      return;
+    }
+    const std::uint32_t c = *rgba8;
+    const Rgba col{static_cast<float>(c & 0xFFu) / 255.0f,
+                   static_cast<float>((c >> 8) & 0xFFu) / 255.0f,
+                   static_cast<float>((c >> 16) & 0xFFu) / 255.0f,
+                   static_cast<float>((c >> 24) & 0xFFu) / 255.0f};
+    // POLAR: X=theta, Y=r0 (inner), X2=theta2, Y2=r1 (outer).
+    tessellateWedge(out, arcOpts.polar, rv.x, rv.y, rv.x2, rv.y2, col, segs,
+                    &pushF32);
+    ids.push_back(rowId(r));
+  }
+
+  if (store && !out.empty()) {
+    store->writeRange(vertexBufferId, storeOffset, out.data(),
+                      static_cast<std::uint32_t>(out.size()));
+  } else if (store && out.empty() && packFrom == 0) {
+    store->reserve(vertexBufferId, 0);
+  }
+
+  res.ok = true;
+  res.error = EncodeError::Ok;
 }
 
 }  // namespace dc

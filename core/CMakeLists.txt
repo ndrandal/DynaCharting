@@ -1706,6 +1706,31 @@ if (DC_BUILD_TESTS)
     target_link_libraries(dc_enc608_dawn_rect_color PRIVATE dc_gpu)
     add_test(NAME dc_enc608_dawn_rect_color COMMAND dc_enc608_dawn_rect_color)
 
+    # ENC-609 (P2.2) — instancedPointColor@1 (per-point color + size) on Dawn.
+    # Renders four quadrant dots, each a DIFFERENT packed-RGBA8 color AND a
+    # DIFFERENT pixel size, in ONE instanced draw, reads back, and asserts each
+    # dot shows its OWN color, the four are mutually DISTINCT, and the per-point
+    # SIZE distinguishes a large dot from a small one (not a shared uniform).
+    # Links only dc_gpu.
+    add_executable(dc_enc609_dawn_point_color
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/d_enc609_dawn_point_color.cpp"
+    )
+    target_link_libraries(dc_enc609_dawn_point_color PRIVATE dc_gpu)
+    add_test(NAME dc_enc609_dawn_point_color COMMAND dc_enc609_dawn_point_color)
+
+    # ENC-613 (P2.3) — polar coords + arc/wedge mark on Dawn. Drives the whole
+    # polar path: an (angle,radius) table -> the encode pass Mark::Arc (POLAR
+    # coords) tessellates each wedge into a triGradient@1 fan in clip space (cx +
+    # r*cos, cy + r*sin) -> DawnTriGradientBackend rasterizes a 4-slice pie.
+    # Asserts a NON-BLANK render with 4 DISTINCT slice colors at the screen
+    # positions polar geometry predicts (an affine mat3 could not), plus the
+    # frame corner outside the disc stays clear. Links only dc_gpu.
+    add_executable(dc_enc613_dawn_polar_arc
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/d_enc613_dawn_polar_arc.cpp"
+    )
+    target_link_libraries(dc_enc613_dawn_polar_arc PRIVATE dc_gpu)
+    add_test(NAME dc_enc613_dawn_polar_arc COMMAND dc_enc613_dawn_polar_arc)
+
     # ENC-606 (P1.15) — THE PROOF, RENDERED: candlestick + SMA(20) from a RAW OHLC
     # feed end to end through the manifest path (PivotIngest -> trivial CPU SMA ->
     # TimeScale x + LinearScale y -> candle + line marks -> byte-exact geometry),

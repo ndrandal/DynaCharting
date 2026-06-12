@@ -595,7 +595,214 @@ int main() {
     check(llFull.geometry.vertexCount == 8, "incr-line: LL whole table = 8 verts");
   }
 
-  std::printf("=== ENC-600/601/603/604 Results: %d passed, %d failed ===\n",
+  // =========================================================================
+  // ENC-609 — POINTCOLOR mark -> instancedPointColor@1 (Point4Color, 16B
+  // /instance: pos2 f32 + packed RGBA8 + size f32). A scatter of per-point
+  // colored + sized dots; assert exact bytes (x,y at off 0/4, packed RGBA8 @8,
+  // size @12) and that validateDrawItem ACCEPTS the produced point4_color geo.
+  // =========================================================================
+  {
+    dc::IngestProcessor ingest;
+    dc::TableStore tables;
+    auto src = dc::makeBufferByteSource(ingest);
+    const dc::Id kTable = 9, kX = 90, kY = 91, kSz = 92, kCol = 93;
+    tables.defineTable(kTable, "scatter");
+    tables.addColumn(kTable, "x", dc::DType::F32, kX);
+    tables.addColumn(kTable, "y", dc::DType::F32, kY);
+    tables.addColumn(kTable, "sz", dc::DType::F32, kSz);
+    tables.addColumn(kTable, "col", dc::DType::I32, kCol);
+
+    const std::uint32_t kRed   = 0xFF0000FFu;
+    const std::uint32_t kGreen = 0xFF00FF00u;
+    const std::uint32_t kBlue  = 0xFFFF0000u;
+
+    appendF32(ingest, kX,  {-0.5f, 0.0f, 0.5f});
+    appendF32(ingest, kY,  { 0.1f, 0.2f, 0.3f});
+    appendF32(ingest, kSz, { 4.0f, 8.0f, 16.0f});  // distinct sizes (pixels)
+    {
+      const std::int32_t cols[3] = {static_cast<std::int32_t>(kRed),
+                                    static_cast<std::int32_t>(kGreen),
+                                    static_cast<std::int32_t>(kBlue)};
+      std::vector<std::uint8_t> batch;
+      appendRecord(batch, kCol, cols, sizeof(cols));
+      ingest.processBatch(batch.data(),
+                          static_cast<std::uint32_t>(batch.size()));
+    }
+
+    dc::Encoding enc;
+    enc.field(dc::Channel::X, "x").field(dc::Channel::Y, "y")
+       .field(dc::Channel::Size, "sz");
+    enc.setColorField("col");  // per-point packed RGBA8
+
+    auto res = pass.compile(dc::Mark::PointColor, enc, tables, kTable, src,
+                            190, 290, 390);
+    check(res.ok, "pointColor: compile ok");
+    check(res.geometry.format == dc::VertexFormat::Point4Color,
+          "pointColor: geometry format == Point4Color");
+    check(res.drawItem.pipeline == "instancedPointColor@1",
+          "pointColor: pipeline == instancedPointColor@1");
+    check(res.instanceCount == 3, "pointColor: 3 instances for 3 rows");
+    check(res.bytes.size() == 3u * 16u,
+          "pointColor: 3 * 16B byte length (exact Point4Color stride)");
+
+    // Byte-exact: per instance [x f32 @0][y f32 @4][rgba8 u32 @8][size f32 @12].
+    const float exx[3] = {-0.5f, 0.0f, 0.5f};
+    const float exy[3] = { 0.1f, 0.2f, 0.3f};
+    const float exs[3] = { 4.0f, 8.0f, 16.0f};
+    const std::uint32_t exc[3] = {kRed, kGreen, kBlue};
+    bool bytesOk = true;
+    for (int i = 0; i < 3; ++i) {
+      if (!eqf(f32At(res.bytes, i * 16 + 0), exx[i])) bytesOk = false;
+      if (!eqf(f32At(res.bytes, i * 16 + 4), exy[i])) bytesOk = false;
+      std::uint32_t c = 0;
+      std::memcpy(&c, res.bytes.data() + i * 16 + 8, 4);
+      if (c != exc[i]) bytesOk = false;
+      if (!eqf(f32At(res.bytes, i * 16 + 12), exs[i])) bytesOk = false;
+    }
+    check(bytesOk,
+          "pointColor: bytes are exactly [x,y][packed RGBA8 @8][size @12]");
+
+    auto vr = wireAndValidate(res, 90, 190, 290,
+                              static_cast<std::uint32_t>(res.bytes.size()),
+                              "instancedPointColor@1");
+    check(vr.ok, "pointColor: validateDrawItem ACCEPTS the point4_color geometry");
+
+    // REJECT: binding the SAME point4_color geometry to points@1 (Pos2_Clip).
+    auto bad = wireAndValidate(res, 90, 190, 290,
+                               static_cast<std::uint32_t>(res.bytes.size()),
+                               "points@1");
+    check(!bad.ok && bad.err.code == "VALIDATION_VERTEX_FORMAT_MISMATCH",
+          "pointColor: mismatched pipeline (points@1) is REJECTED");
+
+    // REJECT at COMPILE: a pointColor missing the Size channel cannot be packed.
+    dc::Encoding noSize;
+    noSize.field(dc::Channel::X, "x").field(dc::Channel::Y, "y");
+    noSize.setColorField("col");
+    auto miss = pass.compile(dc::Mark::PointColor, noSize, tables, kTable, src,
+                             190, 290, 390);
+    check(!miss.ok && miss.error == dc::EncodeError::MissingChannel,
+          "pointColor: missing required Size channel is REJECTED at compile");
+  }
+
+  // =========================================================================
+  // ENC-613 — ARC mark -> triGradient@1 (Pos2Color4) via POLAR coords. Two
+  // wedges (a pie of two slices) at distinct angles + distinct colors. Assert
+  // the tessellated triangle geometry maps (theta,r) -> clip (cx + r*cos, cy +
+  // r*sin) exactly, that the per-vertex color is the row's color, that the
+  // vertex count is fixed (segs * 6 / wedge), and validateDrawItem ACCEPTS it.
+  // =========================================================================
+  {
+    dc::IngestProcessor ingest;
+    dc::TableStore tables;
+    auto src = dc::makeBufferByteSource(ingest);
+    const dc::Id kTable = 11, kT0 = 110, kR0 = 111, kT1 = 112, kR1 = 113,
+                 kCol = 114;
+    tables.defineTable(kTable, "pie");
+    tables.addColumn(kTable, "t0", dc::DType::F32, kT0);
+    tables.addColumn(kTable, "r0", dc::DType::F32, kR0);
+    tables.addColumn(kTable, "t1", dc::DType::F32, kT1);
+    tables.addColumn(kTable, "r1", dc::DType::F32, kR1);
+    tables.addColumn(kTable, "col", dc::DType::I32, kCol);
+
+    const std::uint32_t kRed   = 0xFF0000FFu;
+    const std::uint32_t kGreen = 0xFF00FF00u;
+
+    // Slice 0: [0, pi/2], r 0..0.8 (pie slice from center). Slice 1: [pi, 3pi/2].
+    const float PI = 3.14159265358979323846f;
+    appendF32(ingest, kT0, {0.0f, PI});
+    appendF32(ingest, kR0, {0.0f, 0.0f});
+    appendF32(ingest, kT1, {PI / 2.0f, 3.0f * PI / 2.0f});
+    appendF32(ingest, kR1, {0.8f, 0.8f});
+    {
+      const std::int32_t cols[2] = {static_cast<std::int32_t>(kRed),
+                                    static_cast<std::int32_t>(kGreen)};
+      std::vector<std::uint8_t> batch;
+      appendRecord(batch, kCol, cols, sizeof(cols));
+      ingest.processBatch(batch.data(),
+                          static_cast<std::uint32_t>(batch.size()));
+    }
+
+    dc::Encoding enc;
+    enc.field(dc::Channel::X, "t0").field(dc::Channel::Y, "r0")
+       .field(dc::Channel::X2, "t1").field(dc::Channel::Y2, "r1");
+    enc.setColorField("col");
+
+    dc::ArcOptions arcOpts;
+    arcOpts.polar.centerX = 0.0f;
+    arcOpts.polar.centerY = 0.0f;
+    arcOpts.segmentsPerArc = 4;  // small, exact-to-reason geometry
+
+    auto res = pass.compile(dc::Mark::Arc, enc, tables, kTable, src, 1100, 1200,
+                            1300, nullptr, dc::LineStyle::Line2d, arcOpts);
+    check(res.ok, "arc: compile ok");
+    check(res.geometry.format == dc::VertexFormat::Pos2Color4,
+          "arc: geometry format == Pos2Color4 (triGradient)");
+    check(res.drawItem.pipeline == "triGradient@1",
+          "arc: pipeline == triGradient@1");
+
+    // Fixed tessellation: segs(4) * 6 verts/slice = 24 verts/wedge, 2 wedges.
+    const std::uint32_t kVertsPerWedge = 4u * 6u;
+    check(res.geometry.vertexCount == 2u * kVertsPerWedge,
+          "arc: vertexCount == 2 wedges * (segs*6) verts");
+    check(res.bytes.size() == 2u * kVertsPerWedge * 24u,
+          "arc: byte length == verts * 24B (Pos2Color4 stride)");
+
+    // The very FIRST vertex of wedge 0 is the inner sample at theta0=0, r0=0 ->
+    // the center (0,0). Its color is red (0..1 unpacked).
+    check(eqf(f32At(res.bytes, 0), 0.0f) && eqf(f32At(res.bytes, 4), 0.0f),
+          "arc: wedge0 first vertex is the polar center (0,0)");
+    check(eqf(f32At(res.bytes, 8), 1.0f) && eqf(f32At(res.bytes, 12), 0.0f) &&
+              eqf(f32At(res.bytes, 16), 0.0f) && eqf(f32At(res.bytes, 20), 1.0f),
+          "arc: wedge0 vertex color is the row's RED unpacked to 0..1");
+
+    // The SECOND vertex of wedge 0 is the OUTER sample at theta=0, r=0.8 ->
+    // (cx + 0.8*cos0, cy + 0.8*sin0) = (0.8, 0.0). This proves the polar map.
+    check(eqf(f32At(res.bytes, 24 + 0), 0.8f) &&
+              eqf(f32At(res.bytes, 24 + 4), 0.0f),
+          "arc: outer sample maps (theta=0,r=0.8) -> clip (0.8, 0.0)");
+
+    // A mid-angle outer sample lands off-axis (both x and y non-trivial),
+    // confirming cos/sin are applied (an affine map could never produce this).
+    // Scan the wedge-0 verts for one whose (x,y) ~ (0.8*cos(pi/4)) on both axes.
+    bool sawDiagonal = false;
+    const float diag = 0.8f * 0.70710678f;  // r * cos(45deg) == r * sin(45deg)
+    for (std::uint32_t v = 0; v < kVertsPerWedge; ++v) {
+      const float vx = f32At(res.bytes, v * 24 + 0);
+      const float vy = f32At(res.bytes, v * 24 + 4);
+      if (std::fabs(vx - diag) < 1e-4f && std::fabs(vy - diag) < 1e-4f)
+        sawDiagonal = true;
+    }
+    check(sawDiagonal,
+          "arc: a mid-angle sample lands on the 45deg diagonal (polar, not affine)");
+
+    // Wedge 1 is colored GREEN — its first vertex color differs from wedge 0.
+    const std::uint32_t w1Off = kVertsPerWedge * 24u;
+    check(eqf(f32At(res.bytes, w1Off + 8), 0.0f) &&
+              eqf(f32At(res.bytes, w1Off + 12), 1.0f),
+          "arc: wedge1 vertex color is the row's GREEN (distinct from wedge0)");
+
+    auto vr = wireAndValidate(res, 110 /*unused buf id here*/, 1200, 1100,
+                              static_cast<std::uint32_t>(res.bytes.size()),
+                              "triGradient@1");
+    check(vr.ok, "arc: validateDrawItem ACCEPTS the pos2_color4 geometry");
+
+    // INCREMENTAL: compileInto packs only the appended wedge tail at the right
+    // fixed offset, ending byte-identical to a full compile of the grown table.
+    {
+      dc::CpuBufferStore store;
+      auto t1 = pass.compileInto(dc::Mark::Arc, enc, tables, kTable, src, store,
+                                 1100, 1200, 1300, /*fromRow=*/0, nullptr,
+                                 dc::LineStyle::Line2d, arcOpts);
+      check(t1.ok && store.getCpuDataSize(1300) == 2u * kVertsPerWedge * 24u,
+            "arc/incr: store holds both wedges after first compile");
+      const std::uint8_t* sb = store.getCpuData(1300);
+      bool identical = (res.bytes.size() == store.getCpuDataSize(1300)) &&
+                       (std::memcmp(sb, res.bytes.data(), res.bytes.size()) == 0);
+      check(identical, "arc/incr: store == full compile byte-for-byte");
+    }
+  }
+
+  std::printf("=== ENC-600/601/603/604/609/613 Results: %d passed, %d failed ===\n",
               passed, failed);
   return failed > 0 ? 1 : 0;
 }
