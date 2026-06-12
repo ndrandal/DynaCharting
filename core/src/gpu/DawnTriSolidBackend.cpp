@@ -88,41 +88,83 @@ bool DawnTriSolidBackend::init(GpuDevice& device) {
   return pipeline_.valid();
 }
 
+// ENC-569: (re)upload gb's vertex/index buffers from the geometry's CURRENT
+// CpuBufferStore bytes. The previous device buffer(s) (if any) are destroyed and
+// replaced — a grown/edited stream changes the byte count arbitrarily, so a
+// fresh upload is the simplest correct path. The DRAW vertex count is derived
+// from the current vertex-buffer size (vtxBytes / strideOf(format)) rather than
+// the static geometry.vertexCount, so a growing buffer draws the new vertices.
+// Records the source versions used so the caller can short-circuit an unchanged
+// frame.
+void DawnTriSolidBackend::buildGeoBuffers(GpuDevice& device, const Scene& scene,
+                                          CpuBufferStore& gpu,
+                                          std::uint32_t geometryId,
+                                          GeoBuffers& gb) {
+  if (gb.vertexBuffer.valid()) {
+    device.destroyBuffer(gb.vertexBuffer);
+    gb.vertexBuffer = {};
+  }
+  if (gb.indexBuffer.valid()) {
+    device.destroyBuffer(gb.indexBuffer);
+    gb.indexBuffer = {};
+  }
+  gb.vertexCount = 0;
+  gb.indexCount = 0;
+
+  const Geometry* geo = scene.getGeometry(geometryId);
+  // Stamp the versions we are building from up front so an empty/invalid build
+  // is still a cache hit until the source changes.
+  gb.vtxVersion = geo ? gpu.getCpuDataVersion(geo->vertexBufferId) : 0;
+  gb.idxVersion = geo ? gpu.getCpuDataVersion(geo->indexBufferId) : 0;
+  gb.built = true;
+  if (!geo) return;
+
+  const std::uint8_t* vtx = gpu.getCpuData(geo->vertexBufferId);
+  const std::uint32_t vtxBytes = gpu.getCpuDataSize(geo->vertexBufferId);
+  if (vtx && vtxBytes > 0) {
+    gb.vertexBuffer = device.createBuffer(vtxBytes, vtx, vtxBytes);
+    // Derive the draw count from the CURRENT buffer size, not the (possibly
+    // stale) static geometry.vertexCount — a streaming/re-tessellated buffer
+    // draws every vertex it now holds.
+    const std::uint32_t stride = strideOf(geo->format);
+    gb.vertexCount = stride > 0 ? (vtxBytes / stride) : geo->vertexCount;
+  }
+
+  // Index buffer (optional): same fresh upload; u32 indices => idxBytes / 4.
+  if (geo->indexBufferId != 0 && geo->indexCount > 0) {
+    const std::uint8_t* idx = gpu.getCpuData(geo->indexBufferId);
+    const std::uint32_t idxBytes = gpu.getCpuDataSize(geo->indexBufferId);
+    if (idx && idxBytes > 0) {
+      gb.indexBuffer = device.createBuffer(idxBytes, idx, idxBytes);
+      gb.indexCount = idxBytes / sizeof(std::uint32_t);
+    }
+  }
+}
+
 DawnTriSolidBackend::GeoBuffers& DawnTriSolidBackend::ensureGeoBuffers(
     GpuDevice& device, const Scene& scene, CpuBufferStore& gpu,
     std::uint32_t geometryId) {
+  GeoBuffers* gb = nullptr;
   for (auto& kv : geoBuffers_) {
-    if (kv.first == geometryId) return kv.second;
+    if (kv.first == geometryId) { gb = &kv.second; break; }
+  }
+  if (!gb) {
+    geoBuffers_.emplace_back(geometryId, GeoBuffers{});
+    gb = &geoBuffers_.back().second;
   }
 
-  GeoBuffers gb;
+  // ENC-569: (re)build on first use OR when the underlying CPU buffer(s) changed
+  // since we last built (streaming grow / in-place edit). Otherwise pure cache
+  // hit — no per-frame re-upload for static geometry.
   const Geometry* geo = scene.getGeometry(geometryId);
-  if (geo) {
-    // Vertex buffer: copy the CPU bytes the CpuBufferStore holds for this
-    // geometry's vertex buffer into a static Dawn buffer. (The live coalesced
-    // streaming path lands per-pipeline in ENC-488/489/490 via
-    // CpuBufferStore::uploadDirty + DeviceBufferResolver; triSolid geometry is
-    // uploaded once here.)
-    const std::uint8_t* vtx = gpu.getCpuData(geo->vertexBufferId);
-    const std::uint32_t vtxBytes = gpu.getCpuDataSize(geo->vertexBufferId);
-    if (vtx && vtxBytes > 0) {
-      gb.vertexBuffer = device.createBuffer(vtxBytes, vtx, vtxBytes);
-    }
-    gb.vertexCount = geo->vertexCount;
-
-    // Index buffer (optional): same static upload.
-    if (geo->indexBufferId != 0 && geo->indexCount > 0) {
-      const std::uint8_t* idx = gpu.getCpuData(geo->indexBufferId);
-      const std::uint32_t idxBytes = gpu.getCpuDataSize(geo->indexBufferId);
-      if (idx && idxBytes > 0) {
-        gb.indexBuffer = device.createBuffer(idxBytes, idx, idxBytes);
-        gb.indexCount = geo->indexCount;
-      }
-    }
+  const std::uint64_t vtxVer =
+      geo ? gpu.getCpuDataVersion(geo->vertexBufferId) : 0;
+  const std::uint64_t idxVer =
+      geo ? gpu.getCpuDataVersion(geo->indexBufferId) : 0;
+  if (!gb->built || vtxVer != gb->vtxVersion || idxVer != gb->idxVersion) {
+    buildGeoBuffers(device, scene, gpu, geometryId, *gb);
   }
-
-  geoBuffers_.emplace_back(geometryId, gb);
-  return geoBuffers_.back().second;
+  return *gb;
 }
 
 BackendStats DawnTriSolidBackend::renderDrawItem(GpuDevice& device,

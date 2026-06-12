@@ -176,53 +176,87 @@ bool DawnLineAABackend::init(GpuDevice& device) {
   return pipeline_.valid();
 }
 
+// ENC-569: (re)gather + (re)upload gb's instance buffer from the geometry's
+// CURRENT CpuBufferStore bytes (mirrors the ENC-558 instanced rect path). The
+// previous device buffer (if any) is destroyed and replaced. The instance count
+// is derived from the CURRENT buffer size (vtxBytes / rect4=16B) for the
+// non-indexed path so a streaming/growing thick-line buffer draws the new
+// segments; the indexed path uses the current index count. Records the source
+// versions used so an unchanged frame is a no-op.
+void DawnLineAABackend::buildGeoBuffers(GpuDevice& device, const Scene& scene,
+                                        CpuBufferStore& gpu,
+                                        std::uint32_t geometryId,
+                                        GeoBuffers& gb) {
+  if (gb.instanceBuffer.valid()) {
+    device.destroyBuffer(gb.instanceBuffer);
+    gb.instanceBuffer = {};
+  }
+  gb.instanceCount = 0;
+
+  const Geometry* geo = scene.getGeometry(geometryId);
+  gb.vtxVersion = geo ? gpu.getCpuDataVersion(geo->vertexBufferId) : 0;
+  gb.idxVersion = geo ? gpu.getCpuDataVersion(geo->indexBufferId) : 0;
+  gb.built = true;
+  if (!geo) return;
+
+  const std::uint8_t* vtx = gpu.getCpuData(geo->vertexBufferId);
+  const std::uint32_t vtxBytes = gpu.getCpuDataSize(geo->vertexBufferId);
+
+  if (geo->indexBufferId != 0 && geo->indexCount > 0) {
+    // D26 indexed gather: pack only the selected segments into a scratch
+    // per-instance buffer (mirrors the GL scratch-VBO gather). The index
+    // buffer holds u32 segment indices into the rect4 vertex buffer. Use the
+    // CURRENT index-buffer size so a growing index set draws the new segments.
+    const std::uint8_t* idx = gpu.getCpuData(geo->indexBufferId);
+    const std::uint32_t idxBytes = gpu.getCpuDataSize(geo->indexBufferId);
+    if (vtx && idx && vtxBytes > 0 && idxBytes > 0) {
+      const std::uint32_t count = idxBytes / sizeof(std::uint32_t);
+      const auto* indices = reinterpret_cast<const std::uint32_t*>(idx);
+      std::vector<std::uint8_t> scratch(
+          static_cast<std::size_t>(count) * kRectStride, 0);
+      for (std::uint32_t i = 0; i < count; ++i) {
+        const std::uint32_t off = indices[i] * kRectStride;
+        if (off + kRectStride <= vtxBytes) {
+          std::memcpy(scratch.data() + static_cast<std::size_t>(i) * kRectStride,
+                      vtx + off, kRectStride);
+        }
+      }
+      if (!scratch.empty()) {
+        gb.instanceBuffer = device.createBuffer(
+            scratch.size(), scratch.data(), scratch.size());
+        gb.instanceCount = count;
+      }
+    }
+  } else if (vtx && vtxBytes > 0) {
+    // Non-indexed: upload the rect4 segment records directly; one instance
+    // (one line segment) per rect4 record in the CURRENT buffer.
+    gb.instanceBuffer = device.createBuffer(vtxBytes, vtx, vtxBytes);
+    gb.instanceCount = vtxBytes / kRectStride;
+  }
+}
+
 DawnLineAABackend::GeoBuffers&
 DawnLineAABackend::ensureGeoBuffers(GpuDevice& device, const Scene& scene,
                                     CpuBufferStore& gpu,
                                     std::uint32_t geometryId) {
+  GeoBuffers* gb = nullptr;
   for (auto& kv : geoBuffers_) {
-    if (kv.first == geometryId) return kv.second;
+    if (kv.first == geometryId) { gb = &kv.second; break; }
+  }
+  if (!gb) {
+    geoBuffers_.emplace_back(geometryId, GeoBuffers{});
+    gb = &geoBuffers_.back().second;
   }
 
-  GeoBuffers gb;
   const Geometry* geo = scene.getGeometry(geometryId);
-  if (geo) {
-    const std::uint8_t* vtx = gpu.getCpuData(geo->vertexBufferId);
-    const std::uint32_t vtxBytes = gpu.getCpuDataSize(geo->vertexBufferId);
-
-    if (geo->indexBufferId != 0 && geo->indexCount > 0) {
-      // D26 indexed gather: pack only the selected segments into a scratch
-      // per-instance buffer (mirrors the GL scratch-VBO gather). The index
-      // buffer holds u32 segment indices into the rect4 vertex buffer.
-      const std::uint8_t* idx = gpu.getCpuData(geo->indexBufferId);
-      if (vtx && idx && vtxBytes > 0) {
-        const std::uint32_t count = geo->indexCount;
-        const auto* indices = reinterpret_cast<const std::uint32_t*>(idx);
-        std::vector<std::uint8_t> scratch(
-            static_cast<std::size_t>(count) * kRectStride, 0);
-        for (std::uint32_t i = 0; i < count; ++i) {
-          const std::uint32_t off = indices[i] * kRectStride;
-          if (off + kRectStride <= vtxBytes) {
-            std::memcpy(scratch.data() + static_cast<std::size_t>(i) * kRectStride,
-                        vtx + off, kRectStride);
-          }
-        }
-        if (!scratch.empty()) {
-          gb.instanceBuffer = device.createBuffer(
-              scratch.size(), scratch.data(), scratch.size());
-          gb.instanceCount = count;
-        }
-      }
-    } else if (vtx && vtxBytes > 0) {
-      // Non-indexed: upload the rect4 segment records directly; one instance
-      // (one line segment) per vertex.
-      gb.instanceBuffer = device.createBuffer(vtxBytes, vtx, vtxBytes);
-      gb.instanceCount = geo->vertexCount;
-    }
+  const std::uint64_t vtxVer =
+      geo ? gpu.getCpuDataVersion(geo->vertexBufferId) : 0;
+  const std::uint64_t idxVer =
+      geo ? gpu.getCpuDataVersion(geo->indexBufferId) : 0;
+  if (!gb->built || vtxVer != gb->vtxVersion || idxVer != gb->idxVersion) {
+    buildGeoBuffers(device, scene, gpu, geometryId, *gb);
   }
-
-  geoBuffers_.emplace_back(geometryId, gb);
-  return geoBuffers_.back().second;
+  return *gb;
 }
 
 BackendStats DawnLineAABackend::renderDrawItem(GpuDevice& device,

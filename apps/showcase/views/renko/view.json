@@ -1,9 +1,9 @@
 {
   "id": "renko",
-  "title": "Renko — fixed-brick",
+  "title": "Renko — fixed-brick (live)",
   "tier": "composed",
   "referenceTool": "Renko / Point & Figure",
-  "blurb": "A time-less fixed-brick chart of AAPL — one green up-brick or red down-brick per brick-sized price move — tessellated to axis-aligned rects at manifest-build time and drawn as static instancedRect geometry.",
+  "blurb": "A time-less fixed-brick chart of AAPL — one brick per brick-sized price move — that forms LIVE: each brick is APPENDED to a growing rect4 buffer over a ~20s replay as the simulated price crosses thresholds, drawn as instancedRect geometry whose instance count grows with the buffer.",
   "datasetId": "AAPL",
   "transform": { "sx": 0.072, "sy": 0.361333, "tx": -0.9, "ty": -66.892536 },
   "chrome": {
