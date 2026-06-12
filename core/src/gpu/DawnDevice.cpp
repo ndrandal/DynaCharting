@@ -70,6 +70,7 @@ DawnDevice::~DawnDevice() {
   // Release ENC-484 draw-path resources before the device/instance.
   bindGroups_.clear();
   pipelines_.clear();
+  computePipelines_.clear();  // ENC-591 (DE-RISK SPIKE): compute pipelines
   textures_.clear();  // ENC-491
   buffers_.clear();
   targets_.clear();  // ENC-495: releases every target's color/stencil resources
@@ -429,6 +430,106 @@ bool DawnDevice::readBuffer(BufferHandle buf, std::size_t offsetBytes,
   if (!base) return false;
   std::memcpy(out, base + (offsetBytes - copyOff), bytes);
   readback.Unmap();
+  return true;
+}
+
+// --- compute (ENC-591 — DE-RISK SPIKE) -------------------------------------
+// The WebGPU-compute prerequisite for the GPU-compute half of the GPU-Native
+// Streaming Grammar of Graphics project (Phases 4 & 6). Minimal + additive: a
+// compute pipeline (one @compute entry point) + a one-shot dispatch that binds
+// storage buffers to @group(0) and runs the workgroups. PURE webgpu_cpp — the
+// SAME two calls (device_.CreateComputePipeline, encoder.BeginComputePass) exist
+// on native Dawn AND emdawnwebgpu (browser), so there is no #ifdef here: if this
+// compiles + links + runs natively, the identical code path links + runs through
+// emdawnwebgpu in the browser. The render path is untouched.
+
+DawnDevice::ComputePipelineEntry* DawnDevice::computePipelineAt(
+    ComputePipelineHandle h) {
+  if (!h.valid() || h.id > computePipelines_.size()) return nullptr;
+  return &computePipelines_[h.id - 1];
+}
+
+ComputePipelineHandle DawnDevice::createComputePipeline(const char* wgsl,
+                                                        const char* entryPoint) {
+  if (!wgsl || wgsl[0] == '\0') return {};
+
+  // Compile the WGSL compute module (one module, one @compute entry point).
+  // Identical shape to the render createPipeline's ShaderSourceWGSL path.
+  wgpu::ShaderSourceWGSL src = {};
+  src.code = wgsl;
+  wgpu::ShaderModuleDescriptor smd = {};
+  smd.nextInChain = &src;
+  smd.label = "dc_compute_wgsl";
+  wgpu::ShaderModule module = device_.CreateShaderModule(&smd);
+
+  // Build the compute pipeline with an AUTO bind-group layout: Dawn/Tint derives
+  // group 0's storage-buffer bindings from the WGSL itself, so the spike needs no
+  // hand-written BindGroupLayout. dispatchCompute later fetches that derived
+  // layout via pipeline.GetBindGroupLayout(0) to build the storage bind group.
+  wgpu::ComputePipelineDescriptor cpd = {};
+  cpd.label = "dc_compute_pipeline";
+  cpd.layout = nullptr;  // nullptr layout == auto-layout from the shader
+  cpd.compute.module = module;
+  cpd.compute.entryPoint = entryPoint ? entryPoint : "main";
+  wgpu::ComputePipeline pipeline = device_.CreateComputePipeline(&cpd);
+  if (!pipeline) return {};
+
+  ComputePipelineEntry entry;
+  entry.module = std::move(module);
+  entry.pipeline = std::move(pipeline);
+  computePipelines_.push_back(std::move(entry));
+
+  ComputePipelineHandle h;
+  h.id = static_cast<std::uint32_t>(computePipelines_.size());  // 1-based
+  return h;
+}
+
+bool DawnDevice::dispatchCompute(ComputePipelineHandle pipe,
+                                 const std::vector<BufferHandle>& storageBuffers,
+                                 std::uint32_t workgroupsX,
+                                 std::uint32_t workgroupsY,
+                                 std::uint32_t workgroupsZ) {
+  ComputePipelineEntry* pe = computePipelineAt(pipe);
+  if (!pe || !pe->pipeline) return false;
+
+  // Build the storage-buffer bind group against the pipeline's auto-derived
+  // group-0 layout. Each BufferHandle binds at sequential bindings 0,1,2,… in
+  // array order — the WGSL must declare matching @group(0) @binding(n)
+  // var<storage,read_write> entries. The buffers must carry BufferUsage::Storage
+  // (createStorageBuffer); a vertex/index buffer would be rejected by validation.
+  wgpu::BindGroupLayout bgl = pe->pipeline.GetBindGroupLayout(0);
+
+  std::vector<wgpu::BindGroupEntry> bgEntries;
+  bgEntries.reserve(storageBuffers.size());
+  for (std::size_t i = 0; i < storageBuffers.size(); ++i) {
+    BufferEntry* be = bufferAt(storageBuffers[i]);
+    if (!be || !be->buffer) return false;
+    wgpu::BindGroupEntry bge = {};
+    bge.binding = static_cast<std::uint32_t>(i);
+    bge.buffer = be->buffer;
+    bge.offset = 0;
+    bge.size = be->capacity;  // bind the whole buffer
+    bgEntries.push_back(bge);
+  }
+
+  wgpu::BindGroupDescriptor bgd = {};
+  bgd.layout = bgl;
+  bgd.entryCount = static_cast<std::uint32_t>(bgEntries.size());
+  bgd.entries = bgEntries.empty() ? nullptr : bgEntries.data();
+  wgpu::BindGroup bindGroup = device_.CreateBindGroup(&bgd);
+
+  // One-shot compute pass: own encoder, dispatch, submit. A compute pass needs no
+  // attachments (unlike beginRenderPass). The work is queued on the same queue as
+  // every other command; a subsequent readBuffer() Submits its CopyBufferToBuffer
+  // AFTER this, so the dispatch's writes are visible to the readback.
+  wgpu::CommandEncoder enc = device_.CreateCommandEncoder();
+  wgpu::ComputePassEncoder cpass = enc.BeginComputePass();
+  cpass.SetPipeline(pe->pipeline);
+  cpass.SetBindGroup(0, bindGroup);
+  cpass.DispatchWorkgroups(workgroupsX, workgroupsY, workgroupsZ);
+  cpass.End();
+  wgpu::CommandBuffer cmd = enc.Finish();
+  queue_.Submit(1, &cmd);
   return true;
 }
 

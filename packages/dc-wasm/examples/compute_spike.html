@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<!--
+  compute_spike.html — ENC-591 (P0.3 — DE-RISK SPIKE) browser harness.
+
+  Proves the WebGPU COMPUTE path runs end-to-end through @repo/dc-wasm's
+  emdawnwebgpu build IN A REAL BROWSER: it loads the SAME WASM module
+  (dc_engine_host.js) the package ships, constructs a DcEngineHost, and calls
+  host.selfTestCompute(n), which (browser-side, via emdawnwebgpu / navigator.gpu)
+  creates a storage buffer, compiles a `data[i] *= 2.0` @compute kernel, builds a
+  compute pipeline, dispatches workgroups, reads back, and asserts every element
+  doubled. A positive return (== n) means a WebGPU compute shader executed on the
+  browser's GPU through DynaCharting's Dawn integration — the gating result for
+  Phases 4 & 6.
+
+  Serve over http (WebGPU + ES modules need an origin), then open in Chrome with
+  WebGPU enabled (the orchestrator launches Chrome with
+  --ozone-platform=x11 --enable-unsafe-webgpu --enable-features=Vulkan,WebGPU
+  --use-vulkan). The node harness (~/pw style) reads window.__COMPUTE_SPIKE__.
+
+  Requires ../wasm/dc_engine_host.js + ../wasm/dc_engine_host.wasm.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>ENC-591 — WebGPU compute spike (@repo/dc-wasm)</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 24px; background:#111; color:#eee; }
+    h1 { font-size: 18px; }
+    #result { font-size: 20px; font-weight: 700; margin: 12px 0; }
+    .pass { color: #41d160; } .fail { color: #ff5b5b; } .pending { color: #f5c542; }
+    #log { font-family: ui-monospace, monospace; font-size: 13px; white-space: pre-wrap;
+           color:#9aa; margin-top:16px; max-height:360px; overflow:auto;
+           border-top:1px solid #333; padding-top:8px; }
+  </style>
+</head>
+<body>
+  <h1>ENC-591 DE-RISK SPIKE — WebGPU compute end-to-end (emdawnwebgpu)</h1>
+  <div id="result" class="pending">Status: initializing…</div>
+  <div id="log"></div>
+
+  <script type="module">
+    const resultEl = document.getElementById('result');
+    const logEl = document.getElementById('log');
+    const log = (m) => { logEl.textContent += m + '\n'; };
+    // The node harness polls this object for the verdict.
+    window.__COMPUTE_SPIKE__ = { done: false, ok: false, n: 0, ret: null, backend: '', message: '', error: '' };
+    const finish = (ok, extra) => {
+      Object.assign(window.__COMPUTE_SPIKE__, { done: true, ok }, extra);
+    };
+    const fail = (m) => {
+      resultEl.className = 'fail'; resultEl.textContent = 'FAIL: ' + m; log('FAIL: ' + m);
+      finish(false, { error: m });
+    };
+
+    async function main() {
+      if (!('gpu' in navigator)) {
+        fail('navigator.gpu is undefined — open in Chrome/Edge with WebGPU enabled.');
+        return;
+      }
+      log('navigator.gpu present — loading dc_engine_host module…');
+
+      let Module, host;
+      try {
+        const factory = (await import('../wasm/dc_engine_host.js')).default;
+        Module = await factory();
+        host = new Module.DcEngineHost();
+      } catch (e) {
+        fail('module load failed: ' + (e?.message ?? e));
+        return;
+      }
+      log('module instantiated; DcEngineHost created.');
+
+      // The trivial compute round-trip on the browser's WebGPU. selfTestCompute
+      // is ASYNCIFY-suspending (device acquisition + map-pump readback yield to
+      // the JS event loop), so it returns a Promise<int>.
+      const N = 1000;
+      resultEl.className = 'pending';
+      resultEl.textContent = 'Status: running compute selfTest…';
+      let ret;
+      try {
+        ret = await host.selfTestCompute(N);
+      } catch (e) {
+        fail('selfTestCompute threw: ' + (e?.message ?? e));
+        return;
+      }
+      const backend = host.backend();
+      const message = host.renderMessage();
+      log('selfTestCompute(' + N + ') = ' + ret + '   backend=' + backend);
+      log('message: ' + message);
+
+      if (ret === N) {
+        resultEl.className = 'pass';
+        resultEl.textContent = `PASS — WebGPU compute doubled ${N} f32s on ${backend}`;
+        finish(true, { n: N, ret, backend, message });
+      } else {
+        fail('selfTestCompute returned ' + ret + ' (expected ' + N + '): ' + message);
+        Object.assign(window.__COMPUTE_SPIKE__, { n: N, ret, backend, message });
+      }
+      host.dispose();
+    }
+
+    main().catch(e => fail('unexpected: ' + (e?.message ?? e)));
+  </script>
+</body>
+</html>

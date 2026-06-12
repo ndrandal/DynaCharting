@@ -54,6 +54,18 @@
 
 namespace dc {
 
+// ENC-591 (P0.3 — DE-RISK SPIKE) — an opaque handle to a WebGPU COMPUTE pipeline
+// (a compiled WGSL @compute entry point + its implicit bind-group layout), the
+// compute analog of PipelineHandle. Kept DawnDevice-local (not on the GpuDevice
+// seam) because compute is an additive, renderer-internal capability the spike
+// proves out, exactly like the test-facing readBuffer / createStorageBuffer —
+// the render path (PipelineHandle, BindGroupHandle, …) is untouched. 1-based id;
+// id 0 == null.
+struct ComputePipelineHandle {
+  std::uint32_t id{0};
+  bool valid() const { return id != 0; }
+};
+
 class DawnDevice final : public GpuDevice {
  public:
   DawnDevice() = default;
@@ -181,6 +193,39 @@ class DawnDevice final : public GpuDevice {
   // assert the coalesced upload landed the right bytes); not part of GpuDevice.
   bool readBuffer(BufferHandle buf, std::size_t offsetBytes, std::size_t bytes,
                   std::uint8_t* out);
+
+  // ENC-591 (P0.3 — DE-RISK SPIKE) — minimal WebGPU COMPUTE scaffolding. This is
+  // the gating question for the GPU-compute half of the GPU-Native Streaming
+  // Grammar of Graphics project (Phases 4 & 6: in-engine KDE/FFT/contour + the
+  // custom-WGSL escape hatch). It proves a compute shader runs end-to-end through
+  // this Dawn integration — both natively (lavapipe) and, identically, through
+  // emdawnwebgpu in the browser (the same webgpu_cpp surface, no #ifdef needed;
+  // createComputePipeline / BeginComputePass / Dispatch are all present in
+  // emdawnwebgpu, RESEARCH.md §5.1). Strictly ADDITIVE: the render path
+  // (createPipeline / createBindGroup / draw / the render pass) is untouched.
+  //
+  // createComputePipeline — compile a WGSL module and build a wgpu compute
+  // pipeline for `entryPoint` (the @compute fn). The bind-group layout is built
+  // automatically from the shader (layout = Auto), so the caller need only supply
+  // matching storage buffers to dispatchCompute; the WGSL must declare its
+  // storage bindings on @group(0). Returns a null handle on failure (empty WGSL).
+  ComputePipelineHandle createComputePipeline(const char* wgsl,
+                                              const char* entryPoint);
+
+  // dispatchCompute — bind the given STORAGE buffers (created via
+  // createStorageBuffer) to @group(0) at sequential bindings 0,1,2,… in array
+  // order, then dispatch (workgroupsX, workgroupsY, workgroupsZ) workgroups
+  // through a one-shot compute pass (own encoder; Submit). The bind-group layout
+  // is taken from the auto-layout the pipeline derived from the WGSL. This is the
+  // compute analog of beginRenderPass+draw+endRenderPass collapsed into one call
+  // (a compute pass needs no attachments). The dispatch is queued like any other
+  // command; the caller reads results back via readBuffer (the existing map-pump),
+  // which Submits its own copy AFTER this dispatch, so ordering is guaranteed.
+  // Returns false on an invalid pipeline handle or a null storage buffer.
+  bool dispatchCompute(ComputePipelineHandle pipe,
+                       const std::vector<BufferHandle>& storageBuffers,
+                       std::uint32_t workgroupsX, std::uint32_t workgroupsY = 1,
+                       std::uint32_t workgroupsZ = 1);
 
   // ENC-496 (P3.4) — wrap a render target's color texture as a SAMPLEABLE
   // TextureHandle so a fullscreen post-process pass can sample it as the input
@@ -369,6 +414,19 @@ class DawnDevice final : public GpuDevice {
     std::vector<std::vector<wgpu::VertexAttribute>> vbAttrStorage;
   };
   std::vector<PipelineEntry> pipelines_;
+
+  // ENC-591 (P0.3 — DE-RISK SPIKE): compute pipelines. Each holds the compiled
+  // WGSL module + the wgpu::ComputePipeline built for one @compute entry point.
+  // The bind-group layout is Auto-derived from the shader, so dispatchCompute
+  // fetches it via pipeline.GetBindGroupLayout(0) and builds the storage-buffer
+  // bind group on the fly. Separate slot table from pipelines_ (render) /
+  // bindGroups_ — the compute path shares NO state with the render path.
+  struct ComputePipelineEntry {
+    wgpu::ShaderModule module;
+    wgpu::ComputePipeline pipeline;
+  };
+  std::vector<ComputePipelineEntry> computePipelines_;
+  ComputePipelineEntry* computePipelineAt(ComputePipelineHandle h);
 
   // ENC-493/494: lazily build (and cache) the wgpu::RenderPipeline variant of
   // `pe` for the (blend, clip) combination, returning it. The (Normal, None)

@@ -247,6 +247,88 @@ public:
     return 1;
   }
 
+  // ---- ENC-591 (P0.3 — DE-RISK SPIKE): WebGPU compute self-test ---------
+  // The gating question for the GPU-compute half of the GPU-Native Streaming
+  // Grammar of Graphics project (Phases 4 & 6): does a WebGPU compute shader run
+  // end-to-end through DynaCharting's WASM/browser path (emdawnwebgpu), not just
+  // natively? This drives the SAME DawnDevice compute scaffolding the native
+  // dc_uce_compute test does (createStorageBuffer + createComputePipeline +
+  // dispatchCompute + readBuffer), but through the emdawnwebgpu device the
+  // EngineHost already owns — so a headless-Chrome harness can call it and prove
+  // compute reaches the browser GPU. Returns:
+  //    n  : SUCCESS — every one of the `n` f32 elements was exactly doubled by a
+  //         @compute @workgroup_size(64) kernel running on the browser's WebGPU.
+  //    0  : the n<=0 no-op case.
+  //   -1  : renderer/device bring-up failed (renderMessage() carries why).
+  //   -2  : createComputePipeline failed (WGSL did not compile / pipeline build).
+  //   -3  : dispatchCompute failed.
+  //   -4  : readBuffer (map-pump readback) failed.
+  //   -5  : a result element did not equal 2x its input (compute ran but wrong).
+  // The kernel + correctness bar are byte-identical to the native test.
+  int selfTestCompute(int n) {
+    if (n <= 0) return 0;
+    renderMessage_.clear();
+    if (!ensureRenderer()) return -1;  // renderMessage_ set by ensureRenderer
+    dc::DawnDevice& dev = renderer_->device();
+
+    const std::uint32_t kN = static_cast<std::uint32_t>(n);
+    std::vector<float> input(kN);
+    for (std::uint32_t i = 0; i < kN; ++i) {
+      input[i] = (static_cast<float>(i) - 500.0f) * 0.25f;
+    }
+    const std::size_t kBytes = static_cast<std::size_t>(kN) * sizeof(float);
+
+    dc::BufferHandle storage =
+        dev.createStorageBuffer(kBytes, input.data(), kBytes);
+    if (!storage.valid()) {
+      renderMessage_ = "selfTestCompute: createStorageBuffer failed";
+      return -1;
+    }
+
+    // The trivial de-risk kernel: data[i] *= 2.0 (workgroup_size 64, <= the 256
+    // WebGPU cap). Identical to core/tests/uce_compute_roundtrip.cpp.
+    static const char* kWgsl =
+        "@group(0) @binding(0) var<storage, read_write> data : array<f32>;\n"
+        "@compute @workgroup_size(64)\n"
+        "fn main(@builtin(global_invocation_id) gid : vec3<u32>) {\n"
+        "  let i = gid.x;\n"
+        "  if (i < arrayLength(&data)) { data[i] = data[i] * 2.0; }\n"
+        "}\n";
+    dc::ComputePipelineHandle pipe = dev.createComputePipeline(kWgsl, "main");
+    if (!pipe.valid()) {
+      renderMessage_ = "selfTestCompute: createComputePipeline failed";
+      return -2;
+    }
+
+    const std::uint32_t kWgSize = 64;
+    const std::uint32_t kGroups = (kN + kWgSize - 1) / kWgSize;
+    if (!dev.dispatchCompute(pipe, {storage}, kGroups)) {
+      renderMessage_ = "selfTestCompute: dispatchCompute failed";
+      return -3;
+    }
+
+    std::vector<float> result(kN, -123.0f);
+    if (!dev.readBuffer(storage, 0, kBytes,
+                        reinterpret_cast<std::uint8_t*>(result.data()))) {
+      renderMessage_ = "selfTestCompute: readBuffer failed";
+      return -4;
+    }
+
+    for (std::uint32_t i = 0; i < kN; ++i) {
+      if (result[i] != input[i] * 2.0f) {
+        renderMessage_ = "selfTestCompute: element " + std::to_string(i) +
+                         " not doubled (want " +
+                         std::to_string(input[i] * 2.0f) + ", got " +
+                         std::to_string(result[i]) + ")";
+        return -5;
+      }
+    }
+    renderMessage_ = "selfTestCompute: " + std::to_string(kN) +
+                     " f32s doubled by WebGPU compute on backend=" +
+                     dev.backendName();
+    return static_cast<int>(kN);
+  }
+
   // ---- pick: pick(w,h,x,y) -> drawItemId (0 == miss) --------------------
   // GPU color-ID pick at pixel (x,y) over the scene rendered at (w,h). Mirrors
   // EngineHost.pick (which returns { drawItemId } | null); the TS wrapper maps
@@ -386,6 +468,7 @@ EMSCRIPTEN_BINDINGS(dc_engine_host) {
       .function("applyDataBatch", &DcEngineHost::applyDataBatch)
       .function("setTexturePixels", &DcEngineHost::setTexturePixels)
       .function("render", &DcEngineHost::render)
+      .function("selfTestCompute", &DcEngineHost::selfTestCompute)
       .function("pick", &DcEngineHost::pick)
       .function("dispose", &DcEngineHost::dispose)
       .function("framebuffer", &DcEngineHost::framebuffer)

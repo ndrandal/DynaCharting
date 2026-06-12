@@ -1588,6 +1588,22 @@ if (DC_BUILD_TESTS)
     target_link_libraries(dc_uce_storage PRIVATE dc_gpu)
     add_test(NAME dc_uce_storage COMMAND dc_uce_storage)
 
+    # ENC-591 (P0.3 — DE-RISK SPIKE) — WebGPU COMPUTE pipeline end-to-end on
+    # DawnDevice (native / lavapipe functional proof). The single highest-
+    # uncertainty item in the GPU-native streaming GoG plan: it gates the GPU-
+    # compute half (Phases 4 & 6 — in-engine KDE/FFT/contour + the custom-WGSL
+    # escape hatch). Builds on ENC-590's storage buffer + map-pump readback and
+    # exercises the ADDITIVE compute scaffolding (createComputePipeline +
+    # dispatchCompute) with a trivial `data[i] *= 2.0` kernel: create a storage
+    # buffer, compile+build a compute pipeline, dispatch ceil(N/64) workgroups,
+    # read back, and assert every element is exactly doubled. Links only dc_gpu;
+    # the render path is untouched.
+    add_executable(dc_uce_compute
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/uce_compute_roundtrip.cpp"
+    )
+    target_link_libraries(dc_uce_compute PRIVATE dc_gpu)
+    add_test(NAME dc_uce_compute COMMAND dc_uce_compute)
+
     # ENC-486 (P2.3) — line2d@1 + points@1 end-to-end on Dawn. Renders a line2d
     # scene and a points scene through the backend registry with DeviceKind::Dawn
     # into the headless DawnDevice offscreen target, reads back, and asserts the
