@@ -124,6 +124,15 @@ int main() {
     check(has(k, "@compute @workgroup_size(64)"), "formula: workgroup_size 64");
     check(has(k, "if (i >= arrayLength(&outCol)) { return; }"),
           "formula: bounds guard");
+    // ENC-617a fix: every column binding must be statically referenced so Tint's
+    // auto-derived bind-group layout retains ALL of them — otherwise an
+    // expression that omits a column (here col2) yields a layout missing that
+    // binding while ComputeStage still binds it, and CreateBindGroup fails
+    // (silent all-zeros). The phony-assigned arrayLength() keep-alive forces it.
+    check(has(k, "_ = arrayLength(&col0);") &&
+              has(k, "_ = arrayLength(&col1);") &&
+              has(k, "_ = arrayLength(&col2);"),
+          "formula: every column binding kept alive for the auto layout");
     check(has(k, "outCol[i] = ((col0[i] * 2.0f) + col1[i]);"),
           "formula: per-row write of the expression");
   }
@@ -136,6 +145,12 @@ int main() {
     check(has(k, "@binding(3) var<storage, read_write> outCol : array<u32>;"),
           "filter: output u32 mask at binding numColumns");
     check(has(k, "@compute @workgroup_size(64)"), "filter: workgroup_size 64");
+    // Same auto-layout keep-alive as the formula kernel (this predicate omits
+    // col2, so without the touch its binding would be pruned from the layout).
+    check(has(k, "_ = arrayLength(&col0);") &&
+              has(k, "_ = arrayLength(&col1);") &&
+              has(k, "_ = arrayLength(&col2);"),
+          "filter: every column binding kept alive for the auto layout");
     check(has(k, "outCol[i] = select(0u, 1u, (col0[i] > col1[i]));"),
           "filter: per-row 0/1 mask write");
   }

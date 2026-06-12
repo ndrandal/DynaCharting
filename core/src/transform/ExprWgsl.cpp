@@ -209,6 +209,23 @@ void emitBindings(std::string& out, std::uint32_t numColumns,
          ") var<storage, read_write> outCol : array<" + outType + ">;\n";
 }
 
+// Emit a keep-alive that references EVERY column binding so Tint's auto-derived
+// bind-group layout retains all of them. Without this, an expression that does
+// not mention some column (e.g. `a * 2 - b` never reads col2) would yield a
+// pipeline layout missing that binding's slot — but ComputeStage always binds
+// all numColumns buffers at sequential bindings 0..C-1, so CreateBindGroup would
+// then fail validation ("binding index k not present in the bind group layout")
+// and the dispatch would silently never write its output (all-zeros). A single
+// phony-assigned arrayLength() touch per column forces every binding to be
+// statically used WITHOUT affecting the computed result. (The slot k <-> binding
+// k <-> uploaded-column k contract this file documents is what keeps the layout
+// and the bind group in lock-step.)
+void emitColumnKeepAlive(std::string& out, std::uint32_t numColumns) {
+  for (std::uint32_t c = 0; c < numColumns; ++c) {
+    out += "  _ = arrayLength(&col" + std::to_string(c) + ");\n";
+  }
+}
+
 }  // namespace
 
 std::string emitExprWgsl(const ExprNode& node) {
@@ -225,6 +242,7 @@ std::string buildFormulaKernelWgsl(const CompiledExpr& expr,
   out += "fn main(@builtin(global_invocation_id) gid : vec3<u32>) {\n";
   out += "  let i = gid.x;\n";
   out += "  if (i >= arrayLength(&outCol)) { return; }\n";
+  emitColumnKeepAlive(out, numColumns);
   out += "  outCol[i] = ";
   emit(*expr.root, out);
   out += ";\n}\n";
@@ -239,6 +257,7 @@ std::string buildFilterMaskKernelWgsl(const CompiledExpr& expr,
   out += "fn main(@builtin(global_invocation_id) gid : vec3<u32>) {\n";
   out += "  let i = gid.x;\n";
   out += "  if (i >= arrayLength(&outCol)) { return; }\n";
+  emitColumnKeepAlive(out, numColumns);
   out += "  outCol[i] = select(0u, 1u, ";
   emit(*expr.root, out);
   out += ");\n}\n";
