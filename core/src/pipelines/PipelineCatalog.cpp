@@ -1,5 +1,7 @@
 #include "dc/pipelines/PipelineCatalog.hpp"
 
+#include <algorithm>
+
 namespace dc {
 
 PipelineCatalog::PipelineCatalog() {
@@ -32,6 +34,14 @@ PipelineCatalog::PipelineCatalog() {
 const PipelineSpec* PipelineCatalog::find(const std::string& key) const {
   auto it = specs_.find(key);
   return it == specs_.end() ? nullptr : &it->second;
+}
+
+std::vector<std::string> PipelineCatalog::keys() const {
+  std::vector<std::string> out;
+  out.reserve(specs_.size());
+  for (const auto& kv : specs_) out.push_back(kv.first);
+  std::sort(out.begin(), out.end());
+  return out;
 }
 
 } // namespace dc
