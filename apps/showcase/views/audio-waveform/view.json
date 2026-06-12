@@ -3,7 +3,7 @@
   "title": "Audio waveform — mirrored amplitude",
   "tier": "composed",
   "referenceTool": "audio editor waveform",
-  "blurb": "A dense, mirrored audio-editor waveform — a synthesized amplitude envelope drawn as a filled area by triGradient@1, brightening at the peaks. The candle renderer's gradient-fill pipeline, in a totally different domain.",
+  "blurb": "A dense, mirrored audio-editor waveform — a synthesized amplitude envelope drawn as a filled area by triGradient@1, brightening at the peaks, streamed column-by-column so the band fills in left→right like a track being recorded. The candle renderer's gradient-fill pipeline, in a totally different domain.",
   "datasetId": "audio",
   "transform": { "sx": 0.47, "sy": 0.8, "tx": -0.94, "ty": 0 },
   "chrome": {
