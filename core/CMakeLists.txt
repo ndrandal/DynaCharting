@@ -469,6 +469,16 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_uce_manifest PRIVATE dc)
   add_test(NAME dc_uce_manifest COMMAND dc_uce_manifest)
 
+  # ENC-606 (P1.15) — THE PROOF: candlestick + SMA(20) from a RAW OHLC feed end to
+  # end through the manifest path (PivotIngest -> trivial CPU SMA -> TimeScale x +
+  # LinearScale y -> candle + line marks -> byte-exact geometry), with ZERO
+  # precompute. Exercises the ENC-606 Part-A timestamp→encode wiring (time x-axis).
+  add_executable(dc_uce_enc606_proof
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_uce_enc606_proof.cpp"
+  )
+  target_link_libraries(dc_uce_enc606_proof PRIVATE dc)
+  add_test(NAME dc_uce_enc606_proof COMMAND dc_uce_enc606_proof)
+
   add_executable(dc_d1_3_atomic_frame
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/d1_3_atomic_frame.cpp"
   )
@@ -1686,6 +1696,18 @@ if (DC_BUILD_TESTS)
     )
     target_link_libraries(dc_enc608_dawn_rect_color PRIVATE dc_gpu)
     add_test(NAME dc_enc608_dawn_rect_color COMMAND dc_enc608_dawn_rect_color)
+
+    # ENC-606 (P1.15) — THE PROOF, RENDERED: candlestick + SMA(20) from a RAW OHLC
+    # feed end to end through the manifest path (PivotIngest -> trivial CPU SMA ->
+    # TimeScale x + LinearScale y -> candle + line marks -> byte-exact geometry),
+    # rasterized on the headless DawnDevice. Asserts a non-blank, PLAUSIBLE chart:
+    # green up-candle + red down-candle + amber SMA-line pixels with real coverage.
+    # The pixel companion to the fast dc_uce_enc606_proof. Links only dc_gpu.
+    add_executable(dc_enc606_dawn_candle_sma
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_enc606_dawn_candle_sma.cpp"
+    )
+    target_link_libraries(dc_enc606_dawn_candle_sma PRIVATE dc_gpu)
+    add_test(NAME dc_enc606_dawn_candle_sma COMMAND dc_enc606_dawn_candle_sma)
 
     # ENC-491 (P2.8) — texturedQuad@1 + TextureManager on Dawn. Exercises the new
     # DawnDevice texture/sampler support (createTexture RGBA8Unorm +

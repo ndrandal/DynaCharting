@@ -9,17 +9,20 @@
 // with clear errors: a dangling scale ref, a wrong-dtype scale<->field binding,
 // and a channel set that does not cover the pipeline's required format.
 //
-// THE TIME COLUMN / ENCODE-PASS LIMITATION (surfaced design decision)
-// -------------------------------------------------------------------
-// RESEARCH §6.2's candle binds x = time(t) over a `timestamp` column. The Phase-1
-// encode pass (ENC-601) reads numeric channels through the f32 column view ONLY —
-// a `timestamp` column has no f32 view by design (epoch-ms overflows f32). So a
-// time-scaled channel on a timestamp column PASSES the §6.1 typing checks but is
-// REJECTED at build() by the encode pass (UnresolvableChannel). That is correct
-// fail-fast behavior and a clean seam for when ENC-601 gains the f32-offset time
-// path. The byte-exact happy-path test therefore uses an f32 `t` column with a
-// linear x scale (exactly how the encode test packs candles); a dedicated case
-// asserts the timestamp+time path is rejected at build with a clear error.
+// THE TIME COLUMN / ENCODE-PASS TIME PATH (ENC-606 Part A — the gap is now WIRED)
+// -----------------------------------------------------------------------------
+// RESEARCH §6.2's candle binds x = time(t) over a `timestamp` column. ENC-605
+// surfaced that the Phase-1 encode pass read numeric channels through the f32
+// column view ONLY — a `timestamp` column has no f32 view by design (epoch-ms
+// overflows f32) — so a time-scaled channel was REJECTED at build(). ENC-606 Part
+// A wires the timestamp→encode path minimally + additively: when a position
+// channel binds a TimeScale to a Timestamp(i64 epoch-ms) column, Encoding::resolve
+// reads the i64 column losslessly into f64, normalizes it to a small RELATIVE f32
+// offset against the scale's CPU base epoch (TimeScale::normalizedOffsetF32), and
+// maps that — so a real time x-axis renders with NO f32 epoch-ms overflow. The
+// byte-exact happy-path test below still uses an f32 `t` column with a linear x
+// scale; a dedicated case now asserts the timestamp+time path BUILDS and packs the
+// correct scaled bytes (was: asserted rejected).
 #include "dc/data/TableStore.hpp"
 #include "dc/ingest/IngestProcessor.hpp"
 #include "dc/manifest/Manifest.hpp"
@@ -359,9 +362,10 @@ int main() {
   }
 
   // =========================================================================
-  // TIMESTAMP + TIME scale — passes §6.1 typing (time<-timestamp) but the
-  // Phase-1 encode pass reads channels as f32 only, so build() REJECTS it with a
-  // clear error. This is the surfaced encode-pass-is-f32-only seam (see header).
+  // TIMESTAMP + TIME scale (ENC-606 Part A) — passes §6.1 typing (time<-timestamp)
+  // AND now BUILDS: the encode pass routes a time-scaled timestamp channel through
+  // the i64 -> f64 -> relative-f32-offset path (no epoch-ms->f32 overflow) and
+  // packs the correct scaled x bytes. Was rejected pre-ENC-606.
   // =========================================================================
   {
     const char* tsManifest = R"JSON(
@@ -378,12 +382,15 @@ int main() {
     dc::Manifest m;
     auto lr = m.load(tsManifest);
     check(lr.ok(),
-          "ts-seam: timestamp+time manifest PASSES §6.1 typing at load");
+          "ts-time: timestamp+time manifest PASSES §6.1 typing at load");
     dc::IngestProcessor ingest;
     auto src = dc::makeBufferByteSource(ingest);
-    // append a couple of timestamp (i64) + f32 rows.
+    // append a couple of timestamp (i64 epoch-ms) + f32 rows. Two epoch-ms values
+    // 60 s apart — both far past the f32 mantissa limit, so a naive f32 cast would
+    // collapse them to the SAME value. The relative-offset path keeps them apart.
+    const std::int64_t t0 = 1700000000000LL, t1 = 1700000060000LL;
     {
-      std::vector<std::int64_t> ts = {1700000000000LL, 1700000060000LL};
+      std::vector<std::int64_t> ts = {t0, t1};
       std::vector<std::uint8_t> batch;
       appendRecord(batch, *m.columnBufferId("d", "t"), ts.data(),
                    static_cast<std::uint32_t>(ts.size() * sizeof(std::int64_t)));
@@ -391,8 +398,30 @@ int main() {
     }
     appendF32(ingest, *m.columnBufferId("d", "v"), {1.0f, 2.0f});
     auto br = m.build(src);
-    check(br.status == dc::ManifestStatus::EncodeRejected,
-          "ts-seam: build REJECTS the time-on-timestamp channel (encode is f32-only)");
+    check(br.ok(),
+          "ts-time: build NOW SUCCEEDS (time-on-timestamp channel is wired)");
+
+    // The line packs one segment (2 LineList verts, 8B each). x is the TimeScale
+    // mapping of the epoch-ms (via the relative f32 offset); over the auto-domain
+    // [t0,t1] the endpoints map to the range extents (width => [0,1]).
+    const dc::CompiledMark* ln = m.compiledMark("ln");
+    check(ln != nullptr && ln->result.bytes.size() == 2u * 8u,
+          "ts-time: line packs 1 segment (2 * 8B) from the timestamp x channel");
+    const dc::Scale* xt = m.scale("xt");
+    const dc::Scale* yv = m.scale("yv");
+    bool tsOk =
+        eqf(f32At(ln->result.bytes, 0),
+            static_cast<float>(xt->map(static_cast<double>(t0)))) &&
+        eqf(f32At(ln->result.bytes, 4), static_cast<float>(yv->map(1.0))) &&
+        eqf(f32At(ln->result.bytes, 8),
+            static_cast<float>(xt->map(static_cast<double>(t1)))) &&
+        eqf(f32At(ln->result.bytes, 12), static_cast<float>(yv->map(2.0)));
+    check(tsOk,
+          "ts-time: x bytes == TimeScale.map(epoch-ms) (relative-offset path, no overflow)");
+    // The two distinct epoch-ms 60 s apart produce DISTINCT x (the overflow trap
+    // a naive f32 epoch-ms cast would fall into is avoided).
+    check(!eqf(f32At(ln->result.bytes, 0), f32At(ln->result.bytes, 8)),
+          "ts-time: distinct epoch-ms -> distinct x (no f32 epoch-ms collapse)");
   }
 
   // =========================================================================
