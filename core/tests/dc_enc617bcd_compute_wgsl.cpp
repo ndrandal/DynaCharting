@@ -59,7 +59,7 @@ int main() {
           "bin: floor((v-firstEdge)/step)");
     check(has(bin, "max(0, min(b, i32(params.binCount) - 1))"),
           "bin: clamp to [0, count-1]");
-    check(has(bin, "v == v") && has(bin, "3.4028235e38f"),
+    check(has(bin, "v == v") && has(bin, "(v - v) == 0.0"),
           "bin: finite guard (nan/inf -> bin 0)");
   }
 

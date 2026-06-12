@@ -68,7 +68,10 @@ std::string buildBinHistogramKernelWgsl() {
   // Byte-identical to BinTransform: b = clamp(floor((v-firstEdge)/step), 0,
   // count-1); a non-finite value lands in bin 0 (CPU's std::isfinite guard).
   s += "  var b : i32 = 0;\n";
-  s += "  if (v == v && abs(v) <= 3.4028235e38f) {\n";  // finite (not nan/inf)
+  // finite(v): rules out NaN (v==v) and +/-inf (inf-inf == NaN). Avoids an
+  // f32 max literal — Tint rejects 3.4028235e38 as "cannot be represented as
+  // f32" because it rounds up past FLT_MAX to inf at compile time.
+  s += "  if (v == v && (v - v) == 0.0) {\n";
   s += "    b = i32(floor((v - params.firstEdge) / params.step));\n";
   s += "    b = max(0, min(b, i32(params.binCount) - 1));\n";
   s += "  }\n";
