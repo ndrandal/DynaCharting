@@ -537,6 +537,20 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_enc617a_wgsl_codegen PRIVATE dc)
   add_test(NAME dc_enc617a_wgsl_codegen COMMAND dc_enc617a_wgsl_codegen)
 
+  # ENC-617b/c/d (Epic ENC-617) — GPU compute kernel builders for the
+  # non-expression transforms (aggregate=parallel reduction, bin=atomic-u32
+  # histogram, stack=prefix-sum scan, kde=splat-accumulate; RESEARCH §5.1).
+  # GPU-FREE fast test: emit each kernel and assert its storage bindings /
+  # atomics / structure (incl. the keep-alive on EVERY binding so Dawn's auto
+  # bind-group layout does not prune one -> the ENC-617a all-zeros lesson). The
+  # byte-identical GPU==CPU proofs are the Dawn tests dc_enc617{b,c,d}_dawn_*
+  # (built only with -DDC_FETCH_DAWN=ON).
+  add_executable(dc_enc617bcd_compute_wgsl
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_enc617bcd_compute_wgsl.cpp"
+  )
+  target_link_libraries(dc_enc617bcd_compute_wgsl PRIVATE dc)
+  add_test(NAME dc_enc617bcd_compute_wgsl COMMAND dc_enc617bcd_compute_wgsl)
+
   # ENC-616a (Epic ENC-616) — Transform DAG foundation: typed ColumnStore + topo
   # evaluator with per-node dirty gating (reusing ReactiveGraph) + filter/formula.
   add_executable(dc_uce_transform_dag
@@ -1821,6 +1835,37 @@ if (DC_BUILD_TESTS)
     )
     target_link_libraries(dc_enc617a_dawn_compute_expr PRIVATE dc_gpu)
     add_test(NAME dc_enc617a_dawn_compute_expr COMMAND dc_enc617a_dawn_compute_expr)
+
+    # ENC-617b (Epic ENC-617) — GPU aggregate (parallel reduction) + bin
+    # (atomic-u32 histogram), BYTE-IDENTICAL to the CPU AggregateTransform /
+    # BinTransform. Dense integer group keys + non-negative integer measures make
+    # the u32 reduction exact; the histogram uses the SAME floor/clamp bin
+    # assignment. Links only dc_gpu.
+    add_executable(dc_enc617b_dawn_aggregate_bin
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_enc617b_dawn_aggregate_bin.cpp"
+    )
+    target_link_libraries(dc_enc617b_dawn_aggregate_bin PRIVATE dc_gpu)
+    add_test(NAME dc_enc617b_dawn_aggregate_bin COMMAND dc_enc617b_dawn_aggregate_bin)
+
+    # ENC-617c (Epic ENC-617) — GPU stack via a work-efficient prefix-sum SCAN,
+    # BYTE-IDENTICAL to the CPU StackTransform::Zero running sum. Single-workgroup
+    # Blelloch scan over integer-valued measures (f32-exact partials). dc_gpu.
+    add_executable(dc_enc617c_dawn_scan_stack
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_enc617c_dawn_scan_stack.cpp"
+    )
+    target_link_libraries(dc_enc617c_dawn_scan_stack PRIVATE dc_gpu)
+    add_test(NAME dc_enc617c_dawn_scan_stack COMMAND dc_enc617c_dawn_scan_stack)
+
+    # ENC-617d (Epic ENC-617) — 2D KDE splat-accumulate compute pass: scatter
+    # points into a grid accumulating a gaussian kernel (fixed-point u32 atomics
+    # since WebGPU has no float atomics), BYTE-IDENTICAL to a CPU splat reference
+    # with the same quantization, then tone-mapped to color via a
+    # SequentialColorScale (the density-heatmap sink). dc_gpu.
+    add_executable(dc_enc617d_dawn_kde
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_enc617d_dawn_kde.cpp"
+    )
+    target_link_libraries(dc_enc617d_dawn_kde PRIVATE dc_gpu)
+    add_test(NAME dc_enc617d_dawn_kde COMMAND dc_enc617d_dawn_kde)
 
     # ENC-486 (P2.3) — line2d@1 + points@1 end-to-end on Dawn. Renders a line2d
     # scene and a points scene through the backend registry with DeviceKind::Dawn
