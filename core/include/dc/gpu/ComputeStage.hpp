@@ -32,6 +32,7 @@
 
 #include "dc/gpu/DawnDevice.hpp"
 #include "dc/transform/ComputeWgsl.hpp"
+#include "dc/transform/CustomCompute.hpp"
 #include "dc/transform/Expr.hpp"
 
 #include <cstdint>
@@ -146,6 +147,48 @@ class ComputeStage {
   // Returns false on device failure or a ragged px/py / empty grid.
   bool runKde(const std::vector<float>& px, const std::vector<float>& py,
               const KdeGrid& grid, std::vector<float>& density);
+
+  // ===== ENC-619 — the WGSL ESCAPE HATCH (customCompute + FFT/STFT + contour) =
+
+  // runCustomCompute — the general escape-hatch dispatch. Runs a sandbox-validated
+  // CustomComputeSpec: uploads each input column (binding order = the spec's
+  // inputs then outputs, by @binding index, ascending), allocates each output
+  // (zero-initialized to the declared cap), Tint-validates + builds the pipeline
+  // (a WGSL failure surfaces via lastDeviceError() and returns false — the §5.3
+  // "reject the node, no partial render" semantics), dispatches the spec's grid,
+  // and reads every output back into `outputs` (parallel to spec.outputs, sized to
+  // each output's capElements). A VARIABLE-CARDINALITY output additionally has an
+  // engine-owned atomic counter appended after it in slot order; the live count is
+  // returned in `outCounts` (parallel to spec.outputs; 0 for fixed-cardinality).
+  // Returns false on a sandbox rejection (call validateCustomCompute first for the
+  // message), a ragged input, or any device failure.
+  bool runCustomCompute(const CustomComputeSpec& spec,
+                        const std::vector<std::vector<float>>& inputs,
+                        std::vector<std::vector<float>>& outputs,
+                        std::vector<std::uint32_t>& outCounts);
+
+  // runStft — the shipped FFT/STFT reference kernel (RESEARCH §7). Windowed
+  // short-time FFT magnitude over a raw signal column -> a spectrogram magnitude
+  // grid (frames × bins, row-major; bins = fftSize/2+1). BIT-COMPARABLE (within fp
+  // tolerance) to referenceStft. `frames`/`bins` receive the grid dims. Returns
+  // false on a bad spec (fftSize/hop 0, fewer than fftSize samples) or device
+  // failure.
+  bool runStft(const std::vector<float>& samples, std::uint32_t fftSize,
+               std::uint32_t hop, std::vector<float>& mag, std::uint32_t& frames,
+               std::uint32_t& bins);
+
+  // runMarchingSquares — the shipped marching-squares reference kernel (RESEARCH
+  // §7). Per-cell iso-line extraction from a scalar field (gridW × gridH,
+  // row-major) at level `iso` -> line segments (4 f32 each: x0,y0,x1,y1 in grid
+  // space). The VARIABLE-CARDINALITY path: an engine-owned cap-bounded buffer +
+  // atomic counter + compaction. `capSegments` bounds the output; `segs` receives
+  // 4*min(count,cap) f32 (the compacted live prefix), `count` the TOTAL emitted
+  // (which may exceed cap on overflow — the caller sees the clamp). Returns false
+  // on an empty/degenerate grid or device failure.
+  bool runMarchingSquares(const std::vector<float>& field, std::uint32_t gridW,
+                          std::uint32_t gridH, float iso,
+                          std::uint32_t capSegments, std::vector<float>& segs,
+                          std::uint32_t& count);
 
  private:
   // Shared core: upload `columns` + an output buffer of `outBytes`, compile

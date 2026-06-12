@@ -93,4 +93,50 @@ std::string buildKdeSplatKernelWgsl();
 // rounded). Public so the host divides the read-back u32 grid by the same value.
 constexpr float kKdeFixedScale = 65536.0f;
 
+// ===========================================================================
+// ENC-619 (Epic ENC-619) — the WGSL ESCAPE HATCH reference kernels. These are the
+// two SHIPPED, sandbox-validated kernels (RESEARCH §7: FFT/STFT and marching-
+// squares are the confirmed grammar gaps). They go through the SAME sandbox
+// contract (CustomCompute.hpp) as author-supplied WGSL; being pre-authored makes
+// them the validated proof. Builders live here (pure string, GPU-free) so the
+// kernel STRUCTURE is unit-testable without a GPU; the GPU==CPU bit-checks are the
+// Dawn tests (dc_enc619_dawn_fft / dc_enc619_dawn_marching_squares).
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// buildStftKernelWgsl — a WINDOWED SHORT-TIME FFT MAGNITUDE pass. One invocation
+// per (frame, bin): for frame f starting at sample f*hop, it computes the DFT
+// magnitude at frequency bin k over the Hann-windowed length-`fftSize` slice:
+//   X[k] = sum_{n=0..fftSize-1} w[n] * sample[f*hop+n] * exp(-2πi k n / fftSize)
+//   mag[f*bins + k] = |X[k]| / fftSize
+// Direct DFT per bin (no in-place Stockham butterfly): the per-output-element form
+// maps one cleanly to one GPU invocation and is BIT-COMPARABLE to the identical
+// CPU reference (referenceStft). `bins` = fftSize/2 + 1 (the non-redundant half).
+// The Hann window is computed in-kernel: w[n] = 0.5*(1 - cos(2π n /(fftSize-1))).
+//
+// Bindings @group(0): 0=sample(array<f32>, read), 1=mag(array<f32>, write),
+//   2=params(struct{fftSize,hop,frames,bins:u32}). Every binding is statically
+// referenced (the keep-alive lesson): mag is written, params is read each branch.
+std::string buildStftKernelWgsl();
+
+// ---------------------------------------------------------------------------
+// buildMarchingSquaresKernelWgsl — per-CELL iso-line extraction from a scalar field
+// (gridW x gridH, row-major) at iso-level `iso`. One invocation per cell (gx,gy)
+// in [0,gridW-1) x [0,gridH-1): it classifies the 4 corners against `iso`, and for
+// each edge crossing emits a LINE SEGMENT (two endpoints, linearly interpolated to
+// the iso crossing) into a VARIABLE-CARDINALITY output. A cell emits 0, 1, or 2
+// segments (the 16 marching-squares cases; the two ambiguous saddles resolve via
+// the field's CENTER value, matching the CPU reference exactly).
+//
+// VARIABLE CARDINALITY (§7.2): the kernel atomicAdd's a counter to claim a slot in
+// a MAX-BOUNDED segment buffer (cap declared by the host) and writes the segment
+// there; an overflow (counter >= cap) drops the segment (the host clamps the read
+// count to the cap). The host reads the counter, then reads back min(count,cap)
+// segments — the compaction. Each segment is 4 f32 (x0,y0,x1,y1) in GRID space.
+//
+// Bindings @group(0): 0=field(array<f32>, read), 1=segs(array<f32>, write, 4 per
+//   segment), 2=segCount(atomic<u32>, the counter), 3=params(struct{gridW,gridH,
+//   capSegs:u32, iso:f32}). The kernel references EVERY binding statically.
+std::string buildMarchingSquaresKernelWgsl();
+
 }  // namespace dc

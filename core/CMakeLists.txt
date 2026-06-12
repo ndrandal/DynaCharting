@@ -551,6 +551,19 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_enc617bcd_compute_wgsl PRIVATE dc)
   add_test(NAME dc_enc617bcd_compute_wgsl COMMAND dc_enc617bcd_compute_wgsl)
 
+  # ENC-619 (Epic ENC-619, the FINAL epic) — the WGSL ESCAPE HATCH. GPU-FREE fast
+  # test: the §5.3 SANDBOX CONTRACT (a kernel exceeding ANY static limit is
+  # REJECTED at validate()), the two shipped kernels' WGSL structure (FFT/STFT +
+  # marching-squares; keep-alive on every binding), and the CPU references
+  # (referenceStft peaks at the tone's bin; referenceMarchingSquares iso-line +
+  # variable cardinality). The byte-comparable GPU==CPU proofs are the Dawn tests
+  # dc_enc619_dawn_{customcompute,fft,marching_squares} (DC_FETCH_DAWN=ON).
+  add_executable(dc_enc619_custom_compute
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_enc619_custom_compute.cpp"
+  )
+  target_link_libraries(dc_enc619_custom_compute PRIVATE dc)
+  add_test(NAME dc_enc619_custom_compute COMMAND dc_enc619_custom_compute)
+
   # ENC-616a (Epic ENC-616) — Transform DAG foundation: typed ColumnStore + topo
   # evaluator with per-node dirty gating (reusing ReactiveGraph) + filter/formula.
   add_executable(dc_uce_transform_dag
@@ -1866,6 +1879,35 @@ if (DC_BUILD_TESTS)
     )
     target_link_libraries(dc_enc617d_dawn_kde PRIVATE dc_gpu)
     add_test(NAME dc_enc617d_dawn_kde COMMAND dc_enc617d_dawn_kde)
+
+    # ENC-619 (Epic ENC-619, the FINAL epic) — the WGSL ESCAPE HATCH on Dawn.
+    #  * dc_enc619_dawn_customcompute — a trivial author custom kernel runs through
+    #    ComputeStage::runCustomCompute (the §5.3 sandbox: I/O only through declared
+    #    storage bindings), and a malformed WGSL kernel is REJECTED via
+    #    lastDeviceError() (no partial render).
+    #  * dc_enc619_dawn_fft — the shipped windowed short-time FFT magnitude kernel:
+    #    the GPU spectrogram grid == the CPU FFT reference within fp tolerance.
+    #  * dc_enc619_dawn_marching_squares — the shipped marching-squares kernel: GPU
+    #    iso-line segments (VARIABLE cardinality: bounded buffer + atomic count +
+    #    compaction) == the CPU reference on a known field (sorted, bit-exact).
+    add_executable(dc_enc619_dawn_customcompute
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_enc619_dawn_customcompute.cpp"
+    )
+    target_link_libraries(dc_enc619_dawn_customcompute PRIVATE dc_gpu)
+    add_test(NAME dc_enc619_dawn_customcompute COMMAND dc_enc619_dawn_customcompute)
+
+    add_executable(dc_enc619_dawn_fft
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_enc619_dawn_fft.cpp"
+    )
+    target_link_libraries(dc_enc619_dawn_fft PRIVATE dc_gpu)
+    add_test(NAME dc_enc619_dawn_fft COMMAND dc_enc619_dawn_fft)
+
+    add_executable(dc_enc619_dawn_marching_squares
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_enc619_dawn_marching_squares.cpp"
+    )
+    target_link_libraries(dc_enc619_dawn_marching_squares PRIVATE dc_gpu)
+    add_test(NAME dc_enc619_dawn_marching_squares
+             COMMAND dc_enc619_dawn_marching_squares)
 
     # ENC-486 (P2.3) — line2d@1 + points@1 end-to-end on Dawn. Renders a line2d
     # scene and a points scene through the backend registry with DeviceKind::Dawn

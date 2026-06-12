@@ -8,6 +8,7 @@
 
 #include "dc/transform/ExprWgsl.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <limits>
@@ -340,6 +341,218 @@ bool ComputeStage::runKde(const std::vector<float>& px,
     density[k] = static_cast<float>(gridU[k]) / kKdeFixedScale;
   }
   return true;
+}
+
+// ===========================================================================
+// ENC-619 — the WGSL escape hatch: general customCompute dispatch + the two
+// shipped reference kernels (FFT/STFT, marching-squares).
+// ===========================================================================
+
+bool ComputeStage::runCustomCompute(
+    const CustomComputeSpec& spec,
+    const std::vector<std::vector<float>>& inputs,
+    std::vector<std::vector<float>>& outputs,
+    std::vector<std::uint32_t>& outCounts) {
+  if (inputs.size() != spec.inputs.size()) return false;
+
+  // Sandbox gate FIRST (no partial render): a violation rejects before any GPU
+  // resource is touched. Input element counts size the input bindings.
+  std::vector<std::uint32_t> inElems(spec.inputs.size(), 0u);
+  for (std::size_t k = 0; k < inputs.size(); ++k)
+    inElems[k] = static_cast<std::uint32_t>(inputs[k].size());
+  if (!validateCustomCompute(spec, inElems).ok()) return false;
+
+  // Assemble the binding list in ASCENDING @binding order (dispatchCompute binds
+  // the array sequentially to bindings 0,1,2,…, so the device buffer order must
+  // match the kernel's @binding(N) declarations). A variable-cardinality output
+  // carries an extra atomic-counter buffer immediately after it (the kernel's next
+  // @binding); the spec's binding indices already account for that ordering.
+  struct Slot {
+    std::uint32_t binding;
+    BufferHandle buf;
+  };
+  std::vector<Slot> slots;
+
+  // Inputs: upload read-only storage buffers.
+  for (std::size_t k = 0; k < spec.inputs.size(); ++k) {
+    const auto& col = inputs[k];
+    const std::size_t bytes = col.size() * sizeof(float);
+    BufferHandle h =
+        device_.createStorageBuffer(bytes ? bytes : 4, col.data(), bytes);
+    if (!h.valid()) return false;
+    slots.push_back({spec.inputs[k].binding, h});
+  }
+
+  // Outputs: allocate zero-initialized buffers at the declared cap. A
+  // variable-cardinality output also gets a zeroed u32 counter buffer at the
+  // binding immediately following it.
+  outputs.assign(spec.outputs.size(), {});
+  outCounts.assign(spec.outputs.size(), 0u);
+  // Cache the output + counter HANDLES directly (handles are stable identities,
+  // independent of the slot vector's order) so readback is robust to the sort.
+  std::vector<BufferHandle> outHandle(spec.outputs.size());
+  std::vector<BufferHandle> cntHandle(spec.outputs.size());  // null if fixed-card
+  for (std::size_t k = 0; k < spec.outputs.size(); ++k) {
+    const auto& o = spec.outputs[k];
+    const std::size_t bytes =
+        static_cast<std::size_t>(o.capElements) * ccDTypeBytes(o.dtype);
+    BufferHandle h =
+        device_.createStorageBuffer(bytes ? bytes : 4, nullptr, 0);
+    if (!h.valid()) return false;
+    outHandle[k] = h;
+    slots.push_back({o.binding, h});
+    outputs[k].assign(o.capElements, 0.0f);
+    if (o.variableCardinality) {
+      const std::uint32_t zero = 0u;
+      BufferHandle cnt =
+          device_.createStorageBuffer(sizeof(std::uint32_t), &zero, sizeof(zero));
+      if (!cnt.valid()) return false;
+      cntHandle[k] = cnt;
+      slots.push_back({o.binding + 1u, cnt});
+    }
+  }
+
+  std::sort(slots.begin(), slots.end(),
+            [](const Slot& a, const Slot& b) { return a.binding < b.binding; });
+  std::vector<BufferHandle> bindings;
+  bindings.reserve(slots.size());
+  for (const auto& s : slots) bindings.push_back(s.buf);
+
+  ComputePipelineHandle pipe =
+      device_.createComputePipeline(spec.wgsl.c_str(), spec.entryPoint.c_str());
+  if (!pipe.valid()) return false;  // Tint rejected -> lastDeviceError() set.
+
+  if (!device_.dispatchCompute(pipe, bindings, spec.dispatchX, spec.dispatchY,
+                               spec.dispatchZ)) {
+    return false;
+  }
+
+  // Read each output back; for a variable-cardinality output, read its atomic
+  // counter and compact to the live prefix (min(count, cap) elements).
+  for (std::size_t k = 0; k < spec.outputs.size(); ++k) {
+    const auto& o = spec.outputs[k];
+    if (cntHandle[k].valid()) {
+      std::uint32_t count = 0;
+      if (!device_.readBuffer(cntHandle[k], 0, sizeof(std::uint32_t),
+                              reinterpret_cast<std::uint8_t*>(&count))) {
+        return false;
+      }
+      outCounts[k] = count;
+      const std::uint32_t live = std::min(count, o.capElements);
+      outputs[k].assign(live, 0.0f);
+      if (live == 0) continue;
+    }
+    if (outputs[k].empty()) continue;
+    if (!device_.readBuffer(
+            outHandle[k], 0, outputs[k].size() * sizeof(float),
+            reinterpret_cast<std::uint8_t*>(outputs[k].data()))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool ComputeStage::runStft(const std::vector<float>& samples,
+                           std::uint32_t fftSize, std::uint32_t hop,
+                           std::vector<float>& mag, std::uint32_t& frames,
+                           std::uint32_t& bins) {
+  frames = 0;
+  bins = fftSize / 2u + 1u;
+  mag.clear();
+  if (fftSize == 0 || hop == 0 || samples.size() < fftSize) return false;
+  frames = static_cast<std::uint32_t>((samples.size() - fftSize) / hop) + 1u;
+
+  struct {
+    std::uint32_t fftSize;
+    std::uint32_t hop;
+    std::uint32_t frames;
+    std::uint32_t bins;
+  } params{fftSize, hop, frames, bins};
+
+  const std::size_t magCount = static_cast<std::size_t>(frames) * bins;
+  mag.assign(magCount, 0.0f);
+
+  BufferHandle sampBuf = device_.createStorageBuffer(
+      samples.size() * sizeof(float), samples.data(),
+      samples.size() * sizeof(float));
+  BufferHandle magBuf =
+      device_.createStorageBuffer(magCount * sizeof(float), nullptr, 0);
+  BufferHandle paramBuf =
+      device_.createStorageBuffer(sizeof(params), &params, sizeof(params));
+  if (!sampBuf.valid() || !magBuf.valid() || !paramBuf.valid()) return false;
+
+  const std::string wgsl = buildStftKernelWgsl();
+  ComputePipelineHandle pipe =
+      device_.createComputePipeline(wgsl.c_str(), "main");
+  if (!pipe.valid()) return false;
+
+  // @workgroup_size(8,8,1) -> ceil(frames/8) x ceil(bins/8) workgroups.
+  const std::uint32_t gx = (frames + 7u) / 8u;
+  const std::uint32_t gy = (bins + 7u) / 8u;
+  if (!device_.dispatchCompute(pipe, {sampBuf, magBuf, paramBuf}, gx, gy, 1u))
+    return false;
+
+  return device_.readBuffer(magBuf, 0, magCount * sizeof(float),
+                            reinterpret_cast<std::uint8_t*>(mag.data()));
+}
+
+bool ComputeStage::runMarchingSquares(const std::vector<float>& field,
+                                      std::uint32_t gridW, std::uint32_t gridH,
+                                      float iso, std::uint32_t capSegments,
+                                      std::vector<float>& segs,
+                                      std::uint32_t& count) {
+  count = 0;
+  segs.clear();
+  if (gridW < 2 || gridH < 2 || capSegments == 0) return false;
+  if (field.size() < static_cast<std::size_t>(gridW) * gridH) return false;
+
+  struct {
+    std::uint32_t gridW;
+    std::uint32_t gridH;
+    std::uint32_t capSegs;
+    float iso;
+  } params{gridW, gridH, capSegments, iso};
+
+  // Bounded output: 4 f32 per segment + a u32 atomic counter.
+  std::vector<float> segBuf(static_cast<std::size_t>(capSegments) * 4u, 0.0f);
+  const std::uint32_t zero = 0u;
+
+  BufferHandle fieldBuf = device_.createStorageBuffer(
+      field.size() * sizeof(float), field.data(), field.size() * sizeof(float));
+  BufferHandle segsBuf = device_.createStorageBuffer(
+      segBuf.size() * sizeof(float), segBuf.data(), segBuf.size() * sizeof(float));
+  BufferHandle cntBuf =
+      device_.createStorageBuffer(sizeof(std::uint32_t), &zero, sizeof(zero));
+  BufferHandle paramBuf =
+      device_.createStorageBuffer(sizeof(params), &params, sizeof(params));
+  if (!fieldBuf.valid() || !segsBuf.valid() || !cntBuf.valid() ||
+      !paramBuf.valid()) {
+    return false;
+  }
+
+  const std::string wgsl = buildMarchingSquaresKernelWgsl();
+  ComputePipelineHandle pipe =
+      device_.createComputePipeline(wgsl.c_str(), "main");
+  if (!pipe.valid()) return false;
+
+  // One invocation per cell; @workgroup_size(8,8,1).
+  const std::uint32_t gx = ((gridW - 1u) + 7u) / 8u;
+  const std::uint32_t gy = ((gridH - 1u) + 7u) / 8u;
+  if (!device_.dispatchCompute(pipe, {fieldBuf, segsBuf, cntBuf, paramBuf}, gx,
+                               gy, 1u)) {
+    return false;
+  }
+
+  // Read the counter, then compact: the live count is min(count, cap) segments.
+  if (!device_.readBuffer(cntBuf, 0, sizeof(std::uint32_t),
+                          reinterpret_cast<std::uint8_t*>(&count))) {
+    return false;
+  }
+  const std::uint32_t live = std::min(count, capSegments);
+  segs.assign(static_cast<std::size_t>(live) * 4u, 0.0f);
+  if (live == 0) return true;
+  return device_.readBuffer(segsBuf, 0, segs.size() * sizeof(float),
+                            reinterpret_cast<std::uint8_t*>(segs.data()));
 }
 
 }  // namespace dc

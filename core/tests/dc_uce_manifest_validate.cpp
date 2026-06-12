@@ -265,6 +265,53 @@ int main() {
           "class-3 downgrade warning localized to mark 'dots'");
   }
 
+  // ===== ENC-619 — the customCompute escape hatch (§5.3) ===================
+  {
+    // A VALID customCompute node: 1 input (a source f32 column), 1 output (cap
+    // bounded), a static @workgroup_size, under every sandbox limit. Its output
+    // column ('mag') is bound by a downstream scale/mark.
+    const char* validCC = R"JSON({
+      "id":"cc",
+      "data":{"sources":[{"id":"sig","columns":{"sample":{"dtype":"f32"}}}]},
+      "transforms":[
+        {"id":"spec","in":"sig","op":"customCompute","customCompute":{
+          "wgsl":"@group(0) @binding(0) var<storage, read> sample : array<f32>;\n@group(0) @binding(1) var<storage, read_write> mag : array<f32>;\n@compute @workgroup_size(64) fn main() { mag[0] = sample[0]; }\n",
+          "inputs":[{"binding":0,"column":"sample","dtype":"f32"}],
+          "outputs":[{"binding":1,"name":"mag","dtype":"f32","cap":4096}],
+          "dispatch":{"x":64,"y":1,"z":1}}}],
+      "scales":[{"id":"sy","type":"linear","domain":[0,1],"range":"height"},
+                {"id":"sx","type":"linear","domain":[0,1],"range":"width"}],
+      "marks":[{"id":"line","type":"point","from":"spec","pipeline":"points@1",
+        "encoding":{"x":{"scale":"sx","field":"mag"},"y":{"scale":"sy","field":"mag"}}}]
+    })JSON";
+    auto r = V.validate(validCC);
+    if (!r.valid()) std::fprintf(stderr, "%s", r.toString().c_str());
+    check(r.valid(), "customCompute (§5.3) node is valid + its output column binds");
+
+    // A SANDBOX-VIOLATING node: @workgroup_size(512) exceeds the 256 cap ->
+    // REJECTED at load (no partial render), with a localized sandbox message.
+    std::string bad = validCC;
+    auto p = bad.find("@workgroup_size(64)");
+    bad.replace(p, std::string("@workgroup_size(64)").size(),
+                "@workgroup_size(512)");
+    auto rb = V.validate(bad);
+    check(!rb.valid(), "customCompute exceeding workgroup cap is REJECTED at load");
+    check(hasIssue(rb, dc::ValidationCheck::ColumnSet, dc::Severity::Error,
+                   "sandbox rejected", "spec"),
+          "sandbox rejection localized to the customCompute node 'spec'");
+
+    // An input column that does not resolve -> a ref-resolution error.
+    std::string badRef = validCC;
+    auto pr = badRef.find("\"column\":\"sample\"");
+    badRef.replace(pr, std::string("\"column\":\"sample\"").size(),
+                   "\"column\":\"nope\"");
+    auto rr = V.validate(badRef);
+    check(!rr.valid(), "customCompute input column must resolve");
+    check(hasIssue(rr, dc::ValidationCheck::RefResolution, dc::Severity::Error,
+                   "input column 'nope'", "spec"),
+          "customCompute dangling input column localized to 'spec'");
+  }
+
   std::printf("\n%d passed, %d failed\n", passed, failed);
   return failed == 0 ? 0 : 1;
 }
