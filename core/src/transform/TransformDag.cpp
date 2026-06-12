@@ -249,6 +249,8 @@ double TransformDag::readNumFrom(const Node& in, const std::string& name,
         auto v = tables_.viewTimestamp(in.tableId, name, src_);
         return i < v.size() ? static_cast<double>(v[i]) : std::nan("");
       }
+      case DType::List:
+        return std::nan("");  // ragged: no scalar value (read via raggedF32/I32)
     }
     return std::nan("");
   }
@@ -270,6 +272,8 @@ double TransformDag::readNumFrom(const Node& in, const std::string& name,
       auto v = store_.viewTimestamp(in.id, name);
       return i < v.size() ? static_cast<double>(v[i]) : std::nan("");
     }
+    case DType::List:
+      return std::nan("");  // ragged: no scalar value (transform outputs are scalar)
   }
   return std::nan("");
 }
@@ -300,6 +304,17 @@ ColumnResolver TransformDag::makeResolver(const Node& in) const {
       return c ? c->dtype : DType::F32;
     }
     return store_.dtypeOf(inPtr->id, name);
+  };
+  // Ragged (List) views resolve ONLY against a source's TableStore (List is an
+  // ingest data model, not a transform output) — an upstream input returns invalid.
+  r.raggedF32 = [this, inPtr](const std::string& name) -> RaggedColumn<float> {
+    if (inPtr->kind != Kind::Source) return {};
+    return tables_.viewRaggedF32(inPtr->tableId, name, src_);
+  };
+  r.raggedI32 =
+      [this, inPtr](const std::string& name) -> RaggedColumn<std::int32_t> {
+    if (inPtr->kind != Kind::Source) return {};
+    return tables_.viewRaggedI32(inPtr->tableId, name, src_);
   };
   return r;
 }

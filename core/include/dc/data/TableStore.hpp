@@ -66,9 +66,21 @@ enum class DType : std::uint8_t {
   I32,        // 32-bit signed int      (4 bytes) — native GPU
   Cat,        // category code: u32 dictionary index (4 bytes) + string palette
   Timestamp,  // i64 epoch-ms           (8 bytes) — CPU-ONLY, never f32 (overflow)
+  // ENC-618c (the geo data-model wall, RESEARCH §7.2/§7.3): a RAGGED / LIST cell.
+  // A list column's element is a VARIABLE-LENGTH span of an inner scalar dtype —
+  // Arrow ListArray style: an OFFSETS buffer (i32, length n+1) over a flat VALUES
+  // buffer (the inner dtype). Cell i is values[offsets[i] .. offsets[i+1]). The
+  // single missing primitive a choropleth needs: one polygon feature's ring
+  // vertices fit ONE cell, instead of violating the flat-column premise. Unlike a
+  // scalar dtype, a List cell has no fixed byte width; it is backed by TWO buffers
+  // and accessed through RaggedColumn (below), not the scalar reinterpret views.
+  List,       // ragged variable-length span (offsets buffer + flat values buffer)
 };
 
-// Byte width of one element of `dt`.
+// Byte width of one element of `dt`. A List has NO fixed element width (it is a
+// variable-length span backed by two buffers); 0 here marks it as not a scalar
+// fixed-width dtype — the scalar reinterpret/row-count paths key off this and so
+// transparently exclude List (they were already written to reject width-0 dtypes).
 inline constexpr std::size_t dtypeByteWidth(DType dt) {
   switch (dt) {
     case DType::F32:
@@ -77,6 +89,8 @@ inline constexpr std::size_t dtypeByteWidth(DType dt) {
       return 4;
     case DType::Timestamp:
       return 8;
+    case DType::List:
+      return 0;  // ragged: no fixed element width (see RaggedColumn)
   }
   return 0;
 }
@@ -87,6 +101,7 @@ inline const char* toString(DType dt) {
     case DType::I32: return "i32";
     case DType::Cat: return "cat";
     case DType::Timestamp: return "timestamp";
+    case DType::List: return "list";
   }
   return "unknown";
 }
@@ -155,6 +170,15 @@ struct Column {
 
   // Only meaningful when dtype == Cat. The string palette for the u32 codes.
   CatDictionary dict;
+
+  // ----- List (ragged) columns only (ENC-618c) -----------------------------
+  // A List column is backed by TWO buffers, both filled by the unchanged ingest
+  // feed: `bufferId` (above) is the OFFSETS buffer (i32, length rows+1, monotone
+  // non-decreasing, starting at 0), and `valuesBufferId` is the flat VALUES buffer
+  // of inner dtype `innerDType`. Cell i spans values[offsets[i] .. offsets[i+1]).
+  // (For scalar columns these fields are unused.)
+  Id valuesBufferId{kInvalidId};
+  DType innerDType{DType::F32};
 };
 
 // A typed, length-checked view over a column's bytes. Returned by TableStore's
@@ -170,6 +194,44 @@ struct ColumnView {
   const T& operator[](std::size_t i) const { return data[i]; }
   const T* begin() const { return data; }
   const T* end() const { return data + count; }
+};
+
+// ---------------------------------------------------------------------------
+// RaggedColumn — a typed read view over a LIST (ragged) column (ENC-618c). It
+// holds the OFFSETS array (i32, length rowCount+1) and the flat VALUES array of
+// the inner dtype T. cellCount() is the number of variable-length cells (rows);
+// cell(i) hands back the SPAN of inner values for row i (a ColumnView<T> into the
+// flat buffer — no copy). This is the typed access the polygon-ingest path needs:
+// one polygon ring's vertices are one cell.
+//
+// VALIDITY: valid() is true only when the offsets buffer is well-formed (length
+// >= 1, monotone non-decreasing, last offset within the values buffer). An invalid
+// view reports cellCount() == 0 and yields empty spans.
+template <typename T>
+struct RaggedColumn {
+  const std::int32_t* offsets{nullptr};  // length cellCount()+1
+  const T* values{nullptr};              // flat inner buffer
+  std::size_t cells{0};                  // number of variable-length cells
+  std::size_t valueCount{0};             // total inner values (= offsets[cells])
+
+  bool valid() const { return offsets != nullptr && values != nullptr; }
+  std::size_t cellCount() const { return cells; }
+
+  // Length of cell i (number of inner values in row i). 0 if out of range.
+  std::size_t cellLength(std::size_t i) const {
+    if (!offsets || i >= cells) return 0;
+    return static_cast<std::size_t>(offsets[i + 1] - offsets[i]);
+  }
+
+  // The span of inner values for cell i, as a ColumnView<T> into the flat buffer.
+  // An empty view if i is out of range or the cell is empty.
+  ColumnView<T> cell(std::size_t i) const {
+    if (!valid() || i >= cells) return {};
+    const std::size_t lo = static_cast<std::size_t>(offsets[i]);
+    const std::size_t hi = static_cast<std::size_t>(offsets[i + 1]);
+    if (hi < lo || hi > valueCount) return {};
+    return {values + lo, hi - lo};
+  }
 };
 
 // ---------------------------------------------------------------------------
@@ -189,7 +251,17 @@ class TableStore {
   // Add a column to a table. Fails (false) if the table is unknown, a column of
   // that name already exists in the table, or the dtype is invalid. The bound
   // buffer need not exist yet — it is filled later by the ingest feed.
+  // NOTE: this is the SCALAR path; a List/ragged column must use addListColumn().
+  // Passing DType::List here fails (a ragged column needs two buffers).
   bool addColumn(Id tableId, const std::string& name, DType dtype, Id bufferId);
+
+  // Add a LIST (ragged) column (ENC-618c). The cell is a variable-length span of
+  // `innerDType`; the column is backed by `offsetsBufferId` (i32, length rows+1)
+  // over `valuesBufferId` (the flat inner buffer). Both are filled later by the
+  // ingest feed. Fails (false) if the table is unknown, the name is taken/empty,
+  // or `innerDType` is not a fixed-width scalar dtype (a list-of-list is rejected).
+  bool addListColumn(Id tableId, const std::string& name, DType innerDType,
+                     Id offsetsBufferId, Id valuesBufferId);
 
   // Designate `columnName` as the table's row-identity column (ENC-594 hook).
   // This ONLY records the designation in the schema; no identity semantics are
@@ -249,6 +321,18 @@ class TableStore {
   ColumnView<std::int64_t> viewTimestamp(Id tableId, const std::string& name,
                                          const BufferByteSource& src) const;
 
+  // ----- ragged (List) reinterpret (ENC-618c) -------------------------------
+  //
+  // Reinterpret a List column as a typed ragged view: its OFFSETS buffer (i32) +
+  // its flat VALUES buffer of inner type T. T must match the column's innerDType
+  // (f32→float, i32→int32_t), else an empty (invalid) view. The offsets buffer is
+  // validated (length rows+1, monotone non-decreasing, last offset within the
+  // values buffer); a malformed offsets buffer yields an invalid view (cellCount 0).
+  RaggedColumn<float> viewRaggedF32(Id tableId, const std::string& name,
+                                    const BufferByteSource& src) const;
+  RaggedColumn<std::int32_t> viewRaggedI32(Id tableId, const std::string& name,
+                                           const BufferByteSource& src) const;
+
   // Mutable dictionary for a `cat` column (e.g. the pivot ingest interns labels
   // as codes are appended). nullptr if the table/column is unknown or not Cat.
   CatDictionary* catDict(Id tableId, const std::string& name);
@@ -281,6 +365,42 @@ class TableStore {
   std::pair<const std::uint8_t*, std::size_t> rawColumn(
       Id tableId, const std::string& name, std::size_t expectWidth,
       const BufferByteSource& src) const;
+
+  // Build a validated ragged view (offsets + flat values) for a List column whose
+  // innerDType matches `expectInner`. Templated on the inner storage type T.
+  template <typename T>
+  RaggedColumn<T> rawRagged(Id tableId, const std::string& name, DType expectInner,
+                            const BufferByteSource& src) const {
+    const Column* c = column(tableId, name);
+    if (!c || c->dtype != DType::List || c->innerDType != expectInner)
+      return {};
+    const std::size_t innerW = dtypeByteWidth(expectInner);
+    if (innerW != sizeof(T)) return {};
+    const std::uint8_t* offBytes = src.data ? src.data(c->bufferId) : nullptr;
+    const std::uint32_t offSize = src.size ? src.size(c->bufferId) : 0;
+    const std::uint8_t* valBytes =
+        src.data ? src.data(c->valuesBufferId) : nullptr;
+    const std::uint32_t valSize = src.size ? src.size(c->valuesBufferId) : 0;
+    // Offsets must be a whole i32 array of length >= 1 (the empty-table sentinel
+    // [0] is one offset → 0 cells). Values may be absent only if all cells empty.
+    if (!offBytes || offSize < sizeof(std::int32_t)) return {};
+    const std::size_t offCount = offSize / sizeof(std::int32_t);
+    const std::size_t cells = offCount - 1;
+    const auto* offsets = reinterpret_cast<const std::int32_t*>(offBytes);
+    const std::size_t valCount = valBytes ? valSize / sizeof(T) : 0;
+    // Validate monotonicity + bounds (a malformed feed must not read OOB).
+    if (offsets[0] != 0) return {};
+    for (std::size_t i = 0; i < cells; ++i) {
+      if (offsets[i + 1] < offsets[i]) return {};
+    }
+    if (static_cast<std::size_t>(offsets[cells]) > valCount) return {};
+    RaggedColumn<T> v;
+    v.offsets = offsets;
+    v.values = reinterpret_cast<const T*>(valBytes);
+    v.cells = cells;
+    v.valueCount = valCount;
+    return v;
+  }
 
   std::unordered_map<Id, Table> tables_;
 };
