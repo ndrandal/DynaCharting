@@ -89,6 +89,17 @@ class ColumnResolver {
   // Raw i64 timestamp read (for copy-through of a timestamp column without the
   // f32 trap). 0 if the column is absent / not a timestamp.
   std::function<std::int64_t(const std::string& name, std::size_t i)> readTimestamp;
+
+  // ----- ragged (List) column reads (ENC-618c) ------------------------------
+  // The variable-length-cell seam the geo/choropleth transform reads through. A List
+  // column is two buffers (offsets + flat values), so it cannot ride readNum; this
+  // hands back the whole typed RaggedColumn view (offsets + flat values), and the
+  // transform iterates its cells (one cell = one feature's ring vertices). The view
+  // is invalid (cellCount 0) if the column is absent or not a List of the requested
+  // inner dtype. Bound to the input source's TableStore by the DAG; an upstream-only
+  // (transform-output) input returns an invalid view — List is an INGEST data model.
+  std::function<RaggedColumn<float>(const std::string& name)> raggedF32;
+  std::function<RaggedColumn<std::int32_t>(const std::string& name)> raggedI32;
 };
 
 // ---------------------------------------------------------------------------

@@ -78,6 +78,7 @@ void StratifyTransform::evaluate(const EvalContext& ctx) const {
           case DType::Cat: ctx.out->setCat(node, levels_[lv], i, 0u); break;
           case DType::Timestamp:
             ctx.out->setTimestamp(node, levels_[lv], i, 0); break;
+          case DType::List: break;  // not a hierarchy level (geo-only dtype)
         }
         continue;
       }
@@ -99,6 +100,7 @@ void StratifyTransform::evaluate(const EvalContext& ctx) const {
           ctx.out->setTimestamp(node, levels_[lv], i,
                                 in.readTimestamp(levels_[lv], srcRow));
           break;
+        case DType::List: break;  // not a hierarchy level (geo-only dtype)
       }
     }
   }
