@@ -1,9 +1,13 @@
 /* apps/showcase/views/ridgeline/manifest.ts
  *
- * COMPOSED — "D3/Observable ridgeline" overlapping density bands, a STATIC
- * COMPUTED-GEOMETRY view (Linear ENC-536 / T4.4). The density curves are
- * TESSELLATED AT MANIFEST-BUILD TIME from the market datasets and embedded as
- * static manifest `uploads` — no streaming, capture, or replay.
+ * COMPOSED — "D3/Observable ridgeline" overlapping density bands, now a LIVE
+ * GEOMETRY-FRAME REPLAY view (Linear ENC-582; was the static ENC-536 / T4.4).
+ * The four KDE density bands BREATHE: each symbol's distribution is recomputed
+ * over a ROLLING WINDOW of its price ticks at 40 timesteps across a 20s timeline
+ * (see .gen.mjs), re-tessellated each frame, and streamed as UPDATE_RANGE (op 2)
+ * records that overwrite the band vertex buffer in place. ENC-569's triGradient
+ * vertex re-read + redraw repaints the morphed bands every frame → the ridges
+ * morph live as the rolling window slides.
  *
  * ── What's going on (the technique) ───────────────────────────────────────
  * A ridgeline plot stacks several smoothed distributions, each offset upward
@@ -22,7 +26,16 @@
  * color rides the vertex buffer, ONE triGradient draw item renders every band.
  * Vertices are authored directly in clip space — no transform attached.
  *
- * No `growth`, no streaming: the curves are fully resolved at build time.
+ * ── Live mechanism (geometry-frame replay) ────────────────────────────────
+ * The band buffer is PRE-SIZED here (createBuffer byteLength = the exact float
+ * count) so the replayed UPDATE_RANGE frames are valid in-place overwrites at
+ * offset 0. The manifest seeds the buffer with the FULL-SERIES bake below (a
+ * sensible static first paint); the replay's t=0 frame then takes over and the
+ * subsequent 39 frames morph it. The bin count (48) is CONSTANT across every
+ * frame → the triangle/vertex count is constant → the buffer size never changes,
+ * so each frame is a full overwrite. buildVertices() MUST stay in lock-step with
+ * .gen.mjs (same density()/tessellation) so the seed and the live frames share
+ * one layout.
  */
 
 import type { SceneManifest, BufferUpload } from '../../src/scene/commands';
@@ -128,22 +141,31 @@ function buildVertices(): number[] {
 
 const VERTS = buildVertices();
 const VERTEX_COUNT = VERTS.length / 6;
+const FLOATS_PER_VERTEX = 6; // pos2 + color4
+const BYTES_PER_FLOAT = 4;
+// Pre-sized band buffer: the replayed UPDATE_RANGE frames overwrite exactly this
+// many bytes at offset 0. The bin count is constant → this size never changes.
+const BAND_BYTE_LENGTH = VERTEX_COUNT * FLOATS_PER_VERTEX * BYTES_PER_FLOAT;
 
 export const manifest: SceneManifest = {
-  label: 'Ridgeline — price density bands',
+  label: 'Ridgeline — price density bands (live)',
   commands: [
     { cmd: 'createPane', id: PANE },
     { cmd: 'setPaneRegion', id: PANE, clipXMin: -0.95, clipXMax: 0.95, clipYMin: -0.95, clipYMax: 0.95 },
     { cmd: 'setPaneClearColor', id: PANE, r: 0.04, g: 0.05, b: 0.07, a: 1 },
     { cmd: 'createLayer', id: LAYER, paneId: PANE },
 
-    { cmd: 'createBuffer', id: BAND_BUFFER, byteLength: 0 },
+    // Pre-size the band buffer so the replay's UPDATE_RANGE (op 2, offset 0)
+    // frames are valid in-place overwrites of the whole band geometry.
+    { cmd: 'createBuffer', id: BAND_BUFFER, byteLength: BAND_BYTE_LENGTH },
     { cmd: 'createGeometry', id: BAND_GEOMETRY, vertexBufferId: BAND_BUFFER, format: 'pos2_color4', vertexCount: VERTEX_COUNT },
 
     { cmd: 'createDrawItem', id: BAND_DRAWITEM, layerId: LAYER },
     { cmd: 'bindDrawItem', drawItemId: BAND_DRAWITEM, pipeline: 'triGradient@1', geometryId: BAND_GEOMETRY },
   ],
-  // Four overlapping density bands, tessellated at build time as per-vertex
-  // gradient-filled triangle strips (one static APPEND upload).
-  uploads: [{ bufferId: BAND_BUFFER, floats: VERTS } as BufferUpload],
+  // Seed frame: the full-series KDE bake, written as an UPDATE_RANGE into the
+  // pre-sized buffer (offset 0). This is the static first paint; the replayed
+  // geometry frames (records.json) then overwrite it in place at each timestep,
+  // recomputed over a rolling window so the ridges breathe live.
+  uploads: [{ bufferId: BAND_BUFFER, op: 'updateRange', offsetBytes: 0, floats: VERTS } as BufferUpload],
 };
