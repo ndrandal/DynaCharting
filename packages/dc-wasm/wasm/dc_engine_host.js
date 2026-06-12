@@ -4661,6 +4661,26 @@ ${functionBody}
 
   
   
+  var _wgpuCommandEncoderBeginComputePass = (encoderPtr, descriptor) => {
+      var desc;
+  
+      if (descriptor) {
+        assert(descriptor);assert(HEAPU32[((descriptor)>>2)] === 0);
+        desc = {
+          "label": WebGPU.makeStringFromOptionalStringView(
+            descriptor + 4),
+          "timestampWrites": WebGPU.makePassTimestampWrites(
+            HEAPU32[(((descriptor)+(12))>>2)]),
+        };
+      }
+      var commandEncoder = WebGPU.getJsObject(encoderPtr);
+      var ptr = _emwgpuCreateComputePassEncoder(0);
+      WebGPU.Internals.jsObjectInsert(ptr, commandEncoder.beginComputePass(desc));
+      return ptr;
+    };
+
+  
+  
   var _wgpuCommandEncoderBeginRenderPass = (encoderPtr, descriptor) => {
       assert(descriptor);
   
@@ -4753,6 +4773,21 @@ ${functionBody}
     };
 
   
+  
+  function _wgpuCommandEncoderCopyBufferToBuffer(encoderPtr, srcPtr, srcOffset, dstPtr, dstOffset, size) {
+    srcOffset = bigintToI53Checked(srcOffset);
+    dstOffset = bigintToI53Checked(dstOffset);
+    size = bigintToI53Checked(size);
+  
+  
+      var commandEncoder = WebGPU.getJsObject(encoderPtr);
+      var src = WebGPU.getJsObject(srcPtr);
+      var dst = WebGPU.getJsObject(dstPtr);
+      commandEncoder.copyBufferToBuffer(src, srcOffset, dst, dstOffset, size);
+    ;
+  }
+
+  
   var _wgpuCommandEncoderCopyTextureToBuffer = (encoderPtr, srcPtr, dstPtr, copySizePtr) => {
       var commandEncoder = WebGPU.getJsObject(encoderPtr);
       var copySize = WebGPU.makeExtent3D(copySizePtr);
@@ -4767,6 +4802,50 @@ ${functionBody}
       var commandEncoder = WebGPU.getJsObject(encoderPtr);
       var ptr = _emwgpuCreateCommandBuffer(0);
       WebGPU.Internals.jsObjectInsert(ptr, commandEncoder.finish());
+      return ptr;
+    };
+
+  
+  var _wgpuComputePassEncoderDispatchWorkgroups = (passPtr, x, y, z) => {
+      assert(x >= 0);
+      assert(y >= 0);
+      assert(z >= 0);
+      var pass = WebGPU.getJsObject(passPtr);
+      pass.dispatchWorkgroups(x, y, z);
+    };
+
+  
+  var _wgpuComputePassEncoderEnd = (passPtr) => {
+      var pass = WebGPU.getJsObject(passPtr);
+      pass.end();
+    };
+
+  
+  var _wgpuComputePassEncoderSetBindGroup = (passPtr, groupIndex, groupPtr, dynamicOffsetCount, dynamicOffsetsPtr) => {
+      assert(groupIndex >= 0);
+      var pass = WebGPU.getJsObject(passPtr);
+      var group = WebGPU.getJsObject(groupPtr);
+      if (dynamicOffsetCount == 0) {
+        pass.setBindGroup(groupIndex, group);
+      } else {
+        pass.setBindGroup(groupIndex, group, HEAPU32, ((dynamicOffsetsPtr)>>2), dynamicOffsetCount);
+      }
+    };
+
+  
+  var _wgpuComputePassEncoderSetPipeline = (passPtr, pipelinePtr) => {
+      var pass = WebGPU.getJsObject(passPtr);
+      var pipeline = WebGPU.getJsObject(pipelinePtr);
+      pass.setPipeline(pipeline);
+    };
+
+  
+  
+  var _wgpuComputePipelineGetBindGroupLayout = (pipelinePtr, groupIndex) => {
+      assert(groupIndex >= 0);
+      var pipeline = WebGPU.getJsObject(pipelinePtr);
+      var ptr = _emwgpuCreateBindGroupLayout(0);
+      WebGPU.Internals.jsObjectInsert(ptr, pipeline.getBindGroupLayout(groupIndex));
       return ptr;
     };
 
@@ -4953,6 +5032,16 @@ ${functionBody}
       var device = WebGPU.getJsObject(devicePtr);
       var ptr = _emwgpuCreateCommandEncoder(0);
       WebGPU.Internals.jsObjectInsert(ptr, device.createCommandEncoder(desc));
+      return ptr;
+    };
+
+  
+  
+  var _wgpuDeviceCreateComputePipeline = (devicePtr, descriptor) => {
+      var desc = WebGPU.makeComputePipelineDesc(descriptor);
+      var device = WebGPU.getJsObject(devicePtr);
+      var ptr = _emwgpuCreateComputePipeline(0);
+      WebGPU.Internals.jsObjectInsert(ptr, device.createComputePipeline(desc));
       return ptr;
     };
 
@@ -6001,29 +6090,31 @@ var dynCall_i = makeInvalidEarlyAccess('dynCall_i');
 var dynCall_viii = makeInvalidEarlyAccess('dynCall_viii');
 var dynCall_vii = makeInvalidEarlyAccess('dynCall_vii');
 var dynCall_viiiiii = makeInvalidEarlyAccess('dynCall_viiiiii');
+var dynCall_iii = makeInvalidEarlyAccess('dynCall_iii');
 var dynCall_diiiii = makeInvalidEarlyAccess('dynCall_diiiii');
 var dynCall_viid = makeInvalidEarlyAccess('dynCall_viid');
 var dynCall_did = makeInvalidEarlyAccess('dynCall_did');
-var dynCall_iii = makeInvalidEarlyAccess('dynCall_iii');
 var dynCall_dii = makeInvalidEarlyAccess('dynCall_dii');
 var dynCall_viiii = makeInvalidEarlyAccess('dynCall_viiii');
 var dynCall_iij = makeInvalidEarlyAccess('dynCall_iij');
 var dynCall_vijii = makeInvalidEarlyAccess('dynCall_vijii');
 var dynCall_viiiiiii = makeInvalidEarlyAccess('dynCall_viiiiiii');
 var dynCall_iiiii = makeInvalidEarlyAccess('dynCall_iiiii');
+var dynCall_iiiiiii = makeInvalidEarlyAccess('dynCall_iiiiiii');
+var dynCall_iiiiii = makeInvalidEarlyAccess('dynCall_iiiiii');
+var dynCall_vif = makeInvalidEarlyAccess('dynCall_vif');
 var dynCall_diiiiii = makeInvalidEarlyAccess('dynCall_diiiiii');
 var dynCall_iiid = makeInvalidEarlyAccess('dynCall_iiid');
 var dynCall_diid = makeInvalidEarlyAccess('dynCall_diid');
 var dynCall_viiiii = makeInvalidEarlyAccess('dynCall_viiiii');
-var dynCall_iiiiiii = makeInvalidEarlyAccess('dynCall_iiiiiii');
 var dynCall_jii = makeInvalidEarlyAccess('dynCall_jii');
 var dynCall_jiiii = makeInvalidEarlyAccess('dynCall_jiiii');
 var dynCall_viijii = makeInvalidEarlyAccess('dynCall_viijii');
+var dynCall_viijijj = makeInvalidEarlyAccess('dynCall_viijijj');
+var dynCall_jijiiii = makeInvalidEarlyAccess('dynCall_jijiiii');
 var dynCall_jjj = makeInvalidEarlyAccess('dynCall_jjj');
 var dynCall_viffffff = makeInvalidEarlyAccess('dynCall_viffffff');
-var dynCall_jijiiii = makeInvalidEarlyAccess('dynCall_jijiiii');
 var dynCall_viiiiiiii = makeInvalidEarlyAccess('dynCall_viiiiiiii');
-var dynCall_iiiiii = makeInvalidEarlyAccess('dynCall_iiiiii');
 var dynCall_viffffi = makeInvalidEarlyAccess('dynCall_viffffi');
 var dynCall_viji = makeInvalidEarlyAccess('dynCall_viji');
 var dynCall_jiji = makeInvalidEarlyAccess('dynCall_jiji');
@@ -6098,29 +6189,31 @@ function assignWasmExports(wasmExports) {
   assert(typeof wasmExports['dynCall_viii'] != 'undefined', 'missing Wasm export: dynCall_viii');
   assert(typeof wasmExports['dynCall_vii'] != 'undefined', 'missing Wasm export: dynCall_vii');
   assert(typeof wasmExports['dynCall_viiiiii'] != 'undefined', 'missing Wasm export: dynCall_viiiiii');
+  assert(typeof wasmExports['dynCall_iii'] != 'undefined', 'missing Wasm export: dynCall_iii');
   assert(typeof wasmExports['dynCall_diiiii'] != 'undefined', 'missing Wasm export: dynCall_diiiii');
   assert(typeof wasmExports['dynCall_viid'] != 'undefined', 'missing Wasm export: dynCall_viid');
   assert(typeof wasmExports['dynCall_did'] != 'undefined', 'missing Wasm export: dynCall_did');
-  assert(typeof wasmExports['dynCall_iii'] != 'undefined', 'missing Wasm export: dynCall_iii');
   assert(typeof wasmExports['dynCall_dii'] != 'undefined', 'missing Wasm export: dynCall_dii');
   assert(typeof wasmExports['dynCall_viiii'] != 'undefined', 'missing Wasm export: dynCall_viiii');
   assert(typeof wasmExports['dynCall_iij'] != 'undefined', 'missing Wasm export: dynCall_iij');
   assert(typeof wasmExports['dynCall_vijii'] != 'undefined', 'missing Wasm export: dynCall_vijii');
   assert(typeof wasmExports['dynCall_viiiiiii'] != 'undefined', 'missing Wasm export: dynCall_viiiiiii');
   assert(typeof wasmExports['dynCall_iiiii'] != 'undefined', 'missing Wasm export: dynCall_iiiii');
+  assert(typeof wasmExports['dynCall_iiiiiii'] != 'undefined', 'missing Wasm export: dynCall_iiiiiii');
+  assert(typeof wasmExports['dynCall_iiiiii'] != 'undefined', 'missing Wasm export: dynCall_iiiiii');
+  assert(typeof wasmExports['dynCall_vif'] != 'undefined', 'missing Wasm export: dynCall_vif');
   assert(typeof wasmExports['dynCall_diiiiii'] != 'undefined', 'missing Wasm export: dynCall_diiiiii');
   assert(typeof wasmExports['dynCall_iiid'] != 'undefined', 'missing Wasm export: dynCall_iiid');
   assert(typeof wasmExports['dynCall_diid'] != 'undefined', 'missing Wasm export: dynCall_diid');
   assert(typeof wasmExports['dynCall_viiiii'] != 'undefined', 'missing Wasm export: dynCall_viiiii');
-  assert(typeof wasmExports['dynCall_iiiiiii'] != 'undefined', 'missing Wasm export: dynCall_iiiiiii');
   assert(typeof wasmExports['dynCall_jii'] != 'undefined', 'missing Wasm export: dynCall_jii');
   assert(typeof wasmExports['dynCall_jiiii'] != 'undefined', 'missing Wasm export: dynCall_jiiii');
   assert(typeof wasmExports['dynCall_viijii'] != 'undefined', 'missing Wasm export: dynCall_viijii');
+  assert(typeof wasmExports['dynCall_viijijj'] != 'undefined', 'missing Wasm export: dynCall_viijijj');
+  assert(typeof wasmExports['dynCall_jijiiii'] != 'undefined', 'missing Wasm export: dynCall_jijiiii');
   assert(typeof wasmExports['dynCall_jjj'] != 'undefined', 'missing Wasm export: dynCall_jjj');
   assert(typeof wasmExports['dynCall_viffffff'] != 'undefined', 'missing Wasm export: dynCall_viffffff');
-  assert(typeof wasmExports['dynCall_jijiiii'] != 'undefined', 'missing Wasm export: dynCall_jijiiii');
   assert(typeof wasmExports['dynCall_viiiiiiii'] != 'undefined', 'missing Wasm export: dynCall_viiiiiiii');
-  assert(typeof wasmExports['dynCall_iiiiii'] != 'undefined', 'missing Wasm export: dynCall_iiiiii');
   assert(typeof wasmExports['dynCall_viffffi'] != 'undefined', 'missing Wasm export: dynCall_viffffi');
   assert(typeof wasmExports['dynCall_viji'] != 'undefined', 'missing Wasm export: dynCall_viji');
   assert(typeof wasmExports['dynCall_jiji'] != 'undefined', 'missing Wasm export: dynCall_jiji');
@@ -6191,29 +6284,31 @@ function assignWasmExports(wasmExports) {
   dynCall_viii = dynCalls['viii'] = createExportWrapper('dynCall_viii', 4);
   dynCall_vii = dynCalls['vii'] = createExportWrapper('dynCall_vii', 3);
   dynCall_viiiiii = dynCalls['viiiiii'] = createExportWrapper('dynCall_viiiiii', 7);
+  dynCall_iii = dynCalls['iii'] = createExportWrapper('dynCall_iii', 3);
   dynCall_diiiii = dynCalls['diiiii'] = createExportWrapper('dynCall_diiiii', 6);
   dynCall_viid = dynCalls['viid'] = createExportWrapper('dynCall_viid', 4);
   dynCall_did = dynCalls['did'] = createExportWrapper('dynCall_did', 3);
-  dynCall_iii = dynCalls['iii'] = createExportWrapper('dynCall_iii', 3);
   dynCall_dii = dynCalls['dii'] = createExportWrapper('dynCall_dii', 3);
   dynCall_viiii = dynCalls['viiii'] = createExportWrapper('dynCall_viiii', 5);
   dynCall_iij = dynCalls['iij'] = createExportWrapper('dynCall_iij', 3);
   dynCall_vijii = dynCalls['vijii'] = createExportWrapper('dynCall_vijii', 5);
   dynCall_viiiiiii = dynCalls['viiiiiii'] = createExportWrapper('dynCall_viiiiiii', 8);
   dynCall_iiiii = dynCalls['iiiii'] = createExportWrapper('dynCall_iiiii', 5);
+  dynCall_iiiiiii = dynCalls['iiiiiii'] = createExportWrapper('dynCall_iiiiiii', 7);
+  dynCall_iiiiii = dynCalls['iiiiii'] = createExportWrapper('dynCall_iiiiii', 6);
+  dynCall_vif = dynCalls['vif'] = createExportWrapper('dynCall_vif', 3);
   dynCall_diiiiii = dynCalls['diiiiii'] = createExportWrapper('dynCall_diiiiii', 7);
   dynCall_iiid = dynCalls['iiid'] = createExportWrapper('dynCall_iiid', 4);
   dynCall_diid = dynCalls['diid'] = createExportWrapper('dynCall_diid', 4);
   dynCall_viiiii = dynCalls['viiiii'] = createExportWrapper('dynCall_viiiii', 6);
-  dynCall_iiiiiii = dynCalls['iiiiiii'] = createExportWrapper('dynCall_iiiiiii', 7);
   dynCall_jii = dynCalls['jii'] = createExportWrapper('dynCall_jii', 3);
   dynCall_jiiii = dynCalls['jiiii'] = createExportWrapper('dynCall_jiiii', 5);
   dynCall_viijii = dynCalls['viijii'] = createExportWrapper('dynCall_viijii', 6);
+  dynCall_viijijj = dynCalls['viijijj'] = createExportWrapper('dynCall_viijijj', 7);
+  dynCall_jijiiii = dynCalls['jijiiii'] = createExportWrapper('dynCall_jijiiii', 7);
   dynCall_jjj = dynCalls['jjj'] = createExportWrapper('dynCall_jjj', 3);
   dynCall_viffffff = dynCalls['viffffff'] = createExportWrapper('dynCall_viffffff', 8);
-  dynCall_jijiiii = dynCalls['jijiiii'] = createExportWrapper('dynCall_jijiiii', 7);
   dynCall_viiiiiiii = dynCalls['viiiiiiii'] = createExportWrapper('dynCall_viiiiiiii', 9);
-  dynCall_iiiiii = dynCalls['iiiiii'] = createExportWrapper('dynCall_iiiiii', 6);
   dynCall_viffffi = dynCalls['viffffi'] = createExportWrapper('dynCall_viffffi', 7);
   dynCall_viji = dynCalls['viji'] = createExportWrapper('dynCall_viji', 4);
   dynCall_jiji = dynCalls['jiji'] = createExportWrapper('dynCall_jiji', 4);
@@ -6332,6 +6427,8 @@ var wasmImports = {
   /** @export */
   invoke_iiiiii,
   /** @export */
+  invoke_iiiiiii,
+  /** @export */
   invoke_iij,
   /** @export */
   invoke_jiiii,
@@ -6343,6 +6440,8 @@ var wasmImports = {
   invoke_v,
   /** @export */
   invoke_vi,
+  /** @export */
+  invoke_vif,
   /** @export */
   invoke_viffffff,
   /** @export */
@@ -6362,21 +6461,39 @@ var wasmImports = {
   /** @export */
   invoke_viijii,
   /** @export */
+  invoke_viijijj,
+  /** @export */
   invoke_vijii,
   /** @export */
   wgpuAdapterGetInfo: _wgpuAdapterGetInfo,
   /** @export */
+  wgpuCommandEncoderBeginComputePass: _wgpuCommandEncoderBeginComputePass,
+  /** @export */
   wgpuCommandEncoderBeginRenderPass: _wgpuCommandEncoderBeginRenderPass,
+  /** @export */
+  wgpuCommandEncoderCopyBufferToBuffer: _wgpuCommandEncoderCopyBufferToBuffer,
   /** @export */
   wgpuCommandEncoderCopyTextureToBuffer: _wgpuCommandEncoderCopyTextureToBuffer,
   /** @export */
   wgpuCommandEncoderFinish: _wgpuCommandEncoderFinish,
+  /** @export */
+  wgpuComputePassEncoderDispatchWorkgroups: _wgpuComputePassEncoderDispatchWorkgroups,
+  /** @export */
+  wgpuComputePassEncoderEnd: _wgpuComputePassEncoderEnd,
+  /** @export */
+  wgpuComputePassEncoderSetBindGroup: _wgpuComputePassEncoderSetBindGroup,
+  /** @export */
+  wgpuComputePassEncoderSetPipeline: _wgpuComputePassEncoderSetPipeline,
+  /** @export */
+  wgpuComputePipelineGetBindGroupLayout: _wgpuComputePipelineGetBindGroupLayout,
   /** @export */
   wgpuDeviceCreateBindGroup: _wgpuDeviceCreateBindGroup,
   /** @export */
   wgpuDeviceCreateBindGroupLayout: _wgpuDeviceCreateBindGroupLayout,
   /** @export */
   wgpuDeviceCreateCommandEncoder: _wgpuDeviceCreateCommandEncoder,
+  /** @export */
+  wgpuDeviceCreateComputePipeline: _wgpuDeviceCreateComputePipeline,
   /** @export */
   wgpuDeviceCreatePipelineLayout: _wgpuDeviceCreatePipelineLayout,
   /** @export */
@@ -6516,10 +6633,54 @@ function invoke_vijii(index,a1,a2,a3,a4) {
   }
 }
 
+function invoke_iiiii(index,a1,a2,a3,a4) {
+  var sp = stackSave();
+  try {
+    return dynCall_iiiii(index,a1,a2,a3,a4);
+  } catch(e) {
+    stackRestore(sp);
+    if (!(e instanceof EmscriptenEH)) throw e;
+    _setThrew(1, 0);
+  }
+}
+
+function invoke_iiiiiii(index,a1,a2,a3,a4,a5,a6) {
+  var sp = stackSave();
+  try {
+    return dynCall_iiiiiii(index,a1,a2,a3,a4,a5,a6);
+  } catch(e) {
+    stackRestore(sp);
+    if (!(e instanceof EmscriptenEH)) throw e;
+    _setThrew(1, 0);
+  }
+}
+
+function invoke_iiiiii(index,a1,a2,a3,a4,a5) {
+  var sp = stackSave();
+  try {
+    return dynCall_iiiiii(index,a1,a2,a3,a4,a5);
+  } catch(e) {
+    stackRestore(sp);
+    if (!(e instanceof EmscriptenEH)) throw e;
+    _setThrew(1, 0);
+  }
+}
+
 function invoke_vii(index,a1,a2) {
   var sp = stackSave();
   try {
     dynCall_vii(index,a1,a2);
+  } catch(e) {
+    stackRestore(sp);
+    if (!(e instanceof EmscriptenEH)) throw e;
+    _setThrew(1, 0);
+  }
+}
+
+function invoke_vif(index,a1,a2) {
+  var sp = stackSave();
+  try {
+    dynCall_vif(index,a1,a2);
   } catch(e) {
     stackRestore(sp);
     if (!(e instanceof EmscriptenEH)) throw e;
@@ -6572,6 +6733,17 @@ function invoke_viijii(index,a1,a2,a3,a4,a5) {
   }
 }
 
+function invoke_viijijj(index,a1,a2,a3,a4,a5,a6) {
+  var sp = stackSave();
+  try {
+    dynCall_viijijj(index,a1,a2,a3,a4,a5,a6);
+  } catch(e) {
+    stackRestore(sp);
+    if (!(e instanceof EmscriptenEH)) throw e;
+    _setThrew(1, 0);
+  }
+}
+
 function invoke_jijiiii(index,a1,a2,a3,a4,a5,a6) {
   var sp = stackSave();
   try {
@@ -6596,32 +6768,10 @@ function invoke_jjj(index,a1,a2) {
   }
 }
 
-function invoke_iiiii(index,a1,a2,a3,a4) {
-  var sp = stackSave();
-  try {
-    return dynCall_iiiii(index,a1,a2,a3,a4);
-  } catch(e) {
-    stackRestore(sp);
-    if (!(e instanceof EmscriptenEH)) throw e;
-    _setThrew(1, 0);
-  }
-}
-
 function invoke_viffffff(index,a1,a2,a3,a4,a5,a6,a7) {
   var sp = stackSave();
   try {
     dynCall_viffffff(index,a1,a2,a3,a4,a5,a6,a7);
-  } catch(e) {
-    stackRestore(sp);
-    if (!(e instanceof EmscriptenEH)) throw e;
-    _setThrew(1, 0);
-  }
-}
-
-function invoke_iiiiii(index,a1,a2,a3,a4,a5) {
-  var sp = stackSave();
-  try {
-    return dynCall_iiiiii(index,a1,a2,a3,a4,a5);
   } catch(e) {
     stackRestore(sp);
     if (!(e instanceof EmscriptenEH)) throw e;
