@@ -960,11 +960,14 @@ CmdResult CommandProcessor::cmdSetDrawItemStyle(const rapidjson::Value& obj) {
                 std::string(R"({"drawItemId":)") + std::to_string(drawItemId) + "}");
   }
 
-  // Merge only provided fields
-  di->color[0] = getFloatOr(obj, "r", di->color[0]);
-  di->color[1] = getFloatOr(obj, "g", di->color[1]);
-  di->color[2] = getFloatOr(obj, "b", di->color[2]);
-  di->color[3] = getFloatOr(obj, "a", di->color[3]);
+  // Merge only provided fields. The primary color accepts both the short
+  // r/g/b/a keys and the colorR/colorG/colorB/colorA form (mirroring the
+  // colorUp*/colorDown* candle keys below), so a caller that uses the explicit
+  // "color*" naming for all three colors reaches di->color too.
+  di->color[0] = getFloatOr(obj, "r", getFloatOr(obj, "colorR", di->color[0]));
+  di->color[1] = getFloatOr(obj, "g", getFloatOr(obj, "colorG", di->color[1]));
+  di->color[2] = getFloatOr(obj, "b", getFloatOr(obj, "colorB", di->color[2]));
+  di->color[3] = getFloatOr(obj, "a", getFloatOr(obj, "colorA", di->color[3]));
 
   di->colorUp[0] = getFloatOr(obj, "colorUpR", di->colorUp[0]);
   di->colorUp[1] = getFloatOr(obj, "colorUpG", di->colorUp[1]);
