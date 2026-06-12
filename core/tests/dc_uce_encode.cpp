@@ -271,6 +271,111 @@ int main() {
   }
 
   // =========================================================================
+  // ENC-608 KEYSTONE — RECTCOLOR mark -> instancedRectColor@1 (Rect4Color, 24B
+  // /instance: rect4 f32 + packed RGBA8 + reserved scalar/row-id lane). A small
+  // grid of per-CELL-colored rects; assert exact bytes (rect floats at the right
+  // offsets, the packed RGBA8 at offset 16, the reserved lane == 0 at offset 20)
+  // and that validateDrawItem ACCEPTS the produced rect4_color geometry.
+  // =========================================================================
+  {
+    dc::IngestProcessor ingest;
+    dc::TableStore tables;
+    auto src = dc::makeBufferByteSource(ingest);
+    const dc::Id kTable = 8, kX = 80, kY = 81, kX2 = 82, kY2 = 83, kCol = 84;
+    tables.defineTable(kTable, "grid");
+    tables.addColumn(kTable, "x0", dc::DType::F32, kX);
+    tables.addColumn(kTable, "y0", dc::DType::F32, kY);
+    tables.addColumn(kTable, "x1", dc::DType::F32, kX2);
+    tables.addColumn(kTable, "y1", dc::DType::F32, kY2);
+    // Per-cell color column: i32 holding PRE-PACKED RGBA8 (byte0=R..byte3=A),
+    // i.e. the color scale's output (hand-packed here; scales are ENC-610/611).
+    tables.addColumn(kTable, "col", dc::DType::I32, kCol);
+
+    // 3 cells with DISTINCT colors: red, green, blue (opaque).
+    const std::uint32_t kRed   = 0xFF0000FFu;  // A=FF,B=00,G=00,R=FF
+    const std::uint32_t kGreen = 0xFF00FF00u;  // A=FF,B=00,G=FF,R=00
+    const std::uint32_t kBlue  = 0xFFFF0000u;  // A=FF,B=FF,G=00,R=00
+
+    appendF32(ingest, kX,  {0.0f, 1.0f, 2.0f});
+    appendF32(ingest, kY,  {0.0f, 0.0f, 0.0f});
+    appendF32(ingest, kX2, {1.0f, 2.0f, 3.0f});
+    appendF32(ingest, kY2, {1.0f, 1.0f, 1.0f});
+    // Append the i32 color column (reuse the raw append wire with i32 payload).
+    {
+      const std::int32_t cols[3] = {static_cast<std::int32_t>(kRed),
+                                    static_cast<std::int32_t>(kGreen),
+                                    static_cast<std::int32_t>(kBlue)};
+      std::vector<std::uint8_t> batch;
+      appendRecord(batch, kCol, cols, sizeof(cols));
+      ingest.processBatch(batch.data(),
+                          static_cast<std::uint32_t>(batch.size()));
+    }
+
+    dc::Encoding enc;
+    enc.field(dc::Channel::X, "x0").field(dc::Channel::Y, "y0")
+       .field(dc::Channel::X2, "x1").field(dc::Channel::Y2, "y1");
+    enc.setColorField("col");  // per-instance packed RGBA8
+
+    auto res = pass.compile(dc::Mark::RectColor, enc, tables, kTable, src,
+                            108, 208, 308);
+    check(res.ok, "rectColor: compile ok");
+    check(res.geometry.format == dc::VertexFormat::Rect4Color,
+          "rectColor: geometry format == Rect4Color");
+    check(res.drawItem.pipeline == "instancedRectColor@1",
+          "rectColor: pipeline == instancedRectColor@1");
+    check(res.instanceCount == 3, "rectColor: 3 instances for 3 rows");
+    check(res.bytes.size() == 3u * 24u,
+          "rectColor: 3 * 24B byte length (exact Rect4Color stride)");
+
+    // Byte-exact: per instance [x0,y0,x1,y1 f32][rgba8 u32 @16][lane u32 @20==0].
+    const float exr[3][4] = {{0, 0, 1, 1}, {1, 0, 2, 1}, {2, 0, 3, 1}};
+    const std::uint32_t exc[3] = {kRed, kGreen, kBlue};
+    bool bytesOk = true;
+    for (int i = 0; i < 3; ++i) {
+      for (int k = 0; k < 4; ++k)
+        if (!eqf(f32At(res.bytes, i * 24 + k * 4), exr[i][k])) bytesOk = false;
+      std::uint32_t c = 0, lane = 0xDEADBEEFu;
+      std::memcpy(&c, res.bytes.data() + i * 24 + 16, 4);
+      std::memcpy(&lane, res.bytes.data() + i * 24 + 20, 4);
+      if (c != exc[i]) bytesOk = false;
+      if (lane != 0u) bytesOk = false;  // reserved lane packed 0
+    }
+    check(bytesOk,
+          "rectColor: bytes are exactly [rect4][packed RGBA8 @16][lane=0 @20]");
+
+    // The produced geometry is ACCEPTED by the real validateDrawItem gate.
+    auto vr = wireAndValidate(res, 80, 108, 208,
+                              static_cast<std::uint32_t>(res.bytes.size()),
+                              "instancedRectColor@1");
+    check(vr.ok, "rectColor: validateDrawItem ACCEPTS the rect4_color geometry");
+
+    // REJECT: binding the SAME rect4_color geometry to instancedRect@1 (Rect4).
+    auto bad = wireAndValidate(res, 80, 108, 208,
+                               static_cast<std::uint32_t>(res.bytes.size()),
+                               "instancedRect@1");
+    check(!bad.ok && bad.err.code == "VALIDATION_VERTEX_FORMAT_MISMATCH",
+          "rectColor: mismatched pipeline (instancedRect@1) is REJECTED");
+
+    // Constant-color fallback: no setColorField -> the constant color packs into
+    // every instance (still a valid per-instance buffer).
+    dc::Encoding constEnc;
+    constEnc.field(dc::Channel::X, "x0").field(dc::Channel::Y, "y0")
+            .field(dc::Channel::X2, "x1").field(dc::Channel::Y2, "y1");
+    constEnc.setColor(dc::Rgba{1.0f, 0.0f, 0.0f, 1.0f});  // opaque red
+    auto cres = pass.compile(dc::Mark::RectColor, constEnc, tables, kTable, src,
+                             109, 209, 309);
+    check(cres.ok && cres.bytes.size() == 3u * 24u,
+          "rectColor: constant-color fallback compiles to per-instance buffer");
+    bool constOk = true;
+    for (int i = 0; i < 3; ++i) {
+      std::uint32_t c = 0;
+      std::memcpy(&c, cres.bytes.data() + i * 24 + 16, 4);
+      if (c != 0xFF0000FFu) constOk = false;  // red packed every row
+    }
+    check(constOk, "rectColor: constant color packs RGBA8 into every instance");
+  }
+
+  // =========================================================================
   // LINE mark -> line2d@1 (Pos2_Clip LineList) AND lineAA@1 (Rect4 instanced).
   // 3 rows -> 2 segments. Same source data, two packings.
   // =========================================================================

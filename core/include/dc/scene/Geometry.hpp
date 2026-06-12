@@ -12,7 +12,17 @@ enum class VertexFormat : std::uint8_t {
   Glyph8    = 4, // 8 floats (x0, y0, x1, y1, u0, v0, u1, v1) for text SDF
   Pos2Alpha  = 5, // 3 floats (x, y, alpha) for edge-fringe AA triangles
   Pos2Color4 = 6, // 6 floats (x, y, r, g, b, a) for per-vertex color gradient
-  Pos2Uv4   = 7  // 4 floats (x, y, u, v) for textured quads
+  Pos2Uv4   = 7, // 4 floats (x, y, u, v) for textured quads
+  // ENC-608 (P2.1) — the KEYSTONE per-instance-color rect format. 24 bytes:
+  //   vec4 f32 rect (x0,y0,x1,y1)  @ 0  (16B)
+  //   RGBA8  packed color           @ 16 (4B, Unorm8x4)
+  //   f32    scalar lane            @ 20 (4B; optional per-instance scalar —
+  //                                  reserved so a future per-instance ROW ID
+  //                                  for picking can ride this lane, ENC-594)
+  // Generalizes Candle6's per-instance multi-channel proof so ~4 walled views
+  // (weather-radar / correlation / footprint / pie) collapse to native with
+  // ZERO compute. See DawnInstancedRectColorBackend + EncodePass Mark::RectColor.
+  Rect4Color = 8
 };
 
 inline const char* toString(VertexFormat f) {
@@ -24,6 +34,7 @@ inline const char* toString(VertexFormat f) {
     case VertexFormat::Pos2Alpha:  return "pos2_alpha";
     case VertexFormat::Pos2Color4: return "pos2_color4";
     case VertexFormat::Pos2Uv4:   return "pos2_uv4";
+    case VertexFormat::Rect4Color: return "rect4_color";
     default: return "unknown";
   }
 }
@@ -37,6 +48,7 @@ inline std::uint32_t strideOf(VertexFormat f) {
     case VertexFormat::Pos2Alpha:  return 12;
     case VertexFormat::Pos2Color4: return 24;
     case VertexFormat::Pos2Uv4:   return 16;
+    case VertexFormat::Rect4Color: return 24;  // rect4 (16) + rgba8 (4) + scalar/rowid lane (4)
     default: return 0;
   }
 }

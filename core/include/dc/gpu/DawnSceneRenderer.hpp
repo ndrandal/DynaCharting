@@ -56,6 +56,7 @@
 #include "dc/gpu/DawnLineAABackend.hpp"
 #include "dc/gpu/DawnPointsBackend.hpp"
 #include "dc/gpu/DawnInstancedRectBackend.hpp"
+#include "dc/gpu/DawnInstancedRectColorBackend.hpp"
 #include "dc/gpu/DawnInstancedCandleBackend.hpp"
 #include "dc/gpu/DawnTextSdfBackend.hpp"
 #include "dc/gpu/DawnTexturedQuadBackend.hpp"
@@ -156,6 +157,7 @@ class DawnSceneRenderer {
   DawnLineAABackend lineAA_;
   DawnPointsBackend points_;
   DawnInstancedRectBackend instRect_;
+  DawnInstancedRectColorBackend instRectColor_;  // ENC-608 keystone
   DawnInstancedCandleBackend instCandle_;
   std::unique_ptr<DawnTextSdfBackend> textSdf_;           // only if atlas_
   std::unique_ptr<DawnTexturedQuadBackend> texturedQuad_; // only if textures_

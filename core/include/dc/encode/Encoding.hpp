@@ -158,6 +158,31 @@ class Encoding {
   const std::optional<Rgba>& colorUp() const { return colorUp_; }
   const std::optional<Rgba>& colorDown() const { return colorDown_; }
 
+  // ----- ENC-608 per-INSTANCE color (the keystone: instancedRectColor@1) ------
+  //
+  // Phase 1 color is ONE uniform per draw item; the keystone rect needs a
+  // DIFFERENT color per instance. The color is PRE-RESOLVED upstream (a future
+  // color scale, ENC-610/611) into a packed RGBA8 (one u32 per row, byte order
+  // R,G,B,A in the low..high bytes) and stored as an i32/cat column; the encode
+  // pass copies it straight into the instance record (zero compute). Binding the
+  // pre-packed column here is the in-scope path; tests hand-pack the column.
+  //
+  //   setColorField(col) — per-row packed RGBA8 from i32/cat column `col`.
+  Encoding& setColorField(std::string col) {
+    colorField_ = std::move(col);
+    return *this;
+  }
+  const std::optional<std::string>& colorField() const { return colorField_; }
+
+  // Resolve the per-instance packed RGBA8 for `rowIndex`. Reads the bound color
+  // column (i32 bit-pattern) when setColorField() was used; otherwise falls back
+  // to the constant setColor() value packed to RGBA8 (so an all-constant encoding
+  // still produces a valid per-instance buffer). Returns nullopt only when a
+  // color FIELD was bound but its column is missing/short for `rowIndex`.
+  std::optional<std::uint32_t> resolveColorRgba8(
+      std::size_t rowIndex, const TableStore& tables, Id tableId,
+      const BufferByteSource& src) const;
+
   // ----- per-row resolution (RESEARCH §4.4) ----------------------------------
   //
   // Resolve a numeric channel for row `rowIndex` to a single f64. Reads the bound
@@ -180,6 +205,7 @@ class Encoding {
   std::optional<Rgba> color_;
   std::optional<Rgba> colorUp_;
   std::optional<Rgba> colorDown_;
+  std::optional<std::string> colorField_;  // ENC-608 per-instance packed RGBA8
 };
 
 }  // namespace dc

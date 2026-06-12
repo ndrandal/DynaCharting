@@ -905,13 +905,17 @@ PipelineHandle DawnDevice::createPipeline(const PipelineDesc& desc) {
         wgpu::VertexAttribute wa = {};
         wa.shaderLocation = a.location;
         wa.offset = a.offsetBytes;
-        // Only Float32 components are used today (pos2 = Float32x2, rect4 =
-        // Float32x4).
-        switch (a.componentCount) {
-          case 1: wa.format = wgpu::VertexFormat::Float32; break;
-          case 2: wa.format = wgpu::VertexFormat::Float32x2; break;
-          case 3: wa.format = wgpu::VertexFormat::Float32x3; break;
-          default: wa.format = wgpu::VertexFormat::Float32x4; break;
+        // Float32 components (pos2 = Float32x2, rect4 = Float32x4) plus the
+        // ENC-608 Unorm8x4 packed-RGBA8 per-instance color (instancedRectColor).
+        if (a.type == VertexComponentType::Unorm8x4) {
+          wa.format = wgpu::VertexFormat::Unorm8x4;  // 4 bytes -> vec4<f32> 0..1
+        } else {
+          switch (a.componentCount) {
+            case 1: wa.format = wgpu::VertexFormat::Float32; break;
+            case 2: wa.format = wgpu::VertexFormat::Float32x2; break;
+            case 3: wa.format = wgpu::VertexFormat::Float32x3; break;
+            default: wa.format = wgpu::VertexFormat::Float32x4; break;
+          }
         }
         attrs.push_back(wa);
       }

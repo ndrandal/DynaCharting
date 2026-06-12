@@ -48,11 +48,39 @@ std::optional<double> Encoding::resolve(Channel ch, std::size_t rowIndex,
   return b->scale ? b->scale->map(raw) : raw;
 }
 
+namespace {
+// Pack a 0..1 Rgba into a little-endian RGBA8 u32 (byte 0 = R .. byte 3 = A),
+// matching the Unorm8x4 attribute layout the instancedRectColor@1 shader reads.
+inline std::uint32_t packRgba8(const Rgba& c) {
+  auto q = [](float v) -> std::uint32_t {
+    if (v < 0.0f) v = 0.0f;
+    if (v > 1.0f) v = 1.0f;
+    return static_cast<std::uint32_t>(v * 255.0f + 0.5f);
+  };
+  return q(c.r) | (q(c.g) << 8) | (q(c.b) << 16) | (q(c.a) << 24);
+}
+}  // namespace
+
+std::optional<std::uint32_t> Encoding::resolveColorRgba8(
+    std::size_t rowIndex, const TableStore& tables, Id tableId,
+    const BufferByteSource& src) const {
+  // Per-row packed RGBA8 from the bound i32/cat column (the pre-resolved color).
+  if (colorField_) {
+    ColumnView<std::int32_t> col = tables.viewI32(tableId, *colorField_, src);
+    if (!col.valid() || rowIndex >= col.count) return std::nullopt;
+    return static_cast<std::uint32_t>(col[rowIndex]);
+  }
+  // No per-row field: fall back to the constant color (white if unset) so the
+  // per-instance buffer is still valid for an all-constant encoding.
+  return packRgba8(color_ ? *color_ : Rgba{});
+}
+
 std::vector<std::string> Encoding::referencedFields() const {
   std::vector<std::string> out;
   for (const auto& kv : bindings_) {
     if (kv.second.hasField()) out.push_back(kv.second.field);
   }
+  if (colorField_) out.push_back(*colorField_);
   return out;
 }
 
