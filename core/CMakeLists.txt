@@ -496,6 +496,16 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_uce_transform_dag PRIVATE dc)
   add_test(NAME dc_uce_transform_dag COMMAND dc_uce_transform_dag)
 
+  # ENC-616b (Epic ENC-616) — Transform tier: bin + aggregate + sort/rank. Each a
+  # pure TransformNode (data-free inferSchema typing + DAG eval); covers bin
+  # boundaries/counts, every aggregate reducer (incl. mean/median), sort asc/desc,
+  # and the rank column — all running as DAG nodes (incl. bin->aggregate histogram).
+  add_executable(dc_uce_transform_bas
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_uce_transform_bas.cpp"
+  )
+  target_link_libraries(dc_uce_transform_bas PRIVATE dc)
+  add_test(NAME dc_uce_transform_bas COMMAND dc_uce_transform_bas)
+
   # ENC-606 — regression guard for the setDrawItemStyle PRIMARY-color key wiring
   # (colorR/colorG/colorB/colorA must reach di.color, the form the render proof
   # drives the amber SMA line with). A pure-logic CommandProcessor test.
