@@ -95,11 +95,19 @@ class ColumnResolver {
 // EvalContext — everything a transform's evaluate() needs: its own node id (the
 // key it writes outputs under), the resolver over its input, and the ColumnStore
 // it writes into. The input schema is supplied so evaluate() can iterate columns.
+//
+// SECOND (RIGHT) INPUT — for the relational `join/lookup` transform (ENC-616d).
+// Almost every transform is unary (filter/formula/…): they read `input` and leave
+// `right*` null. A JOIN node additionally reads a RIGHT source (the lookup table)
+// to resolve its left rows' keys against — the DAG populates `rightSchema`/`right`
+// only for a binary node. A unary transform never touches them.
 // ---------------------------------------------------------------------------
 struct EvalContext {
   Id nodeId{kInvalidId};
-  const ColumnSchema* inputSchema{nullptr};
-  const ColumnResolver* input{nullptr};
+  const ColumnSchema* inputSchema{nullptr};  // LEFT input schema
+  const ColumnResolver* input{nullptr};      // LEFT input resolver
+  const ColumnSchema* rightSchema{nullptr};  // RIGHT input schema (join only)
+  const ColumnResolver* right{nullptr};      // RIGHT input resolver (join only)
   ColumnStore* out{nullptr};
 };
 
@@ -117,11 +125,27 @@ class TransformNode {
 
   // Data-free typing: given the input edge schema, produce the output edge
   // schema or a fail-fast error. Called once at DAG-build time. MUST NOT touch
-  // any bytes — it only reasons over names + dtypes.
+  // any bytes — it only reasons over names + dtypes. Unary transforms implement
+  // THIS; a binary (join) node overrides inferSchemaBinary() instead and may
+  // leave this defaulting to an error (it is never called for an arity-2 node).
   virtual SchemaResult inferSchema(const ColumnSchema& input) const = 0;
 
-  // Run the node: read inputs via ctx.input, write outputs into ctx.out under
-  // ctx.nodeId. Called only when the DAG decides the node is dirty.
+  // ARITY — how many inputs this node reads. 1 for filter/formula/… ; 2 for the
+  // relational join/lookup (left rows + right lookup table). The DAG wires that
+  // many input edges and dirties the node when ANY of them changes.
+  virtual int arity() const { return 1; }
+
+  // Binary typing: output schema as a pure function of the LEFT and RIGHT input
+  // schemas. Only called for arity()==2 nodes. The default delegates to the unary
+  // form (ignoring `right`) so unary transforms need not implement it.
+  virtual SchemaResult inferSchemaBinary(const ColumnSchema& left,
+                                         const ColumnSchema& /*right*/) const {
+    return inferSchema(left);
+  }
+
+  // Run the node: read inputs via ctx.input (+ ctx.right for a join), write
+  // outputs into ctx.out under ctx.nodeId. Called only when the DAG decides the
+  // node is dirty.
   virtual void evaluate(const EvalContext& ctx) const = 0;
 };
 
