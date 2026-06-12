@@ -480,6 +480,17 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_uce_manifest_validate PRIVATE dc)
   add_test(NAME dc_uce_manifest_validate COMMAND dc_uce_manifest_validate)
 
+  # ENC-620c (Epic ENC-620) — AI GRAMMAR-CARD / CONTEXT-KIT: the catalog-derived
+  # grammar card (marks/scales/transforms/pipelines enumerated from the LIVE
+  # catalogs), the feed schema descriptor (f64-time-stays-CPU rule), the worked
+  # few-shot manifests (each PASSES the validator), and the execution-guided
+  # repair-loop scaffold (author->ManifestValidator->repair signal).
+  add_executable(dc_uce_contextkit
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_uce_contextkit.cpp"
+  )
+  target_link_libraries(dc_uce_contextkit PRIVATE dc)
+  add_test(NAME dc_uce_contextkit COMMAND dc_uce_contextkit)
+
   # ENC-606 (P1.15) — THE PROOF: candlestick + SMA(20) from a RAW OHLC feed end to
   # end through the manifest path (PivotIngest -> trivial CPU SMA -> TimeScale x +
   # LinearScale y -> candle + line marks -> byte-exact geometry), with ZERO
