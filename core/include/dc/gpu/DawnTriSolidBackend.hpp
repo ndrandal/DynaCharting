@@ -52,19 +52,34 @@ class DawnTriSolidBackend final : public IRendererBackend {
   // per draw — see GpuDevice / ENC-493 cache note).
   PipelineHandle pipeline_{};
 
-  // Static per-geometry GPU buffers, created lazily on first draw of a geometry
-  // and reused thereafter. triSolid keeps this minimal/static; the live coalesced
-  // streaming model (CpuBufferStore::uploadDirty + DeviceBufferResolver, ENC-485)
-  // is adopted by the instanced pipelines that stream per tick (ENC-488/489/490).
-  // Keyed by geometryId.
+  // Per-geometry GPU buffers, created lazily on first draw of a geometry and
+  // reused thereafter. Keyed by geometryId.
+  //
+  // ENC-569: the cached vertex/index buffers are re-read + re-uploaded when the
+  // underlying CpuBufferStore bytes change (streaming grow / in-place edit). We
+  // stamp the source buffer versions (+ sizes) this GPU buffer was built from;
+  // ensureGeoBuffers() re-checks them every render and rebuilds on a bump. The
+  // DRAW count is derived from the CURRENT buffer size (vtxBytes / strideOf) not
+  // the static geometry.vertexCount, so a growing line/triangle buffer draws the
+  // new vertices. Unchanged geometry stays a pure cache hit.
   struct GeoBuffers {
     BufferHandle vertexBuffer{};
     BufferHandle indexBuffer{};
     std::uint32_t vertexCount{0};
     std::uint32_t indexCount{0};
+    std::uint64_t vtxVersion{0};  // CpuBufferStore version of vertexBufferId
+    std::uint64_t idxVersion{0};  // CpuBufferStore version of indexBufferId
+    bool built{false};            // false until first (re)build
   };
-  // Tiny inline map (geometry count is small in the first-render slice).
+  // Tiny inline map (geometry count is small).
   std::vector<std::pair<std::uint32_t, GeoBuffers>> geoBuffers_;
+
+  // (Re)upload gb's vertex/index buffers from the geometry's current CPU bytes,
+  // deriving the draw counts from the current buffer sizes. Records the source
+  // versions so a subsequent unchanged frame is a no-op.
+  void buildGeoBuffers(GpuDevice& device, const Scene& scene,
+                       CpuBufferStore& gpu, std::uint32_t geometryId,
+                       GeoBuffers& gb);
 
   GeoBuffers& ensureGeoBuffers(GpuDevice& device, const Scene& scene,
                                CpuBufferStore& gpu, std::uint32_t geometryId);

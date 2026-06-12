@@ -49,16 +49,27 @@ class DawnLine2dBackend final : public IRendererBackend {
   // per draw — same lifetime model as DawnTriSolidBackend).
   PipelineHandle pipeline_{};
 
-  // Static per-geometry GPU buffers, created lazily on first draw of a geometry
-  // and reused thereafter (matches triSolid's static-upload approach; live
-  // streaming lands per-pipeline later). Keyed by geometryId.
+  // Per-geometry GPU buffers, created lazily on first draw of a geometry and
+  // reused thereafter. Keyed by geometryId.
+  //
+  // ENC-569: re-read + re-upload on a CpuBufferStore version bump and derive the
+  // draw count from the current buffer size (see DawnTriSolidBackend). So a
+  // STREAMING (growing) line2d buffer draws the new segments instead of being
+  // frozen at the first frame's vertexCount.
   struct GeoBuffers {
     BufferHandle vertexBuffer{};
     BufferHandle indexBuffer{};
     std::uint32_t vertexCount{0};
     std::uint32_t indexCount{0};
+    std::uint64_t vtxVersion{0};
+    std::uint64_t idxVersion{0};
+    bool built{false};
   };
   std::vector<std::pair<std::uint32_t, GeoBuffers>> geoBuffers_;
+
+  void buildGeoBuffers(GpuDevice& device, const Scene& scene,
+                       CpuBufferStore& gpu, std::uint32_t geometryId,
+                       GeoBuffers& gb);
 
   GeoBuffers& ensureGeoBuffers(GpuDevice& device, const Scene& scene,
                                CpuBufferStore& gpu, std::uint32_t geometryId);

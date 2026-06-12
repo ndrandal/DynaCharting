@@ -74,11 +74,23 @@ class DawnLineAABackend final : public IRendererBackend {
   // Non-indexed path uploads the geometry's rect4 segment bytes directly; the
   // indexed (D26) path uploads a CPU-gathered scratch buffer of only the
   // selected segments.
+  //
+  // ENC-569: like the instanced rect backend (ENC-558), we stamp the source
+  // buffer versions this instance buffer was built from and re-gather/re-upload
+  // (growing instanceCount from the current buffer size) on a CpuBufferStore
+  // version bump, so a streaming/growing thick-line buffer animates.
   struct GeoBuffers {
     BufferHandle instanceBuffer{};   // per-instance segment records (a_rect)
     std::uint32_t instanceCount{0};  // segments drawn (gathered count when indexed)
+    std::uint64_t vtxVersion{0};     // CpuBufferStore version of vertexBufferId
+    std::uint64_t idxVersion{0};     // CpuBufferStore version of indexBufferId
+    bool built{false};               // false until first (re)build
   };
   std::vector<std::pair<std::uint32_t, GeoBuffers>> geoBuffers_;
+
+  void buildGeoBuffers(GpuDevice& device, const Scene& scene,
+                       CpuBufferStore& gpu, std::uint32_t geometryId,
+                       GeoBuffers& gb);
 
   GeoBuffers& ensureGeoBuffers(GpuDevice& device, const Scene& scene,
                                CpuBufferStore& gpu, std::uint32_t geometryId);
