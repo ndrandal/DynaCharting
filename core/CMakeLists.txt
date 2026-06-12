@@ -535,6 +535,19 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_uce_stream_sched PRIVATE dc)
   add_test(NAME dc_uce_stream_sched COMMAND dc_uce_stream_sched)
 
+  # ENC-618b (Epic ENC-618 — layout primitives) — `sankey` / alluvial layout +
+  # cubic-bezier ribbon routing. Replaces the showcase's 208-line upstream sankey
+  # precompute with an in-engine TransformNode: node layering by longest-path depth,
+  # median-heuristic within-layer ordering, node heights ∝ throughput, and each flow
+  # routed as a SMOOTH cubic-bezier ribbon (via dc::CurveTessellator) — NOT straight
+  # quads. Covers layering/heights/ribbon-width ∝ value, well-formed (no degenerate/
+  # NaN) triangles, per-node conservation, run as a DAG node + as a class-3 global.
+  add_executable(dc_uce_sankey
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_uce_sankey.cpp"
+  )
+  target_link_libraries(dc_uce_sankey PRIVATE dc)
+  add_test(NAME dc_uce_sankey COMMAND dc_uce_sankey)
+
   # ENC-606 — regression guard for the setDrawItemStyle PRIMARY-color key wiring
   # (colorR/colorG/colorB/colorA must reach di.color, the form the render proof
   # drives the amber SMA line with). A pure-logic CommandProcessor test.
