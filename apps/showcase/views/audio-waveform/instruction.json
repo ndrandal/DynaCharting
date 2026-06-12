@@ -1,7 +1,7 @@
 {
   "id": "showcase-audio-waveform",
   "sessionId": "showcase",
-  "note": "STATIC computed view — no live subscriptions. The mirrored amplitude envelope is synthesized deterministically and baked into manifest.ts uploads at build time; there is no capture/embassy path. This stub exists only to satisfy the per-view directory contract.",
+  "note": "STREAMING computed view (ENC-571) — no live subscriptions. The mirrored amplitude envelope is synthesized deterministically in records.gen.mjs and streamed column-by-column into buffer 500 (pos2_color4, triGradient@1) over a ~20s records.json timeline so the filled band grows left→right; there is no capture/embassy path and no static uploads. This stub exists only to satisfy the per-view directory contract.",
   "subscriptions": [],
   "visualization": { "recipe": "showcase-explicit-v1", "bindings": [], "buffers": [] }
 }
