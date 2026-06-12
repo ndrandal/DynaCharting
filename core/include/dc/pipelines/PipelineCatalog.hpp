@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace dc {
 
@@ -30,6 +31,12 @@ public:
   PipelineCatalog();
 
   const PipelineSpec* find(const std::string& key) const;
+
+  // Enumerate every registered pipeline key (e.g. "instancedCandle@1"), sorted for
+  // a stable, reproducible order. Lets a tool (the AI grammar card, ENC-620c) emit
+  // the pipeline->required-vertex-format table DIRECTLY from the catalog so it can
+  // never drift from the registered set.
+  std::vector<std::string> keys() const;
 
 private:
   std::unordered_map<std::string, PipelineSpec> specs_;
