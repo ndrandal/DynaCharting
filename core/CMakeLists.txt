@@ -428,6 +428,13 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_uce_table PRIVATE dc)
   add_test(NAME dc_uce_table COMMAND dc_uce_table)
 
+  # ENC-593/594/595 — Table layer: pivot ingest + per-row identity + reactive dirty
+  add_executable(dc_uce_table_layer
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_uce_table_layer.cpp"
+  )
+  target_link_libraries(dc_uce_table_layer PRIVATE dc)
+  add_test(NAME dc_uce_table_layer COMMAND dc_uce_table_layer)
+
   # ENC-596 (P1.5) — Linear scale + streaming O(Δ) auto-domain
   add_executable(dc_uce_scale
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_uce_scale.cpp"
