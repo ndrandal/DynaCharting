@@ -85,6 +85,13 @@ class DawnDevice final : public GpuDevice {
   const std::string& backendName() const { return backendName_; }
   const std::string& adapterName() const { return adapterName_; }
 
+  /// ENC-617a: the most recent device/validation/WGSL-compile error reported by
+  /// Dawn's uncaptured-error callback (empty if none). createComputePipeline()
+  /// wraps pipeline creation in an error scope and fails loudly when Tint rejects
+  /// the WGSL, so a codegen bug surfaces as a build failure instead of an
+  /// all-zeros output buffer.
+  const std::string& lastDeviceError() const { return lastDeviceError_; }
+
   // --- buffer resources (TODO(ENC-485) — draw path) -----------------------
   BufferHandle createBuffer(std::size_t capacityBytes, const void* initData,
                             std::size_t initBytes) override;
@@ -285,6 +292,10 @@ class DawnDevice final : public GpuDevice {
   std::string errorMessage_;
   std::string backendName_;
   std::string adapterName_;
+  // ENC-617a: last uncaptured device error (validation / WGSL compile). Written
+  // by the device's uncaptured-error callback; read by createComputePipeline's
+  // error scope so a Tint rejection fails loudly.
+  std::string lastDeviceError_;
 
 #ifndef __EMSCRIPTEN__
   // NATIVE: Dawn owns the instance; it must outlive every wgpu object below. Held

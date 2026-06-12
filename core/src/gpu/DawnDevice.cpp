@@ -6,6 +6,7 @@
 // TODO(ENC-484) / TODO(ENC-485) — those land when the triSolid pipeline does.
 #include "dc/gpu/DawnDevice.hpp"
 
+#include <cstdio>
 #include <cstring>
 #include <utility>
 #include <vector>
@@ -233,7 +234,23 @@ bool DawnDevice::init() {
   }
 
   // Create the device from the chosen adapter (synchronous on dawn::native).
-  WGPUDevice cDevice = chosen->CreateDevice();
+  // ENC-617a: install an uncaptured-error callback so validation / WGSL-compile
+  // (Tint) failures are captured into lastDeviceError_ instead of being silently
+  // swallowed (which previously turned a bad generated kernel into an all-zeros
+  // output buffer). createComputePipeline() reads this via an error scope.
+  wgpu::DeviceDescriptor deviceDesc = {};
+  deviceDesc.SetUncapturedErrorCallback(
+      [](const wgpu::Device&, wgpu::ErrorType type, wgpu::StringView message,
+         DawnDevice* self) {
+        if (type != wgpu::ErrorType::NoError) {
+          self->lastDeviceError_ = toStdString(message);
+          std::fprintf(stderr, "[DawnDevice] uncaptured error: %s\n",
+                       self->lastDeviceError_.c_str());
+        }
+      },
+      this);
+  WGPUDevice cDevice = chosen->CreateDevice(
+      reinterpret_cast<const WGPUDeviceDescriptor*>(&deviceDesc));
   if (cDevice == nullptr) {
     errorMessage_ = "DawnDevice: Adapter::CreateDevice failed (backend=" +
                     backendName_ + ")";
@@ -471,8 +488,41 @@ ComputePipelineHandle DawnDevice::createComputePipeline(const char* wgsl,
   cpd.layout = nullptr;  // nullptr layout == auto-layout from the shader
   cpd.compute.module = module;
   cpd.compute.entryPoint = entryPoint ? entryPoint : "main";
+
+  // ENC-617a: validate synchronously. Shader-module creation + pipeline creation
+  // are wrapped in a Validation error scope; if Tint rejects the WGSL the scope
+  // pops a non-NoError status with the diagnostic, and we FAIL the pipeline build
+  // (return a null handle) rather than handing back a pipeline that quietly never
+  // writes its output buffer. The error text is logged + retained in
+  // lastDeviceError_.
+  lastDeviceError_.clear();
+  device_.PushErrorScope(wgpu::ErrorFilter::Validation);
   wgpu::ComputePipeline pipeline = device_.CreateComputePipeline(&cpd);
-  if (!pipeline) return {};
+
+  struct ScopeResult {
+    bool done = false;
+    bool failed = false;
+    std::string message;
+  } scope;
+  device_.PopErrorScope(
+      wgpu::CallbackMode::AllowProcessEvents,
+      [](wgpu::PopErrorScopeStatus, wgpu::ErrorType type, wgpu::StringView msg,
+         ScopeResult* r) {
+        r->failed = (type != wgpu::ErrorType::NoError);
+        r->message = toStdString(msg);
+        r->done = true;
+      },
+      &scope);
+  waitUntil(&scope.done);
+
+  if (scope.failed || !pipeline) {
+    if (!scope.message.empty()) lastDeviceError_ = scope.message;
+    std::fprintf(stderr,
+                 "[DawnDevice] createComputePipeline FAILED (WGSL compile/"
+                 "validation): %s\nWGSL:\n%s\n",
+                 lastDeviceError_.c_str(), wgsl);
+    return {};
+  }
 
   ComputePipelineEntry entry;
   entry.module = std::move(module);
