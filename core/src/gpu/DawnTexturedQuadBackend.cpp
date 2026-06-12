@@ -182,25 +182,54 @@ DawnTexturedQuadBackend::ensureGeoBuffers(GpuDevice& device, const Scene& scene,
 
 TextureHandle DawnTexturedQuadBackend::ensureTexture(GpuDevice& device,
                                                      std::uint32_t textureId) {
+  CachedTexture* cached = nullptr;
   for (auto& kv : textureHandles_) {
-    if (kv.first == textureId) return kv.second;
+    if (kv.first == textureId) { cached = &kv.second; break; }
   }
-  TextureHandle h{};
+
+  // ENC-568: re-upload when the source pixels changed (animated texture track) —
+  // the texture analogue of ENC-558's instanced-buffer re-read. A cache hit
+  // (same version) skips straight to the existing handle.
+  const std::uint64_t srcVer = textures_ ? textures_->getTextureVersion(textureId) : 0;
+  if (cached && cached->handle.valid() && cached->version == srcVer) {
+    return cached->handle;
+  }
+
   const std::uint8_t* data = nullptr;
   std::uint32_t w = 0, ht = 0;
   TextureFormat fmt = TextureFormat::RGBA8;
-  if (textures_ &&
-      textures_->getTexturePixels(textureId, &data, &w, &ht, &fmt) && data) {
+  if (!textures_ ||
+      !textures_->getTexturePixels(textureId, &data, &w, &ht, &fmt) || !data) {
+    // No pixels available; keep any prior handle (don't churn) or cache empty.
+    if (cached) return cached->handle;
+    textureHandles_.emplace_back(textureId, CachedTexture{});
+    return {};
+  }
+
+  if (!cached) {
+    textureHandles_.emplace_back(textureId, CachedTexture{});
+    cached = &textureHandles_.back().second;
+  }
+
+  // Same dimensions/format → cheap in-place re-upload (queueWriteTexture).
+  // Otherwise (first use, or the texture was resized) (re)create it.
+  if (cached->handle.valid() && cached->w == w && cached->h == ht && cached->format == fmt) {
+    device.updateTexture(cached->handle, data);
+  } else {
+    if (cached->handle.valid()) device.destroyTexture(cached->handle);
     TextureDesc td;
     td.width = w;
     td.height = ht;
     td.format = fmt;
     td.filter = TextureFilter::Linear;  // matches GL TextureManager (GL_LINEAR)
     td.data = data;                     // initial upload via queue.WriteTexture
-    h = device.createTexture(td);
+    cached->handle = device.createTexture(td);
+    cached->w = w;
+    cached->h = ht;
+    cached->format = fmt;
   }
-  textureHandles_.emplace_back(textureId, h);
-  return h;
+  cached->version = srcVer;
+  return cached->handle;
 }
 
 BackendStats DawnTexturedQuadBackend::renderDrawItem(GpuDevice& device,

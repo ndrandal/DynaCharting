@@ -331,7 +331,14 @@ export class EngineHost {
     format: TextureFormat = TextureFormat.RGBA8,
   ): void {
     this.frameDirty = true;
-    if (this.ready && this.core) {
+    // Apply immediately only when the core is ready AND no render is in flight.
+    // The WASM core uses ASYNCIFY (one async op at a time); core.render()
+    // suspends mid-await, and touching the core during that window aborts the
+    // runtime ("multiple async operations in flight"). When a render is in
+    // flight we buffer + drain after it resolves — the same single-flight
+    // discipline as enqueueData/applyControl. This is what makes an ANIMATED
+    // texture track (setTexturePixels per replay frame, ENC-568) safe.
+    if (this.ready && this.core && !this.rendering) {
       this.core.setTexturePixels(id, bytes, w, h, format);
       return;
     }
@@ -570,14 +577,27 @@ export class EngineHost {
   }
 
   /**
-   * Flush control commands + data batches buffered while the core was busy
-   * (loading, or a render in flight). Applied in order: control before data, so
-   * a geometry/buffer exists before its bytes land. Safe to call only when no
-   * render is in flight (the caller guarantees this).
+   * Flush textures + control commands + data batches buffered while the core was
+   * busy (loading, or a render in flight). Applied in order: textures first (so a
+   * drawItem that binds a textureId finds its pixels), then control before data
+   * (so a geometry/buffer exists before its bytes land). Safe to call only when
+   * no render is in flight (the caller guarantees this).
    */
   private drainQueued(): void {
     if (!this.ready || !this.core || this.rendering) return;
-    if (this.pendingControl.length === 0 && this.dataQueue.length === 0) return;
+    if (
+      this.pendingTextures.length === 0 &&
+      this.pendingControl.length === 0 &&
+      this.dataQueue.length === 0
+    )
+      return;
+    if (this.pendingTextures.length > 0) {
+      const texs = this.pendingTextures;
+      this.pendingTextures = [];
+      for (const t of texs) {
+        this.core.setTexturePixels(t.textureId, t.pixels, t.w, t.h, t.format);
+      }
+    }
     if (this.pendingControl.length > 0) {
       const ctrl = this.pendingControl;
       this.pendingControl = [];

@@ -11,17 +11,60 @@
  * header + payload). Replaying them through enqueueData drives the WASM/Dawn
  * ingest path identically to the live slice — only the transport changes.
  *
- * Growth-sync + X-anchor (was in useAgentStream): for instanced geometry the
- * renderer draws geometry.vertexCount instances and the dataplane only grows
- * the buffer's bytes, so as records land we advance vertexCount via a
- * fresh-geometry rebind (ENC-558: the instanced backend caches its GPU buffer
- * per geometryId). When the view sets xAnchor, the X part of the transform is
- * re-derived from the first replayed record's recordIndex so the chart frames
- * from the left regardless of embassy's absolute index at capture time.
+ * MULTI-BUFFER GROWTH (ENC-568, supersedes the single-buffer rebind hack):
+ * every frame is pushed verbatim through host.enqueueData. Each record already
+ * carries its own bufferId, so a multi-series view (candles + volume + SMA)
+ * grows ALL of its buffers as the timeline advances. For each growing geometry
+ * the replay counts the records that land on its buffer and issues ONE
+ * `setGeometryVertexCount(geometryId, count)` so the renderer draws every
+ * streamed instance/vertex. ENC-558 (instanced) + ENC-569 (line/vertex) made the
+ * backends re-read a grown buffer once its vertexCount advances, so this single
+ * vertexCount bump per series replaces the old throttled createGeometry /
+ * bindDrawItem / deleteGeometry geometry-rebind churn (which could only advance
+ * ONE buffer per view).
+ *
+ * X-ANCHOR: when the view sets xAnchor, the X part of its transform is
+ * re-derived from the FIRST replayed record's recordIndex (read off the primary
+ * growth buffer's x field) so the chart frames from the left regardless of
+ * embassy's absolute index at capture time.
+ *
+ * TEXTURE TIMELINE (ENC-568): a view may also carry an animated TEXTURE track —
+ * `records.textures`, a list of frames `{ t, textureId, width, height,
+ * pixelsB64, format? }`. Each is scheduled at its `t` and applied via
+ * host.setTexturePixels, so a texturedQuad view can SWAP its texture over time
+ * (e.g. a rolling-window correlation heatmap). The texture track loops with the
+ * binary timeline. See TextureFrame below for the per-view schema.
  */
 
 import { useEffect, useRef } from 'react';
 import type { EngineHost } from '@repo/dc-wasm';
+
+/**
+ * One frame of a view's animated texture track. A view carrying a `textures`
+ * array on its Records will, during replay, have each frame applied via
+ * host.setTexturePixels(textureId, decode(pixelsB64), width, height, format) at
+ * its relative timestamp `t` (looping with the binary timeline).
+ *
+ * SCHEMA (per-view authoring contract):
+ *   - t          relative ms offset into the timeline (0 = first frame)
+ *   - textureId  logical texture id the manifest's texturedQuad drawItem binds
+ *                (via setDrawItemTexture); the same id is reused across frames
+ *   - width      texture width  in pixels
+ *   - height     texture height in pixels
+ *   - pixelsB64  base64 of the tightly-packed pixel bytes (RGBA8 = w*h*4 bytes,
+ *                row-major from row 0; R8 = w*h bytes)
+ *   - format     optional TextureFormat code: 0 = R8, 1 = RGBA8 (default 1)
+ */
+export interface TextureFrame {
+  t: number;
+  textureId: number;
+  width: number;
+  height: number;
+  /** Base64 of the tightly-packed pixel bytes for this frame. */
+  pixelsB64: string;
+  /** Texture format: 0 = R8, 1 = RGBA8 (default). */
+  format?: number;
+}
 
 /** A captured view's frozen dataplane output (apps/showcase/views/<id>/records.json). */
 export interface Records {
@@ -33,13 +76,37 @@ export interface Records {
   };
   /** Binary frames with relative timestamps. `b64` = base64 of one dataplane batch. */
   frames: { t: number; b64: string }[];
+  /**
+   * Optional animated TEXTURE track (ENC-568). When present, each frame is
+   * applied via host.setTexturePixels at its `t`, looping with the timeline — so
+   * a texturedQuad view can animate (swap its texture over time). Absent for
+   * non-texture views (the common case). See TextureFrame for the schema.
+   */
+  textures?: TextureFrame[];
 }
 
 /**
- * Growth/X-anchor descriptor for a live-growing instanced geometry. Provided by
- * a view's manifest module when its data feeds an instanced pipeline whose
- * vertexCount must track the streamed record count (e.g. candle6). Omit for
- * views whose geometry is fixed-size (the buffer is overwritten in place).
+ * A live-growing geometry the replay advances: as records land on `bufferId`,
+ * the replay issues `setGeometryVertexCount(geometryId, count)` so the renderer
+ * draws every streamed instance/vertex. One entry per growing series in a view
+ * (e.g. candle-overlays has three: candles, volume, SMA).
+ */
+export interface GrowthSeries {
+  /** Buffer the records stream into (matches the manifest's createBuffer id). */
+  bufferId: number;
+  /** Geometry whose vertexCount tracks the buffer's record count. */
+  geometryId: number;
+  /** Bytes per record on this buffer (candle6 = 24, rect4 = 16, pos2 = 8). */
+  stride: number;
+}
+
+/**
+ * Growth/X-anchor descriptor for a view's PRIMARY live-growing instanced
+ * geometry. Provided by a view's manifest module; the replay uses it to locate
+ * the X-anchor field on the primary growth buffer and (when no explicit
+ * `growthSeries` list is given) as the single series to advance. The chrome
+ * overlay + view authoring metadata also read it. Multi-series views additionally
+ * export `growthSeries` (see ViewManifestModule).
  */
 export interface GrowthSync {
   bufferId: number;
@@ -82,16 +149,23 @@ export interface ReplayOptions {
    * the ever-growing buffer. Omit for a one-shot replay.
    */
   onComplete?: () => void;
-  /** Instanced-geometry growth descriptor (omit for fixed-size views). */
+  /** Primary growth descriptor (locates the X-anchor field); omit for fixed-size views. */
   growth?: GrowthSync;
+  /**
+   * Every growing series in the view (candles + volume + SMA …). The replay
+   * advances each geometry's vertexCount as its buffer grows. When omitted but
+   * `growth` is set, the primary `growth` series alone is advanced (back-compat
+   * for single-series views).
+   */
+  growthSeries?: GrowthSeries[];
   /** X-anchor framing (omit unless the view sets xAnchor). */
   xAnchor?: XAnchorSpec;
 }
 
 const OP_APPEND = 1;
 const RECORD_HEADER_SIZE = 13; // [1B op][4B bufferId][4B offset][4B payloadBytes]
-/** Min interval between instanced-geometry rebuilds (ms); bounds rebuild churn. */
-const REBUILD_INTERVAL_MS = 250;
+/** Min interval between vertexCount bumps (ms); bounds control-plane churn. */
+const VCOUNT_SYNC_INTERVAL_MS = 200;
 
 function b64ToArrayBuffer(b64: string): ArrayBuffer {
   const bin = atob(b64);
@@ -99,6 +173,15 @@ function b64ToArrayBuffer(b64: string): ArrayBuffer {
   const bytes = new Uint8Array(len);
   for (let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
   return bytes.buffer;
+}
+
+/** Decode base64 pixel bytes for a texture frame. */
+function b64ToBytes(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const len = bin.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
 }
 
 /** Count whole `stride`-byte APPEND records targeting `bufferId` in one batch. */
@@ -141,9 +224,15 @@ function firstRecordX(batch: ArrayBuffer, bufferId: number, xField: number): num
  * timeline. Re-runs (restarts the timeline) whenever `host`, `records`, or the
  * play/loop options change. Pausing (`playing:false`) freezes the current frame
  * and resumes the schedule from where it left off on the next play.
+ *
+ * Every record (across every bufferId) is delivered verbatim via enqueueData, so
+ * multi-series views grow ALL of their buffers; each growing geometry's
+ * vertexCount is advanced as its buffer grows (ENC-558/ENC-569 re-read). An
+ * optional texture track is applied alongside the binary timeline (ENC-568) so
+ * texturedQuad views can animate.
  */
 export function useReplay(host: EngineHost | null, records: Records | null, opts: ReplayOptions = {}): void {
-  const { playing = true, onProgress, onComplete, growth, xAnchor } = opts;
+  const { playing = true, onProgress, onComplete, growth, growthSeries, xAnchor } = opts;
   // Hold the latest callbacks without re-arming the timeline each render.
   const onProgressRef = useRef(onProgress);
   onProgressRef.current = onProgress;
@@ -151,21 +240,32 @@ export function useReplay(host: EngineHost | null, records: Records | null, opts
   onCompleteRef.current = onComplete;
 
   useEffect(() => {
-    if (!host || !records || !records.frames.length) return;
+    if (!host || !records) return;
+    const frames = records.frames;
+    const textureFrames = records.textures ?? [];
+    // A view may have a binary timeline, a texture timeline, or both. Nothing to
+    // do only when BOTH are empty.
+    if (!frames.length && !textureFrames.length) return;
     if (!playing) return;
 
-    const frames = records.frames;
     const total = frames.length;
+
+    // The series to advance: an explicit growthSeries list, else the primary
+    // `growth` (single-series back-compat), else none (fixed-size view).
+    const series: GrowthSeries[] =
+      growthSeries && growthSeries.length
+        ? growthSeries
+        : growth
+          ? [{ bufferId: growth.bufferId, geometryId: growth.geometryId, stride: growth.stride }]
+          : [];
 
     // Per-run replay state (reset each (re)start of the effect).
     let cancelled = false;
     let idx = 0;
-    let recordTotal = 0; // cumulative records counted off the replayed frames
-    let syncedCount = -1; // record count at the last geometry rebuild
     let xAnchored = false;
-    let curGeometryId = growth?.geometryId ?? 0;
-    let geomSeq = 0;
-    let lastRebuild = 0;
+    let lastSync = 0;
+    const counts = new Map<number, number>(); // bufferId -> cumulative records
+    const synced = new Map<number, number>(); // geometryId -> last bumped count
     const timers: ReturnType<typeof setTimeout>[] = [];
 
     // Live X-anchor: on the first record, map [firstX, firstX+window]→clipX.
@@ -180,63 +280,82 @@ export function useReplay(host: EngineHost | null, records: Records | null, opts
       host.markDirty();
     };
 
-    // Throttled instanced-geometry rebuild so the backend re-uploads the grown
-    // buffer (ENC-558). Hand a fresh geometryId, rebind, delete the prior one.
-    const growthSync = () => {
-      if (!growth) return;
+    // Advance each growing geometry's vertexCount to its buffer's record count.
+    // Throttled so a burst of frames doesn't flood the control plane; `force`
+    // (final flush) bypasses the throttle so the last records always render.
+    const syncGrowth = (force = false) => {
+      if (!series.length) return;
       const now = performance.now();
-      if (recordTotal <= 0 || recordTotal === syncedCount) return;
-      if (now - lastRebuild < REBUILD_INTERVAL_MS) return;
-      lastRebuild = now;
-      syncedCount = recordTotal;
-      geomSeq += 1;
-      const newGeom = growth.geometryId + (geomSeq % 98) + 1;
-      const prevGeom = curGeometryId;
-      host.applyControl({
-        cmd: 'createGeometry',
-        id: newGeom,
-        vertexBufferId: growth.bufferId,
-        format: growth.format,
-        vertexCount: recordTotal,
-      });
-      host.applyControl({ cmd: 'bindDrawItem', drawItemId: growth.drawItemId, pipeline: growth.pipeline, geometryId: newGeom });
-      if (prevGeom && prevGeom !== newGeom) host.deleteGeometry(prevGeom);
-      curGeometryId = newGeom;
-      host.markDirty();
+      if (!force && now - lastSync < VCOUNT_SYNC_INTERVAL_MS) return;
+      lastSync = now;
+      let bumped = false;
+      for (const s of series) {
+        const count = counts.get(s.bufferId) ?? 0;
+        if (count <= 0 || synced.get(s.geometryId) === count) continue;
+        synced.set(s.geometryId, count);
+        host.applyControl({ cmd: 'setGeometryVertexCount', geometryId: s.geometryId, vertexCount: count });
+        bumped = true;
+      }
+      if (bumped) host.markDirty();
     };
 
-    // Push one frame into the data plane + update growth/progress.
-    const pushFrame = (i: number) => {
-      if (cancelled) return;
-      const ab = b64ToArrayBuffer(frames[i].b64);
-      if (growth) {
-        anchorXFor(ab);
-        recordTotal += countRecordsForBuffer(ab, growth.bufferId, growth.stride);
-      }
-      host.enqueueData(ab);
-      if (growth) growthSync();
-      onProgressRef.current?.((i + 1) / total);
-      idx = i + 1;
-      if (idx >= total) {
-        // Final flush of the grown geometry so the last records render even if
-        // the rebuild throttle skipped them, then signal completion (the
-        // controller drives looping via resetScene → applyManifest → restart).
-        if (growth) {
-          lastRebuild = 0;
-          growthSync();
-        }
+    // Progress + completion are driven by the BINARY timeline when it exists,
+    // else by the TEXTURE timeline (texture-only views). One source of truth so a
+    // texture-only view still reports progress + loops.
+    const progressTotal = total > 0 ? total : textureFrames.length;
+    let done = 0;
+    const advance = () => {
+      done += 1;
+      onProgressRef.current?.(progressTotal > 0 ? done / progressTotal : 1);
+      if (done >= progressTotal) {
+        if (series.length) syncGrowth(true); // final flush of grown geometry
         onCompleteRef.current?.();
       }
     };
+    const usesBinaryProgress = total > 0;
 
-    // Schedule every frame at its relative `t`. One timeline pass.
+    // Push one binary frame into the data plane verbatim. Every record routes to
+    // its own bufferId, so all of a multi-series view's buffers grow together;
+    // we tally per-buffer counts and advance each geometry's vertexCount.
+    const pushFrame = (i: number) => {
+      if (cancelled) return;
+      const ab = b64ToArrayBuffer(frames[i].b64);
+      anchorXFor(ab);
+      for (const s of series) {
+        counts.set(s.bufferId, (counts.get(s.bufferId) ?? 0) + countRecordsForBuffer(ab, s.bufferId, s.stride));
+      }
+      host.enqueueData(ab);
+      syncGrowth();
+      idx = i + 1;
+      advance();
+    };
+
+    // Apply one texture frame (animated TEXTURE track — ENC-568).
+    const applyTextureFrame = (f: TextureFrame) => {
+      if (cancelled) return;
+      const pixels = b64ToBytes(f.pixelsB64);
+      host.setTexturePixels(f.textureId, pixels, f.width, f.height, f.format ?? 1);
+      host.markDirty();
+      if (!usesBinaryProgress) advance(); // texture-only view: drive progress here
+    };
+
+    // Schedule every binary frame + every texture frame at its relative `t`,
+    // anchored on whichever timeline starts first. One timeline pass; the
+    // controller drives looping via onComplete.
     const scheduleRun = () => {
       if (cancelled) return;
-      const t0 = frames[0].t;
+      const firstT = Math.min(
+        frames.length ? frames[0].t : Infinity,
+        textureFrames.length ? textureFrames[0].t : Infinity,
+      );
+      const t0 = Number.isFinite(firstT) ? firstT : 0;
       for (let i = idx; i < total; i++) {
         const delay = Math.max(0, frames[i].t - t0);
-        const timer = setTimeout(() => pushFrame(i), delay);
-        timers.push(timer);
+        timers.push(setTimeout(() => pushFrame(i), delay));
+      }
+      for (const f of textureFrames) {
+        const delay = Math.max(0, f.t - t0);
+        timers.push(setTimeout(() => applyTextureFrame(f), delay));
       }
     };
 

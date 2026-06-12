@@ -17,7 +17,7 @@
  * hand around these baked constants, like the other showcase views).
  */
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -182,4 +182,88 @@ console.log('\n═══ SANKEY ═══');
 console.log('sources:', SYMBOLS.join(', '), '| dests:', dests.join(', '));
 console.log('flow matrix (volume units):');
 for (const sym of SYMBOLS) console.log('  ', sym, '->', flow[sym].join('\t'));
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 4) CORRELATION HEATMAP — ANIMATED TEXTURE TRACK (ENC-568).
+// ═════════════════════════════════════════════════════════════════════════════
+// The static heatmap (§1) shows the FULL-tape correlation. To prove the replay
+// engine's animated TEXTURE track, we additionally compute a ROLLING-WINDOW
+// correlation (a WIN-sample window slid across the per-bucket log returns) and
+// rasterize one RGBA8 frame per window step, then WRITE them into the view's
+// records.json as a `textures` TextureFrame[] track. useReplay swaps the bound
+// texture via setTexturePixels at each frame's `t` (looping), so the heatmap
+// evolves over time. (Unlike the printed blocks above, this section WRITES a
+// file — records.json — because the frame data is too large to inline by hand.)
+{
+  const WIN = 16;            // rolling window length (log-return samples)
+  const cellPx = 32;         // px per matrix cell (nearest-neighbour upscale)
+  const dim = N * cellPx;    // 128
+  const FRAME_MS = 1000;     // 1 s per frame
+  const FRAMES = 10;         // target frame count (last window always included)
+  const TEXTURE_ID = 700;    // MUST match correlation-heatmap/manifest.ts
+
+  const rwRets = SYMBOLS.map((s) => logReturns(closes[s]));
+  const T = Math.min(...rwRets.map((r) => r.length));
+
+  function rasterize(c) {
+    const px = new Uint8Array(dim * dim * 4);
+    for (let py = 0; py < dim; py++) {
+      const i = Math.floor(py / cellPx);
+      for (let pxX = 0; pxX < dim; pxX++) {
+        const j = Math.floor(pxX / cellPx);
+        const [r, g, b] = diverging(c[i][j]);
+        const o = (py * dim + pxX) * 4;
+        const edge = (pxX % cellPx < 2) || (py % cellPx < 2);
+        px[o] = edge ? Math.round(r * 0.45) : r;
+        px[o + 1] = edge ? Math.round(g * 0.45) : g;
+        px[o + 2] = edge ? Math.round(b * 0.45) : b;
+        px[o + 3] = 255;
+      }
+    }
+    return px;
+  }
+
+  const starts = [];
+  for (let s = 0; s + WIN <= T; s++) starts.push(s);
+  const step = Math.max(1, Math.floor(starts.length / FRAMES));
+  const chosen = [];
+  for (let k = 0; k < starts.length && chosen.length < FRAMES; k += step) chosen.push(starts[k]);
+  if (starts.length && chosen[chosen.length - 1] !== starts[starts.length - 1]) {
+    chosen.push(starts[starts.length - 1]);
+  }
+
+  const frames = chosen.map((s, k) => {
+    const win = rwRets.map((r) => r.slice(s, s + WIN));
+    const c = [];
+    for (let i = 0; i < N; i++) {
+      const row = [];
+      for (let j = 0; j < N; j++) row.push(pearson(win[i], win[j]));
+      c.push(row);
+    }
+    return {
+      t: k * FRAME_MS,
+      textureId: TEXTURE_ID,
+      width: dim,
+      height: dim,
+      pixelsB64: Buffer.from(rasterize(c)).toString('base64'),
+      format: 1,
+    };
+  });
+
+  const records = {
+    meta: {
+      viewId: 'correlation-heatmap',
+      durationMs: frames.length * FRAME_MS,
+      frameCount: 0,
+      cadenceMs: FRAME_MS,
+    },
+    frames: [],      // texture-only timeline (no binary records)
+    textures: frames,
+  };
+  const outPath = join(here, 'correlation-heatmap', 'records.json');
+  writeFileSync(outPath, JSON.stringify(records));
+  console.log('\n═══ CORRELATION HEATMAP — ANIMATED TRACK (ENC-568) ═══');
+  console.log(`wrote ${frames.length} frames (${dim}x${dim} RGBA8, ${FRAME_MS}ms apart) -> ${outPath}`);
+}
+
 console.log('\nDone.');

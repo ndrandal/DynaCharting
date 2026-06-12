@@ -106,6 +106,7 @@ export function useViewSwitch(host: EngineHost | null, view: ShowcaseView | null
     onProgress: setProgress,
     onComplete,
     growth: view?.growth,
+    growthSeries: view?.growthSeries,
     xAnchor: view?.xAnchor,
   });
 
