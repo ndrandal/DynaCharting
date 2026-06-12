@@ -21,16 +21,21 @@
  * re-read the grown buffers (ENC-558). So the volume sub-pane bars now populate
  * across the tape instead of showing a single seeded instance.
  *
- * SMA(20) — CAPTURED + GROWTH-TRACKED, BUT NOT DRAWN (one remaining frontier
- * limit): a 20-period SMA is subscribed + bound (buffer 10120) so the capture
- * exercises the real multi-buffer pipeline and the records are present, and the
- * replay engine WILL advance an SMA geometry's vertexCount (the plumbing is
- * multi-series now). It is still not DRAWN because line2d@1 is WebGPU LineList
- * (GL_LINES) — a one-point-per-record append can't form a connected polyline —
- * and the line/vertex backends do not yet re-read a grown buffer (ENC-569, in
- * parallel). Once ENC-569 lands a stream-connectable line, the SMA draw item +
- * its growthSeries entry drop straight in. Drawing it today would blank the
- * scene (a LineList draw with an odd/seed vertexCount aborts the render pass).
+ * SMA(20) — NOW LIVE + DRAWN (ENC-585): the 20-period SMA overlay (buffer 10120)
+ * streams live alongside the candles/volume and is drawn as a thick, connected,
+ * anti-aliased polyline via lineAA@1. Its geometry format is `rect4` (16B per
+ * instance = one [x0,y0,x1,y1] clip-space segment); a connected N-point SMA is
+ * authored as N OVERLAPPING segments (segment i = [pt[i-1], pt[i]]) that APPEND
+ * one-per-timestep in lockstep with the candle/volume APPENDs — see
+ * records.gen.mjs. The lineAA Dawn backend re-gathers + re-counts instances
+ * (instanceCount = bytes/16) on every buffer version bump (foundation #38/
+ * ENC-569), so the streamed segments grow the drawn line live, exactly like the
+ * instanced candle/volume buffers. The SMA values ride PRICE_TRANSFORM (lineAA
+ * applies the DrawItem mat3 to both endpoints) so the line overlays the candles.
+ *
+ * (Was line2d@1 — a WebGPU LineList drawing DISCONNECTED vertex pairs from a
+ * one-point-per-record append, which rendered thin/broken; replaced by lineAA@1.
+ * See ENC-587 for the line-pipeline fix lineage.)
  */
 
 import type { SceneManifest } from '../../src/scene/commands';
@@ -51,7 +56,7 @@ const CANDLE_DRAWITEM = 10300;
 // NOTE: ENC-568 advances each series' geometry vertexCount in place
 // (setGeometryVertexCount) instead of the old fresh-id rebind, so geometry ids
 // no longer churn. The SMA/volume ids are kept well-separated for clarity.
-const SMA_BUFFER = 10120; // pos2_clip 8B (x, y)
+const SMA_BUFFER = 10120; // rect4 16B (x0, y0, x1, y1) — connected line segments
 const SMA_GEOMETRY = 10500;
 const SMA_DRAWITEM = 10320;
 
@@ -103,6 +108,24 @@ export const manifest: SceneManifest = {
     },
     { cmd: 'attachTransform', drawItemId: CANDLE_DRAWITEM, transformId: PRICE_TRANSFORM },
 
+    // --- SMA(20) overlay (price pane): thick AA connected polyline, lineAA@1 ---
+    // rect4 geometry (16B/instance = one [x0,y0,x1,y1] segment); the records
+    // stream one OVERLAPPING segment per timestep so the polyline is connected
+    // and grows live (the lineAA backend re-counts instanceCount = bytes/16 on
+    // each buffer version bump). Shares PRICE_TRANSFORM so it overlays the
+    // candles. Colour: warm amber, ~2px — clearly reads over the OHLC bars.
+    {
+      cmd: 'createGeometry', id: SMA_GEOMETRY,
+      vertexBufferId: SMA_BUFFER, format: 'rect4', vertexCount: 1,
+    },
+    { cmd: 'createDrawItem', id: SMA_DRAWITEM, layerId: PRICE_LAYER },
+    { cmd: 'bindDrawItem', drawItemId: SMA_DRAWITEM, pipeline: 'lineAA@1', geometryId: SMA_GEOMETRY },
+    {
+      cmd: 'setDrawItemStyle', drawItemId: SMA_DRAWITEM,
+      r: 0.95, g: 0.78, b: 0.3, a: 1, lineWidth: 2,
+    },
+    { cmd: 'attachTransform', drawItemId: SMA_DRAWITEM, transformId: PRICE_TRANSFORM },
+
     // --- Volume bars (volume pane, own transform) ---
     {
       cmd: 'createGeometry', id: VOL_GEOMETRY,
@@ -136,16 +159,17 @@ export const growth: GrowthSync = {
 };
 
 /**
- * MULTI-BUFFER GROWTH (ENC-568): every live-growing geometry the replay engine
- * advances as its buffer streams in. Candles (candle6) + volume (rect4) both
- * grow live — the replay tallies each buffer's record count and bumps the
- * matching geometry's vertexCount, and the instanced backends re-read the grown
- * buffers (ENC-558). SMA (10120) is captured + growth-trackable but NOT listed
- * here because it has no draw item yet (line2d is LineList + the line backends
- * don't re-read on growth until ENC-569 — see header note); add an SMA entry
- * here alongside its draw item once ENC-569 lands.
+ * MULTI-BUFFER GROWTH (ENC-568 / ENC-585): every live-growing geometry the
+ * replay engine advances as its buffer streams in. All THREE series now grow
+ * live — candles (candle6), volume (rect4), AND the SMA(20) overlay (rect4
+ * segments, lineAA@1). The replay tallies each buffer's record count and bumps
+ * the matching geometry's vertexCount; the instanced backends re-read the grown
+ * candle/volume buffers (ENC-558) and the lineAA backend re-gathers + re-counts
+ * instances (bytes/16) on each version bump (ENC-569), so the SMA polyline grows
+ * one segment per timestep in lockstep with the bars.
  */
 export const growthSeries: GrowthSeries[] = [
   { bufferId: CANDLE_BUFFER, geometryId: CANDLE_GEOMETRY, stride: 24 }, // candle6
+  { bufferId: SMA_BUFFER, geometryId: SMA_GEOMETRY, stride: 16 }, // rect4 (lineAA segments)
   { bufferId: VOL_BUFFER, geometryId: VOL_GEOMETRY, stride: 16 }, // rect4
 ];
