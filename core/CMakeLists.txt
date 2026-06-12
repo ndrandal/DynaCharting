@@ -421,6 +421,13 @@ if (DC_BUILD_TESTS)
 
   add_test(NAME dc_d1_1_smoke COMMAND dc_d1_1_smoke)
 
+  # ENC-592 (P1.1) — TableStore + Column model (named typed columns)
+  add_executable(dc_uce_table
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_uce_table.cpp"
+  )
+  target_link_libraries(dc_uce_table PRIVATE dc)
+  add_test(NAME dc_uce_table COMMAND dc_uce_table)
+
   add_executable(dc_d1_3_atomic_frame
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/d1_3_atomic_frame.cpp"
   )
