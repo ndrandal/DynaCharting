@@ -1,16 +1,22 @@
 #!/usr/bin/env node
-/* apps/showcase/tools/snap-stills.mjs — still-frame capture + contact sheet (ENC-550 / T6.2)
+/* apps/showcase/tools/snap-stills.mjs — still-frame capture + contact sheet (ENC-550 / T6.2; ENC-586 mid-animation)
  *
  *   node apps/showcase/tools/snap-stills.mjs
- *     [--url http://localhost:5178/] [--wait 7000] [--outdir <showcase>/stills]
+ *     [--url http://localhost:5178/] [--wait 10000] [--outdir <showcase>/stills]
  *
  * Drives the BUILT showcase (served by `vite preview`) through a real WebGPU
  * Chrome (Playwright, headless:false on DISPLAY=:0) and, for EACH view in the
- * registry, navigates to its single-view route (`#/view/<id>`), waits for the
- * loop-replay to populate/settle, samples the live canvas to classify the
- * render as full / partial / none, and writes a PNG screenshot of the FULL view
- * region — the engine canvas PLUS the logical-chart chrome overlay (axes /
- * gridlines / legend / colorbar) and the FPS HUD composited over it — to
+ * registry, navigates to its single-view route (`#/view/<id>`), then — now that
+ * EVERY view has a live/animating loop-replay (ENC-57x..58x merged) — waits a
+ * fixed MID-ANIMATION delay (~10s of the ~20s loop timeline) before sampling,
+ * so the screenshot freezes the view MID-EVOLUTION rather than at t=0 or the
+ * settled end: texture views (FFT/KDE/marching-squares) show a mid-evolution
+ * field, streaming views show a partially-grown trace, geometry-frame views show
+ * mid-flow. The replay auto-plays and loops, so this fixed wait lands inside the
+ * timeline naturally — no seek/scrub needed. It then samples the live canvas to
+ * classify the render as full / partial / none, and writes a PNG screenshot of
+ * the FULL view region — the engine canvas PLUS the logical-chart chrome overlay
+ * (axes / gridlines / legend / colorbar) and the FPS HUD composited over it — to
  *   apps/showcase/stills/<view-id>.png
  *
  * The render classifier still samples the bare <canvas> (the GPU render proof),
@@ -47,7 +53,10 @@ const flag = (n, d) => {
   return i >= 0 && args[i + 1] ? args[i + 1] : d;
 };
 const URL = flag('url', process.env.SHOWCASE_URL || 'http://localhost:5178/');
-const WAIT = Number(flag('wait', '7000'));
+// Mid-animation delay (ms): the loop-replay timeline is ~20s and auto-plays, so
+// ~10s lands roughly mid-evolution (texture field half-swapped, traces partially
+// grown, geometry-frame flows mid-stride) — the ENC-586 "show motion" capture.
+const WAIT = Number(flag('wait', '10000'));
 const OUTDIR = flag('outdir', join(SHOWCASE_DIR, 'stills'));
 
 // Chrome WebGPU flags — the proven local config (matches the other pw scripts).
@@ -70,9 +79,14 @@ const TIER_RANK = { native: 0, composed: 1, walled: 2 };
  * the captured still and pinned here so the tally reflects what actually renders.
  *   - radial-seasonality: the full polar clock (ring + 24 spokes + closed series
  *     loop) renders correctly; its 1px blue `line2d` strokes just read faint.
+ *   - ecg: the live PQRST trace renders crisply (lineAA@1 thick trace, ENC-587),
+ *     but at a MID-ANIMATION freeze (ENC-586) the partially-grown window can land
+ *     on a quiet inter-beat baseline segment, so the pixel sample under-reports a
+ *     near-flat thin green line. Confirmed rendering by eye; pinned to full.
  */
 const VERDICT_OVERRIDE = {
   'radial-seasonality': 'full',
+  'ecg': 'full',
 };
 
 /** Discover the catalog the same way registry.ts does: every views/<id> with a view.json. */
@@ -273,7 +287,9 @@ async function main() {
     let still = false;
     try {
       await page.goto(URL + '#/view/' + v.id, { waitUntil: 'load' });
-      await page.waitForTimeout(WAIT); // engine bring-up + manifest apply + replay settle
+      // engine bring-up + manifest apply + let the loop-replay run to ~mid-timeline
+      // (NOT "settle") so the frozen frame reads as mid-animation motion (ENC-586).
+      await page.waitForTimeout(WAIT);
       pix = await sampleCanvas(page);
       // Screenshot the FULL view region — the engine canvas PLUS the composited
       // chrome overlay (axes/gridlines/legend/colorbar) + FPS HUD — so the still
