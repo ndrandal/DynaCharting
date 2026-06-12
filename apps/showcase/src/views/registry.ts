@@ -20,7 +20,7 @@
  */
 
 import type { SceneManifest } from '../scene/commands';
-import type { Records, GrowthSync, XAnchorSpec } from '../engine/useReplay';
+import type { Records, GrowthSync, GrowthSeries, XAnchorSpec } from '../engine/useReplay';
 import type { ChromeSpec } from '../chrome/types';
 
 export type { ChromeSpec, AxisSpec, LegendItem, ColorbarSpec, AxisFormat, LegendKind, RGBA } from '../chrome/types';
@@ -85,6 +85,12 @@ export interface ShowcaseView {
   explainer: string;
   /** Instanced-geometry growth descriptor, when the view's manifest exports one. */
   growth?: GrowthSync;
+  /**
+   * Every growing series in the view (candles + volume + SMA …). The replay
+   * advances each geometry's vertexCount as its buffer grows (ENC-568 multi-
+   * buffer growth). Absent for single-series / fixed-size views.
+   */
+  growthSeries?: GrowthSeries[];
   /** X-anchor framing derived from view.json (window/clip + baked Y), when xAnchor. */
   xAnchor?: XAnchorSpec;
   /** Logical-chart chrome (axes/legend/colorbar) from view.json, when present. */
@@ -95,6 +101,8 @@ export interface ShowcaseView {
 export interface ViewManifestModule {
   manifest: SceneManifest;
   growth?: GrowthSync;
+  /** Every growing series in the view (ENC-568 multi-buffer growth). */
+  growthSeries?: GrowthSeries[];
 }
 
 /**
@@ -127,6 +135,7 @@ export function defineView(parts: {
     records,
     explainer,
     growth: module.growth,
+    growthSeries: module.growthSeries,
     xAnchor,
     chrome: meta.chrome,
   };

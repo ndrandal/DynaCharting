@@ -6016,6 +6016,7 @@ var dynCall_iiid = makeInvalidEarlyAccess('dynCall_iiid');
 var dynCall_diid = makeInvalidEarlyAccess('dynCall_diid');
 var dynCall_viiiii = makeInvalidEarlyAccess('dynCall_viiiii');
 var dynCall_iiiiiii = makeInvalidEarlyAccess('dynCall_iiiiiii');
+var dynCall_jii = makeInvalidEarlyAccess('dynCall_jii');
 var dynCall_jiiii = makeInvalidEarlyAccess('dynCall_jiiii');
 var dynCall_viijii = makeInvalidEarlyAccess('dynCall_viijii');
 var dynCall_jjj = makeInvalidEarlyAccess('dynCall_jjj');
@@ -6112,6 +6113,7 @@ function assignWasmExports(wasmExports) {
   assert(typeof wasmExports['dynCall_diid'] != 'undefined', 'missing Wasm export: dynCall_diid');
   assert(typeof wasmExports['dynCall_viiiii'] != 'undefined', 'missing Wasm export: dynCall_viiiii');
   assert(typeof wasmExports['dynCall_iiiiiii'] != 'undefined', 'missing Wasm export: dynCall_iiiiiii');
+  assert(typeof wasmExports['dynCall_jii'] != 'undefined', 'missing Wasm export: dynCall_jii');
   assert(typeof wasmExports['dynCall_jiiii'] != 'undefined', 'missing Wasm export: dynCall_jiiii');
   assert(typeof wasmExports['dynCall_viijii'] != 'undefined', 'missing Wasm export: dynCall_viijii');
   assert(typeof wasmExports['dynCall_jjj'] != 'undefined', 'missing Wasm export: dynCall_jjj');
@@ -6204,6 +6206,7 @@ function assignWasmExports(wasmExports) {
   dynCall_diid = dynCalls['diid'] = createExportWrapper('dynCall_diid', 4);
   dynCall_viiiii = dynCalls['viiiii'] = createExportWrapper('dynCall_viiiii', 6);
   dynCall_iiiiiii = dynCalls['iiiiiii'] = createExportWrapper('dynCall_iiiiiii', 7);
+  dynCall_jii = dynCalls['jii'] = createExportWrapper('dynCall_jii', 3);
   dynCall_jiiii = dynCalls['jiiii'] = createExportWrapper('dynCall_jiiii', 5);
   dynCall_viijii = dynCalls['viijii'] = createExportWrapper('dynCall_viijii', 6);
   dynCall_jjj = dynCalls['jjj'] = createExportWrapper('dynCall_jjj', 3);

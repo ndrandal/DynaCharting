@@ -15,25 +15,26 @@
  * Modeled on embassy's candles-with-overlays-v1 recipe SHAPE but authored as a
  * showcase manifest (the showcase owns geometry; embassy is a generic pump).
  *
- * SMA(20) — CAPTURED BUT NOT DRAWN (two compounding frontier limits): a 20-period
- * SMA is subscribed + bound (buffer 10120) so the capture exercises the real
- * multi-buffer pipeline and the records are present, BUT no SMA draw item is
- * created, because (a) line2d@1 is WebGPU LineList (GL_LINES) — a one-point-per-
- * record append can't form a connected polyline, and (b) the replay engine's
- * GrowthSync advances only ONE buffer per view (the candle6 buffer here), so a
- * second growing series wouldn't track anyway. Drawing it would also blank the
- * scene (a LineList draw with an odd/seed vertexCount aborts the render pass).
- * The SMA line is the natural next step once the engine ships width-capable,
- * stream-connectable lines + the harness gains multi-series growth.
+ * MULTI-BUFFER GROWTH (ENC-568): candles (10100) AND volume (10130) now grow
+ * LIVE at replay. The replay engine advances every series' geometry vertexCount
+ * as its buffer streams in (see `growthSeries` below) and the instanced backends
+ * re-read the grown buffers (ENC-558). So the volume sub-pane bars now populate
+ * across the tape instead of showing a single seeded instance.
  *
- * VOLUME — captured + drawn, but NOT growing at replay for the same single-growth
- * reason: the volume rect4 buffer (10130) is applied and renders its seeded
- * instance, but its vertexCount does not advance during replay (only candle6
- * does). The full volume series is in records.json for a future multi-growth run.
+ * SMA(20) — CAPTURED + GROWTH-TRACKED, BUT NOT DRAWN (one remaining frontier
+ * limit): a 20-period SMA is subscribed + bound (buffer 10120) so the capture
+ * exercises the real multi-buffer pipeline and the records are present, and the
+ * replay engine WILL advance an SMA geometry's vertexCount (the plumbing is
+ * multi-series now). It is still not DRAWN because line2d@1 is WebGPU LineList
+ * (GL_LINES) — a one-point-per-record append can't form a connected polyline —
+ * and the line/vertex backends do not yet re-read a grown buffer (ENC-569, in
+ * parallel). Once ENC-569 lands a stream-connectable line, the SMA draw item +
+ * its growthSeries entry drop straight in. Drawing it today would blank the
+ * scene (a LineList draw with an odd/seed vertexCount aborts the render pass).
  */
 
 import type { SceneManifest } from '../../src/scene/commands';
-import type { GrowthSync } from '../../src/engine/useReplay';
+import type { GrowthSync, GrowthSeries } from '../../src/engine/useReplay';
 
 // --- structural IDs ---
 const PRICE_PANE = 10000;
@@ -47,10 +48,9 @@ const CANDLE_BUFFER = 10100; // candle6 24B  — MUST match instruction bufferId
 const CANDLE_GEOMETRY = 10200;
 const CANDLE_DRAWITEM = 10300;
 
-// NOTE: the replay engine's growth rebind mints fresh candle geometry ids in
-// CANDLE_GEOMETRY + 1 .. +98 (10201..10298) as the candle buffer grows. The SMA
-// and volume geometry ids MUST sit OUTSIDE that band, or a rebind would collide
-// (createGeometry ID_TAKEN) and stall the candle growth. Hence 10500/10600.
+// NOTE: ENC-568 advances each series' geometry vertexCount in place
+// (setGeometryVertexCount) instead of the old fresh-id rebind, so geometry ids
+// no longer churn. The SMA/volume ids are kept well-separated for clarity.
 const SMA_BUFFER = 10120; // pos2_clip 8B (x, y)
 const SMA_GEOMETRY = 10500;
 const SMA_DRAWITEM = 10320;
@@ -120,11 +120,8 @@ export const manifest: SceneManifest = {
 };
 
 /**
- * Growth descriptor: the candle6 buffer is the live-growing series the replay
- * engine advances (useReplay supports one growth target per view). xAnchor
- * re-derives the price transform's X from the first candle record. SMA (10120)
- * and volume (10130) buffers are captured + applied but do not grow at replay
- * until the harness supports multi-series growth (see header note).
+ * PRIMARY growth descriptor: the candle6 buffer drives the X-anchor (its first
+ * record's recordIndex re-frames PRICE_TRANSFORM's X) and the chrome overlay.
  */
 export const growth: GrowthSync = {
   bufferId: CANDLE_BUFFER,
@@ -137,3 +134,18 @@ export const growth: GrowthSync = {
   transformId: PRICE_TRANSFORM,
   xField: 0,
 };
+
+/**
+ * MULTI-BUFFER GROWTH (ENC-568): every live-growing geometry the replay engine
+ * advances as its buffer streams in. Candles (candle6) + volume (rect4) both
+ * grow live — the replay tallies each buffer's record count and bumps the
+ * matching geometry's vertexCount, and the instanced backends re-read the grown
+ * buffers (ENC-558). SMA (10120) is captured + growth-trackable but NOT listed
+ * here because it has no draw item yet (line2d is LineList + the line backends
+ * don't re-read on growth until ENC-569 — see header note); add an SMA entry
+ * here alongside its draw item once ENC-569 lands.
+ */
+export const growthSeries: GrowthSeries[] = [
+  { bufferId: CANDLE_BUFFER, geometryId: CANDLE_GEOMETRY, stride: 24 }, // candle6
+  { bufferId: VOL_BUFFER, geometryId: VOL_GEOMETRY, stride: 16 }, // rect4
+];

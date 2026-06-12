@@ -62,6 +62,15 @@ class TextureSource {
                                 std::uint32_t* outWidth,
                                 std::uint32_t* outHeight,
                                 TextureFormat* outFormat) const = 0;
+
+  /// Monotonic version for `textureId`, bumped each time its pixels are replaced
+  /// (ENC-568 animated texture track). The backend re-uploads to the GPU when the
+  /// version changes — the texture analogue of the instanced buffer re-read
+  /// (ENC-558). Default 0 (sources that never mutate a texture's pixels need not
+  /// override; the texture stays a first-upload cache hit).
+  virtual std::uint64_t getTextureVersion(std::uint32_t /*textureId*/) const {
+    return 0;
+  }
 };
 
 class DawnTexturedQuadBackend final : public IRendererBackend {
@@ -95,8 +104,17 @@ class DawnTexturedQuadBackend final : public IRendererBackend {
   std::vector<std::pair<std::uint32_t, GeoBuffers>> geoBuffers_;
 
   // Per-textureId Dawn textures, created lazily from the TextureSource on first
-  // use and reused across frames/draws.
-  std::vector<std::pair<std::uint32_t, TextureHandle>> textureHandles_;
+  // use and reused across frames/draws. `version`/`w`/`h`/`format` record what we
+  // last uploaded so an animated texture track (ENC-568) re-uploads on change:
+  // same dims/format → updateTexture (queueWriteTexture), else recreate.
+  struct CachedTexture {
+    TextureHandle handle{};
+    std::uint64_t version{0};
+    std::uint32_t w{0};
+    std::uint32_t h{0};
+    TextureFormat format{TextureFormat::RGBA8};
+  };
+  std::vector<std::pair<std::uint32_t, CachedTexture>> textureHandles_;
 
   GeoBuffers& ensureGeoBuffers(GpuDevice& device, const Scene& scene,
                                CpuBufferStore& gpu, std::uint32_t geometryId);

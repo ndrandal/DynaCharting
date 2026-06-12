@@ -14,8 +14,10 @@ Per-second AAPL candles in the price pane with a cumulative-volume sub-pane belo
 | **BUFFERS** | `10100` candle6 · `10130` rect4 (volume) · `10120` pos2_clip (SMA, captured) |
 | **SOURCE** | Mock GMA → embassy → dataplane WS → dc-wasm |
 
-The SMA(20) line and the live-growing volume are the frontier here: the replay
-harness advances one series' vertex count per view (candles), and a connected,
-width-controlled streamed line is a separate engine step — so the SMA is captured
-but not yet drawn, and volume renders its seeded slice. Both data series are in
-`records.json`, ready for a multi-series replay run.
+Candles **and** volume now grow live together: the replay engine advances every
+series' vertex count as its buffer streams in (multi-buffer growth), so the
+volume bars populate across the tape alongside the candles. The SMA(20) line is
+the remaining frontier — a connected, width-controlled streamed line needs the
+line backend to re-read a growing buffer (in parallel) — so the SMA is captured
+and growth-trackable but not yet drawn. Its series is in `records.json`, ready to
+drop in once that lands.

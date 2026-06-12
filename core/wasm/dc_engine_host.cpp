@@ -74,7 +74,12 @@ public:
 
   void set(std::uint32_t id, std::vector<std::uint8_t> pixels, std::uint32_t w,
            std::uint32_t h, dc::TextureFormat fmt) {
-    textures_[id] = Tex{std::move(pixels), w, h, fmt};
+    Tex& t = textures_[id];
+    t = Tex{std::move(pixels), w, h, fmt};
+    // ENC-568: bump the version so the texturedQuad backend re-uploads. This is
+    // what makes an ANIMATED texture track (repeated setTexturePixels for the
+    // same id) actually swap the rendered texture instead of staying frozen.
+    ++versions_[id];
   }
 
   bool getTexturePixels(std::uint32_t id, const std::uint8_t** outData,
@@ -89,8 +94,14 @@ public:
     return true;
   }
 
+  std::uint64_t getTextureVersion(std::uint32_t id) const override {
+    auto it = versions_.find(id);
+    return it == versions_.end() ? 0 : it->second;
+  }
+
 private:
   std::map<std::uint32_t, Tex> textures_;
+  std::map<std::uint32_t, std::uint64_t> versions_;
 };
 
 // Result of applyControl — mirrors the TS EngineHost.applyControl return shape
