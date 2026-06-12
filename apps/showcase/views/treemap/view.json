@@ -3,7 +3,7 @@
   "title": "Treemap — market map",
   "tier": "composed",
   "referenceTool": "Finviz market map",
-  "blurb": "A squarified, two-level market map — four symbols sized by traded volume, each split into time-bucket leaf tiles colored green/red by price performance — fully tessellated at manifest-build time and drawn as per-vertex-colored triGradient triangles.",
+  "blurb": "A squarified, two-level market map — four symbols sized by traded volume, each split into time-bucket leaf tiles colored green/red by price performance. The layout is re-tessellated at N timesteps and replayed as per-frame UPDATE_RANGE geometry, so the tiles resize and re-pack live, drawn as per-vertex-colored triGradient triangles.",
   "datasetId": "AAPL",
   "chrome": {
     "legend": [
