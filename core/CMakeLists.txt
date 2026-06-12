@@ -535,6 +535,18 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_uce_transform_swl PRIVATE dc)
   add_test(NAME dc_uce_transform_swl COMMAND dc_uce_transform_swl)
 
+  # ENC-618a — hierarchy LAYOUT transforms (RESEARCH §5.1 layout tier; §6.3 treemap):
+  # stratify (flat rows -> parent/depth/value tree) + treemap squarify (rectangles
+  # tile [0,1], area ∝ value, resquarify keeps a tile's slot stable under small value
+  # change) + partition/icicle (depth band + value cross-axis) + pack (non-overlapping
+  # sibling circles) + dendrogram (depth-monotonic node-link positions). All run as
+  # DAG nodes (inferSchema typing). The treemap-from-raw-data inverts the showcase's
+  # 188-line precompute.
+  add_executable(dc_uce_hierarchy
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_uce_hierarchy.cpp"
+  )
+  target_link_libraries(dc_uce_hierarchy PRIVATE dc)
+  add_test(NAME dc_uce_hierarchy COMMAND dc_uce_hierarchy)
   # ENC-616e — streaming SCHEDULER: per-class cadence over the transform DAG.
   # class-1 runs every dirty frame; class-2 only on a window/hop boundary; class-3
   # globals are throttled (do NOT run every tick, DO run after the interval); held
@@ -545,6 +557,19 @@ if (DC_BUILD_TESTS)
   )
   target_link_libraries(dc_uce_stream_sched PRIVATE dc)
   add_test(NAME dc_uce_stream_sched COMMAND dc_uce_stream_sched)
+
+  # ENC-618b (Epic ENC-618 — layout primitives) — `sankey` / alluvial layout +
+  # cubic-bezier ribbon routing. Replaces the showcase's 208-line upstream sankey
+  # precompute with an in-engine TransformNode: node layering by longest-path depth,
+  # median-heuristic within-layer ordering, node heights ∝ throughput, and each flow
+  # routed as a SMOOTH cubic-bezier ribbon (via dc::CurveTessellator) — NOT straight
+  # quads. Covers layering/heights/ribbon-width ∝ value, well-formed (no degenerate/
+  # NaN) triangles, per-node conservation, run as a DAG node + as a class-3 global.
+  add_executable(dc_uce_sankey
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_uce_sankey.cpp"
+  )
+  target_link_libraries(dc_uce_sankey PRIVATE dc)
+  add_test(NAME dc_uce_sankey COMMAND dc_uce_sankey)
 
   # ENC-606 — regression guard for the setDrawItemStyle PRIMARY-color key wiring
   # (colorR/colorG/colorB/colorA must reach di.color, the form the render proof
