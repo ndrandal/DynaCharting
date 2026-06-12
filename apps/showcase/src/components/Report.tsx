@@ -28,11 +28,14 @@ export function Report({ onNavigate }: { onNavigate: (r: Route) => void }) {
           </div>
           <p style={{ color: 'var(--text)', lineHeight: 1.65, maxWidth: '68ch' }}>
             Every view here is a JSON manifest applied to one engine instance, fed by captured frames from the real
-            faithful pipeline (Mock GMA → embassy → dataplane WS → dc-wasm). Native views render directly; composed
-            views route upstream precompute (scalar-fan / texture-feed) into fixed buffers; walled views render the
-            precomputed version and name the live-GPU gap. The one remaining wall is{' '}
+            faithful pipeline (Mock GMA → embassy → dataplane WS → dc-wasm), and <strong>all 22 now animate</strong> —
+            traces grow, geometry fields flow, and texture views swap an animated field over a looping ~20s replay.
+            Native views render directly; composed views route upstream precompute (scalar-fan / texture-feed) into
+            buffers; walled views replay a precomputed-but-animated field and name the live-GPU gap. Because every view
+            is already animated, the one remaining wall is precisely{' '}
             <strong style={{ color: 'var(--tier-walled)' }}>real-time GPU per-pixel compute / custom shaders</strong> —
-            the custom-WGSL-pipeline-from-JSON decision.
+            live FFT / KDE-glow / marching-squares derived per frame on the GPU, the custom-WGSL-pipeline-from-JSON
+            decision.
           </p>
           <div className="links" style={{ display: 'flex', gap: 'var(--s-3)', marginTop: 'var(--s-6)' }}>
             <button className="btn primary" onClick={() => onNavigate({ name: 'frontier' })}>

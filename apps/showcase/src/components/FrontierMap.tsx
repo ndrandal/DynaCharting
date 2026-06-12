@@ -93,8 +93,10 @@ export function FrontierMap({ onNavigate }: FrontierMapProps) {
           <p>
             Everything to the left is a JSON manifest over a pure data path. The wall on the right is the same shape
             every time: <strong>computation that must happen on the GPU, per-pixel, in real time</strong> — live FFT,
-            live KDE density, live marching-squares, glow. We render the <em>precomputed</em> version (texture-fed,
-            purity preserved) and mark the <em>live-GPU</em> gap. <strong>That gap is the custom-WGSL-pipeline-from-JSON
+            live KDE density, live marching-squares, glow. We render a <em>precomputed-but-animated</em> version
+            (texture-fed, the field swapped frame-by-frame over the loop, purity preserved) and mark the{' '}
+            <em>live-GPU</em> gap — every view here animates, so the wall isn't "static vs. live", it's the field being
+            <em> computed</em> live on the GPU vs. replayed. <strong>That gap is the custom-WGSL-pipeline-from-JSON
             decision</strong> — the one thing the manifest model can't currently buy.
           </p>
         </div>

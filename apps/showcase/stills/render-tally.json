@@ -1,5 +1,5 @@
 {
-  "capturedAt": "2026-06-11T23:32:47.501Z",
+  "capturedAt": "2026-06-12T01:19:41.369Z",
   "total": 22,
   "tally": {
     "full": 21,
@@ -12,9 +12,9 @@
       "tier": "native",
       "verdict": "full",
       "autoVerdict": "full",
-      "coverage": 0.0395306735110113,
-      "chroma": 0.0395306735110113,
-      "distinctColors": 5
+      "coverage": 0.0892132823062997,
+      "chroma": 0.08891536998418773,
+      "distinctColors": 25
     },
     {
       "id": "candles-aapl",
@@ -22,8 +22,8 @@
       "tier": "native",
       "verdict": "full",
       "autoVerdict": "full",
-      "coverage": 0.04899511882118386,
-      "chroma": 0.04899511882118386,
+      "coverage": 0.05717624951302794,
+      "chroma": 0.05717624951302794,
       "distinctColors": 4
     },
     {
@@ -32,8 +32,8 @@
       "tier": "native",
       "verdict": "full",
       "autoVerdict": "full",
-      "coverage": 0.02685794165501753,
-      "chroma": 0.02685794165501753,
+      "coverage": 0.029974562870958132,
+      "chroma": 0.029974562870958132,
       "distinctColors": 4
     },
     {
@@ -42,8 +42,8 @@
       "tier": "native",
       "verdict": "full",
       "autoVerdict": "full",
-      "coverage": 0.3254348374086211,
-      "chroma": 0.3254348374086211,
+      "coverage": 0.37454453789215575,
+      "chroma": 0.37454453789215575,
       "distinctColors": 4
     },
     {
@@ -52,9 +52,9 @@
       "tier": "native",
       "verdict": "partial",
       "autoVerdict": "partial",
-      "coverage": 0.012535233861172859,
-      "chroma": 0.012535233861172859,
-      "distinctColors": 4
+      "coverage": 0.005843664779888627,
+      "chroma": 0.005843664779888627,
+      "distinctColors": 3
     },
     {
       "id": "audio-waveform",
@@ -62,9 +62,9 @@
       "tier": "composed",
       "verdict": "full",
       "autoVerdict": "full",
-      "coverage": 0.33560968902536836,
-      "chroma": 0.33560968902536836,
-      "distinctColors": 1067
+      "coverage": 0.2328757705616793,
+      "chroma": 0.2328757705616793,
+      "distinctColors": 303
     },
     {
       "id": "correlation-heatmap",
@@ -73,8 +73,8 @@
       "verdict": "full",
       "autoVerdict": "full",
       "coverage": 0.7224832137864656,
-      "chroma": 0.5204069940646698,
-      "distinctColors": 90
+      "chroma": 0.605747416183514,
+      "distinctColors": 228
     },
     {
       "id": "depth-ladder",
@@ -82,8 +82,8 @@
       "tier": "composed",
       "verdict": "full",
       "autoVerdict": "full",
-      "coverage": 0.2683502532254738,
-      "chroma": 0.2683502532254738,
+      "coverage": 0.05415129362696794,
+      "chroma": 0.05415129362696794,
       "distinctColors": 4
     },
     {
@@ -91,10 +91,10 @@
       "title": "ECG monitor — PQRST trace",
       "tier": "composed",
       "verdict": "full",
-      "autoVerdict": "full",
-      "coverage": 0.026010037353621927,
-      "chroma": 0.026010037353621927,
-      "distinctColors": 3
+      "autoVerdict": "partial",
+      "coverage": 0.006439489424112565,
+      "chroma": 0.006645736416343928,
+      "distinctColors": 24
     },
     {
       "id": "footprint",
@@ -102,8 +102,8 @@
       "tier": "composed",
       "verdict": "full",
       "autoVerdict": "full",
-      "coverage": 0.6029287072896854,
-      "chroma": 0.6029287072896854,
+      "coverage": 0.16238513188349338,
+      "chroma": 0.16238513188349338,
       "distinctColors": 5
     },
     {
@@ -112,8 +112,8 @@
       "tier": "composed",
       "verdict": "full",
       "autoVerdict": "full",
-      "coverage": 0.5427275018905974,
-      "chroma": 0.5427275018905974,
+      "coverage": 0.5504503059330385,
+      "chroma": 0.5504503059330385,
       "distinctColors": 16
     },
     {
@@ -121,19 +121,19 @@
       "title": "Radial Seasonality Clock — polar projection",
       "tier": "composed",
       "verdict": "full",
-      "autoVerdict": "partial",
-      "coverage": 0.005820748447418475,
-      "chroma": 0.005820748447418475,
-      "distinctColors": 3
+      "autoVerdict": "full",
+      "coverage": 0.13616884753764008,
+      "chroma": 0.13616884753764008,
+      "distinctColors": 16
     },
     {
       "id": "renko",
-      "title": "Renko — fixed-brick",
+      "title": "Renko — fixed-brick (live)",
       "tier": "composed",
       "verdict": "full",
       "autoVerdict": "full",
-      "coverage": 0.03829319155762312,
-      "chroma": 0.03829319155762312,
+      "coverage": 0.02298508146756193,
+      "chroma": 0.02298508146756193,
       "distinctColors": 4
     },
     {
@@ -142,9 +142,9 @@
       "tier": "composed",
       "verdict": "full",
       "autoVerdict": "full",
-      "coverage": 0.30733093475720147,
-      "chroma": 0.3051767995050072,
-      "distinctColors": 929
+      "coverage": 0.2782271925201091,
+      "chroma": 0.2761876389302656,
+      "distinctColors": 905
     },
     {
       "id": "sports-shot-chart",
@@ -152,19 +152,19 @@
       "tier": "composed",
       "verdict": "full",
       "autoVerdict": "full",
-      "coverage": 0.04131814744368311,
-      "chroma": 0.04131814744368311,
+      "coverage": 0.030616220180122375,
+      "chroma": 0.030616220180122375,
       "distinctColors": 12
     },
     {
       "id": "streamgraph",
-      "title": "Streamgraph — volume flow",
+      "title": "Streamgraph — bands flow over time",
       "tier": "composed",
       "verdict": "full",
       "autoVerdict": "full",
-      "coverage": 0.6204367852968811,
-      "chroma": 0.6204367852968811,
-      "distinctColors": 372
+      "coverage": 0.627540848362628,
+      "chroma": 0.627540848362628,
+      "distinctColors": 524
     },
     {
       "id": "treemap",
@@ -172,9 +172,9 @@
       "tier": "composed",
       "verdict": "full",
       "autoVerdict": "full",
-      "coverage": 0.7468891078671769,
-      "chroma": 0.7468891078671769,
-      "distinctColors": 22
+      "coverage": 0.7468432752022366,
+      "chroma": 0.7468432752022366,
+      "distinctColors": 20
     },
     {
       "id": "volume-profile",
@@ -182,8 +182,8 @@
       "tier": "composed",
       "verdict": "full",
       "autoVerdict": "full",
-      "coverage": 0.18213901047276393,
-      "chroma": 0.18213901047276393,
+      "coverage": 0.06783234411164837,
+      "chroma": 0.06783234411164837,
       "distinctColors": 3
     },
     {
@@ -192,9 +192,9 @@
       "tier": "composed",
       "verdict": "full",
       "autoVerdict": "full",
-      "coverage": 0.6307491349084493,
-      "chroma": 0.6498384398560855,
-      "distinctColors": 1010
+      "coverage": 0.6976189930563512,
+      "chroma": 0.70953548594083,
+      "distinctColors": 1057
     },
     {
       "id": "contour",
@@ -203,8 +203,8 @@
       "verdict": "full",
       "autoVerdict": "full",
       "coverage": 0.9024680890070353,
-      "chroma": 0.8652290487430392,
-      "distinctColors": 679
+      "chroma": 0.7874051836744047,
+      "distinctColors": 775
     },
     {
       "id": "density-heatmap",
@@ -212,9 +212,9 @@
       "tier": "walled",
       "verdict": "full",
       "autoVerdict": "full",
-      "coverage": 0.40330453514219583,
-      "chroma": 0.8828746247450558,
-      "distinctColors": 674
+      "coverage": 0.3671883951692371,
+      "chroma": 0.8117423287577056,
+      "distinctColors": 637
     },
     {
       "id": "spectrogram",
@@ -223,8 +223,8 @@
       "verdict": "full",
       "autoVerdict": "full",
       "coverage": 0.9024680890070353,
-      "chroma": 0.9024680890070353,
-      "distinctColors": 781
+      "chroma": 0.9023305910122144,
+      "distinctColors": 937
     }
   ]
 }
