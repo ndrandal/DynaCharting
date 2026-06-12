@@ -188,4 +188,147 @@ std::string buildKdeSplatKernelWgsl() {
   return s;
 }
 
+// ===========================================================================
+// ENC-619 — the escape-hatch reference kernels (FFT/STFT, marching-squares).
+// ===========================================================================
+
+std::string buildStftKernelWgsl() {
+  // params: struct{ fftSize:u32, hop:u32, frames:u32, bins:u32 }. One invocation
+  // per (frame f = gid.x, bin k = gid.y); direct DFT of the Hann-windowed slice.
+  std::string s;
+  s += "struct Params {\n";
+  s += "  fftSize : u32,\n";
+  s += "  hop : u32,\n";
+  s += "  frames : u32,\n";
+  s += "  bins : u32,\n";
+  s += "};\n";
+  s += "@group(0) @binding(0) var<storage, read> sample : array<f32>;\n";
+  s += "@group(0) @binding(1) var<storage, read_write> mag : array<f32>;\n";
+  s += "@group(0) @binding(2) var<storage, read> params : Params;\n";
+  s += "\n@compute @workgroup_size(8, 8, 1)\n";
+  s += "fn main(@builtin(global_invocation_id) gid : vec3<u32>) {\n";
+  s += "  let f = gid.x;\n";
+  s += "  let k = gid.y;\n";
+  // Keep-alive: touch the sample-array length so the binding survives auto-layout.
+  s += "  _ = arrayLength(&sample);\n";
+  s += "  if (f >= params.frames || k >= params.bins) { return; }\n";
+  s += "  let N = params.fftSize;\n";
+  s += "  let base = f * params.hop;\n";
+  s += "  let twoPi = 6.28318530717958647692528676655900577f;\n";
+  s += "  let wk = -twoPi * f32(k) / f32(N);\n";
+  s += "  var re : f32 = 0.0f;\n";
+  s += "  var im : f32 = 0.0f;\n";
+  s += "  for (var n : u32 = 0u; n < N; n = n + 1u) {\n";
+  // Hann window (denominator N-1, matching the CPU reference).
+  s += "    let hann = 0.5f * (1.0f - cos(twoPi * f32(n) / f32(N - 1u)));\n";
+  s += "    let sn = sample[base + n] * hann;\n";
+  s += "    let ang = wk * f32(n);\n";
+  s += "    re = re + sn * cos(ang);\n";
+  s += "    im = im + sn * sin(ang);\n";
+  s += "  }\n";
+  s += "  let m = sqrt(re * re + im * im) / f32(N);\n";
+  s += "  mag[f * params.bins + k] = m;\n";
+  s += "}\n";
+  return s;
+}
+
+std::string buildMarchingSquaresKernelWgsl() {
+  // params: struct{ gridW:u32, gridH:u32, capSegs:u32, iso:f32 }. One invocation
+  // per cell; emits 0..2 iso-line segments into the bounded `segs` buffer, claiming
+  // slots via an atomic counter (the variable-cardinality path).
+  std::string s;
+  s += "struct Params {\n";
+  s += "  gridW : u32,\n";
+  s += "  gridH : u32,\n";
+  s += "  capSegs : u32,\n";
+  s += "  iso : f32,\n";
+  s += "};\n";
+  s += "@group(0) @binding(0) var<storage, read> field : array<f32>;\n";
+  s += "@group(0) @binding(1) var<storage, read_write> segs : array<f32>;\n";
+  s += "@group(0) @binding(2) var<storage, read_write> segCount : atomic<u32>;\n";
+  s += "@group(0) @binding(3) var<storage, read> params : Params;\n";
+  // Linear iso-crossing on an edge between two corner values a,b at unit spacing.
+  s += "\nfn lerpT(a : f32, b : f32, iso : f32) -> f32 {\n";
+  s += "  let d = b - a;\n";
+  // Guard a degenerate edge (a==b): the case table never asks for a crossing on a
+  // non-straddling edge, but keep it finite (return 0.5) to match the CPU guard.
+  s += "  if (d == 0.0f) { return 0.5f; }\n";
+  s += "  return (iso - a) / d;\n";
+  s += "}\n";
+  // Claim a slot + write one segment (x0,y0)->(x1,y1); drop on overflow.
+  s += "fn emit(x0 : f32, y0 : f32, x1 : f32, y1 : f32, cap : u32) {\n";
+  s += "  let slot = atomicAdd(&segCount, 1u);\n";
+  s += "  if (slot >= cap) { return; }\n";
+  s += "  let o = slot * 4u;\n";
+  s += "  segs[o + 0u] = x0;\n";
+  s += "  segs[o + 1u] = y0;\n";
+  s += "  segs[o + 2u] = x1;\n";
+  s += "  segs[o + 3u] = y1;\n";
+  s += "}\n";
+  s += "\n@compute @workgroup_size(8, 8, 1)\n";
+  s += "fn main(@builtin(global_invocation_id) gid : vec3<u32>) {\n";
+  s += "  let gx = gid.x;\n";
+  s += "  let gy = gid.y;\n";
+  s += "  _ = arrayLength(&segs);\n";
+  s += "  if (gx + 1u >= params.gridW || gy + 1u >= params.gridH) { return; }\n";
+  s += "  let W = params.gridW;\n";
+  s += "  let iso = params.iso;\n";
+  // Corners: bl=(gx,gy) tl=(gx,gy+1) tr=(gx+1,gy+1) br=(gx+1,gy). Field is
+  // row-major [row*W + col].
+  s += "  let bl = field[gy * W + gx];\n";
+  s += "  let br = field[gy * W + (gx + 1u)];\n";
+  s += "  let tl = field[(gy + 1u) * W + gx];\n";
+  s += "  let tr = field[(gy + 1u) * W + (gx + 1u)];\n";
+  s += "  let fx = f32(gx);\n";
+  s += "  let fy = f32(gy);\n";
+  // 4-bit case index: bit0=bl bit1=br bit2=tr bit3=tl (CCW from bottom-left).
+  s += "  var c : u32 = 0u;\n";
+  s += "  if (bl >= iso) { c = c | 1u; }\n";
+  s += "  if (br >= iso) { c = c | 2u; }\n";
+  s += "  if (tr >= iso) { c = c | 4u; }\n";
+  s += "  if (tl >= iso) { c = c | 8u; }\n";
+  // Edge crossing points (only valid when that edge straddles iso):
+  //   B(bottom): bl-br ; R(right): br-tr ; T(top): tl-tr ; L(left): bl-tl
+  s += "  let bX = fx + lerpT(bl, br, iso);\n";
+  s += "  let bY = fy;\n";
+  s += "  let rX = fx + 1.0f;\n";
+  s += "  let rY = fy + lerpT(br, tr, iso);\n";
+  s += "  let tX = fx + lerpT(tl, tr, iso);\n";
+  s += "  let tY = fy + 1.0f;\n";
+  s += "  let lX = fx;\n";
+  s += "  let lY = fy + lerpT(bl, tl, iso);\n";
+  s += "  let cap = params.capSegs;\n";
+  // The 16 cases (1 and 14, 2 and 13, ... are complementary -> same segment). The
+  // two saddles (5,10) disambiguate via the cell-center average vs iso, matching
+  // the CPU reference.
+  s += "  switch (c) {\n";
+  s += "    case 0u, 15u: {}\n";
+  s += "    case 1u, 14u: { emit(lX, lY, bX, bY, cap); }\n";
+  s += "    case 2u, 13u: { emit(bX, bY, rX, rY, cap); }\n";
+  s += "    case 3u, 12u: { emit(lX, lY, rX, rY, cap); }\n";
+  s += "    case 4u, 11u: { emit(rX, rY, tX, tY, cap); }\n";
+  s += "    case 6u, 9u:  { emit(bX, bY, tX, tY, cap); }\n";
+  s += "    case 7u, 8u:  { emit(lX, lY, tX, tY, cap); }\n";
+  s += "    case 5u: {\n";  // bl,tr inside; br,tl outside
+  s += "      let center = (bl + br + tr + tl) * 0.25f;\n";
+  s += "      if (center >= iso) {\n";
+  s += "        emit(lX, lY, tX, tY, cap); emit(bX, bY, rX, rY, cap);\n";
+  s += "      } else {\n";
+  s += "        emit(lX, lY, bX, bY, cap); emit(tX, tY, rX, rY, cap);\n";
+  s += "      }\n";
+  s += "    }\n";
+  s += "    case 10u: {\n";  // br,tl inside; bl,tr outside
+  s += "      let center = (bl + br + tr + tl) * 0.25f;\n";
+  s += "      if (center >= iso) {\n";
+  s += "        emit(lX, lY, bX, bY, cap); emit(tX, tY, rX, rY, cap);\n";
+  s += "      } else {\n";
+  s += "        emit(lX, lY, tX, tY, cap); emit(bX, bY, rX, rY, cap);\n";
+  s += "      }\n";
+  s += "    }\n";
+  s += "    default: {}\n";
+  s += "  }\n";
+  s += "}\n";
+  return s;
+}
+
 }  // namespace dc

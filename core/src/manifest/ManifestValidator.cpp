@@ -11,6 +11,7 @@
 #include "dc/encode/EncodePass.hpp"
 #include "dc/pipelines/PipelineCatalog.hpp"
 #include "dc/scale/Scale.hpp"
+#include "dc/transform/CustomCompute.hpp"
 #include "dc/transform/Transform.hpp"
 #include "dc/transform/transforms/Aggregate.hpp"
 #include "dc/transform/transforms/Bin.hpp"
@@ -77,6 +78,98 @@ std::string strOr(const rapidjson::Value& obj, const char* key,
   const auto* v = member(obj, key);
   if (v && v->IsString()) return v->GetString();
   return dflt;
+}
+
+// ----- ENC-619 customCompute spec parse (§5.3) -----------------------------
+
+// Map a customCompute binding dtype (f32/f16/i32/u32) to the flat-column DType the
+// inferred output schema carries (f16 widens to F32 in the column model; i32/u32
+// -> I32; the GPU keeps the narrow type). Returns false for an out-of-contract
+// dtype string (the sandbox rejects it at validate() with BadDType).
+bool ccColumnDType(CcDType dt, DType& out) {
+  switch (dt) {
+    case CcDType::F32: case CcDType::F16: out = DType::F32; return true;
+    case CcDType::I32: case CcDType::U32: out = DType::I32; return true;
+  }
+  return false;
+}
+
+// Parse one binding sub-object {binding,name/column,dtype,access,length/cap}.
+bool parseCcBinding(const rapidjson::Value& b, bool isOutput, CcBinding& out,
+                    std::string& err) {
+  if (!b.IsObject()) { err = "binding is not an object"; return false; }
+  if (const auto* v = member(b, "binding"); v && v->IsNumber())
+    out.binding = static_cast<std::uint32_t>(v->GetUint());
+  out.name = strOr(b, "name");
+  out.column = strOr(b, "column");
+  if (out.name.empty()) out.name = out.column;
+  const std::string dt = strOr(b, "dtype", "f32");
+  if (!parseCcDType(dt, out.dtype)) {
+    err = "binding '" + out.name + "': dtype '" + dt +
+          "' is not f32/f16/i32/u32";
+    return false;
+  }
+  out.access = isOutput ? CcAccess::Write : CcAccess::Read;
+  // Output cap: `cap` / `capElements` / numeric `length` (the engine-owned bound).
+  if (isOutput) {
+    if (const auto* v = member(b, "cap"); v && v->IsNumber())
+      out.capElements = static_cast<std::uint32_t>(v->GetUint());
+    else if (const auto* v2 = member(b, "capElements"); v2 && v2->IsNumber())
+      out.capElements = static_cast<std::uint32_t>(v2->GetUint());
+    else if (const auto* v3 = member(b, "length"); v3 && v3->IsNumber())
+      out.capElements = static_cast<std::uint32_t>(v3->GetUint());
+    if (const auto* vc = member(b, "variableCardinality"); vc && vc->IsBool())
+      out.variableCardinality = vc->GetBool();
+  }
+  return true;
+}
+
+// Parse the `customCompute` spec sub-object into a CustomComputeSpec. Fills the
+// workgroup size from the WGSL (@workgroup_size) and the dispatch from the spec.
+// Returns false + a localized error on a structurally bad spec.
+bool parseCustomComputeSpec(const std::string& id, const rapidjson::Value& s,
+                            CustomComputeSpec& spec, std::string& err) {
+  spec.id = id;
+  spec.wgsl = strOr(s, "wgsl");
+  if (spec.wgsl.empty()) { err = "customCompute '" + id + "': missing 'wgsl'"; return false; }
+  spec.entryPoint = strOr(s, "entryPoint", "main");
+  // Workgroup size is the kernel's own @workgroup_size (the checkable, static size).
+  if (!parseWorkgroupSize(spec.wgsl, spec.workgroupX, spec.workgroupY,
+                          spec.workgroupZ)) {
+    err = "customCompute '" + id + "': WGSL has no static @workgroup_size";
+    return false;
+  }
+  if (const auto* v = member(s, "sharedBytes"); v && v->IsNumber())
+    spec.sharedBytes = static_cast<std::uint32_t>(v->GetUint());
+  if (const auto* ins = member(s, "inputs"); ins && ins->IsArray()) {
+    for (const auto& b : ins->GetArray()) {
+      CcBinding cb;
+      if (!parseCcBinding(b, /*isOutput=*/false, cb, err)) return false;
+      spec.inputs.push_back(std::move(cb));
+    }
+  }
+  if (const auto* outs = member(s, "outputs"); outs && outs->IsArray()) {
+    for (const auto& b : outs->GetArray()) {
+      CcBinding cb;
+      if (!parseCcBinding(b, /*isOutput=*/true, cb, err)) return false;
+      spec.outputs.push_back(std::move(cb));
+    }
+  }
+  if (const auto* d = member(s, "dispatch"); d && d->IsObject()) {
+    if (const auto* v = member(*d, "x"); v && v->IsNumber())
+      spec.dispatchX = static_cast<std::uint32_t>(v->GetUint());
+    if (const auto* v = member(*d, "y"); v && v->IsNumber())
+      spec.dispatchY = static_cast<std::uint32_t>(v->GetUint());
+    if (const auto* v = member(*d, "z"); v && v->IsNumber())
+      spec.dispatchZ = static_cast<std::uint32_t>(v->GetUint());
+  }
+  if (const auto* rp = member(s, "recomputePolicy"); rp && rp->IsObject()) {
+    if (const auto* v = member(*rp, "onHop"); v && v->IsNumber()) {
+      spec.recompute.hop = static_cast<std::uint32_t>(v->GetUint());
+      spec.recompute.perFrame = false;
+    }
+  }
+  return true;
 }
 
 // ----- the §6.1 #2/#3 scale↔dtype matrix (mirror of Manifest.cpp) ----------
@@ -267,6 +360,14 @@ class Validator {
   // `isJoin`.
   std::unique_ptr<TransformNode> buildNode(const DatasetM& t, bool& isJoin,
                                            std::string& buildErr) const;
+
+  // ENC-619 — the customCompute escape hatch is NOT a column-expression
+  // TransformNode (it is a GPU WGSL kernel), so it is parsed + sandbox-validated
+  // here directly: parse the §5.3 spec, enforce the sandbox static limits (a
+  // violation is a hard load ERROR — the node is rejected, no partial render), and
+  // infer the output schema from the declared output bindings. Returns true iff the
+  // node is accepted (its inferred columns are written into `t`).
+  bool inferCustomComputeSchema(DatasetM& t, const DatasetM& in);
 
   DatasetM* dataset(const std::string& id) {
     auto it = datasetById_.find(id);
@@ -834,6 +935,10 @@ bool Validator::inferTransformSchema(DatasetM& t) {
     return false;
   }
 
+  // ENC-619 — customCompute is a GPU WGSL kernel, not a column-expression node:
+  // parse + sandbox-validate it here and infer its schema from declared outputs.
+  if (t.op == "customCompute") return inferCustomComputeSchema(t, *in);
+
   bool isJoin = false;
   std::string buildErr;
   std::unique_ptr<TransformNode> node = buildNode(t, isJoin, buildErr);
@@ -870,6 +975,55 @@ bool Validator::inferTransformSchema(DatasetM& t) {
     return false;
   }
   for (const auto& c : res.schema.columns) t.columns.push_back({c.name, c.dtype});
+  t.schemaResolved = true;
+  return true;
+}
+
+bool Validator::inferCustomComputeSchema(DatasetM& t, const DatasetM& in) {
+  if (!t.spec || !t.spec->IsObject()) {
+    err(ValidationCheck::ColumnSet, t.id, "transforms['" + t.id + "']",
+        "customCompute '" + t.id + "': missing its 'customCompute' spec object");
+    return false;
+  }
+  CustomComputeSpec spec;
+  std::string perr;
+  if (!parseCustomComputeSpec(t.id, *t.spec, spec, perr)) {
+    err(ValidationCheck::ColumnSet, t.id, "transforms['" + t.id + "']", perr);
+    return false;
+  }
+
+  // Each input binding's source column must resolve in the input dataset (§6.1 #1
+  // applied to the kernel's IO seam). Their lengths are not statically known, so
+  // the per-input byte cap is enforced at DISPATCH (runtime); the output caps are
+  // declared and checked now.
+  std::vector<std::uint32_t> inElems(spec.inputs.size(), 0u);
+  for (const auto& b : spec.inputs) {
+    const std::string& col = b.column.empty() ? b.name : b.column;
+    if (!in.find(col)) {
+      err(ValidationCheck::RefResolution, t.id,
+          "transforms['" + t.id + "'].customCompute.inputs",
+          "customCompute '" + t.id + "': input column '" + col +
+              "' is not a column of input '" + t.input + "'");
+      return false;
+    }
+  }
+
+  // THE SANDBOX GATE (§5.3): a static-limit violation is a HARD load error — the
+  // node is rejected, no partial render (mirrors frameFailed).
+  CcValidation v = validateCustomCompute(spec, inElems);
+  if (!v.ok()) {
+    err(ValidationCheck::ColumnSet, t.id, "transforms['" + t.id + "']",
+        std::string("customCompute sandbox rejected (") + toString(v.status) +
+            "): " + v.message);
+    return false;
+  }
+
+  // Output schema = the declared output bindings (their names + widened dtypes).
+  for (const auto& o : spec.outputs) {
+    DType dt = DType::F32;
+    ccColumnDType(o.dtype, dt);
+    t.columns.push_back({o.name, dt});
+  }
   t.schemaResolved = true;
   return true;
 }
