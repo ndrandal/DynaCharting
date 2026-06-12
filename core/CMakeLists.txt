@@ -1835,6 +1835,24 @@ if (DC_BUILD_TESTS)
     endif()
     add_test(NAME dc_d50_dawn_scene_renderer COMMAND dc_d50_dawn_scene_renderer)
 
+    # ENC-589 (P0.1) — Wire the SDF glyph atlas into the WASM host (text marks).
+    # Native mirror of DcEngineHost's new text path (atlas-supplied
+    # DawnSceneRenderer + dc::layoutText -> Glyph8 -> render store, via the full
+    # scene walk): renders a known label and asserts non-blank text pixels in the
+    # text color with anti-aliased SDF edges + a clean background. The host itself
+    # is Emscripten-only, but it runs this identical code, so a pass here proves
+    # setTextGeometry/loadFont render. Needs the test font; links only dc_gpu.
+    if (EXISTS "${DC_TEST_FONT}")
+      add_executable(dc_enc589_host_text
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/enc589_host_text.cpp"
+      )
+      target_link_libraries(dc_enc589_host_text PRIVATE dc_gpu)
+      target_compile_definitions(dc_enc589_host_text PRIVATE
+        FONT_PATH="${DC_TEST_FONT}"
+      )
+      add_test(NAME dc_enc589_host_text COMMAND dc_enc589_host_text)
+    endif()
+
     # ENC-501 (P5 cutover) — Dawn-only golden conformance coverage. Formerly the
     # ENC-510/511/512/500 GL<->Dawn parity tests (rendered each scene through BOTH
     # the GL backend (Renderer + OsMesaContext) and the Dawn backend and compared
