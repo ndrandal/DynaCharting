@@ -76,6 +76,22 @@ class DawnDevice final : public GpuDevice {
   // --- buffer resources (TODO(ENC-485) — draw path) -----------------------
   BufferHandle createBuffer(std::size_t capacityBytes, const void* initData,
                             std::size_t initBytes) override;
+
+  // ENC-590 (P0.2) — STORAGE buffer creation path. A SECOND, additive create
+  // variant for the WebGPU-compute half (ENC-591 spike, Phases 4 & 6): the same
+  // streaming/readback shape as createBuffer above, but the underlying
+  // wgpu::Buffer carries BufferUsage::Storage so a compute pipeline can bind it
+  // as a read/write storage binding. The existing vertex/index path
+  // (createBuffer + kStreamBufferUsage) is left COMPLETELY unchanged.
+  //
+  // The returned handle is a normal BufferHandle into the same slot table, so
+  // every existing buffer op works on it: queue.WriteBuffer (updateBuffer /
+  // writeBufferRange — CopyDst is included) writes from the CPU, and readBuffer
+  // (CopyBufferToBuffer -> MapRead via the waitUntil() map-pump — CopySrc is
+  // included) reads it back. This ticket adds ONLY the storage usage flag + a
+  // round-trip; it builds no compute pipeline (that is ENC-591).
+  BufferHandle createStorageBuffer(std::size_t capacityBytes,
+                                   const void* initData, std::size_t initBytes);
   void updateBuffer(BufferHandle buf, const void* data,
                     std::size_t bytes) override;
   void writeBufferRange(BufferHandle buf, std::size_t offsetBytes,
