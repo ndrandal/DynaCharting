@@ -3,7 +3,7 @@
   "title": "ECG monitor — PQRST trace",
   "tier": "composed",
   "referenceTool": "medical / ECG monitor",
-  "blurb": "A clean green-on-dark ECG trace — the 250 Hz, 72 bpm PQRST waveform streamed sample-by-sample into a growing line2d@1 vertex buffer and framed by one affine transform, drawing live like a hospital monitor. Same vector renderer as the candles; a different domain entirely.",
+  "blurb": "A clean green-on-dark ECG trace — the 250 Hz, 72 bpm PQRST waveform streamed sample-by-sample into a growing lineAA@1 rect4 buffer as connected segments and framed by one affine transform, drawing live as a thick, anti-aliased hospital monitor. Same vector renderer as the candles; a different domain entirely.",
   "datasetId": "ecg",
   "transform": { "sx": 0.2301159, "sy": 0.994655, "tx": -0.92, "ty": -0.335291 },
   "chrome": {

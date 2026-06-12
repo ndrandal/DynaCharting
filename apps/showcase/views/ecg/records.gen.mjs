@@ -1,33 +1,34 @@
 #!/usr/bin/env node
-/* apps/showcase/views/ecg/records.gen.mjs — ECG streaming-records generator (ENC-570)
+/* apps/showcase/views/ecg/records.gen.mjs — ECG streaming-records generator (ENC-587)
  *
  * Zero-dependency Node generator. Reads the synthetic ECG amplitude series from
  * apps/showcase/data/synthetic/ecg.json and emits a STREAMING record timeline
- * (records.json) that GROWS the ECG view's pos2_clip line2d buffer one vertex
- * per sample, so the trace draws live like a hospital monitor instead of being
- * baked as a static geometry.
+ * (records.json) that GROWS the ECG view's rect4 lineAA buffer one CONNECTED
+ * segment per sample, so the trace draws live as a thick, anti-aliased hospital
+ * monitor waveform instead of being baked as a static geometry.
  *
  *   node apps/showcase/views/ecg/records.gen.mjs
  *
- * --- The streaming model (compound-line stride-8, mirrors candle-overlays SMA) ---
+ * --- The streaming model (connected rect4 segments, lineAA stride-16) ---
  *
  * The candle views grow an instanced candle6 buffer record-by-record; the ECG
- * trace grows a `line2d@1` (pos2_clip) buffer the SAME way, using the proven
- * "compound-line stride-8" trick: each sample becomes ONE pos2_clip vertex
- *   [ x = sampleIndex (static, derived from the record's position),
- *     y = amplitude (the streamed value) ]
- * = 2×f32 = 8 bytes, APPENDed to the trace buffer. As records land, useReplay's
- * GrowthSync advances geometry.vertexCount = floor(byteLength / 8), so the line
- * lengthens to the right exactly like the live candle series lengthens.
+ * trace grows a `lineAA@1` (rect4) buffer the SAME way. Each NEW sample becomes
+ * ONE rect4 segment connecting the PREVIOUS point to the new one:
+ *   [ x0 = prevSampleIndex, y0 = prevAmplitude,
+ *     x1 = thisSampleIndex, y1 = thisAmplitude ]
+ * = 4×f32 = 16 bytes, APPENDed to the trace buffer. Consecutive segments SHARE
+ * an endpoint (segment i.p1 == segment i+1.p0), so the appended instances form a
+ * single CONNECTED polyline. As records land, useReplay's GrowthSync advances
+ * geometry.vertexCount = floor(byteLength / 16) (= the lineAA instance count), so
+ * the trace lengthens to the right exactly like the live candle series lengthens.
  *
- * --- DEPENDENCY: ENC-569 (line2d / vertex-buffer GROWTH) ---
+ * --- DEPENDENCY: ENC-569 (lineAA / instance-buffer GROWTH) ---
  *
- * line2d@1 is a WebGPU **LineList** (GL_LINES) pipeline: it draws discrete
- * segment PAIRS, so a growing one-vertex-per-sample append only forms a fully
- * connected, animating polyline once ENC-569 lands the line2d growth fix (the
- * same limitation that keeps candle-overlays' SMA captured-but-not-drawn). This
- * generator AUTHORS the streaming timeline + manifest now; the buffer/geometry
- * grow correctly, and the live scroll animates after ENC-569 merges.
+ * lineAA@1 is a WebGPU INSTANCED quad-expansion pipeline: each rect4 segment is
+ * expanded into a thick AA quad, so a growing one-segment-per-sample append forms
+ * a fully connected, animating thick polyline. The lineAA backend re-counts
+ * instanceCount = bufferBytes / 16 on each buffer-version bump (ENC-569), so the
+ * streaming APPEND growth path used by line2d works unchanged here (ENC-587).
  *
  * --- Output (apps/showcase/views/<id>/records.json, Records shape) ---
  *
@@ -50,8 +51,8 @@ const OUT = join(__dirname, 'records.json');
 
 // --- contract IDs (MUST match manifest.ts) ---
 const VIEW_ID = 'ecg';
-const TRACE_BUFFER = 500; // pos2_clip trace buffer the manifest grows
-const STRIDE = 8; // pos2_clip vertex = [x, y] = 2×f32 = 8 bytes
+const TRACE_BUFFER = 500; // rect4 trace buffer the manifest grows
+const STRIDE = 16; // rect4 segment = [x0, y0, x1, y1] = 4×f32 = 16 bytes
 
 // --- binary record packing (mirrors src/scene/commands.ts encodeUpload) ---
 const OP_APPEND = 1;
@@ -83,11 +84,11 @@ const cadenceMs = dataset.meta.cadenceMs ?? 4; // 4 ms/sample (250 Hz)
 const durationMs = dataset.meta.durationMs ?? sampleCount * cadenceMs; // 20000
 
 // --- frame the stream at a ~30 fps render cadence ---
-// One pos2_clip VERTEX per sample (x=sampleIndex, y=amplitude); a frame batches
-// the whole-number of samples that fall in its ~FRAME_MS window so the buffer
-// grows smoothly (≈30 fps) instead of 5000 single-sample frames. recordIndex is
-// derived from the running sample position — x is STATIC per the compound-line
-// trick (the streamed dynamic is y=amplitude).
+// One rect4 SEGMENT per NEW sample, connecting the previous point to this one
+// (x=sampleIndex, y=amplitude); a frame batches the whole-number of samples that
+// fall in its ~FRAME_MS window so the buffer grows smoothly (≈30 fps) instead of
+// ~5000 single-sample frames. x is the sampleIndex; consecutive segments share an
+// endpoint, so the appended instances form a single connected polyline.
 const FRAME_MS = 33; // ~30 fps render cadence
 const samplesPerFrame = Math.max(1, Math.round(FRAME_MS / cadenceMs)); // ~8
 
@@ -96,9 +97,17 @@ for (let i = 0; i < sampleCount; i += samplesPerFrame) {
   const end = Math.min(i + samplesPerFrame, sampleCount);
   const floats = [];
   for (let s = i; s < end; s++) {
-    floats.push(s); // x = sampleIndex (static)
-    floats.push(samples[s]); // y = amplitude (the streamed value)
+    // A segment needs a previous point; sample 0 starts the trace with no
+    // segment of its own (it becomes the p0 of segment 1).
+    if (s === 0) continue;
+    floats.push(s - 1); // x0 = prev sampleIndex
+    floats.push(samples[s - 1]); // y0 = prev amplitude
+    floats.push(s); // x1 = this sampleIndex
+    floats.push(samples[s]); // y1 = this amplitude
   }
+  // The first window may yield no segment only if it is empty; with
+  // samplesPerFrame >= 2 the first window always produces >= 1 segment.
+  if (floats.length === 0) continue;
   frames.push({ t: i * cadenceMs, b64: encodeAppend(TRACE_BUFFER, floats) });
 }
 
