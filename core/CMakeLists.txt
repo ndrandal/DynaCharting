@@ -1637,6 +1637,20 @@ if (DC_BUILD_TESTS)
     target_link_libraries(dc_d_enc558_instanced_grow PRIVATE dc_gpu)
     add_test(NAME dc_d_enc558_instanced_grow COMMAND dc_d_enc558_instanced_grow)
 
+    # ENC-569 — VERTEX-based backends re-read + re-COUNT when their streaming CPU
+    # buffer GROWS, so streaming line + tessellated geometry animates. Mirrors
+    # ENC-558 for the vertex backends (line2d / triGradient / triSolid / lineAA):
+    # stamp the CpuBufferStore version, re-upload on a bump, and derive the draw
+    # vertex count from the CURRENT buffer size (bytes / strideOf(format)) instead
+    # of the static geometry.vertexCount. Renders a short line2d (and a small
+    # triGradient), grows the buffer (same geometryId), renders again, and asserts
+    # the new segments/vertices draw (previously-clear pixels become lit).
+    add_executable(dc_d_enc569_vertex_grow
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/d_enc569_vertex_grow.cpp"
+    )
+    target_link_libraries(dc_d_enc569_vertex_grow PRIVATE dc_gpu)
+    add_test(NAME dc_d_enc569_vertex_grow COMMAND dc_d_enc569_vertex_grow)
+
     # ENC-490 (P2.7) — lineAA@1 (anti-aliased thick lines) + dash patterns
     # (D28.1) on Dawn. Quad-expands each segment into a thick AA quad in the
     # vertex shader and does AA coverage falloff + dash on/off in the fragment

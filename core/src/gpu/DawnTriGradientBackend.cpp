@@ -104,35 +104,72 @@ bool DawnTriGradientBackend::init(GpuDevice& device) {
   return pipeline_.valid();
 }
 
+// ENC-569: (re)upload gb's vertex/index buffers from the geometry's CURRENT CPU
+// bytes (see DawnTriSolidBackend for the rationale). The DRAW vertex count is
+// derived from the current buffer size (vtxBytes / strideOf(pos2_color4=24B))
+// so a growing / re-tessellated triGradient buffer re-shapes instead of being
+// frozen at the first frame's vertexCount.
+void DawnTriGradientBackend::buildGeoBuffers(GpuDevice& device,
+                                             const Scene& scene,
+                                             CpuBufferStore& gpu,
+                                             std::uint32_t geometryId,
+                                             GeoBuffers& gb) {
+  if (gb.vertexBuffer.valid()) {
+    device.destroyBuffer(gb.vertexBuffer);
+    gb.vertexBuffer = {};
+  }
+  if (gb.indexBuffer.valid()) {
+    device.destroyBuffer(gb.indexBuffer);
+    gb.indexBuffer = {};
+  }
+  gb.vertexCount = 0;
+  gb.indexCount = 0;
+
+  const Geometry* geo = scene.getGeometry(geometryId);
+  gb.vtxVersion = geo ? gpu.getCpuDataVersion(geo->vertexBufferId) : 0;
+  gb.idxVersion = geo ? gpu.getCpuDataVersion(geo->indexBufferId) : 0;
+  gb.built = true;
+  if (!geo) return;
+
+  const std::uint8_t* vtx = gpu.getCpuData(geo->vertexBufferId);
+  const std::uint32_t vtxBytes = gpu.getCpuDataSize(geo->vertexBufferId);
+  if (vtx && vtxBytes > 0) {
+    gb.vertexBuffer = device.createBuffer(vtxBytes, vtx, vtxBytes);
+    const std::uint32_t stride = strideOf(geo->format);
+    gb.vertexCount = stride > 0 ? (vtxBytes / stride) : geo->vertexCount;
+  }
+
+  if (geo->indexBufferId != 0 && geo->indexCount > 0) {
+    const std::uint8_t* idx = gpu.getCpuData(geo->indexBufferId);
+    const std::uint32_t idxBytes = gpu.getCpuDataSize(geo->indexBufferId);
+    if (idx && idxBytes > 0) {
+      gb.indexBuffer = device.createBuffer(idxBytes, idx, idxBytes);
+      gb.indexCount = idxBytes / sizeof(std::uint32_t);
+    }
+  }
+}
+
 DawnTriGradientBackend::GeoBuffers& DawnTriGradientBackend::ensureGeoBuffers(
     GpuDevice& device, const Scene& scene, CpuBufferStore& gpu,
     std::uint32_t geometryId) {
+  GeoBuffers* gb = nullptr;
   for (auto& kv : geoBuffers_) {
-    if (kv.first == geometryId) return kv.second;
+    if (kv.first == geometryId) { gb = &kv.second; break; }
+  }
+  if (!gb) {
+    geoBuffers_.emplace_back(geometryId, GeoBuffers{});
+    gb = &geoBuffers_.back().second;
   }
 
-  GeoBuffers gb;
   const Geometry* geo = scene.getGeometry(geometryId);
-  if (geo) {
-    const std::uint8_t* vtx = gpu.getCpuData(geo->vertexBufferId);
-    const std::uint32_t vtxBytes = gpu.getCpuDataSize(geo->vertexBufferId);
-    if (vtx && vtxBytes > 0) {
-      gb.vertexBuffer = device.createBuffer(vtxBytes, vtx, vtxBytes);
-    }
-    gb.vertexCount = geo->vertexCount;
-
-    if (geo->indexBufferId != 0 && geo->indexCount > 0) {
-      const std::uint8_t* idx = gpu.getCpuData(geo->indexBufferId);
-      const std::uint32_t idxBytes = gpu.getCpuDataSize(geo->indexBufferId);
-      if (idx && idxBytes > 0) {
-        gb.indexBuffer = device.createBuffer(idxBytes, idx, idxBytes);
-        gb.indexCount = geo->indexCount;
-      }
-    }
+  const std::uint64_t vtxVer =
+      geo ? gpu.getCpuDataVersion(geo->vertexBufferId) : 0;
+  const std::uint64_t idxVer =
+      geo ? gpu.getCpuDataVersion(geo->indexBufferId) : 0;
+  if (!gb->built || vtxVer != gb->vtxVersion || idxVer != gb->idxVersion) {
+    buildGeoBuffers(device, scene, gpu, geometryId, *gb);
   }
-
-  geoBuffers_.emplace_back(geometryId, gb);
-  return geoBuffers_.back().second;
+  return *gb;
 }
 
 BackendStats DawnTriGradientBackend::renderDrawItem(GpuDevice& device,

@@ -46,13 +46,23 @@ class DawnTriGradientBackend final : public IRendererBackend {
  private:
   PipelineHandle pipeline_{};
 
+  // ENC-569: re-read + re-upload on a CpuBufferStore version bump and derive the
+  // draw count from the current buffer size (see DawnTriSolidBackend for the
+  // mechanism). A growing/re-tessellated triGradient buffer re-shapes.
   struct GeoBuffers {
     BufferHandle vertexBuffer{};
     BufferHandle indexBuffer{};
     std::uint32_t vertexCount{0};
     std::uint32_t indexCount{0};
+    std::uint64_t vtxVersion{0};
+    std::uint64_t idxVersion{0};
+    bool built{false};
   };
   std::vector<std::pair<std::uint32_t, GeoBuffers>> geoBuffers_;
+
+  void buildGeoBuffers(GpuDevice& device, const Scene& scene,
+                       CpuBufferStore& gpu, std::uint32_t geometryId,
+                       GeoBuffers& gb);
 
   GeoBuffers& ensureGeoBuffers(GpuDevice& device, const Scene& scene,
                                CpuBufferStore& gpu, std::uint32_t geometryId);
