@@ -79,6 +79,54 @@ bool TransformDag::addTransform(NodeId nodeId, NodeId inputNode,
   return true;
 }
 
+bool TransformDag::addJoin(NodeId nodeId, NodeId leftNode, NodeId rightNode,
+                           std::unique_ptr<TransformNode> transform) {
+  if (nodes_.count(nodeId)) {
+    lastError_ = "addJoin: node " + std::to_string(nodeId) + " exists";
+    return false;
+  }
+  if (!transform || transform->arity() != 2) {
+    lastError_ = "addJoin: transform is not a binary (arity-2) node";
+    return false;
+  }
+  Node* left = find(leftNode);
+  if (!left) {
+    lastError_ = "addJoin: unknown left input node " + std::to_string(leftNode);
+    return false;
+  }
+  Node* right = find(rightNode);
+  if (!right) {
+    lastError_ = "addJoin: unknown right input node " + std::to_string(rightNode);
+    return false;
+  }
+  // Fail-fast typing: output = f(left schema, right schema). A bad key dtype /
+  // missing column is rejected here, before any row runs.
+  SchemaResult sr = transform->inferSchemaBinary(left->schema, right->schema);
+  if (!sr.ok) {
+    lastError_ = "addJoin[" + std::string(transform->op()) + "]: " + sr.error;
+    return false;
+  }
+  Node n;
+  n.id = nodeId;
+  n.kind = Kind::Transform;
+  n.input = leftNode;
+  n.rightInput = rightNode;
+  n.transform = std::move(transform);
+  n.schema = std::move(sr.schema);
+  nodes_.emplace(nodeId, std::move(n));
+
+  // Wire BOTH input edges for the downstream dirty-closure + reactive deps so the
+  // join recomputes when EITHER the left rows or the right lookup table change.
+  left->dependents.push_back(nodeId);
+  right->dependents.push_back(nodeId);
+  if (left->kind == Kind::Source)
+    reactive_.addDependency(static_cast<DependentId>(nodeId), dataInput(leftNode));
+  if (right->kind == Kind::Source)
+    reactive_.addDependency(static_cast<DependentId>(nodeId), dataInput(rightNode));
+  built_ = false;
+  return true;
+}
+
 bool TransformDag::build() {
   // Topological sort over transform nodes (sources are leaves with no eval work).
   // Kahn's algorithm on the input -> node edges.
@@ -299,6 +347,17 @@ std::vector<NodeId> TransformDag::evaluate() {
     ctx.inputSchema = &in->schema;
     ctx.input = &resolver;
     ctx.out = &store_;
+    // Binary (join) node: also resolve its RIGHT input (the lookup table).
+    ColumnResolver rightResolver;
+    const Node* rin = nullptr;
+    if (n->transform->arity() == 2 && n->rightInput != kInvalidId) {
+      rin = find(n->rightInput);
+      if (rin) {
+        rightResolver = makeResolver(*rin);
+        ctx.rightSchema = &rin->schema;
+        ctx.right = &rightResolver;
+      }
+    }
     n->transform->evaluate(ctx);
     ++n->recomputes;
     ran.push_back(id);
