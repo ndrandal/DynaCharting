@@ -442,6 +442,16 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_uce_scale PRIVATE dc)
   add_test(NAME dc_uce_scale COMMAND dc_uce_scale)
 
+  # ENC-610/611 (P2) — Color scales: sequential + diverging numeric -> RGBA8.
+  # Sequential ramp (auto-domain via RunningDomain) + diverging two-sided ramp
+  # around a fixed mid + the class-4 baseline-policy rejection. Asserts the packed
+  # RGBA8 output directly (no GPU / LUT-texture path).
+  add_executable(dc_uce_colorscale
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_uce_colorscale.cpp"
+  )
+  target_link_libraries(dc_uce_colorscale PRIVATE dc)
+  add_test(NAME dc_uce_colorscale COMMAND dc_uce_colorscale)
+
   # ENC-600/601/603/604 — Encode compiler + marks (point/line/rect/candle):
   # byte-level vertex/instance packing + the validateDrawItem exact-stride gate.
   add_executable(dc_uce_encode
@@ -449,6 +459,15 @@ if (DC_BUILD_TESTS)
   )
   target_link_libraries(dc_uce_encode PRIVATE dc)
   add_test(NAME dc_uce_encode COMMAND dc_uce_encode)
+
+  # ENC-605 (P1.14) — Manifest v0 parser (data / scales / coords / marks /
+  # encoding): parses a JSON manifest, applies the §6.1 typing checks, and drives
+  # the table -> scale -> encode -> mark pipeline to produce DrawItems + geometry.
+  add_executable(dc_uce_manifest
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_uce_manifest.cpp"
+  )
+  target_link_libraries(dc_uce_manifest PRIVATE dc)
+  add_test(NAME dc_uce_manifest COMMAND dc_uce_manifest)
 
   add_executable(dc_d1_3_atomic_frame
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/d1_3_atomic_frame.cpp"
