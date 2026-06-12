@@ -41,6 +41,8 @@ void writeSentinel(ColumnStore& out, Id node, const SchemaColumn& col,
     case DType::Timestamp:
       out.setTimestamp(node, col.name, row, 0);
       break;
+    case DType::List:
+      break;  // ragged columns are not join outputs (geo-only dtype)
   }
 }
 
@@ -66,6 +68,8 @@ void copyRightCell(const std::string& field, DType dtype,
     case DType::Timestamp:
       out.setTimestamp(node, outName, dstRow, right.readTimestamp(field, srcRow));
       break;
+    case DType::List:
+      break;  // ragged columns are not join outputs (geo-only dtype)
   }
 }
 

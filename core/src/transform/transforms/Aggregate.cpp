@@ -165,6 +165,8 @@ void AggregateTransform::evaluate(const EvalContext& ctx) const {
           ctx.out->setTimestamp(node, groupBy_[k], gi,
                                 static_cast<std::int64_t>(kv));
           break;
+        case DType::List:
+          break;  // ragged columns are not group keys (geo-only dtype)
       }
     }
     for (std::size_t m = 0; m < nMeas; ++m) {

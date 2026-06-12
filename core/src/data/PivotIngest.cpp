@@ -146,6 +146,10 @@ void PivotIngest::emitValue(const std::string& columnName,
       appendRecord(batch, col->bufferId, &x, sizeof(x));
       break;
     }
+    case DType::List:
+      // Pivot ingest produces scalar cells; a ragged (List) column is filled by the
+      // raw ingest feed directly, never through the pivot path. Emit nothing.
+      break;
   }
   ingest_.processBatch(batch.data(), static_cast<std::uint32_t>(batch.size()));
 }
@@ -168,6 +172,7 @@ void PivotIngest::appendRow(const PendingRow& row) {
         case DType::I32: rk = pvI32(static_cast<std::int32_t>(row.rowKey)); break;
         case DType::F32: rk = pvF32(static_cast<float>(row.rowKey)); break;
         case DType::Cat: rk = pvCat(static_cast<std::uint32_t>(row.rowKey)); break;
+        case DType::List: break;  // a List column is never a rowKey (geo-only dtype)
       }
       emitValue(colName, rk);
       continue;

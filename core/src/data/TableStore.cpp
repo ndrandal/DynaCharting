@@ -13,6 +13,7 @@ std::optional<DType> parseDType(const std::string& s) {
   if (s == "i32") return DType::I32;
   if (s == "cat") return DType::Cat;
   if (s == "timestamp") return DType::Timestamp;
+  if (s == "list") return DType::List;
   return std::nullopt;
 }
 
@@ -80,6 +81,8 @@ bool TableStore::addColumn(Id tableId, const std::string& name, DType dtype,
   Table* t = find(tableId);
   if (!t) return false;
   if (name.empty()) return false;
+  // List/ragged columns need two buffers — use addListColumn(). Scalar dtypes
+  // only here (a 0-width dtype is List or an invalid enum).
   if (dtypeByteWidth(dtype) == 0) return false;
   if (t->byName.find(name) != t->byName.end()) return false;  // dup name
 
@@ -87,6 +90,30 @@ bool TableStore::addColumn(Id tableId, const std::string& name, DType dtype,
   c.name = name;
   c.dtype = dtype;
   c.bufferId = bufferId;
+
+  t->byName.emplace(name, t->columns.size());
+  t->columns.push_back(std::move(c));
+  ++t->version;
+  return true;
+}
+
+bool TableStore::addListColumn(Id tableId, const std::string& name,
+                               DType innerDType, Id offsetsBufferId,
+                               Id valuesBufferId) {
+  Table* t = find(tableId);
+  if (!t) return false;
+  if (name.empty()) return false;
+  // The inner dtype must be a fixed-width scalar (no list-of-list). dtypeByteWidth
+  // is 0 for List itself and for any invalid enum value.
+  if (dtypeByteWidth(innerDType) == 0) return false;
+  if (t->byName.find(name) != t->byName.end()) return false;  // dup name
+
+  Column c;
+  c.name = name;
+  c.dtype = DType::List;
+  c.bufferId = offsetsBufferId;      // offsets (i32, length rows+1)
+  c.valuesBufferId = valuesBufferId; // flat inner values
+  c.innerDType = innerDType;
 
   t->byName.emplace(name, t->columns.size());
   t->columns.push_back(std::move(c));
@@ -251,6 +278,16 @@ ColumnView<std::int64_t> TableStore::viewTimestamp(
   auto [bytes, count] = rawColumn(tableId, name, sizeof(std::int64_t), src);
   if (!bytes) return {};
   return {reinterpret_cast<const std::int64_t*>(bytes), count};
+}
+
+RaggedColumn<float> TableStore::viewRaggedF32(Id tableId, const std::string& name,
+                                              const BufferByteSource& src) const {
+  return rawRagged<float>(tableId, name, DType::F32, src);
+}
+
+RaggedColumn<std::int32_t> TableStore::viewRaggedI32(
+    Id tableId, const std::string& name, const BufferByteSource& src) const {
+  return rawRagged<std::int32_t>(tableId, name, DType::I32, src);
 }
 
 CatDictionary* TableStore::catDict(Id tableId, const std::string& name) {
