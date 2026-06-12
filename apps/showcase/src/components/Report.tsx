@@ -27,12 +27,16 @@ export function Report({ onNavigate }: { onNavigate: (r: Route) => void }) {
             </span>
           </div>
           <p style={{ color: 'var(--text)', lineHeight: 1.65, maxWidth: '68ch' }}>
-            Every view here is a JSON manifest applied to one engine instance, fed by captured frames from the real
-            faithful pipeline (Mock GMA → embassy → dataplane WS → dc-wasm), and <strong>all 22 now animate</strong> —
-            traces grow, geometry fields flow, and texture views swap an animated field over a looping ~20s replay.
-            Native views render directly; composed views route upstream precompute (scalar-fan / texture-feed) into
-            buffers; walled views replay a precomputed-but-animated field and name the live-GPU gap. Because every view
-            is already animated, the one remaining wall is precisely{' '}
+            Every view here was built the same way: Claude wrote a JSON manifest and a synthetic test feed, then handed
+            both to a single DynaCharting engine instance — no chart-specific code anywhere. The manifest declares the
+            buffers and pipelines; the feed (captured from the real faithful pipeline: Mock GMA → embassy → dataplane WS
+            → dc-wasm) supplies the bytes; the engine renders. The same engine draws candlesticks, a weather field, a
+            Sankey diagram, and a spectrogram — only the manifest and the data change. That this much breadth comes from
+            declarations alone, with nothing written per chart, is the quiet claim of this showcase. And{' '}
+            <strong>all 22 now animate</strong> — traces grow, geometry fields flow, and texture views swap an animated
+            field over a looping ~20s replay. Native views render directly; composed views route upstream precompute
+            (scalar-fan / texture-feed) into buffers; walled views replay a precomputed-but-animated field and name the
+            live-GPU gap. Because every view is already animated, the one remaining wall is precisely{' '}
             <strong style={{ color: 'var(--tier-walled)' }}>real-time GPU per-pixel compute / custom shaders</strong> —
             live FFT / KDE-glow / marching-squares derived per frame on the GPU, the custom-WGSL-pipeline-from-JSON
             decision.

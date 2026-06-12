@@ -38,8 +38,11 @@ export function Hero({ onNavigate, onSlot, chrome }: HeroProps) {
               pushed until exactly one wall remains.
             </h1>
             <p className="sub">
-              Faithful market data over a real path, rendered live in your browser via WebGPU. No bespoke chart code:
-              the manifest declares the panes, buffers, and pipelines; the engine does the rest.
+              Every chart in this gallery was produced the same way: Claude wrote a <strong>JSON manifest</strong> — a
+              declaration of panes, buffers, and render pipelines — paired it with a <strong>synthetic test data feed</strong>,
+              and handed both to DynaCharting. There&rsquo;s no per-chart code; no two views share a line of rendering logic.
+              The engine reads the manifest and renders the feed — that&rsquo;s the whole pipeline, streaming live in your
+              browser via WebGPU.
             </p>
 
             <div className="spine" aria-label="Data path">
