@@ -319,26 +319,40 @@ std::vector<NodeId> TransformDag::evaluate() {
   syncSourceVersions();
 
   // The ReactiveGraph yields the transform nodes directly reacting to a dirtied
-  // SOURCE. Seed the dirty set with them, then close DOWNSTREAM along DAG edges.
+  // SOURCE. Seed the dirty set with them PLUS any node HELD (deferred) on a prior
+  // pass — a held node's dirtiness persists until the gate lets it run.
   std::unordered_set<NodeId> dirty;
   for (DependentId d : reactive_.drain()) dirty.insert(static_cast<NodeId>(d));
+  for (NodeId h : held_) dirty.insert(h);
 
-  // Downstream closure: a dirty node dirties its dependents (which are transforms).
-  // Walk in topo order so a node is marked before we reach its dependents.
-  for (NodeId id : topoOrder_) {
-    if (!dirty.count(id)) continue;
-    Node* n = find(id);
-    if (!n) continue;
-    for (NodeId dep : n->dependents) {
-      if (find(dep) && find(dep)->kind == Kind::Transform) dirty.insert(dep);
-    }
-  }
+  // Single topo pass that interleaves the downstream dirty-closure with the
+  // scheduling gate (ENC-616e). For each node, in topo order:
+  //   * if not dirty -> skip (dirty-gating respected: clean nodes never run).
+  //   * if a gate is set and says the node is NOT due -> HOLD it: keep it dirty
+  //     for next pass, do NOT run it, and do NOT propagate dirtiness through it
+  //     (its dependents must not consume its stale output). A node already
+  //     dirtied by some OTHER (running) upstream path stays dirty independently.
+  //   * otherwise -> run it, and dirty its dependents (close downstream).
+  // With no gate, every dirty node is due and this reduces to the foundation's
+  // "full closure, run all dirty" behavior.
+  held_.clear();
 
-  // Run ONLY the dirty transform nodes, in topological order.
   for (NodeId id : topoOrder_) {
     if (!dirty.count(id)) continue;
     Node* n = find(id);
     if (!n || n->kind != Kind::Transform) continue;
+
+    if (gate_ && !gate_(id)) {
+      // Not due this pass: defer. Held nodes are re-seeded next evaluate(); their
+      // downstream is NOT closed through them so dependents keep stale-free inputs.
+      held_.insert(id);
+      continue;
+    }
+
+    // Due: dirty its dependents so the closure flows to downstream transforms.
+    for (NodeId dep : n->dependents) {
+      if (find(dep) && find(dep)->kind == Kind::Transform) dirty.insert(dep);
+    }
     const Node* in = find(n->input);
     if (!in) continue;
     ColumnResolver resolver = makeResolver(*in);

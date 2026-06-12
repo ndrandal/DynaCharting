@@ -524,6 +524,17 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_uce_transform_swl PRIVATE dc)
   add_test(NAME dc_uce_transform_swl COMMAND dc_uce_transform_swl)
 
+  # ENC-616e — streaming SCHEDULER: per-class cadence over the transform DAG.
+  # class-1 runs every dirty frame; class-2 only on a window/hop boundary; class-3
+  # globals are throttled (do NOT run every tick, DO run after the interval); held
+  # dirtiness persists; dirty-gating (clean nodes skipped) is still respected. Driven
+  # by an injected fake clock. Closes the Epic ENC-616 transform DAG.
+  add_executable(dc_uce_stream_sched
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_uce_stream_sched.cpp"
+  )
+  target_link_libraries(dc_uce_stream_sched PRIVATE dc)
+  add_test(NAME dc_uce_stream_sched COMMAND dc_uce_stream_sched)
+
   # ENC-606 — regression guard for the setDrawItemStyle PRIMARY-color key wiring
   # (colorR/colorG/colorB/colorA must reach di.color, the form the render proof
   # drives the amber SMA line with). A pure-logic CommandProcessor test.
