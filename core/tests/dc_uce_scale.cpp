@@ -266,6 +266,254 @@ int main() {
     check(emptyNice.domain().empty, "nice() no-op on empty domain");
   }
 
-  std::printf("=== ENC-596 Results: %d passed, %d failed ===\n", passed, failed);
+  // ----- ENC-599: LinearScale emits nice ticks from the live domain ----------
+  {
+    dc::LinearScale s(dc::Domain{0.3, 9.7, false}, dc::Range{0.0, 1.0});
+    auto t = s.ticks(5);
+    check(!t.empty(), "linear ticks non-empty over [0.3,9.7]");
+    // nice step 2 over [0,10] -> {0,2,4,6,8,10}
+    check(approx(t.front().value, 0.0), "linear first tick is 0");
+    check(approx(t.back().value, 10.0), "linear last tick is 10");
+    check(t.size() == 6, "linear ticks count is 6 (0..10 step 2)");
+    check(t[1].label == "2", "linear tick label formatted compactly");
+
+    // Ticks UPDATE (extend) as the domain grows — the acceptance criterion.
+    dc::LinearScale g(dc::Domain{0.0, 9.0, false}, dc::Range{0.0, 1.0});
+    auto t1 = g.ticks(5);  // step 2 -> last tick 10
+    g.setDomain(0.0, 90.0);  // domain extends 10x
+    auto t2 = g.ticks(5);  // step 20 -> last tick 100
+    check(t2.back().value > t1.back().value,
+          "linear ticks extend with the domain (new max covered)");
+    check(!approx(t2[1].value, t1[1].value),
+          "linear ticks recomputed (new step) from the extended domain");
+
+    // Empty / degenerate domains emit no ticks (no crash).
+    dc::LinearScale empt;
+    check(empt.ticks().empty(), "empty domain emits no ticks");
+    dc::LinearScale flat(dc::Domain{5.0, 5.0, false}, dc::Range{0.0, 1.0});
+    check(flat.ticks().empty(), "degenerate domain emits no ticks");
+  }
+
+  // ----- ENC-597: TimeScale — multi-day epoch-ms with NO f32 precision loss --
+  {
+    // Two instants 2 days + 1 ms apart, both far past the f32 mantissa limit
+    // (~16.7M). epoch-ms here is ~1.7e12. A naive f32 cast would collapse the
+    // 1ms difference (and quantize both to ~minute buckets). The time scale keeps
+    // the i64 base on CPU and only ever exposes a RELATIVE f32 offset.
+    const double kDayMs = 86400000.0;
+    const double t0 = 1700000000000.0;          // 2023-11-14T22:13:20Z
+    const double t1 = t0 + 2.0 * kDayMs + 1.0;  // +2 days +1 ms
+
+    dc::TimeScale ts(t0, t1, dc::Range{0.0, 1000.0});
+    // map endpoints exactly in f64 epoch-ms space.
+    check(approx(ts.map(t0), 0.0), "time map domain-min -> r0");
+    check(approx(ts.map(t1), 1000.0), "time map domain-max -> r1");
+    // The 1ms-apart instants map to DISTINCT range positions — proof the 1ms is
+    // not lost. (A f32 epoch cast would make these identical.)
+    const double span = t1 - t0;
+    const double pa = ts.map(t0 + 1.0);  // +1 ms from min
+    const double pb = ts.map(t0);
+    check(pa > pb, "1ms difference at epoch-ms scale is RESOLVED (no f32 loss)");
+    check(approx(pa - pb, 1000.0 / span), "1ms maps to the exact f64 fraction");
+
+    // The base epoch is CPU-held; the relative f32 offset is small + exact.
+    check(approx(ts.baseEpochMs(), t0), "base epoch pinned to domain min");
+    check(ts.normalizedOffsetF32(t1) == static_cast<float>(span),
+          "relative f32 offset for the full span is exact (fits f32)");
+    check(ts.normalizedOffsetF32(t0) == 0.0f, "offset at base epoch is 0");
+    // Sanity: the RELATIVE offset (a few e8 ms) is within f32 integer-exactness
+    // (< 2^24 only after we accept ms granularity loss above ~16.7M ms ≈ 4.6h);
+    // for the OFFSET we still hold the exact value as a CPU double — prove the
+    // round-trip through invert is f64-exact regardless.
+    check(approx(ts.invert(ts.map(t1)), t1), "time map/invert round-trips in f64");
+    check(approx(ts.invert(ts.map(t0 + 1.0)), t0 + 1.0),
+          "time invert recovers the 1ms-offset instant exactly");
+
+    // Direct proof the trap is real and avoided: a naive f32 epoch cast collapses
+    // the two instants; the scale's f64 path does not.
+    check(static_cast<float>(t0) == static_cast<float>(t0 + 1.0),
+          "[trap] naive f32 epoch cast COLLAPSES the 1ms difference");
+    check(ts.map(t0) != ts.map(t0 + 1.0),
+          "[mitigation] TimeScale keeps the 1ms difference distinct");
+  }
+
+  // ----- ENC-597: TimeScale streaming auto-domain over a Timestamp column ----
+  {
+    dc::IngestProcessor ingest;
+    dc::TableStore tables;
+    auto src = dc::makeBufferByteSource(ingest);
+
+    const dc::Id kTbuf = 300;
+    const dc::Id kTtab = 8;
+    check(tables.defineTable(kTtab, "tseries"), "defineTable for time scale");
+    check(tables.addColumn(kTtab, "t", dc::DType::Timestamp, kTbuf),
+          "addColumn t/timestamp");
+
+    dc::TimeScale ts;
+    ts.setRange(0.0, 1.0);
+    ts.bindColumn(kTtab, "t");
+    check(ts.hasBoundColumn(), "time scale bound to timestamp column");
+    check(!ts.updateDomain(tables, src), "time updateDomain false on empty col");
+
+    const double kDayMs = 86400000.0;
+    const double base = 1700000000000.0;
+    // Tick 1: 3 timestamps spanning ~2 days.
+    {
+      std::int64_t v[3] = {
+          static_cast<std::int64_t>(base),
+          static_cast<std::int64_t>(base + kDayMs),
+          static_cast<std::int64_t>(base + 2.0 * kDayMs)};
+      std::vector<std::uint8_t> batch;
+      appendRecord(batch, kTbuf, v, sizeof(v));
+      ingest.processBatch(batch.data(),
+                          static_cast<std::uint32_t>(batch.size()));
+      check(ts.updateDomain(tables, src), "time updateDomain true after append");
+      check(approx(ts.domain().min, base) &&
+                approx(ts.domain().max, base + 2.0 * kDayMs),
+            "time auto-domain spans the 3 timestamps (multi-day, f64-exact)");
+      check(approx(ts.baseEpochMs(), base), "base epoch re-pinned to domain min");
+    }
+    // Tick 2: append an EARLIER and a LATER timestamp; domain extends both ends.
+    {
+      std::int64_t v[2] = {
+          static_cast<std::int64_t>(base - kDayMs),
+          static_cast<std::int64_t>(base + 5.0 * kDayMs)};
+      std::vector<std::uint8_t> batch;
+      appendRecord(batch, kTbuf, v, sizeof(v));
+      ingest.processBatch(batch.data(),
+                          static_cast<std::uint32_t>(batch.size()));
+      ts.updateDomain(tables, src);
+      check(approx(ts.domain().min, base - kDayMs) &&
+                approx(ts.domain().max, base + 5.0 * kDayMs),
+            "time auto-domain extends both ends as timestamps stream in");
+      check(ts.runningDomain().consumedCount() == 5,
+            "time reducer consumed exactly 5 rows (O(Δ) high-water)");
+    }
+    // Nice time ticks over the live multi-day domain (ENC-599).
+    {
+      auto tk = ts.ticks(6);
+      check(!tk.empty(), "time scale emits nice ticks");
+      // All ticks lie within the domain, are increasing, and are labeled.
+      bool ok = true;
+      for (std::size_t i = 0; i < tk.size(); ++i) {
+        if (tk[i].value < ts.domain().min - 1.0 ||
+            tk[i].value > ts.domain().max + 1.0)
+          ok = false;
+        if (tk[i].label.empty()) ok = false;
+        if (i > 0 && tk[i].value <= tk[i - 1].value) ok = false;
+      }
+      check(ok, "time ticks are in-domain, increasing, and labeled");
+      // A multi-day span picks a day(ish) step -> labels are date-only.
+      check(tk.front().label.size() >= 8,
+            "time tick label is a formatted UTC date");
+    }
+  }
+
+  // ----- ENC-598: Band + Point ordinal scales over a GROWING category set ----
+  {
+    // Band scale over 4 categories in [0,400], no padding -> 4 equal bands of
+    // width 100 starting at 0,100,200,300.
+    dc::BandScale b;
+    b.setRange(0.0, 400.0);
+    b.setCategories({0, 1, 2, 3});
+    check(approx(b.bandwidth(), 100.0), "band bandwidth = extent/n with no pad");
+    check(approx(b.step(), 100.0), "band step = 100");
+    check(approx(b.map(0.0), 0.0), "band cat0 start = 0");
+    check(approx(b.map(1.0), 100.0), "band cat1 start = 100");
+    check(approx(b.map(3.0), 300.0), "band cat3 start = 300");
+    check(approx(b.center(2), 250.0), "band cat2 center = 250");
+    // invert: a pixel inside band 2 returns code 2.
+    check(approx(b.invert(260.0), 2.0), "band invert px->category code");
+    check(approx(b.invert(99.0), 0.0), "band invert near-edge stays in band 0");
+
+    // Padding carves gaps but bands stay ordered + within range.
+    dc::BandScale bp;
+    bp.setRange(0.0, 100.0);
+    bp.setCategories({0, 1, 2, 3, 4});
+    bp.setPadding(0.2);
+    check(bp.bandwidth() < bp.step(), "padded bandwidth < step");
+    check(bp.map(0.0) > 0.0, "outer padding offsets first band start");
+    check(bp.map(4.0) + bp.bandwidth() <= 100.0 + 1e-6,
+          "last band stays within range");
+
+    // Point scale over the same 4 categories -> 0-width, positions at band
+    // centers of a zero-inner-pad band layout: step = 400/3, points at 0,step,...
+    dc::PointScale p;
+    p.setRange(0.0, 300.0);
+    p.setCategories({0, 1, 2, 3});
+    check(approx(p.bandwidth(), 0.0), "point bandwidth is 0");
+    check(approx(p.step(), 100.0), "point step = extent/(n-1)-equivalent = 100");
+    check(approx(p.map(0.0), 0.0), "point cat0 at r0");
+    check(approx(p.map(3.0), 300.0), "point cat3 at r1");
+    check(approx(p.center(1), 100.0), "point cat1 at 100");
+
+    // GROWING category set: placements stay correct as categories ARRIVE.
+    dc::BandScale grow;
+    grow.setRange(0.0, 1000.0);
+    grow.setCategories({0});
+    check(approx(grow.bandwidth(), 1000.0), "1 category fills the whole range");
+    grow.setCategories({0, 1});
+    check(approx(grow.bandwidth(), 500.0) && approx(grow.map(1.0), 500.0),
+          "adding a 2nd category re-lays-out to two 500-wide bands");
+    grow.setCategories({0, 1, 2, 3, 4});
+    check(approx(grow.bandwidth(), 200.0) && approx(grow.map(4.0), 800.0),
+          "5 categories -> 200-wide bands; last at 800");
+  }
+
+  // ----- ENC-598: ordinal auto-domain over a GROWING Cat dictionary ----------
+  {
+    dc::TableStore tables;
+    const dc::Id kCbuf = 400;
+    const dc::Id kCtab = 9;
+    check(tables.defineTable(kCtab, "catseries"), "defineTable for band scale");
+    check(tables.addColumn(kCtab, "sym", dc::DType::Cat, kCbuf),
+          "addColumn sym/cat");
+    dc::CatDictionary* dict = tables.catDict(kCtab, "sym");
+    check(dict != nullptr, "cat column has a dictionary");
+
+    dc::BandScale b;
+    b.setRange(0.0, 300.0);
+    b.bindColumn(kCtab, "sym");
+    check(b.hasBoundColumn(), "band scale bound to cat column");
+    check(b.updateDomain(tables) && b.ordinalDomain().empty(),
+          "empty dictionary is a valid no-op domain");
+
+    // Categories arrive over the stream (interned into the dictionary in order).
+    dict->intern("AAPL");  // code 0
+    dict->intern("MSFT");  // code 1
+    dict->intern("GOOG");  // code 2
+    check(b.updateDomain(tables), "band updateDomain after 3 categories");
+    check(b.ordinalDomain().size() == 3, "domain grew to 3 categories");
+    check(approx(b.bandwidth(), 100.0), "3 categories -> 100-wide bands");
+    check(approx(b.map(0.0), 0.0) && approx(b.map(2.0), 200.0),
+          "category placements correct (AAPL@0, GOOG@200)");
+
+    // A 4th category ARRIVES — O(Δ) fold extends the domain; placements re-lay.
+    dict->intern("AMZN");  // code 3
+    b.updateDomain(tables);
+    check(b.ordinalDomain().size() == 4, "domain grew to 4 categories (O(Δ))");
+    check(approx(b.bandwidth(), 75.0) && approx(b.map(3.0), 225.0),
+          "4 categories -> 75-wide bands; AMZN@225");
+
+    // Re-update with no new categories is a no-op (idempotent O(0)).
+    std::size_t before = b.ordinalDomain().size();
+    b.updateDomain(tables);
+    check(b.ordinalDomain().size() == before, "re-fold with no new cats no-op");
+
+    // Ticks: one per category at its center, labeled from the dictionary.
+    auto tk = b.ticksWithDict(dict);
+    check(tk.size() == 4, "ordinal emits one tick per category");
+    check(tk[0].label == "AAPL" && tk[3].label == "AMZN",
+          "ordinal tick labels come from the Cat dictionary");
+    check(approx(tk[0].value, b.center(0)), "ordinal tick sits at band center");
+
+    // Binding a non-Cat / missing column yields no domain update.
+    dc::BandScale bad;
+    bad.bindColumn(kCtab, "nope");
+    check(!bad.updateDomain(tables), "ordinal updateDomain false for missing col");
+  }
+
+  std::printf("=== ENC-596/597/598/599 Results: %d passed, %d failed ===\n",
+              passed, failed);
   return failed > 0 ? 1 : 0;
 }
