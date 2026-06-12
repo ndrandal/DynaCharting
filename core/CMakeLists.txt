@@ -561,6 +561,17 @@ if (DC_BUILD_TESTS)
   )
   target_link_libraries(dc_uce_hierarchy PRIVATE dc)
   add_test(NAME dc_uce_hierarchy COMMAND dc_uce_hierarchy)
+  # ENC-618c — GEO layer (closes Epic ENC-618 layout primitives): the ragged/list
+  # dtype (variable-length cells: offsets + flat values, Arrow ListArray style) +
+  # geo-projection (lng/lat -> x/y: Mercator / equirectangular / Albers equal-area) +
+  # polygon triangulation (earcut ear-clipping of polygons-with-holes -> fill tris).
+  # The choropleth chain (ragged polygons -> project -> triangulate -> colored
+  # Pos2Color4 fill) runs as DAG nodes. Resolves the geo data-model wall (§7.2/§7.3).
+  add_executable(dc_uce_geo
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_uce_geo.cpp"
+  )
+  target_link_libraries(dc_uce_geo PRIVATE dc)
+  add_test(NAME dc_uce_geo COMMAND dc_uce_geo)
   # ENC-616e — streaming SCHEDULER: per-class cadence over the transform DAG.
   # class-1 runs every dirty frame; class-2 only on a window/hop boundary; class-3
   # globals are throttled (do NOT run every tick, DO run after the interval); held

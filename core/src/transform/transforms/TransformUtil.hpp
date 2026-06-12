@@ -57,6 +57,10 @@ inline void copyCell(const SchemaColumn& col, const ColumnResolver& in,
     case DType::Timestamp:
       out.setTimestamp(node, col.name, dstRow, in.readTimestamp(col.name, srcRow));
       break;
+    case DType::List:
+      // A ragged (List) column is not a scalar cell — it is consumed directly by
+      // the geo/choropleth transform, never copied through the generic per-row path.
+      break;
   }
 }
 
