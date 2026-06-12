@@ -524,6 +524,19 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_uce_transform_swl PRIVATE dc)
   add_test(NAME dc_uce_transform_swl COMMAND dc_uce_transform_swl)
 
+  # ENC-618a — hierarchy LAYOUT transforms (RESEARCH §5.1 layout tier; §6.3 treemap):
+  # stratify (flat rows -> parent/depth/value tree) + treemap squarify (rectangles
+  # tile [0,1], area ∝ value, resquarify keeps a tile's slot stable under small value
+  # change) + partition/icicle (depth band + value cross-axis) + pack (non-overlapping
+  # sibling circles) + dendrogram (depth-monotonic node-link positions). All run as
+  # DAG nodes (inferSchema typing). The treemap-from-raw-data inverts the showcase's
+  # 188-line precompute.
+  add_executable(dc_uce_hierarchy
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_uce_hierarchy.cpp"
+  )
+  target_link_libraries(dc_uce_hierarchy PRIVATE dc)
+  add_test(NAME dc_uce_hierarchy COMMAND dc_uce_hierarchy)
+
   # ENC-606 — regression guard for the setDrawItemStyle PRIMARY-color key wiring
   # (colorR/colorG/colorB/colorA must reach di.color, the form the render proof
   # drives the amber SMA line with). A pure-logic CommandProcessor test.
