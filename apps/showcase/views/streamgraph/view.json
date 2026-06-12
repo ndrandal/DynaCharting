@@ -1,20 +1,22 @@
 {
   "id": "streamgraph",
-  "title": "Streamgraph — volume flow",
+  "title": "Streamgraph — bands flow over time",
   "tier": "composed",
   "referenceTool": "streamgraph / stacked area",
-  "blurb": "Four per-symbol volume series stacked into flowing bands around a wandering wiggle baseline — tessellated to gradient-filled ribbons at manifest-build time and drawn as per-vertex-colored triGradient geometry.",
+  "blurb": "Six bands stacked into a river around a wandering wiggle baseline — a LIVE streamgraph whose band thicknesses evolve every frame: each timestep's stacked silhouette is re-tessellated to gradient-filled ribbons (triGradient@1) and replayed as an UPDATE_RANGE that overwrites the vertex buffer in place, so the river flows and the silhouette undulates over time.",
   "datasetId": "AAPL",
   "transform": { "sx": 0.046153846, "sy": 1, "tx": -0.9, "ty": 0 },
   "chrome": {
     "axes": {
-      "x": { "label": "Time bucket", "min": 0, "max": 39, "format": "index", "ticks": 6, "grid": false }
+      "x": { "label": "Time", "min": 0, "max": 39, "format": "index", "ticks": 6, "grid": false }
     },
     "legend": [
-      { "label": "AAPL", "color": [0.38, 0.72, 0.55, 1], "kind": "area" },
-      { "label": "MSFT", "color": [0.36, 0.55, 0.92, 1], "kind": "area" },
-      { "label": "NVDA", "color": [0.80, 0.58, 0.32, 1], "kind": "area" },
-      { "label": "TSLA", "color": [0.82, 0.40, 0.55, 1], "kind": "area" }
+      { "label": "Band 1", "color": [0.38, 0.72, 0.55, 1], "kind": "area" },
+      { "label": "Band 2", "color": [0.36, 0.55, 0.92, 1], "kind": "area" },
+      { "label": "Band 3", "color": [0.80, 0.58, 0.32, 1], "kind": "area" },
+      { "label": "Band 4", "color": [0.82, 0.40, 0.55, 1], "kind": "area" },
+      { "label": "Band 5", "color": [0.55, 0.45, 0.85, 1], "kind": "area" },
+      { "label": "Band 6", "color": [0.40, 0.78, 0.78, 1], "kind": "area" }
     ]
   }
 }
