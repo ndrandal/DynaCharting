@@ -428,6 +428,13 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_uce_table PRIVATE dc)
   add_test(NAME dc_uce_table COMMAND dc_uce_table)
 
+  # ENC-596 (P1.5) — Linear scale + streaming O(Δ) auto-domain
+  add_executable(dc_uce_scale
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_uce_scale.cpp"
+  )
+  target_link_libraries(dc_uce_scale PRIVATE dc)
+  add_test(NAME dc_uce_scale COMMAND dc_uce_scale)
+
   add_executable(dc_d1_3_atomic_frame
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/d1_3_atomic_frame.cpp"
   )

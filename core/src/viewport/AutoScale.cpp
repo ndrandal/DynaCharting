@@ -3,11 +3,13 @@
 #include "dc/scene/Geometry.hpp"
 #include "dc/ingest/IngestProcessor.hpp"
 #include "dc/viewport/Viewport.hpp"
+#include "dc/data/TableStore.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <string>
 
 namespace dc {
 
@@ -79,7 +81,14 @@ bool AutoScale::computeYRange(const std::vector<Id>& drawItemIds,
 
   if (!found) return false;
 
-  // Apply margin
+  applyPolicy(lo, hi);
+  yMin = lo;
+  yMax = hi;
+  return true;
+}
+
+void AutoScale::applyPolicy(double& lo, double& hi) const {
+  // Margin
   double span = hi - lo;
   if (span < 1e-12) span = 1.0; // avoid zero span
   double margin = span * config_.marginFraction;
@@ -91,7 +100,21 @@ bool AutoScale::computeYRange(const std::vector<Id>& drawItemIds,
     if (lo > 0.0) lo = 0.0;
     if (hi < 0.0) hi = 0.0;
   }
+}
 
+bool AutoScale::computeYRangeStreaming(const TableStore& tables, Id tableId,
+                                       const std::string& column,
+                                       const BufferByteSource& src,
+                                       RunningDomain& running,
+                                       double& yMin, double& yMax) const {
+  // O(Δ): fold only the rows appended since `running` was last advanced.
+  if (!running.reduceColumnF32(tables, tableId, column, src)) return false;
+  const Domain& d = running.domain();
+  if (d.empty) return false;
+
+  double lo = d.min;
+  double hi = d.max;
+  applyPolicy(lo, hi);
   yMin = lo;
   yMax = hi;
   return true;
