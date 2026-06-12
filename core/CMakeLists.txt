@@ -442,6 +442,14 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_uce_scale PRIVATE dc)
   add_test(NAME dc_uce_scale COMMAND dc_uce_scale)
 
+  # ENC-600/601/603/604 — Encode compiler + marks (point/line/rect/candle):
+  # byte-level vertex/instance packing + the validateDrawItem exact-stride gate.
+  add_executable(dc_uce_encode
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_uce_encode.cpp"
+  )
+  target_link_libraries(dc_uce_encode PRIVATE dc)
+  add_test(NAME dc_uce_encode COMMAND dc_uce_encode)
+
   add_executable(dc_d1_3_atomic_frame
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/d1_3_atomic_frame.cpp"
   )
