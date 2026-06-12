@@ -3,14 +3,13 @@
   "title": "Radial Seasonality Clock — polar projection",
   "tier": "composed",
   "referenceTool": "polar / radial seasonality clock",
-  "blurb": "A polar seasonality clock — average per-tick return by cyclic phase bin, drawn as a radial line loop with spokes and a baseline ring. The engine has no native polar transform; (angle, radius) is projected to cartesian (x=r·cosθ, y=r·sinθ) at manifest-build time and drawn with the ordinary line2d@1 pipeline.",
+  "blurb": "A polar seasonality clock that SWEEPS — average per-tick return by cyclic phase bin, drawn as filled radial wedges (a polar rose). A clock hand sweeps 0→360° over the timeline, revealing each wedge as it passes. The engine has no native polar transform; (angle, radius) is projected to cartesian (x=r·sinθ, y=r·cosθ) at build time and the wedges are filled triangles drawn by the triGradient@1 pipeline.",
   "datasetId": "AAPL",
   "chrome": {
     "legend": [
-      { "label": "Avg return by phase (24 bins)", "color": [0.45, 0.78, 0.95, 1], "kind": "line" },
-      { "label": "Radial spoke = one phase bin", "color": [0.45, 0.78, 0.95, 1], "kind": "line" },
-      { "label": "Baseline ring = 0% return", "color": [0.45, 0.78, 0.95, 1], "kind": "line" },
-      { "label": "Angle θ = session phase (bin 0 = 3 o'clock, CCW)", "color": [0.18, 0.2, 0.26, 1], "kind": "swatch" },
+      { "label": "Filled wedge = avg return by phase (24 bins)", "color": [0.78, 0.62, 0.3, 1], "kind": "swatch" },
+      { "label": "Sweep hand = current clock angle", "color": [0.98, 0.95, 0.72, 1], "kind": "swatch" },
+      { "label": "Angle θ = session phase (bin 0 = 12 o'clock, clockwise)", "color": [0.18, 0.2, 0.26, 1], "kind": "swatch" },
       { "label": "Radius = avg per-tick return (outward = gain)", "color": [0.18, 0.2, 0.26, 1], "kind": "swatch" }
     ]
   }
