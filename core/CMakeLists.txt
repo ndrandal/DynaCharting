@@ -479,6 +479,23 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_uce_enc606_proof PRIVATE dc)
   add_test(NAME dc_uce_enc606_proof COMMAND dc_uce_enc606_proof)
 
+  # ENC-616a (Epic ENC-616) — Expression DSL: restricted side-effect-free grammar
+  # (column refs, literals, + - * / %, comparisons, && || !, ternary, ~25 math
+  # fns); parse -> typed AST -> CPU per-row eval; type errors rejected at compile.
+  add_executable(dc_uce_expr
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_uce_expr.cpp"
+  )
+  target_link_libraries(dc_uce_expr PRIVATE dc)
+  add_test(NAME dc_uce_expr COMMAND dc_uce_expr)
+
+  # ENC-616a (Epic ENC-616) — Transform DAG foundation: typed ColumnStore + topo
+  # evaluator with per-node dirty gating (reusing ReactiveGraph) + filter/formula.
+  add_executable(dc_uce_transform_dag
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_uce_transform_dag.cpp"
+  )
+  target_link_libraries(dc_uce_transform_dag PRIVATE dc)
+  add_test(NAME dc_uce_transform_dag COMMAND dc_uce_transform_dag)
+
   # ENC-606 — regression guard for the setDrawItemStyle PRIMARY-color key wiring
   # (colorR/colorG/colorB/colorA must reach di.color, the form the render proof
   # drives the amber SMA line with). A pure-logic CommandProcessor test.
