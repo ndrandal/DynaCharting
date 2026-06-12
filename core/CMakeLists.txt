@@ -499,6 +499,19 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_uce_expr PRIVATE dc)
   add_test(NAME dc_uce_expr COMMAND dc_uce_expr)
 
+  # ENC-617a (Epic ENC-617) — AST -> WGSL codegen (the GPU backend of the
+  # expression DSL; RESEARCH §5.3: the SAME AST compiles to a WASM-CPU loop OR a
+  # WGSL body). GPU-FREE fast test: compile representative expressions with the
+  # SAME compileExpr() the CPU path uses, emit their WGSL, and assert the right
+  # intrinsics / storage-buffer loads / kernel structure (formula f32 output,
+  # filter u32 0/1 mask). The byte-identical GPU==CPU proof is the Dawn test
+  # dc_enc617a_dawn_compute_expr (built only with -DDC_FETCH_DAWN=ON).
+  add_executable(dc_enc617a_wgsl_codegen
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_enc617a_wgsl_codegen.cpp"
+  )
+  target_link_libraries(dc_enc617a_wgsl_codegen PRIVATE dc)
+  add_test(NAME dc_enc617a_wgsl_codegen COMMAND dc_enc617a_wgsl_codegen)
+
   # ENC-616a (Epic ENC-616) — Transform DAG foundation: typed ColumnStore + topo
   # evaluator with per-node dirty gating (reusing ReactiveGraph) + filter/formula.
   add_executable(dc_uce_transform_dag
@@ -1757,6 +1770,21 @@ if (DC_BUILD_TESTS)
     )
     target_link_libraries(dc_uce_compute PRIVATE dc_gpu)
     add_test(NAME dc_uce_compute COMMAND dc_uce_compute)
+
+    # ENC-617a (Epic ENC-617) — GPU filter + formula BYTE-IDENTICAL to the CPU
+    # evaluator. Generalizes the ENC-591 compute spike into the reusable
+    # ComputeStage (upload columns -> dispatch a GENERATED kernel -> read back),
+    # driven by the AST->WGSL codegen (ExprWgsl). Compiles representative NUM
+    # formulas + BOOL predicates with the SAME compileExpr() the CPU path uses,
+    # runs them on the GPU, and asserts every formula output is BIT-EQUAL to
+    # static_cast<float>(evalNum) and every filter survivor set equals the CPU
+    # evalBool survivors — the §5.3 "same AST -> WASM-CPU loop OR WGSL body"
+    # promise, proven end-to-end on Dawn. Links only dc_gpu.
+    add_executable(dc_enc617a_dawn_compute_expr
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_enc617a_dawn_compute_expr.cpp"
+    )
+    target_link_libraries(dc_enc617a_dawn_compute_expr PRIVATE dc_gpu)
+    add_test(NAME dc_enc617a_dawn_compute_expr COMMAND dc_enc617a_dawn_compute_expr)
 
     # ENC-486 (P2.3) — line2d@1 + points@1 end-to-end on Dawn. Renders a line2d
     # scene and a points scene through the backend registry with DeviceKind::Dawn
