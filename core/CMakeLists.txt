@@ -469,6 +469,17 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_uce_manifest PRIVATE dc)
   add_test(NAME dc_uce_manifest COMMAND dc_uce_manifest)
 
+  # ENC-620a (Epic ENC-620) — Manifest LOAD-TIME VALIDATOR: the four §6.1 anti-
+  # nonsense checks run WITHOUT data (ref resolution; column-set + dtype inference
+  # via each transform's inferSchema; channel↔scale↔dtype↔pipeline/format matrix;
+  # DAG acyclicity + class-3→perFrame downgrade warning), returning localized,
+  # structured errors (node id + path + reason) for an AI repair loop.
+  add_executable(dc_uce_manifest_validate
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_uce_manifest_validate.cpp"
+  )
+  target_link_libraries(dc_uce_manifest_validate PRIVATE dc)
+  add_test(NAME dc_uce_manifest_validate COMMAND dc_uce_manifest_validate)
+
   # ENC-606 (P1.15) — THE PROOF: candlestick + SMA(20) from a RAW OHLC feed end to
   # end through the manifest path (PivotIngest -> trivial CPU SMA -> TimeScale x +
   # LinearScale y -> candle + line marks -> byte-exact geometry), with ZERO
@@ -557,6 +568,19 @@ if (DC_BUILD_TESTS)
   )
   target_link_libraries(dc_uce_stream_sched PRIVATE dc)
   add_test(NAME dc_uce_stream_sched COMMAND dc_uce_stream_sched)
+
+  # ENC-618b (Epic ENC-618 — layout primitives) — `sankey` / alluvial layout +
+  # cubic-bezier ribbon routing. Replaces the showcase's 208-line upstream sankey
+  # precompute with an in-engine TransformNode: node layering by longest-path depth,
+  # median-heuristic within-layer ordering, node heights ∝ throughput, and each flow
+  # routed as a SMOOTH cubic-bezier ribbon (via dc::CurveTessellator) — NOT straight
+  # quads. Covers layering/heights/ribbon-width ∝ value, well-formed (no degenerate/
+  # NaN) triangles, per-node conservation, run as a DAG node + as a class-3 global.
+  add_executable(dc_uce_sankey
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_uce_sankey.cpp"
+  )
+  target_link_libraries(dc_uce_sankey PRIVATE dc)
+  add_test(NAME dc_uce_sankey COMMAND dc_uce_sankey)
 
   # ENC-606 — regression guard for the setDrawItemStyle PRIMARY-color key wiring
   # (colorR/colorG/colorB/colorA must reach di.color, the form the render proof
