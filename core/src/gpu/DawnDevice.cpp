@@ -26,6 +26,17 @@ constexpr wgpu::BufferUsage kStreamBufferUsage =
     wgpu::BufferUsage::Vertex | wgpu::BufferUsage::Index |
     wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::CopySrc;
 
+// ENC-590 (P0.2) — usage for a compute STORAGE buffer (the WebGPU-compute
+// prerequisite; ENC-591 spike, Phases 4 & 6). Storage so a compute pipeline can
+// bind it as a read/write storage binding; CopyDst so queue.WriteBuffer (the
+// existing updateBuffer/writeBufferRange streaming path) can write it from the
+// CPU; CopySrc so readBuffer (CopyBufferToBuffer -> MapRead) can read it back.
+// Deliberately SEPARATE from kStreamBufferUsage — this is an additive second
+// path that leaves the vertex/index buffers exactly as they were.
+constexpr wgpu::BufferUsage kStorageBufferUsage =
+    wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst |
+    wgpu::BufferUsage::CopySrc;
+
 // Map a Dawn BackendType to a short human string for diagnostics/logging.
 const char* backendTypeName(wgpu::BackendType b) {
   switch (b) {
@@ -288,6 +299,40 @@ BufferHandle DawnDevice::createBuffer(std::size_t capacityBytes,
   if (initData && initBytes > 0) {
     // WriteBuffer requires the written size be a multiple of 4. The caller's
     // vertex data (pos2 = 8B/vertex, u32 indices = 4B) is already 4-aligned.
+    const std::size_t writeBytes = (initBytes + 3u) & ~std::size_t{3u};
+    queue_.WriteBuffer(buffer, 0, initData,
+                       writeBytes <= size ? writeBytes : size);
+  }
+
+  buffers_.push_back(BufferEntry{std::move(buffer), size, /*isIndex=*/false});
+  BufferHandle h;
+  h.id = static_cast<std::uint32_t>(buffers_.size());  // 1-based
+  return h;
+}
+
+// ENC-590 (P0.2) — additive STORAGE buffer creation. Byte-for-byte the same
+// shape as createBuffer above (4-byte-rounded size, optional CPU init via
+// queue.WriteBuffer), differing ONLY in the usage flags: kStorageBufferUsage
+// (Storage|CopyDst|CopySrc) instead of kStreamBufferUsage. The resulting handle
+// is a normal entry in buffers_, so updateBuffer / writeBufferRange (CPU writes)
+// and readBuffer (the map-pump readback) all operate on it unchanged. No compute
+// pipeline is built here — this only unblocks the storage-binding usage that
+// ENC-591 needs.
+BufferHandle DawnDevice::createStorageBuffer(std::size_t capacityBytes,
+                                             const void* initData,
+                                             std::size_t initBytes) {
+  // WebGPU requires buffer sizes be a multiple of 4. Round up the capacity.
+  const std::size_t size = (capacityBytes + 3u) & ~std::size_t{3u};
+
+  wgpu::BufferDescriptor bd = {};
+  bd.label = "dc_storage";
+  bd.size = size;
+  bd.usage = kStorageBufferUsage;
+  wgpu::Buffer buffer = device_.CreateBuffer(&bd);
+
+  if (initData && initBytes > 0) {
+    // WriteBuffer requires the written size be a multiple of 4; round up and
+    // clamp to the allocated capacity (the same rule as createBuffer).
     const std::size_t writeBytes = (initBytes + 3u) & ~std::size_t{3u};
     queue_.WriteBuffer(buffer, 0, initData,
                        writeBytes <= size ? writeBytes : size);

@@ -428,6 +428,13 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_uce_table PRIVATE dc)
   add_test(NAME dc_uce_table COMMAND dc_uce_table)
 
+  # ENC-593/594/595 — Table layer: pivot ingest + per-row identity + reactive dirty
+  add_executable(dc_uce_table_layer
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_uce_table_layer.cpp"
+  )
+  target_link_libraries(dc_uce_table_layer PRIVATE dc)
+  add_test(NAME dc_uce_table_layer COMMAND dc_uce_table_layer)
+
   # ENC-596 (P1.5) — Linear scale + streaming O(Δ) auto-domain
   add_executable(dc_uce_scale
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_uce_scale.cpp"
@@ -1574,6 +1581,19 @@ if (DC_BUILD_TESTS)
     )
     target_link_libraries(dc_d85_dawn_range_upload PRIVATE dc_gpu)
     add_test(NAME dc_d85_dawn_range_upload COMMAND dc_d85_dawn_range_upload)
+
+    # ENC-590 (P0.2) — Storage buffer-usage path on DawnDevice (round-trip).
+    # The compute prerequisite for the GPU-native streaming GoG project (ENC-591
+    # spike, Phases 4 & 6): an ADDITIVE DawnDevice::createStorageBuffer that
+    # creates a buffer with BufferUsage::Storage (vs the vertex/index
+    # kStreamBufferUsage). Writes known bytes from the CPU, reads them back via
+    # the existing async map-pump readback, and asserts an exact round-trip. The
+    # vertex/index path is untouched. Links only dc_gpu.
+    add_executable(dc_uce_storage
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/uce_storage_roundtrip.cpp"
+    )
+    target_link_libraries(dc_uce_storage PRIVATE dc_gpu)
+    add_test(NAME dc_uce_storage COMMAND dc_uce_storage)
 
     # ENC-486 (P2.3) — line2d@1 + points@1 end-to-end on Dawn. Renders a line2d
     # scene and a points scene through the backend registry with DeviceKind::Dawn
