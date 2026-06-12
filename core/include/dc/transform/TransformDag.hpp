@@ -42,9 +42,11 @@
 #include "dc/transform/Transform.hpp"
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace dc {
@@ -124,6 +126,28 @@ class TransformDag {
   // incremental proofs). A node not in the closure is NOT touched.
   std::vector<NodeId> evaluate();
 
+  // ----- streaming-scheduler seam (ENC-616e) --------------------------------
+  //
+  // A SCHEDULING GATE lets a streaming scheduler decide, per evaluation pass,
+  // which dirty nodes are DUE to recompute by their streaming class (class-1 every
+  // frame, class-2 on a window/hop boundary, class-3 on a throttled cadence). The
+  // gate is consulted for every node in the dirty closure; if it returns false the
+  // node is NOT due this pass: it is HELD (its dirtiness persists, re-seeded next
+  // evaluate) and its downstream is NOT closed THROUGH it (an expensive global
+  // does not force its dependents to re-run before it has itself run).
+  //
+  // The gate is purely additive: with no gate set (the default) evaluate() behaves
+  // exactly as the foundation — every dirty node runs every pass. A node the gate
+  // is never asked about (not dirty) is untouched: dirty-gating is still respected.
+  using NodeGate = std::function<bool(NodeId)>;
+  void setNodeGate(NodeGate gate) { gate_ = std::move(gate); }
+  void clearNodeGate() { gate_ = nullptr; }
+
+  // Is `node` currently HELD (dirty but deferred by the gate on the last pass)?
+  // A scheduler reads this to know a class-3 global still owes a recompute.
+  bool isHeld(NodeId node) const { return held_.count(node) > 0; }
+  std::size_t heldCount() const { return held_.size(); }
+
   // ----- introspection -------------------------------------------------------
 
   const ColumnStore& columns() const { return store_; }
@@ -174,6 +198,11 @@ class TransformDag {
   std::vector<NodeId> topoOrder_;  // transform nodes only, in eval order
   bool built_{false};
   std::string lastError_;
+
+  // Streaming-scheduler gate + the set of nodes it deferred last pass (held
+  // dirty). held_ is re-seeded into the dirty set at the top of each evaluate().
+  NodeGate gate_;
+  std::unordered_set<NodeId> held_;
 };
 
 }  // namespace dc
