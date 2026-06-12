@@ -450,6 +450,15 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_uce_encode PRIVATE dc)
   add_test(NAME dc_uce_encode COMMAND dc_uce_encode)
 
+  # ENC-605 (P1.14) — Manifest v0 parser (data / scales / coords / marks /
+  # encoding): parses a JSON manifest, applies the §6.1 typing checks, and drives
+  # the table -> scale -> encode -> mark pipeline to produce DrawItems + geometry.
+  add_executable(dc_uce_manifest
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_uce_manifest.cpp"
+  )
+  target_link_libraries(dc_uce_manifest PRIVATE dc)
+  add_test(NAME dc_uce_manifest COMMAND dc_uce_manifest)
+
   add_executable(dc_d1_3_atomic_frame
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/d1_3_atomic_frame.cpp"
   )
