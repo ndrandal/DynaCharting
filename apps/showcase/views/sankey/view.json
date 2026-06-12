@@ -3,7 +3,7 @@
   "title": "Fund-Flow Sankey — ribbon tessellation",
   "tier": "composed",
   "referenceTool": "fund-flow Sankey",
-  "blurb": "Weighted flow ribbons between two node columns — a fund-flow Sankey whose ribbons and node bars are tessellated at manifest-build time into a colored-triangle list (triGradient@1) from a flow matrix synthesized from the four symbols' volume and price drift.",
+  "blurb": "Weighted flow ribbons between two node columns — a LIVE fund-flow Sankey whose ribbons and node bars re-tessellate every frame as the flow matrix drifts: each timestep's colored-triangle geometry (triGradient@1) is replayed as an UPDATE_RANGE that overwrites the vertex buffer in place, so the flows pulse and re-route over time.",
   "datasetId": "AAPL",
   "chrome": {
     "legend": [
