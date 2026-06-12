@@ -16,7 +16,7 @@
       {"slot":"ohlc.high","requestId":"r-high","bufferId":10100,"mode":"compound","stride":24,"intraOffset":8,"slotBit":1},
       {"slot":"ohlc.low","requestId":"r-low","bufferId":10100,"mode":"compound","stride":24,"intraOffset":12,"slotBit":2},
       {"slot":"ohlc.close","requestId":"r-close","bufferId":10100,"mode":"compound","stride":24,"intraOffset":16,"slotBit":3},
-      {"slot":"sma.value","requestId":"r-sma","bufferId":10120,"mode":"compound","stride":8,"intraOffset":4,"slotBit":0},
+      {"slot":"sma.value","requestId":"r-sma","bufferId":10120,"mode":"compound","stride":16,"intraOffset":12,"slotBit":0},
       {"slot":"vol.value","requestId":"r-vol","bufferId":10130,"mode":"compound","stride":16,"intraOffset":12,"slotBit":0}
     ],
     "buffers": [
@@ -24,8 +24,9 @@
         {"intraOffset":0,"kind":"recordIndex"},
         {"intraOffset":20,"kind":"const","value":0.4}
       ]},
-      {"bufferId":10120,"stride":8,"fullMask":1,"staticFields":[
-        {"intraOffset":0,"kind":"recordIndex"}
+      {"bufferId":10120,"stride":16,"fullMask":1,"staticFields":[
+        {"intraOffset":0,"kind":"recordIndexMinusOne"},
+        {"intraOffset":8,"kind":"recordIndex"}
       ]},
       {"bufferId":10130,"stride":16,"fullMask":1,"staticFields":[
         {"intraOffset":0,"kind":"recordIndexPlusConst","value":-0.35},
