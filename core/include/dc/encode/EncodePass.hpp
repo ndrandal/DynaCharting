@@ -89,6 +89,21 @@ enum class Mark : std::uint8_t {
   // via Encoding::setColorField) into the Rect4Color instance record instead of a
   // single uniform — so weather-radar/correlation/footprint/pie render native.
   RectColor,
+  // ENC-609 (P2.2) — the per-POINT color + size scatter.
+  //   PointColor -> instancedPointColor@1  (x, y + per-row packed RGBA8 + size)
+  // One instance per row; the per-row color rides Encoding::setColorField (or the
+  // constant-color fallback) and the per-row SIZE (point diameter in pixels)
+  // resolves through the Size channel — a scatter where every dot has its own
+  // color and size, not a uniform color / 1px point.
+  PointColor,
+  // ENC-613 (P2.3) — the polar ARC / wedge mark.
+  //   Arc -> triGradient@1 (Pos2Color4) via POLAR coords
+  // A wedge spanning [theta, theta2] x [r, r2] (X=theta, Y=r, X2=theta2, Y2=r2)
+  // tessellated into a triangle fan in CLIP space (cx + r*cos theta, cy + r*sin
+  // theta) — what radial/pie/rose charts need (the affine mat3 cannot express
+  // polar). Color is the per-row uniform (packed per-vertex into the gradient
+  // format). See compileArcPolar in EncodePass.cpp.
+  Arc,
 };
 
 const char* toString(Mark m);
@@ -113,6 +128,18 @@ struct MarkSpec {
 // Resolve a (mark, lineStyle) to its MarkSpec. lineStyle is ignored for non-line
 // marks.
 MarkSpec markSpecOf(Mark mark, LineStyle lineStyle = LineStyle::Line2d);
+
+// ---------------------------------------------------------------------------
+// ENC-613 — ArcOptions: how an Arc/wedge mark is tessellated + placed in polar
+// coords. Only consulted for Mark::Arc; ignored by every other mark.
+//   * polar — the clip-space center the (angle, radius) is measured from.
+//   * segments — triangle fan segments PER UNIT of angular span (clamped to a
+//     sane min/max per wedge) controlling the smoothness of the arc edge.
+// ---------------------------------------------------------------------------
+struct ArcOptions {
+  PolarParams polar{};       // center (defaults to clip origin 0,0)
+  int segmentsPerArc{24};    // fan segments across each wedge's angular span
+};
 
 // ---------------------------------------------------------------------------
 // EncodeError — why a compile was rejected (the validateDrawItem-at-compile gate
@@ -182,11 +209,13 @@ class EncodePass {
   //
   //   geometryId / drawItemId / vertexBufferId — ids the caller pre-allocated.
   //   rowIds — optional ENC-594 identity (nullptr = no row-id threading).
+  //   arc — ENC-613 polar/tessellation options (only used for Mark::Arc).
   EncodeResult compile(Mark mark, const Encoding& enc, const TableStore& tables,
                        Id tableId, const BufferByteSource& src, Id geometryId,
                        Id drawItemId, Id vertexBufferId,
                        const RowIdentity* rowIds = nullptr,
-                       LineStyle lineStyle = LineStyle::Line2d) const;
+                       LineStyle lineStyle = LineStyle::Line2d,
+                       const ArcOptions& arc = ArcOptions{}) const;
 
   // Incremental compile: pack ONLY rows [fromRow, totalRows) and writeRange()
   // them into `store` at the correct tail offset (class-1 O(Δ)). The full-table
@@ -202,7 +231,8 @@ class EncodePass {
                            Id geometryId, Id drawItemId, Id vertexBufferId,
                            std::size_t fromRow,
                            const RowIdentity* rowIds = nullptr,
-                           LineStyle lineStyle = LineStyle::Line2d) const;
+                           LineStyle lineStyle = LineStyle::Line2d,
+                           const ArcOptions& arc = ArcOptions{}) const;
 
  private:
   PipelineCatalog catalog_;

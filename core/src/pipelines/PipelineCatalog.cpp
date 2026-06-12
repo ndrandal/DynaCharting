@@ -19,6 +19,8 @@ PipelineCatalog::PipelineCatalog() {
   reg("instancedRect",   1, VertexFormat::Rect4,    DrawMode::InstancedTriangles,  6);
   // ENC-608 (P2.1) — the keystone per-instance-color rect (Rect4Color stride).
   reg("instancedRectColor", 1, VertexFormat::Rect4Color, DrawMode::InstancedTriangles, 6);
+  // ENC-609 (P2.2) — the per-point color+size scatter (Point4Color stride).
+  reg("instancedPointColor", 1, VertexFormat::Point4Color, DrawMode::InstancedTriangles, 6);
   reg("instancedCandle", 1, VertexFormat::Candle6,  DrawMode::InstancedTriangles, 12);
   reg("textSDF",         1, VertexFormat::Glyph8,  DrawMode::InstancedTriangles,  6);
   reg("lineAA",          1, VertexFormat::Rect4,  DrawMode::InstancedTriangles,  6);

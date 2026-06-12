@@ -22,7 +22,17 @@ enum class VertexFormat : std::uint8_t {
   // Generalizes Candle6's per-instance multi-channel proof so ~4 walled views
   // (weather-radar / correlation / footprint / pie) collapse to native with
   // ZERO compute. See DawnInstancedRectColorBackend + EncodePass Mark::RectColor.
-  Rect4Color = 8
+  Rect4Color = 8,
+  // ENC-609 (P2.2) — the per-POINT color+size scatter format. 16 bytes:
+  //   vec2 f32 position (x,y)       @ 0  (8B)
+  //   RGBA8  packed color           @ 8  (4B, Unorm8x4)
+  //   f32    size (point diameter,  @ 12 (4B; pixels — quad half-extent)
+  //          in pixels)
+  // The per-point sibling of Rect4Color: one instanced quad per point, sized in
+  // pixels (so the scatter scales with the viewport, not the affine transform)
+  // and colored from the per-instance packed RGBA8. See
+  // DawnInstancedPointColorBackend + EncodePass Mark::PointColor.
+  Point4Color = 9
 };
 
 inline const char* toString(VertexFormat f) {
@@ -35,6 +45,7 @@ inline const char* toString(VertexFormat f) {
     case VertexFormat::Pos2Color4: return "pos2_color4";
     case VertexFormat::Pos2Uv4:   return "pos2_uv4";
     case VertexFormat::Rect4Color: return "rect4_color";
+    case VertexFormat::Point4Color: return "point4_color";
     default: return "unknown";
   }
 }
@@ -49,6 +60,7 @@ inline std::uint32_t strideOf(VertexFormat f) {
     case VertexFormat::Pos2Color4: return 24;
     case VertexFormat::Pos2Uv4:   return 16;
     case VertexFormat::Rect4Color: return 24;  // rect4 (16) + rgba8 (4) + scalar/rowid lane (4)
+    case VertexFormat::Point4Color: return 16; // pos2 (8) + rgba8 (4) + size (4)
     default: return 0;
   }
 }

@@ -148,6 +148,7 @@ bool DawnSceneRenderer::init() {
   if (!reg(points_, "points@1")) return false;
   if (!reg(instRect_, "instancedRect@1")) return false;
   if (!reg(instRectColor_, "instancedRectColor@1")) return false;  // ENC-608
+  if (!reg(instPointColor_, "instancedPointColor@1")) return false;  // ENC-609
   if (!reg(instCandle_, "instancedCandle@1")) return false;
 
   // textSDF@1 / texturedQuad@1 only when their resource was supplied.
