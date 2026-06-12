@@ -53,6 +53,9 @@
 #include "dc/render/GpuDevice.hpp"
 #include "dc/gpu/DawnSceneRenderer.hpp"
 #include "dc/gpu/DawnTexturedQuadBackend.hpp"
+#include "dc/text/GlyphAtlas.hpp"
+#include "dc/text/TextLayout.hpp"
+#include "dc/scene/Geometry.hpp"
 #include "dc/debug/Stats.hpp"
 
 namespace {
@@ -132,6 +135,13 @@ public:
     // commands (createBuffer/byteLength) and inline buffer data land in ingest_
     // (the same wiring JsonHost does), keeping the render store in sync.
     cp_.setIngestProcessor(&ingest_);
+    // ENC-589 (P0.1) — attach the glyph atlas so the control-plane `ensureGlyphs`
+    // command (CommandProcessor::cmdEnsureGlyphs) can rasterize glyphs into it,
+    // mirroring JsonHost/AnnotationRenderer. The atlas size + glyph pixel height
+    // are the proven defaults from the d3_3 textSDF test.
+    atlas_.setAtlasSize(512);
+    atlas_.setGlyphPx(48);
+    cp_.setGlyphAtlas(&atlas_);
   }
 
   ~DcEngineHost() { dispose(); }
@@ -194,6 +204,88 @@ public:
     dc::TextureFormat fmt = (format == 0) ? dc::TextureFormat::R8
                                           : dc::TextureFormat::RGBA8;
     textureSource_.set(textureId, std::move(bytes), w, h, fmt);
+  }
+
+  // ---- text (textSDF@1): loadFont / setTextGeometry ---------------------
+  // ENC-589 (P0.1) — wire the SDF glyph atlas into the WASM host so a caller can
+  // actually render positioned text. The textSDF@1 pipeline + DawnTextSdfBackend +
+  // GlyphAtlas all exist, but the host never supplied an atlas (ensureRenderer
+  // passed atlas=nullptr, so textSDF@1 was skipped) and there was no host path to
+  // turn a string into the Glyph8 instance geometry the backend consumes. These
+  // two methods close that gap; everything else (scene structure: pane/layer/
+  // drawItem/buffer/geometry(glyph8)/bind textSDF@1/color) goes through the
+  // existing applyControl command plane, exactly as the d3_3 textSDF test drives
+  // the backend directly.
+
+  // Load a TTF/OTF font into the glyph atlas from a JS Uint8Array. The bytes
+  // cross the boundary the SAME way applyDataBatch/setTexturePixels marshal
+  // binary (convertJSArrayToNumberVector — NOT std::string, which UTF-8-mangles
+  // raw bytes). Must be called once before setTextGeometry. Returns true on a
+  // successful font load (stbtt parse happens lazily on first ensureGlyphs).
+  bool loadFont(emscripten::val fontBytes) {
+    std::vector<std::uint8_t> bytes =
+        emscripten::convertJSArrayToNumberVector<std::uint8_t>(fontBytes);
+    if (bytes.empty()) return false;
+    fontLoaded_ =
+        atlas_.loadFont(bytes.data(), static_cast<std::uint32_t>(bytes.size()));
+    return fontLoaded_;
+  }
+
+  // Lay out `text` at clip-space (clipX, clipY) baseline and write the resulting
+  // Glyph8 instance records (x0,y0,x1,y1,u0,v0,u1,v1 per glyph) into the render
+  // buffer `bufferId`, then set geometry `geometryId`'s vertexCount to the glyph
+  // count so the textSDF@1 DrawItem bound to it renders. The caller has already
+  // created the buffer (createBuffer) + geometry (createGeometry format:"glyph8")
+  // + drawItem (bindDrawItem textSDF@1) via applyControl; this fills the geometry.
+  //
+  // Steps mirror the d3_3 textSDF test + AxisRecipe/TooltipRecipe: rasterize the
+  // string's glyphs into the atlas (ensureGlyphs — marks it dirty so the backend
+  // re-uploads the R8 SDF texture), layout via dc::layoutText (the shared Glyph8
+  // layout helper), push the bytes straight into the render store (NOT ingest:
+  // these are CPU-computed instances, like the test's store.setCpuData), and set
+  // the vertex count. Returns the number of visible glyph instances written, or
+  // -1 if no font has been loaded.
+  int setTextGeometry(double bufferId, double geometryId, const std::string& text,
+                      double clipX, double clipY, double fontSize) {
+    if (!fontLoaded_) return -1;
+
+    // Rasterize/pack any not-yet-present glyphs (marks the atlas dirty so the
+    // textSDF backend re-uploads the R8 SDF texture on the next render).
+    std::vector<std::uint32_t> cps;
+    cps.reserve(text.size());
+    for (unsigned char ch : text) cps.push_back(static_cast<std::uint32_t>(ch));
+    if (!cps.empty()) atlas_.ensureGlyphs(cps.data(),
+                                          static_cast<std::uint32_t>(cps.size()));
+
+    // Layout the string into Glyph8 instances at the clip-space baseline.
+    dc::TextLayoutResult layout = dc::layoutText(
+        atlas_, text.c_str(), static_cast<float>(clipX),
+        static_cast<float>(clipY), static_cast<float>(fontSize),
+        static_cast<float>(atlas_.glyphPx()));
+
+    // Write the instance bytes into the render store (the bytes the
+    // DawnTextSdfBackend gathers per-glyph). Mirrors the d3_3 test's
+    // store.setCpuData; these are CPU-computed, so they bypass ingest. Because
+    // the buffer carries no ingest data, syncAllBuffers() leaves it untouched.
+    const auto id = static_cast<dc::Id>(bufferId);
+    if (layout.glyphCount > 0) {
+      store_.setCpuData(
+          id, layout.glyphInstances.data(),
+          static_cast<std::uint32_t>(layout.glyphInstances.size() *
+                                     sizeof(float)));
+    } else {
+      store_.setCpuData(id, nullptr, 0);
+    }
+
+    // Drive the geometry's vertexCount through the control plane (the textSDF
+    // backend uses geo->vertexCount as the instance count for the non-indexed
+    // path), keeping all scene mutation in CommandProcessor.
+    cp_.applyJsonText(
+        std::string(R"({"cmd":"setGeometryVertexCount","geometryId":)") +
+        std::to_string(static_cast<long long>(geometryId)) +
+        R"(,"vertexCount":)" + std::to_string(layout.glyphCount) + "}");
+
+    return layout.glyphCount;
   }
 
   // ---- render: render(w,h) -> framebuffer readback ----------------------
@@ -399,11 +491,12 @@ private:
   bool ensureRenderer() {
     if (renderer_) return true;
     // ENC-532: supply the in-memory TextureSource so texturedQuad@1 registers
-    // and can sample browser-uploaded colormap pixels (setTexturePixels). The
-    // glyph atlas (textSDF@1) is still null. The source is owned by this host
-    // and outlives the renderer; the backend holds it non-owning.
-    renderer_ = std::make_unique<dc::DawnSceneRenderer>(
-        /*atlas=*/nullptr, &textureSource_);
+    // and can sample browser-uploaded colormap pixels (setTexturePixels).
+    // ENC-589: ALSO supply the glyph atlas so textSDF@1 registers and the
+    // DawnTextSdfBackend uploads the R8 SDF atlas + renders the Glyph8 instances
+    // produced by setTextGeometry. Both resources are owned by this host and
+    // outlive the renderer; the backends hold them non-owning.
+    renderer_ = std::make_unique<dc::DawnSceneRenderer>(&atlas_, &textureSource_);
     if (!renderer_->init()) {
       renderMessage_ =
           "DawnSceneRenderer::init failed: " + renderer_->errorMessage();
@@ -431,6 +524,11 @@ private:
   // outlives renderer_ (the backend references it non-owning). Declared BEFORE
   // renderer_ so it is destroyed AFTER it.
   MemTextureSource textureSource_{};
+  // ENC-589: the SDF glyph atlas for textSDF@1. Owned here so it outlives
+  // renderer_ (the DawnTextSdfBackend references it non-owning). Declared BEFORE
+  // renderer_ so it is destroyed AFTER it, same lifetime rule as textureSource_.
+  dc::GlyphAtlas atlas_{};
+  bool fontLoaded_{false};
   std::unique_ptr<dc::DawnSceneRenderer> renderer_;
 
   std::vector<std::uint8_t> framebuffer_;
@@ -467,6 +565,8 @@ EMSCRIPTEN_BINDINGS(dc_engine_host) {
       .function("applyControl", &DcEngineHost::applyControl)
       .function("applyDataBatch", &DcEngineHost::applyDataBatch)
       .function("setTexturePixels", &DcEngineHost::setTexturePixels)
+      .function("loadFont", &DcEngineHost::loadFont)
+      .function("setTextGeometry", &DcEngineHost::setTextGeometry)
       .function("render", &DcEngineHost::render)
       .function("selfTestCompute", &DcEngineHost::selfTestCompute)
       .function("pick", &DcEngineHost::pick)

@@ -47,6 +47,27 @@ export interface DcEngineHostInstance {
     h: number,
     format: number,
   ): void;
+  /**
+   * Load a TTF/OTF font into the SDF glyph atlas (textSDF@1). Must be called
+   * once before setTextGeometry. Returns true on a successful load. (ENC-589)
+   */
+  loadFont(fontBytes: Uint8Array): boolean;
+  /**
+   * Lay out `text` at clip-space (clipX, clipY) baseline into the Glyph8 instance
+   * buffer `bufferId` and set geometry `geometryId`'s vertexCount to the glyph
+   * count, so a textSDF@1 DrawItem bound to it renders positioned text. The
+   * pane/layer/drawItem/buffer/geometry(glyph8)/bind(textSDF@1)/color scaffolding
+   * is created via applyControl first. Returns the glyph instance count written,
+   * or -1 if no font has been loaded. (ENC-589)
+   */
+  setTextGeometry(
+    bufferId: number,
+    geometryId: number,
+    text: string,
+    clipX: number,
+    clipY: number,
+    fontSize: number,
+  ): number;
   render(w: number, h: number): number | Promise<number>;
   pick(w: number, h: number, x: number, y: number): number | Promise<number>;
   dispose(): void;

@@ -48,6 +48,7 @@ public:
 
   // Parameters
   void setGlyphPx(std::uint32_t px) { glyphPx_ = px; }
+  std::uint32_t glyphPx() const { return glyphPx_; }
   void setSdfRange(std::uint32_t r) { sdfRange_ = r; }
   void setAtlasSize(std::uint32_t s);
 
