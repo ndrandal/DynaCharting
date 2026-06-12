@@ -13,6 +13,7 @@ const char* toString(Mark m) {
     case Mark::Line: return "line";
     case Mark::Rect: return "rect";
     case Mark::Candle: return "candle";
+    case Mark::RectColor: return "rectColor";
   }
   return "unknown";
 }
@@ -48,6 +49,12 @@ MarkSpec markSpecOf(Mark mark, LineStyle lineStyle) {
       // instancedRect@1 — Rect4 (x0, y0, x1, y1), one instance per row.
       return {"instancedRect@1", VertexFormat::Rect4,
               {Channel::X, Channel::Y, Channel::X2, Channel::Y2}};
+    case Mark::RectColor:
+      // ENC-608 keystone — instancedRectColor@1, Rect4Color (rect4 + packed
+      // RGBA8 + reserved scalar lane), one instance per row. Same position
+      // channels as Rect; the per-row color rides Encoding::setColorField.
+      return {"instancedRectColor@1", VertexFormat::Rect4Color,
+              {Channel::X, Channel::Y, Channel::X2, Channel::Y2}};
     case Mark::Candle:
       // instancedCandle@1 — Candle6 (x, open, high, low, close, halfWidth).
       return {"instancedCandle@1", VertexFormat::Candle6,
@@ -65,6 +72,13 @@ namespace {
 inline void pushF32(std::vector<std::uint8_t>& out, float v) {
   const auto* p = reinterpret_cast<const std::uint8_t*>(&v);
   out.insert(out.end(), p, p + sizeof(float));
+}
+
+// Append a little-endian u32 (ENC-608: the packed RGBA8 color + the reserved
+// scalar/row-id lane in the Rect4Color instance record).
+inline void pushU32(std::vector<std::uint8_t>& out, std::uint32_t v) {
+  const auto* p = reinterpret_cast<const std::uint8_t*>(&v);
+  out.insert(out.end(), p, p + sizeof(std::uint32_t));
 }
 
 // Apply the encoding's color(s) onto the draw item. Phase-1 single uniform color
@@ -115,6 +129,7 @@ bool resolveRow(Mark mark, const Encoding& enc, std::size_t row,
     case Mark::Line:
       return get(Channel::X, rv.x) && get(Channel::Y, rv.y);
     case Mark::Rect:
+    case Mark::RectColor:
       return get(Channel::X, rv.x) && get(Channel::Y, rv.y) &&
              get(Channel::X2, rv.x2) && get(Channel::Y2, rv.y2);
     case Mark::Candle:
@@ -323,6 +338,35 @@ static void compileCore(const PipelineCatalog& catalog, Mark mark,
       pushF32(out, static_cast<float>(rv.y));
       pushF32(out, static_cast<float>(rv.x2));
       pushF32(out, static_cast<float>(rv.y2));
+      ids.push_back(rowId(r));
+    }
+  } else if (mark == Mark::RectColor) {
+    // ENC-608 keystone — Rect4Color: x0, y0, x1, y1 (f32) + packed RGBA8 color
+    // (per row, pre-resolved) + reserved scalar/row-id lane (0 for now). The
+    // color is the only difference from the plain Rect packing; the scale stage
+    // pre-resolves it, so the compiler is pure copy (zero compute).
+    for (std::size_t r = packFrom; r < totalRows; ++r) {
+      RowVals rv;
+      if (!resolveRow(mark, enc, r, tables, tableId, src, rv, rowErr)) {
+        res.error = rowErr;
+        res.message = "row " + std::to_string(r) + ": " + toString(rowErr);
+        return;
+      }
+      auto rgba8 = enc.resolveColorRgba8(r, tables, tableId, src);
+      if (!rgba8) {
+        res.error = EncodeError::UnresolvableChannel;
+        res.message = "row " + std::to_string(r) + ": color column unresolvable";
+        return;
+      }
+      pushF32(out, static_cast<float>(rv.x));
+      pushF32(out, static_cast<float>(rv.y));
+      pushF32(out, static_cast<float>(rv.x2));
+      pushF32(out, static_cast<float>(rv.y2));
+      pushU32(out, *rgba8);  // per-instance packed RGBA8 (the keystone)
+      // Reserved scalar/row-id lane: 0 today. Documented in
+      // DawnInstancedRectColorBackend — a future per-instance ROW ID for picking
+      // (ENC-594) rides this lane WITHOUT a new format. Not built now.
+      pushU32(out, 0u);
       ids.push_back(rowId(r));
     }
   } else {  // Candle

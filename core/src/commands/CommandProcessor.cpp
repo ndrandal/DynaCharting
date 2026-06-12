@@ -463,6 +463,7 @@ CmdResult CommandProcessor::cmdCreateGeometry(const rapidjson::Value& obj) {
     else if (s == "pos2_alpha")  fmt = VertexFormat::Pos2Alpha;
     else if (s == "pos2_color4") fmt = VertexFormat::Pos2Color4;
     else if (s == "pos2_uv4")   fmt = VertexFormat::Pos2Uv4;
+    else if (s == "rect4_color") fmt = VertexFormat::Rect4Color;
     else {
       return fail("UNSUPPORTED_VERTEX_FORMAT",
                   "createGeometry: unknown format",

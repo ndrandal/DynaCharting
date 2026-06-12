@@ -83,6 +83,12 @@ enum class Mark : std::uint8_t {
   Line,
   Rect,
   Candle,
+  // ENC-608 (P2.1) — the KEYSTONE per-cell-colored rect.
+  //   RectColor -> instancedRectColor@1  (x, y, x2, y2 + per-row packed RGBA8)
+  // Same geometry as Rect, but the fill color resolves PER ROW (pre-packed RGBA8
+  // via Encoding::setColorField) into the Rect4Color instance record instead of a
+  // single uniform — so weather-radar/correlation/footprint/pie render native.
+  RectColor,
 };
 
 const char* toString(Mark m);

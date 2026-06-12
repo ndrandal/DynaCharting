@@ -1675,6 +1675,18 @@ if (DC_BUILD_TESTS)
     target_link_libraries(dc_d28_2_dawn_rounded_rect PRIVATE dc_gpu)
     add_test(NAME dc_d28_2_dawn_rounded_rect COMMAND dc_d28_2_dawn_rounded_rect)
 
+    # ENC-608 (P2.1) — instancedRectColor@1 (THE KEYSTONE per-instance color) on
+    # Dawn. Renders a grid of FOUR quadrant rects, each a DIFFERENT packed-RGBA8
+    # color, in ONE instanced draw through the backend registry with
+    # DeviceKind::Dawn into the headless DawnDevice, reads back, and asserts each
+    # quadrant shows ITS OWN color and the four are mutually DISTINCT (proving
+    # per-instance, not a single uniform color). Links only dc_gpu.
+    add_executable(dc_enc608_dawn_rect_color
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/d_enc608_dawn_rect_color.cpp"
+    )
+    target_link_libraries(dc_enc608_dawn_rect_color PRIVATE dc_gpu)
+    add_test(NAME dc_enc608_dawn_rect_color COMMAND dc_enc608_dawn_rect_color)
+
     # ENC-491 (P2.8) — texturedQuad@1 + TextureManager on Dawn. Exercises the new
     # DawnDevice texture/sampler support (createTexture RGBA8Unorm +
     # queue.WriteTexture + sampler + the texture/sampler bind-group entries) and

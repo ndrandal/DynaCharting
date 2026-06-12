@@ -180,6 +180,10 @@ enum class IndexFormat : std::uint8_t {
 /// wgpu::VertexFormat (e.g. Float32x2).
 enum class VertexComponentType : std::uint8_t {
   Float32 = 0,
+  // ENC-608 (P2.1): 4 normalized u8 components packed in 4 bytes (RGBA8 ->
+  // vec4<f32> 0..1 in WGSL). WebGPU: wgpu::VertexFormat::Unorm8x4. Used by the
+  // instancedRectColor@1 per-instance color attribute (the keystone mark).
+  Unorm8x4 = 1,
 };
 
 /// Texture pixel format for create/upload. GL: R8 (glyph atlas, single-channel
