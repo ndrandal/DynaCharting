@@ -505,6 +505,24 @@ if (DC_BUILD_TESTS)
   )
   target_link_libraries(dc_uce_transform_bas PRIVATE dc)
   add_test(NAME dc_uce_transform_bas COMMAND dc_uce_transform_bas)
+  # ENC-616d (Epic ENC-616) — relational join/lookup transform: edge-endpoint
+  # resolution (the prerequisite for ALL edge-bearing charts — node-link/sankey/
+  # chord). Binary DAG node hashing the right table by key, multi-key lookups,
+  # miss policy, fail-fast key-dtype typing, right-side dirty recompute.
+  add_executable(dc_uce_join
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_uce_join.cpp"
+  )
+  target_link_libraries(dc_uce_join PRIVATE dc)
+  add_test(NAME dc_uce_join COMMAND dc_uce_join)
+  # ENC-616c (Epic ENC-616) — Transform tier: stack + window/rolling + sample/LOD.
+  # stack cumulative band + offset modes + the class-3/4 baseline-policy rejection;
+  # window rolling mean/sum/min/max + EMA (via core/math/Ema.cpp); sample M4/min-max
+  # LOD reduces to budget while preserving extremes. All run as DAG nodes.
+  add_executable(dc_uce_transform_swl
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_uce_transform_swl.cpp"
+  )
+  target_link_libraries(dc_uce_transform_swl PRIVATE dc)
+  add_test(NAME dc_uce_transform_swl COMMAND dc_uce_transform_swl)
 
   # ENC-606 — regression guard for the setDrawItemStyle PRIMARY-color key wiring
   # (colorR/colorG/colorB/colorA must reach di.color, the form the render proof

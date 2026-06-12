@@ -80,6 +80,16 @@ class TransformDag {
   bool addTransform(NodeId nodeId, NodeId inputNode,
                     std::unique_ptr<TransformNode> transform);
 
+  // Add a BINARY (relational JOIN) node `nodeId` reading a LEFT input (`leftNode`,
+  // the edges/rows being resolved) and a RIGHT input (`rightNode`, the lookup
+  // table). `transform->arity()` must be 2 (a JoinTransform). The output schema is
+  // inferSchemaBinary(left, right), validated fail-fast here. BOTH inputs are wired
+  // for dirty-gating: the join recomputes when EITHER side's key/columns change
+  // (RESEARCH §5.1 "recompute on key change"). Fails (false + lastError()) on an
+  // unknown input, an existing nodeId, a non-binary transform, or a typing reject.
+  bool addJoin(NodeId nodeId, NodeId leftNode, NodeId rightNode,
+               std::unique_ptr<TransformNode> transform);
+
   // Finalize: topo-sort (rejects cycles). Must be called after the last
   // addTransform and before evaluate(). Returns false + lastError() on a cycle.
   bool build();
@@ -133,7 +143,8 @@ class TransformDag {
     NodeId id{kInvalidId};
     Kind kind{Kind::Source};
     Id tableId{kInvalidId};                 // Source only
-    NodeId input{kInvalidId};               // Transform only
+    NodeId input{kInvalidId};               // Transform: LEFT input
+    NodeId rightInput{kInvalidId};          // Join only: RIGHT input
     std::unique_ptr<TransformNode> transform;  // Transform only
     ColumnSchema schema;                    // output schema of this node
     std::vector<NodeId> dependents;         // nodes that read THIS node
