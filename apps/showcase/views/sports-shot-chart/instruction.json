@@ -1,7 +1,7 @@
 {
   "id": "showcase-sports-shot-chart",
   "sessionId": "showcase",
-  "note": "STATIC computed view — no live subscriptions. Shot positions, outcomes, and the court lines are synthesized deterministically and baked into manifest.ts uploads at build time; there is no capture/embassy path. This stub exists only to satisfy the per-view directory contract.",
+  "note": "Synthesized (no live embassy subscriptions). Shot positions + made/missed outcomes are synthesized deterministically, then records.gen.mjs spreads them over a ~20s clock into records.json APPEND frames that the replay engine streams into the growing shot buffer (501); the court lines (500) stay a static manifest upload. This stub exists only to satisfy the per-view directory contract — there is no capture/embassy path.",
   "subscriptions": [],
   "visualization": { "recipe": "showcase-explicit-v1", "bindings": [], "buffers": [] }
 }

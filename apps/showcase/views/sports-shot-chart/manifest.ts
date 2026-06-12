@@ -1,39 +1,53 @@
 /* apps/showcase/views/sports-shot-chart/manifest.ts
  *
- * CROSS-DOMAIN view (ENC-538 / T4.6) — "NBA shot chart".
+ * CROSS-DOMAIN view (ENC-538 / T4.6) — "NBA shot chart", now LIVE (ENC-573).
  *
- * A STATIC computed view: a half-court basketball shot chart. Shot (x, y)
- * positions + a made/missed outcome are synthesized deterministically at
- * manifest-build time (clustered into realistic zones: rim, paint, mid-range,
- * three-point arc, corner 3s), then rendered as colored markers — GREEN for made,
- * RED for missed — with the court lines drawn underneath. No live data path
- * (no capture/embassy).
+ * A half-court basketball shot chart that REPLAYS a game: made (green) and missed
+ * (red) shot markers ACCUMULATE over a ~20s timeline (a few early, the cloud
+ * thickening as the game progresses) instead of being baked all at once. The
+ * court lines stay STATIC (a one-time line2d@1 upload) underneath the streaming
+ * markers.
  *
- * MARKERS: the brief calls for points@1 (pos2_clip), but points@1 on WebGPU is a
- * 1px PointList with no size control (di.pointSize is ignored — see
- * DawnPointsBackend), so single-pixel dots would be invisible at gallery scale.
- * To keep the chart legible we draw each shot as a small SQUARE via
- * `instancedRect@1` (rect4: x0,y0,x1,y1) — one draw item per outcome so each gets
- * its own uniform color. Two scatter clouds, same geometric idea as a points
- * scatter, just visible. COURT LINES use `line2d@1` static uploads (LineList
- * segment pairs). Everything is authored directly in CLIP space (no transform).
+ * STREAMING MARKERS (triGradient@1 / pos2_color4). Every shot — made (green) AND
+ * missed (red) — streams into ONE buffer over the replay timeline (records.json,
+ * built by records.gen.mjs), and ALL shots accumulate together.
+ *
+ * Why one buffer of colored TRIANGLES (not two rect4 clouds): a shot chart needs
+ * BOTH colors to accumulate live, but instancedRect@1 (rect4) carries ONE uniform
+ * color per draw item, so two colors would need two buffers — and the replay
+ * engine's GrowthSync advances only ONE buffer per view (see
+ * candle-overlays/manifest.ts: "GrowthSync advances only ONE buffer per view";
+ * empirically a second instancedRect stream FROZE while the first grew). So each
+ * shot is instead a small COLORED QUAD via `triGradient@1` (pos2_color4 =
+ * x,y,r,g,b,a per vertex, 2 triangles = 6 verts/shot) with the made/missed color
+ * baked into the vertices. One buffer, one draw item, one GrowthSync — both
+ * colors accumulate.
+ *
+ * GROWTH — the replay engine's `growth` descriptor advances the geometry's
+ * vertexCount + rebind as bytes land (ENC-558). For pos2_color4 the growth
+ * `stride` is ONE VERTEX (24B), so vertexCount = floor(byteLength/24) tracks the
+ * total streamed vertices (6 per shot) exactly.
+ *
+ * COURT LINES use `line2d@1` STATIC uploads (LineList segment pairs), drawn first,
+ * underneath the markers — these stay baked (a static manifest upload is fine
+ * alongside the streaming marker buffer). Everything is authored directly in CLIP
+ * space, so the bake transform is the identity framing for the court extent.
  */
 
 import type { SceneManifest } from '../../src/scene/commands';
+import type { GrowthSync } from '../../src/engine/useReplay';
 
 // --- structural IDs (local to this view; scene is reset between views) ---
 const PANE = 100;
 const LAYER = 101;
 
 const COURT_BUFFER = 500;
-const MADE_BUFFER = 501;
-const MISS_BUFFER = 502;
+const SHOT_BUFFER = 501; // pos2_color4 triangles — the one streaming marker buffer
 const COURT_GEOMETRY = 200;
-const MADE_GEOMETRY = 201;
-const MISS_GEOMETRY = 202;
+const SHOT_GEOMETRY = 201;
 const COURT_DRAWITEM = 300;
-const MADE_DRAWITEM = 301;
-const MISS_DRAWITEM = 302;
+const SHOT_DRAWITEM = 301;
+const TRANSFORM = 150; // identity framing (markers + court already authored in clip space)
 
 // Court line segments (line2d@1 LineList = pos2_clip pairs). 252 vertices.
 const COURT: number[] = [
@@ -103,6 +117,7 @@ const COURT: number[] = [
 ];
 
 // Made-shot markers as instancedRect rect4 (x0,y0,x1,y1) squares. 152 shots.
+// Reused VERBATIM by records.gen.mjs to build the streaming made timeline.
 const MADE: number[] = [
   0.0523, -0.5585, 0.0763, -0.5345, 0.0027, -0.5438, 0.0267, -0.5198,
   -0.0199, -0.4937, 0.0041, -0.4697, 0.0273, -0.4855, 0.0513, -0.4615,
@@ -183,6 +198,7 @@ const MADE: number[] = [
 ];
 
 // Missed-shot markers as instancedRect rect4 squares. 168 shots.
+// Reused VERBATIM by records.gen.mjs to build the streaming missed timeline.
 const MISS: number[] = [
   -0.0988, -0.5199, -0.0748, -0.4959, 0.0364, -0.5644, 0.0604, -0.5404,
   0.1023, -0.5389, 0.1263, -0.5149, -0.0664, -0.5635, -0.0424, -0.5395,
@@ -270,8 +286,11 @@ const MISS: number[] = [
   0.8322, -0.5893, 0.8562, -0.5653, -0.8339, -0.4857, -0.8099, -0.4617,
 ];
 
+void MADE;
+void MISS;
+
 export const manifest: SceneManifest = {
-  label: 'Shot chart — made/missed (half court)',
+  label: 'Shot chart — made/missed (live half court)',
   commands: [
     { cmd: 'createPane', id: PANE },
     { cmd: 'setPaneRegion', id: PANE, clipXMin: -0.97, clipXMax: 0.97, clipYMin: -0.97, clipYMax: 0.97 },
@@ -279,7 +298,12 @@ export const manifest: SceneManifest = {
     { cmd: 'setPaneClearColor', id: PANE, r: 0.10, g: 0.07, b: 0.05, a: 1 },
     { cmd: 'createLayer', id: LAYER, paneId: PANE },
 
-    // Court lines (drawn first, underneath the markers).
+    // Identity framing — markers + court are authored directly in clip space, so
+    // the bake transform maps the court extent 1:1 (sx=sy=1, tx=ty=0).
+    { cmd: 'createTransform', id: TRANSFORM },
+    { cmd: 'setTransform', id: TRANSFORM, sx: 1, sy: 1, tx: 0, ty: 0 },
+
+    // Court lines (STATIC, drawn first, underneath the streaming markers).
     { cmd: 'createBuffer', id: COURT_BUFFER, byteLength: 0 },
     { cmd: 'createGeometry', id: COURT_GEOMETRY, vertexBufferId: COURT_BUFFER, format: 'pos2_clip', vertexCount: 252 },
     { cmd: 'createDrawItem', id: COURT_DRAWITEM, layerId: LAYER },
@@ -287,24 +311,42 @@ export const manifest: SceneManifest = {
     { cmd: 'setDrawItemColor', drawItemId: COURT_DRAWITEM, r: 0.55, g: 0.45, b: 0.32, a: 1 },
     { cmd: 'setDrawItemStyle', drawItemId: COURT_DRAWITEM, lineWidth: 1, pointSize: 0 },
 
-    // Made shots (green squares).
-    { cmd: 'createBuffer', id: MADE_BUFFER, byteLength: 0 },
-    { cmd: 'createGeometry', id: MADE_GEOMETRY, vertexBufferId: MADE_BUFFER, format: 'rect4', vertexCount: 152 },
-    { cmd: 'createDrawItem', id: MADE_DRAWITEM, layerId: LAYER },
-    { cmd: 'bindDrawItem', drawItemId: MADE_DRAWITEM, pipeline: 'instancedRect@1', geometryId: MADE_GEOMETRY },
-    { cmd: 'setDrawItemStyle', drawItemId: MADE_DRAWITEM, r: 0.20, g: 0.85, b: 0.40, a: 0.95 },
-
-    // Missed shots (red squares).
-    { cmd: 'createBuffer', id: MISS_BUFFER, byteLength: 0 },
-    { cmd: 'createGeometry', id: MISS_GEOMETRY, vertexBufferId: MISS_BUFFER, format: 'rect4', vertexCount: 168 },
-    { cmd: 'createDrawItem', id: MISS_DRAWITEM, layerId: LAYER },
-    { cmd: 'bindDrawItem', drawItemId: MISS_DRAWITEM, pipeline: 'instancedRect@1', geometryId: MISS_GEOMETRY },
-    { cmd: 'setDrawItemStyle', drawItemId: MISS_DRAWITEM, r: 0.90, g: 0.30, b: 0.30, a: 0.95 },
+    // Shot markers (green made + red missed) — STREAMING: one pos2_color4 buffer
+    // grown vertex-by-vertex at replay time. Each shot is a 6-vertex colored quad
+    // (triGradient@1), color baked per vertex by records.gen.mjs. vertexCount
+    // starts at 3 (one degenerate triangle until the first shot lands; triGradient
+    // needs a multiple of 3) and the replay engine advances it to bytes/24 as
+    // vertices arrive (ENC-558).
+    { cmd: 'createBuffer', id: SHOT_BUFFER, byteLength: 0 },
+    { cmd: 'createGeometry', id: SHOT_GEOMETRY, vertexBufferId: SHOT_BUFFER, format: 'pos2_color4', vertexCount: 3 },
+    { cmd: 'createDrawItem', id: SHOT_DRAWITEM, layerId: LAYER },
+    { cmd: 'bindDrawItem', drawItemId: SHOT_DRAWITEM, pipeline: 'triGradient@1', geometryId: SHOT_GEOMETRY },
+    { cmd: 'attachTransform', drawItemId: SHOT_DRAWITEM, transformId: TRANSFORM },
   ],
-  // STATIC: court + both scatter clouds baked once (no live replay).
+  // STATIC: only the court lines are baked. The shot-marker buffer carries NO
+  // upload — it grows from records.json (records.gen.mjs) at replay time.
   uploads: [
     { bufferId: COURT_BUFFER, floats: COURT },
-    { bufferId: MADE_BUFFER, floats: MADE },
-    { bufferId: MISS_BUFFER, floats: MISS },
   ],
+};
+
+/**
+ * Growth descriptor for the replay engine (ENC-558). triGradient@1 over
+ * pos2_color4: the renderer draws geometry.vertexCount vertices and the dataplane
+ * only grows a buffer's BYTES, so vertexCount = floor(byteLength/24) is advanced
+ * (via fresh-geometry rebind) as vertices land. `stride` is ONE VERTEX (24B), so
+ * recordTotal = total streamed vertices (6 per shot) = the right vertexCount.
+ * No xAnchor — the chart is authored in clip space, so the identity TRANSFORM is
+ * preserved as-is (the controller bakes view.json.transform = identity into it).
+ */
+export const growth: GrowthSync = {
+  bufferId: SHOT_BUFFER,
+  geometryId: SHOT_GEOMETRY,
+  drawItemId: SHOT_DRAWITEM,
+  layerId: LAYER,
+  stride: 24, // pos2_color4 vertex: [x, y, r, g, b, a] = 6×f32
+  format: 'pos2_color4',
+  pipeline: 'triGradient@1',
+  transformId: TRANSFORM,
+  xField: 0,
 };
