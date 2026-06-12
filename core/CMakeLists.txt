@@ -488,6 +488,15 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_enc606_style_color_keys PRIVATE dc)
   add_test(NAME dc_enc606_style_color_keys COMMAND dc_enc606_style_color_keys)
 
+  # ENC-612 (P2) — 256x1 color-ramp LUT bytes (buildColorLut). Byte-level proof
+  # that a ColorScale ramp bakes into the exact 256x1 RGBA8 texel row the
+  # texturedQuad LUT path uploads; the Dawn render sibling is dc_enc612_dawn_lut.
+  add_executable(dc_enc612_color_lut
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_enc612_color_lut.cpp"
+  )
+  target_link_libraries(dc_enc612_color_lut PRIVATE dc)
+  add_test(NAME dc_enc612_color_lut COMMAND dc_enc612_color_lut)
+
   add_executable(dc_d1_3_atomic_frame
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/d1_3_atomic_frame.cpp"
   )
@@ -1730,6 +1739,47 @@ if (DC_BUILD_TESTS)
     )
     target_link_libraries(dc_enc613_dawn_polar_arc PRIVATE dc_gpu)
     add_test(NAME dc_enc613_dawn_polar_arc COMMAND dc_enc613_dawn_polar_arc)
+
+    # ENC-612 (P2) — 256x1 color-LUT texture on Dawn. A texturedQuad samples a
+    # 256x1 color-ramp LUT (built via buildColorLut from a ColorScale ramp) in
+    # the shader, producing a SMOOTH per-pixel blue->red gradient across the
+    # framebuffer (RESEARCH §4.2). Asserts blue/red endpoints, a genuine blend at
+    # center, a MONOTONE gradient, and non-blank. Links only dc_gpu.
+    add_executable(dc_enc612_dawn_lut
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_enc612_dawn_lut.cpp"
+    )
+    target_link_libraries(dc_enc612_dawn_lut PRIVATE dc_gpu)
+    add_test(NAME dc_enc612_dawn_lut COMMAND dc_enc612_dawn_lut)
+
+    # ENC-615 (P2) — PROOF: weather-radar HEATMAP native. A raw 4x4 magnitude grid
+    # -> SequentialColorScale -> packed per-cell RGBA8 -> EncodePass(RectColor) ->
+    # instancedRectColor@1 -> Dawn. Each cell renders ITS OWN magnitude color in
+    # ONE instanced draw (zero precompute). Links only dc_gpu.
+    add_executable(dc_enc615_dawn_heatmap_native
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_enc615_dawn_heatmap_native.cpp"
+    )
+    target_link_libraries(dc_enc615_dawn_heatmap_native PRIVATE dc_gpu)
+    add_test(NAME dc_enc615_dawn_heatmap_native COMMAND dc_enc615_dawn_heatmap_native)
+
+    # ENC-615 (P2) — PROOF: CORRELATION matrix native. A raw N×N corr grid in
+    # [-1,1] -> DivergingColorScale (fixed mid 0) -> packed RGBA8 ->
+    # EncodePass(RectColor) -> instancedRectColor@1 -> Dawn. Positive cells green,
+    # negative red, distinct + non-blank, one draw. Links only dc_gpu.
+    add_executable(dc_enc615_dawn_correlation_native
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_enc615_dawn_correlation_native.cpp"
+    )
+    target_link_libraries(dc_enc615_dawn_correlation_native PRIVATE dc_gpu)
+    add_test(NAME dc_enc615_dawn_correlation_native COMMAND dc_enc615_dawn_correlation_native)
+
+    # ENC-615 (P2) — PROOF: FOOTPRINT (price×time) native. A raw price×time volume
+    # grid -> SequentialColorScale (magma) -> packed RGBA8 ->
+    # EncodePass(RectColor) -> instancedRectColor@1 -> Dawn. Each cell its own
+    # volume color, hot vs cold distinct, one draw. Links only dc_gpu.
+    add_executable(dc_enc615_dawn_footprint_native
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_enc615_dawn_footprint_native.cpp"
+    )
+    target_link_libraries(dc_enc615_dawn_footprint_native PRIVATE dc_gpu)
+    add_test(NAME dc_enc615_dawn_footprint_native COMMAND dc_enc615_dawn_footprint_native)
 
     # ENC-606 (P1.15) — THE PROOF, RENDERED: candlestick + SMA(20) from a RAW OHLC
     # feed end to end through the manifest path (PivotIngest -> trivial CPU SMA ->
