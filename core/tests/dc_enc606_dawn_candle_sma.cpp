@@ -23,7 +23,7 @@
 
 #include "dc/gpu/DawnDevice.hpp"
 #include "dc/gpu/DawnInstancedCandleBackend.hpp"
-#include "dc/gpu/DawnLine2dBackend.hpp"
+#include "dc/gpu/DawnLineAABackend.hpp"
 
 #include "dc/render/BackendRegistry.hpp"
 #include "dc/render/IRendererBackend.hpp"
@@ -120,7 +120,7 @@ static const char* kManifest = R"JSON(
         "yHigh":{"scale":"yp","field":"high"},"yLow":{"scale":"yp","field":"low"},
         "width":{"value":0.025},
         "color":{"condition":{"value":"#26a69a"},"value":"#ef5350"} } },
-    { "id":"smaLine","type":"line","from":"ohlc","pipeline":"line2d@1",
+    { "id":"smaLine","type":"line","from":"ohlc","pipeline":"lineAA@1",
       "encoding":{ "x":{"scale":"xt","field":"t"},"y":{"scale":"yp","field":"sma20"},
         "color":{"value":"#ffb300"} } }
   ]
@@ -216,7 +216,7 @@ int main() {
               dev.backendName().c_str(), dev.adapterName().c_str());
 
   dc::DawnInstancedCandleBackend candleBe;
-  dc::DawnLine2dBackend lineBe;
+  dc::DawnLineAABackend lineBe;
   if (!candleBe.init(dev) || !lineBe.init(dev)) {
     std::fprintf(stderr, "backend init failed\n");
     return 1;
@@ -276,10 +276,12 @@ int main() {
                   candle->result.drawItem.colorDown[1],
                   candle->result.drawItem.colorDown[2]);
     requireOk(cp.applyJsonText(cmd), "candle-style");
-    // SMA line color (#ffb300 amber) from the encode.
+    // SMA line color (#ffb300 amber) from the encode, drawn THICK via lineAA@1
+    // (Rect4 quad expansion) so it reads as a visible amber band.
     std::snprintf(cmd, sizeof(cmd),
                   R"({"cmd":"setDrawItemStyle","drawItemId":4,)"
-                  R"("colorR":%f,"colorG":%f,"colorB":%f,"colorA":1})",
+                  R"("colorR":%f,"colorG":%f,"colorB":%f,"colorA":1,)"
+                  R"("lineWidth":3.0})",
                   line->result.drawItem.color[0], line->result.drawItem.color[1],
                   line->result.drawItem.color[2]);
     requireOk(cp.applyJsonText(cmd), "line-style");
@@ -316,8 +318,9 @@ int main() {
       dev.readPixel(static_cast<std::int32_t>(x), static_cast<std::int32_t>(y), p);
       const int r = p[0], g = p[1], b = p[2];
       if (r > 24 || g > 24 || b > 24) ++litPx;
-      // up candle #26a69a ~ (38,166,80): green-dominant, low red/blue.
-      if (g > 110 && r < 90 && b < 120 && g > r + 40 && g > b + 30) ++greenPx;
+      // up candle #26a69a ~ (38,166,154): green-dominant teal — green is the top
+      // channel, red is low, and (being a teal) blue is high but stays below green.
+      if (g > 110 && r < 90 && g > r + 40 && g > b + 8) ++greenPx;
       // down candle #ef5350 ~ (239,83,80): red-dominant.
       else if (r > 150 && g < 130 && b < 130 && r > g + 50 && r > b + 50) ++redPx;
       // SMA line #ffb300 ~ (255,179,0): red+green high, blue ~0.

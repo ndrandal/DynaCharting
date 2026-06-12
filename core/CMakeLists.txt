@@ -479,6 +479,15 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_uce_enc606_proof PRIVATE dc)
   add_test(NAME dc_uce_enc606_proof COMMAND dc_uce_enc606_proof)
 
+  # ENC-606 — regression guard for the setDrawItemStyle PRIMARY-color key wiring
+  # (colorR/colorG/colorB/colorA must reach di.color, the form the render proof
+  # drives the amber SMA line with). A pure-logic CommandProcessor test.
+  add_executable(dc_enc606_style_color_keys
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_enc606_style_color_keys.cpp"
+  )
+  target_link_libraries(dc_enc606_style_color_keys PRIVATE dc)
+  add_test(NAME dc_enc606_style_color_keys COMMAND dc_enc606_style_color_keys)
+
   add_executable(dc_d1_3_atomic_frame
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/d1_3_atomic_frame.cpp"
   )
