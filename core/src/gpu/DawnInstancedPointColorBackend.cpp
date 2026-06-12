@@ -82,10 +82,12 @@ fn vs_main(@builtin(vertex_index) vid : u32,
   let m = mat3x3<f32>(u.c0.xyz, u.c1.xyz, u.c2.xyz);
   let c = m * vec3<f32>(a_pos, 1.0);
 
-  // Offset the corner by ±size/2 PIXELS, converted to clip units (2 clip / view
-  // pixels). uv in [0,1] -> [-0.5,0.5] half-extent.
-  let halfPx = a_size * 0.5;
-  let offsetClip = (uv - vec2<f32>(0.5)) * (2.0 * halfPx) / u.viewport;
+  // Offset the corner by ±size/2 PIXELS. uv in [0,1] -> (uv-0.5) in [-0.5,0.5]
+  // spans the full diameter, so (uv-0.5)*a_size is the corner offset in PIXELS.
+  // Convert pixels -> clip: clip space spans 2 units across `viewport` pixels, so
+  // 1 pixel = 2/viewport clip units (the factor of 2 is essential — without it the
+  // dot renders at half the requested size).
+  let offsetClip = (uv - vec2<f32>(0.5)) * a_size * 2.0 / u.viewport;
 
   var out : VsOut;
   // Negate y (same convention as every backend) AFTER applying the pixel offset

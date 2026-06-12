@@ -166,20 +166,23 @@ int main() {
   dev.endRenderPass();
   check(calls == 1, "pointColor: 1 instanced draw call (4 instances)");
 
-  // After the WGSL y-flip, clip-top lands at framebuffer-top:
-  //   pt0 (clip TL) -> framebuffer TOP-left     -> red
-  //   pt1 (clip TR) -> framebuffer TOP-right    -> green
-  //   pt2 (clip BL) -> framebuffer BOTTOM-left  -> blue
-  //   pt3 (clip BR) -> framebuffer BOTTOM-right -> yellow
+  // The WGSL negates clip.y (same convention as every backend, incl. the proven
+  // instancedRectColor@1 keystone), so a clip-TOP point lands at framebuffer-
+  // BOTTOM. Hence the per-point centers map:
+  //   pt0 (clip TL, y=+0.5) -> framebuffer BOTTOM-left  -> red
+  //   pt1 (clip TR, y=+0.5) -> framebuffer BOTTOM-right -> green
+  //   pt2 (clip BL, y=-0.5) -> framebuffer TOP-left     -> blue
+  //   pt3 (clip BR, y=-0.5) -> framebuffer TOP-right    -> yellow
+  // Sample names below are FRAMEBUFFER positions; the variable suffix names the pt.
   std::uint8_t tl[4], tr[4], bl[4], br[4];
-  px(W / 4,     H / 4,     tl);  // top-left      -> pt0 red
-  px(3 * W / 4, H / 4,     tr);  // top-right     -> pt1 green
-  px(W / 4,     3 * H / 4, bl);  // bottom-left   -> pt2 blue
-  px(3 * W / 4, 3 * H / 4, br);  // bottom-right  -> pt3 yellow
-  std::printf("  TL(pt0) R=%u G=%u B=%u A=%u\n", tl[0], tl[1], tl[2], tl[3]);
-  std::printf("  TR(pt1) R=%u G=%u B=%u A=%u\n", tr[0], tr[1], tr[2], tr[3]);
-  std::printf("  BL(pt2) R=%u G=%u B=%u A=%u\n", bl[0], bl[1], bl[2], bl[3]);
-  std::printf("  BR(pt3) R=%u G=%u B=%u A=%u\n", br[0], br[1], br[2], br[3]);
+  px(W / 4,     3 * H / 4, tl);  // fb bottom-left  -> pt0 red
+  px(3 * W / 4, 3 * H / 4, tr);  // fb bottom-right -> pt1 green
+  px(W / 4,     H / 4,     bl);  // fb top-left     -> pt2 blue
+  px(3 * W / 4, H / 4,     br);  // fb top-right    -> pt3 yellow
+  std::printf("  pt0(fb BL) R=%u G=%u B=%u A=%u\n", tl[0], tl[1], tl[2], tl[3]);
+  std::printf("  pt1(fb BR) R=%u G=%u B=%u A=%u\n", tr[0], tr[1], tr[2], tr[3]);
+  std::printf("  pt2(fb TL) R=%u G=%u B=%u A=%u\n", bl[0], bl[1], bl[2], bl[3]);
+  std::printf("  pt3(fb TR) R=%u G=%u B=%u A=%u\n", br[0], br[1], br[2], br[3]);
 
   // Each dot reads back ITS OWN per-instance color.
   check(tl[0] > 240 && tl[1] < 16  && tl[2] < 16,  "pointColor: pt0 -> RED");
@@ -204,10 +207,10 @@ int main() {
   // (the 20px dot does NOT reach 12px out, i.e. > size/2 = 10). This only holds
   // if size is read PER POINT, not a shared uniform.
   std::uint8_t bigEdge[4], smallEdge[4];
-  // Red center is framebuffer (W/4, H/4) = (16,16). 12px right of center -> x=28.
-  px(W / 4 + 12, H / 4, bigEdge);
-  // Blue center is framebuffer (W/4, 3H/4) = (16,48). 12px right -> x=28.
-  px(W / 4 + 12, 3 * H / 4, smallEdge);
+  // Red (size 28) center is framebuffer (W/4, 3H/4) = (16,48). 12px right -> x=28.
+  px(W / 4 + 12, 3 * H / 4, bigEdge);
+  // Blue (size 20) center is framebuffer (W/4, H/4) = (16,16). 12px right -> x=28.
+  px(W / 4 + 12, H / 4, smallEdge);
   std::printf("  bigEdge(+12 from red,  size28) R=%u G=%u B=%u\n",
               bigEdge[0], bigEdge[1], bigEdge[2]);
   std::printf("  smallEdge(+12 from blue, size20) R=%u G=%u B=%u\n",

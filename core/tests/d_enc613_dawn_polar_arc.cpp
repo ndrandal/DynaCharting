@@ -13,7 +13,7 @@
 //   slice1 [pi/2, pi   ] green  -> -x,+y  quadrant
 //   slice2 [pi,   3pi/2] blue   -> -x,-y  quadrant
 //   slice3 [3pi/2,2pi  ] yellow -> +x,-y  quadrant
-// After the WGSL y-flip, clip +y lands at framebuffer-top.
+// After the WGSL y-flip (clip.y is negated), clip +y lands at framebuffer-BOTTOM.
 //
 // On this headless box the only Vulkan backend may be lavapipe (software). Force:
 //   VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json
@@ -210,7 +210,7 @@ int main() {
 
   // Sample a point well inside each quadrant slice, ~0.45 clip units from the
   // center along the slice's mid-angle, mapped clip -> framebuffer pixel (the
-  // WGSL negates y, so clip +y -> top of the framebuffer).
+  // WGSL negates y, so clip +y -> BOTTOM of the framebuffer, i.e. larger pxY).
   // Mid-angles: slice0 45deg, slice1 135deg, slice2 225deg, slice3 315deg.
   const float rr = 0.45f;
   struct Sample { float ang; const char* name; std::uint8_t exp[3]; };
@@ -225,10 +225,12 @@ int main() {
   for (int i = 0; i < 4; ++i) {
     const float cx = rr * std::cos(samples[i].ang);
     const float cy = rr * std::sin(samples[i].ang);
-    // clip -> framebuffer pixel. The WGSL negates y, so clip +y -> top of fb.
+    // clip -> framebuffer pixel. The WGSL NEGATES clip.y (same convention as the
+    // proven triSolid/triGradient/candlestick path), so a clip +y point lands at
+    // the BOTTOM of the framebuffer (larger pxY). Hence pxY grows with cy.
     const std::uint32_t pxX = static_cast<std::uint32_t>((cx + 1.0f) * 0.5f * W);
     const std::uint32_t pxY =
-        static_cast<std::uint32_t>((1.0f - (cy + 1.0f) * 0.5f) * H);
+        static_cast<std::uint32_t>((cy + 1.0f) * 0.5f * H);
     px(pxX, pxY, read[i]);
     std::printf("  %s @ pix(%u,%u) R=%u G=%u B=%u A=%u\n", samples[i].name, pxX,
                 pxY, read[i][0], read[i][1], read[i][2], read[i][3]);
