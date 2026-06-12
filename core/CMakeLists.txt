@@ -490,6 +490,20 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_uce_enc606_proof PRIVATE dc)
   add_test(NAME dc_uce_enc606_proof COMMAND dc_uce_enc606_proof)
 
+  # ENC-620b (Epic ENC-620) — FEED→FRAMES REPLAY / PROPERTY HARNESS: the AI grading
+  # oracle. A manifest is a pure function feed→frames, so replay it against an
+  # adversarial synthetic-feed corpus (empty / single / monotonic / all-equal /
+  # out-of-order / NaN / 1e5-burst) and assert invariants on the produced DrawItems
+  # + geometry BYTES (finite channels, x0≤x1 / candle ordering, positions in-pane,
+  # stride matches format, scale domain contains data, no build crash). Proves a
+  # known-good manifest passes the whole corpus and that the NaN / mis-set-domain
+  # probes are caught by the right invariant. Pure dc (no Dawn / pixels).
+  add_executable(dc_uce_replay_harness
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_uce_replay_harness.cpp"
+  )
+  target_link_libraries(dc_uce_replay_harness PRIVATE dc)
+  add_test(NAME dc_uce_replay_harness COMMAND dc_uce_replay_harness)
+
   # ENC-616a (Epic ENC-616) — Expression DSL: restricted side-effect-free grammar
   # (column refs, literals, + - * / %, comparisons, && || !, ternary, ~25 math
   # fns); parse -> typed AST -> CPU per-row eval; type errors rejected at compile.
