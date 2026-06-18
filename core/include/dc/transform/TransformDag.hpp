@@ -120,6 +120,31 @@ class TransformDag {
   // the top of evaluate(); exposed for tests.
   std::size_t syncSourceVersions();
 
+  // ----- interaction-signal inputs (ENC-624) --------------------------------
+  //
+  // Wire a transform node to react to an interaction SIGNAL (selection/hover/
+  // brush) — the §5/§6 feedback edge. The signal is a ReactiveGraph Signal-kind
+  // input keyed by `signalId`, DISTINCT from any Data input of the same numeric
+  // key, so a signal change schedules `transformNode` exactly like a source change
+  // and evaluate() recomputes it (and its downstream) through the SAME drain()/topo
+  // path — no new evaluation plumbing. Returns false (sets lastError) if the node
+  // is unknown or is a source (only transforms read signals). Callable before or
+  // after build(): signal inputs are external, they do not affect topo order.
+  bool addSignalDependency(NodeId transformNode, Id signalId);
+
+  // Mark an interaction SIGNAL dirty — call on a SignalStore mutation (or bind a
+  // SignalStore to reactive() so set()/clear() does this automatically). Schedules
+  // every transform node that registered the signal. Returns dependents scheduled.
+  std::size_t markSignalDirty(Id signalId) {
+    return reactive_.markSignalDirty(signalId);
+  }
+
+  // The DAG's ReactiveGraph — the integration seam (RESEARCH §5.2). Bind a
+  // SignalStore to it (`SignalStore store(&dag.reactive())`) so signal mutations
+  // drive transform recompute with no extra wiring.
+  ReactiveGraph& reactive() { return reactive_; }
+  const ReactiveGraph& reactive() const { return reactive_; }
+
   // Evaluate the DAG: compute the dirty-closure (dirtied sources -> reacting
   // transforms -> their downstream), then run ONLY those transform nodes in topo
   // order. Returns the list of node ids that recomputed this pass (for tests /

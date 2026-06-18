@@ -190,6 +190,24 @@ std::size_t TransformDag::markTableDirty(Id tableId) {
   return reactive_.markDirty(dataInput(tableId));
 }
 
+bool TransformDag::addSignalDependency(NodeId transformNode, Id signalId) {
+  Node* n = find(transformNode);
+  if (!n) {
+    lastError_ = "addSignalDependency: unknown node";
+    return false;
+  }
+  if (n->kind != Kind::Transform) {
+    lastError_ = "addSignalDependency: node is a source (only transforms read signals)";
+    return false;
+  }
+  // A Signal-kind input keyed by signalId — never collides with a Data input of
+  // the same numeric key. evaluate()'s drain() schedules this node when the
+  // signal is marked dirty, identically to a source change.
+  reactive_.addDependency(static_cast<DependentId>(transformNode),
+                          signalInput(signalId));
+  return true;
+}
+
 std::size_t TransformDag::markTouchedBuffers(
     const std::vector<Id>& touchedBuffers) {
   std::unordered_set<Id> touched(touchedBuffers.begin(), touchedBuffers.end());
