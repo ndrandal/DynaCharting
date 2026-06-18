@@ -458,6 +458,14 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_uce_selection_filter PRIVATE dc)
   add_test(NAME dc_uce_selection_filter COMMAND dc_uce_selection_filter)
 
+  # ENC-655 (B5b) — InteractionRuntime: a signal change re-evaluates the DAG and
+  # re-encodes each mark from its transform output (signal -> pixels loop).
+  add_executable(dc_uce_interaction_runtime
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_uce_interaction_runtime.cpp"
+  )
+  target_link_libraries(dc_uce_interaction_runtime PRIVATE dc)
+  add_test(NAME dc_uce_interaction_runtime COMMAND dc_uce_interaction_runtime)
+
   # ENC-625 (B3) — SelectionPredicate: signal -> per-row boolean column over a
   # table + conditionalColorColumn (the §6.1 conditional color encoding as data).
   add_executable(dc_uce_predicate
