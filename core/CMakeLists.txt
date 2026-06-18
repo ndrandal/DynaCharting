@@ -506,6 +506,15 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_uce_signal_binding PRIVATE dc)
   add_test(NAME dc_uce_signal_binding COMMAND dc_uce_signal_binding)
 
+  # ENC-629 (C3) — PickRouter: route a per-instance pick hit (DawnPickResult.rowId)
+  # into the SignalStore (point select / multi toggle / hover), driving the bound
+  # TransformDag nodes to recompute via the ENC-624 dirty feedback edge. Pure dc.
+  add_executable(dc_enc629_pick_router
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_enc629_pick_router.cpp"
+  )
+  target_link_libraries(dc_enc629_pick_router PRIVATE dc)
+  add_test(NAME dc_enc629_pick_router COMMAND dc_enc629_pick_router)
+
   # ENC-610/611 (P2) — Color scales: sequential + diverging numeric -> RGBA8.
   # Sequential ramp (auto-domain via RunningDomain) + diverging two-sided ramp
   # around a fixed mid + the class-4 baseline-policy rejection. Asserts the packed
