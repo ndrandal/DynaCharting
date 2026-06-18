@@ -450,6 +450,14 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_uce_signals PRIVATE dc)
   add_test(NAME dc_uce_signals COMMAND dc_uce_signals)
 
+  # ENC-625 (B3) — SelectionPredicate: signal -> per-row boolean column over a
+  # table + conditionalColorColumn (the §6.1 conditional color encoding as data).
+  add_executable(dc_uce_predicate
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_uce_predicate.cpp"
+  )
+  target_link_libraries(dc_uce_predicate PRIVATE dc)
+  add_test(NAME dc_uce_predicate COMMAND dc_uce_predicate)
+
   # ENC-624 (B2) — Signal -> TransformDag binding: a SignalStore mutation drives a
   # transform-node recompute through the DAG's ReactiveGraph (dirty-gating kept).
   add_executable(dc_uce_signal_binding
