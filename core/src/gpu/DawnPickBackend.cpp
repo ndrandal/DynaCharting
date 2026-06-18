@@ -26,6 +26,28 @@ const float* resolveTransform(const DrawItem& di, const Scene& scene) {
   return t ? t->mat3 : kIdentityMat3;
 }
 
+// ENC-653 (C2c): the 2nd pick pass numbers instances in GATHERED (draw) order. For
+// a D26-indexed instanced geometry the gather repacks records (scratch[i] ==
+// record[index[i]]), so a gathered index must be mapped back THROUGH the index
+// buffer to the ORIGINAL record index before it indexes the PickInstanceTable —
+// whose ids are EncodeResult::instanceRowIds, in record/emit order. Non-indexed
+// geometry (the EncodePass path) is the identity, so this is a no-op there.
+std::int32_t toOriginalInstanceIndex(const Scene& scene, CpuBufferStore& gpu,
+                                     const DrawItem& di,
+                                     std::int32_t gatheredIdx) {
+  if (gatheredIdx < 0) return gatheredIdx;
+  const Geometry* geo = scene.getGeometry(di.geometryId);
+  if (!geo || geo->indexBufferId == 0 || geo->indexCount == 0) return gatheredIdx;
+  if (static_cast<std::uint32_t>(gatheredIdx) >= geo->indexCount) return gatheredIdx;
+  const std::uint8_t* idx = gpu.getCpuData(geo->indexBufferId);
+  const std::uint32_t idxBytes = gpu.getCpuDataSize(geo->indexBufferId);
+  if (!idx) return gatheredIdx;
+  const std::size_t off = static_cast<std::size_t>(gatheredIdx) * 4u;
+  if (off + 4u > idxBytes) return gatheredIdx;
+  return static_cast<std::int32_t>(
+      reinterpret_cast<const std::uint32_t*>(idx)[gatheredIdx]);
+}
+
 // True for the non-instanced "flat" pick pipelines (pos2 geometry, drawn as
 // triangles/lines/points but always with the id color). Mirrors GL drawPick's
 // first branch.
@@ -932,7 +954,12 @@ DawnPickResult DawnPickBackend::renderPick(GpuDevice& device, const Scene& scene
                                     (static_cast<std::uint32_t>(ipx[1]) << 8) |
                                     (static_cast<std::uint32_t>(ipx[2]) << 16);
           if (enc != 0) {
-            result.instanceIndex = static_cast<std::int32_t>(enc) - 1;
+            // enc-1 is the GATHERED (draw-order) instance; map it back to the
+            // original record index so it indexes the C1 table consistently
+            // (ENC-653 — identity for the non-indexed EncodePass path).
+            const std::int32_t gathered = static_cast<std::int32_t>(enc) - 1;
+            result.instanceIndex =
+                toOriginalInstanceIndex(scene, gpu, *hit, gathered);
           }
         }
       }
