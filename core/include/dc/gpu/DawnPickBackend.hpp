@@ -24,6 +24,11 @@
 //   pickLineAA     — lineAA@1
 //   textSDF@1 is NOT pickable (matches GL — text has no pick variant).
 //
+// ENC-652 (C2a) adds the per-instance-color marks (the ones that need picking most
+// — a treemap/correlation grid or a scatter is one DrawItem of many instances):
+//   pickInstRectColor  — instancedRectColor@1   (Rect4Color, 24B; rect4 lane only)
+//   pickInstPointColor — instancedPointColor@1  (Point4Color, 16B; pos2 + size)
+//
 // The geometry gather mirrors each visible backend (D26 indexed-instance gather
 // into a scratch buffer for the instanced pipelines; per-vertex stride skipping
 // for the flat pos2 attribute of triAA/triGradient).
@@ -101,6 +106,13 @@ class DawnPickBackend {
   PipelineHandle pickInstRect_{};
   PipelineHandle pickInstCandle_{};
   PipelineHandle pickLineAA_{};
+  // ENC-652 (C2a): per-instance-color marks (treemap/correlation rects, scatter
+  // points). Same geometry as pickInstRect_/the point scatter but a 24B Rect4Color
+  // / 16B Point4Color instance stride (the color + reserved lanes are skipped), so
+  // they need their own pipelines (distinct vertex strides) even though the rect
+  // pick shader is shared with pickInstRect_.
+  PipelineHandle pickInstRectColor_{};
+  PipelineHandle pickInstPointColor_{};
 
   // Per-geometry scratch GPU buffers for the pick draw, keyed by geometryId.
   // The flat path uploads the raw pos2-strided vertex buffer; the instanced

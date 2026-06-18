@@ -169,6 +169,43 @@ fn vs_main(@builtin(vertex_index) vid : u32,
 fn fs_main() -> @location(0) vec4<f32> { return u.color; }
 )WGSL";
 
+// pickInstPointColor: per-instance Point4Color (16B = pos2 8 + rgba8 4 + size 4).
+// Mirrors DawnInstancedPointColorBackend's vertex stage — a fixed-PIXEL quad
+// centered on the transformed point (offset ±size/2 px via the viewport) — but
+// drops the per-instance color (loc 1) and writes the flat id color instead, so
+// the pick footprint matches the visible dot exactly. The color/RGBA8 lane (the
+// record's bytes 8..11) is simply not read: a_pos is loc 0 @0, a_size is loc 1 @12.
+const char* kPickInstPointColorWgsl = R"WGSL(
+struct U {
+  c0:vec4<f32>, c1:vec4<f32>, c2:vec4<f32>,
+  color:vec4<f32>,     // float 12 (the id color)
+  viewport:vec2<f32>,  // float 16 (pixel width/height, for the dot's pixel size)
+  _pad:vec2<f32>,
+};
+@group(0) @binding(0) var<uniform> u : U;
+@vertex
+fn vs_main(@builtin(vertex_index) vid : u32,
+           @location(0) a_pos : vec2<f32>,
+           @location(1) a_size : f32) -> @builtin(position) vec4<f32> {
+  let v = vid % 6u;
+  var uv : vec2<f32>;
+  if (v == 0u)      { uv = vec2<f32>(0.0, 0.0); }
+  else if (v == 1u) { uv = vec2<f32>(1.0, 0.0); }
+  else if (v == 2u) { uv = vec2<f32>(0.0, 1.0); }
+  else if (v == 3u) { uv = vec2<f32>(0.0, 1.0); }
+  else if (v == 4u) { uv = vec2<f32>(1.0, 0.0); }
+  else              { uv = vec2<f32>(1.0, 1.0); }
+  let m = mat3x3<f32>(u.c0.xyz, u.c1.xyz, u.c2.xyz);
+  let c = m * vec3<f32>(a_pos, 1.0);
+  // ±size/2 pixels -> clip units (clip spans 2 across `viewport` px). Matches the
+  // visible point shader so the pickable footprint is the same fixed-pixel dot.
+  let offsetClip = (uv - vec2<f32>(0.5)) * a_size * 2.0 / u.viewport;
+  return vec4<f32>(c.x + offsetClip.x, -(c.y) + offsetClip.y, 0.0, 1.0);
+}
+@fragment
+fn fs_main() -> @location(0) vec4<f32> { return u.color; }
+)WGSL";
+
 PipelineHandle makeFlatPipeline(GpuDevice& device, const char* wgsl,
                                 const char* name) {
   VertexAttribute attr;
@@ -193,14 +230,17 @@ PipelineHandle makeFlatPipeline(GpuDevice& device, const char* wgsl,
 }
 
 PipelineHandle makeRect4Pipeline(GpuDevice& device, const char* wgsl,
-                                 const char* name, std::size_t uniformBytes) {
+                                 const char* name, std::size_t uniformBytes,
+                                 std::uint32_t strideBytes = 16) {
   VertexAttribute attr;
   attr.location = 0;
   attr.componentCount = 4;
   attr.type = VertexComponentType::Float32;
   attr.offsetBytes = 0;
   VertexBufferLayout layout;
-  layout.strideBytes = 16;  // rect4 / first 16B of pos2uv4
+  // rect4 (16B), first 16B of pos2uv4 (16B), or the rect4 lane of a wider
+  // Rect4Color record (24B) — only the leading vec4 is read either way.
+  layout.strideBytes = strideBytes;
   layout.stepInstance = true;
   layout.attributes = &attr;
   layout.attributeCount = 1;
@@ -223,6 +263,13 @@ bool DawnPickBackend::init(GpuDevice& device) {
 
   pickInstRect_ = makeRect4Pipeline(device, kPickInstRectWgsl, "pickInstRect",
                                     /*uniformBytes*/ 64);
+
+  // ENC-652 (C2a): instancedRectColor@1 reuses the rect pick shader (only the
+  // leading rect4 vec4 is read) but with the 24B Rect4Color stride so the color +
+  // reserved lanes are stepped over.
+  pickInstRectColor_ = makeRect4Pipeline(device, kPickInstRectWgsl,
+                                         "pickInstRectColor",
+                                         /*uniformBytes*/ 64, /*stride*/ 24);
 
   // pickLineAA: rect4-strided instance (segment endpoints); 96-byte uniform
   // block (reuses the lineAA tail layout for lineWidth/aaWidth).
@@ -258,8 +305,39 @@ bool DawnPickBackend::init(GpuDevice& device) {
     pickInstCandle_ = device.createPipeline(desc);
   }
 
+  // ENC-652 (C2a): instancedPointColor@1 — Point4Color (16B), two attributes
+  // (a_pos vec2 @0, a_size f32 @12; the RGBA8 color lane @8 is skipped). 80-byte
+  // uniform block (mat3 + id color + viewport, matching the visible point shader).
+  {
+    VertexAttribute attrs[2];
+    attrs[0].location = 0;
+    attrs[0].componentCount = 2;
+    attrs[0].type = VertexComponentType::Float32;
+    attrs[0].offsetBytes = 0;
+    attrs[1].location = 1;
+    attrs[1].componentCount = 1;
+    attrs[1].type = VertexComponentType::Float32;
+    attrs[1].offsetBytes = 12;
+    VertexBufferLayout layout;
+    layout.strideBytes = 16;  // Point4Color
+    layout.stepInstance = true;
+    layout.attributes = attrs;
+    layout.attributeCount = 2;
+    PipelineDesc desc;
+    desc.debugName = "pickInstPointColor";
+    desc.vertexSource = kPickInstPointColorWgsl;
+    desc.vertexBuffers = &layout;
+    desc.vertexBufferCount = 1;
+    desc.topology = PrimitiveTopology::Triangles;
+    desc.blend = DeviceBlendMode::Normal;
+    desc.clip = ClipMode::None;
+    desc.uniformBytes = 80;
+    pickInstPointColor_ = device.createPipeline(desc);
+  }
+
   return pickFlat_.valid() && pickInstRect_.valid() &&
-         pickInstCandle_.valid() && pickLineAA_.valid();
+         pickInstCandle_.valid() && pickLineAA_.valid() &&
+         pickInstRectColor_.valid() && pickInstPointColor_.valid();
 }
 
 DawnPickBackend::GeoBuffers& DawnPickBackend::ensureGeoBuffers(
@@ -315,6 +393,10 @@ DawnPickBackend::GeoBuffers& DawnPickBackend::ensureGeoBuffers(
       // the visible backends.
       std::uint32_t recStride = 16;  // rect4 / pos2uv4 first 16B / lineAA segment
       if (di.pipeline == "instancedCandle@1") recStride = 24;  // candle6
+      // ENC-652 (C2a): the per-instance-color records carry extra lanes; gather the
+      // FULL record (the pick pipeline's stride steps over color/reserved/size).
+      else if (di.pipeline == "instancedRectColor@1") recStride = 24;   // Rect4Color
+      else if (di.pipeline == "instancedPointColor@1") recStride = 16;  // Point4Color
 
       if (indexed) {
         const std::uint32_t count = geo->indexCount;
@@ -402,6 +484,69 @@ void DawnPickBackend::drawPickItem(GpuDevice& device, const Scene& scene,
     BindGroupHandle group = device.createBindGroup(bg);
     if (!group.valid()) return;
     device.bindPipeline(pickInstRect_);
+    DrawInstancedParams params;
+    params.vertexCountPerInstance = 6;
+    params.instanceCount = gb.instanceCount;
+    device.drawInstanced(group, params);
+    return;
+  }
+
+  // ENC-652 (C2a): instancedRectColor@1 — same rect pick draw as instancedRect@1,
+  // but the 24B-stride pipeline (color/reserved lanes skipped). One id-colored
+  // instanced draw of the gathered Rect4Color records.
+  if (di.pipeline == "instancedRectColor@1") {
+    if (!gb.vertexBuffer.valid() || gb.instanceCount == 0) return;
+    UniformBinding uniforms[2];
+    uniforms[0].kind = UniformBinding::Kind::Mat3;
+    uniforms[0].name = "u_transform";
+    uniforms[0].data = xform;
+    uniforms[1].kind = UniformBinding::Kind::Vec4;
+    uniforms[1].name = "u_color";
+    uniforms[1].data = idColor;
+
+    BindGroupDesc bg;
+    bg.pipeline = pickInstRectColor_;
+    bg.vertexBuffers = &gb.vertexBuffer;
+    bg.vertexBufferCount = 1;
+    bg.uniforms = uniforms;
+    bg.uniformCount = 2;
+    BindGroupHandle group = device.createBindGroup(bg);
+    if (!group.valid()) return;
+    device.bindPipeline(pickInstRectColor_);
+    DrawInstancedParams params;
+    params.vertexCountPerInstance = 6;
+    params.instanceCount = gb.instanceCount;
+    device.drawInstanced(group, params);
+    return;
+  }
+
+  // ENC-652 (C2a): instancedPointColor@1 — fixed-pixel dot footprint (needs the
+  // viewport to size the quad, exactly like the visible point shader), flat id
+  // color. The per-instance color lane is skipped by the pick vertex layout.
+  if (di.pipeline == "instancedPointColor@1") {
+    if (!gb.vertexBuffer.valid() || gb.instanceCount == 0) return;
+    const float viewport[2] = {static_cast<float>(viewW),
+                               static_cast<float>(viewH)};
+    UniformBinding uniforms[3];
+    uniforms[0].kind = UniformBinding::Kind::Mat3;
+    uniforms[0].name = "u_transform";
+    uniforms[0].data = xform;
+    uniforms[1].kind = UniformBinding::Kind::Vec4;
+    uniforms[1].name = "u_color";
+    uniforms[1].data = idColor;
+    uniforms[2].kind = UniformBinding::Kind::Vec2;
+    uniforms[2].name = "u_viewportSize";
+    uniforms[2].data = viewport;
+
+    BindGroupDesc bg;
+    bg.pipeline = pickInstPointColor_;
+    bg.vertexBuffers = &gb.vertexBuffer;
+    bg.vertexBufferCount = 1;
+    bg.uniforms = uniforms;
+    bg.uniformCount = 3;
+    BindGroupHandle group = device.createBindGroup(bg);
+    if (!group.valid()) return;
+    device.bindPipeline(pickInstPointColor_);
     DrawInstancedParams params;
     params.vertexCountPerInstance = 6;
     params.instanceCount = gb.instanceCount;

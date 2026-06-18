@@ -33,6 +33,8 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <vector>
 
 static int passed = 0;
 static int failed = 0;
@@ -53,6 +55,41 @@ static void check(bool cond, const char* name) {
     std::fprintf(stderr, "  FAIL: %s\n", name);
     ++failed;
   }
+}
+
+// Pack one Rect4Color instance (24B): rect4 f32 @0 + packed RGBA8 @16 + reserved
+// scalar/row-id lane @20. The color is irrelevant to pick (the pick pass writes a
+// flat id color) — it's set only to prove the color lane is correctly skipped.
+static void pushRectColor(std::vector<std::uint8_t>& out, float x0, float y0,
+                          float x1, float y1, std::uint32_t rgba8) {
+  auto pf = [&](float v) {
+    const auto* p = reinterpret_cast<const std::uint8_t*>(&v);
+    out.insert(out.end(), p, p + 4);
+  };
+  auto pu = [&](std::uint32_t v) {
+    const auto* p = reinterpret_cast<const std::uint8_t*>(&v);
+    out.insert(out.end(), p, p + 4);
+  };
+  pf(x0); pf(y0); pf(x1); pf(y1);
+  pu(rgba8);  // packed RGBA8 (skipped by the pick vertex layout)
+  pu(0u);     // reserved scalar/row-id lane
+}
+
+// Pack one Point4Color instance (16B): pos2 f32 @0 + packed RGBA8 @8 + f32 pixel
+// size @12. As with rects, the color lane is skipped by the pick layout.
+static void pushPointColor(std::vector<std::uint8_t>& out, float x, float y,
+                           std::uint32_t rgba8, float sizePx) {
+  auto pf = [&](float v) {
+    const auto* p = reinterpret_cast<const std::uint8_t*>(&v);
+    out.insert(out.end(), p, p + 4);
+  };
+  auto pu = [&](std::uint32_t v) {
+    const auto* p = reinterpret_cast<const std::uint8_t*>(&v);
+    out.insert(out.end(), p, p + 4);
+  };
+  pf(x); pf(y);
+  pu(rgba8);    // packed RGBA8 (skipped by the pick vertex layout)
+  pf(sizePx);   // pixel diameter
 }
 
 int main() {
@@ -227,6 +264,113 @@ int main() {
     auto rc = pick.renderPick(dev, scene, store, W, H, 2, 2, &bus);
     check(rc.drawItemId == 0, "event pick corner -> 0 (no hit)");
     check(clickCount == 0, "no GeometryClicked on a clear pick");
+  }
+
+  // -- Test 4 (ENC-652): instancedRectColor@1 is pickable. -----------------
+  // Two per-instance-color rects (LEFT id 11, RIGHT id 22), each a single-instance
+  // DrawItem, mirror Test 2 but on the 24B Rect4Color path. Proves the color +
+  // reserved lanes are stepped over and the id still decodes per DrawItem.
+  {
+    dc::Scene scene;
+    dc::ResourceRegistry reg;
+    dc::CommandProcessor cp(scene, reg);
+    dc::CpuBufferStore store;
+
+    requireOk(cp.applyJsonText(R"({"cmd":"createPane","id":1,"name":"P"})"), "pane");
+    requireOk(cp.applyJsonText(R"({"cmd":"createLayer","id":2,"paneId":1})"), "layer");
+
+    // LEFT rect id 11: clip x in [-0.8,-0.2], full height; arbitrary color.
+    requireOk(cp.applyJsonText(R"({"cmd":"createDrawItem","id":11,"layerId":2})"), "diL");
+    std::vector<std::uint8_t> left;
+    pushRectColor(left, -0.8f, -0.8f, -0.2f, 0.8f, 0xFF0000FFu);  // red
+    requireOk(cp.applyJsonText(R"({"cmd":"createBuffer","id":20,"byteLength":24})"), "bufL");
+    store.setCpuData(20, left.data(), static_cast<std::uint32_t>(left.size()));
+    requireOk(cp.applyJsonText(
+        R"({"cmd":"createGeometry","id":200,"vertexBufferId":20,"vertexCount":1,"format":"rect4_color"})"),
+        "geomL");
+    requireOk(cp.applyJsonText(
+        R"({"cmd":"bindDrawItem","drawItemId":11,"pipeline":"instancedRectColor@1","geometryId":200})"),
+        "bindL");
+    requireOk(cp.applyJsonText(
+        R"({"cmd":"setDrawItemStyle","drawItemId":11,"cornerRadius":0})"), "styleL");
+
+    // RIGHT rect id 22: clip x in [0.2,0.8], full height; different color.
+    requireOk(cp.applyJsonText(R"({"cmd":"createDrawItem","id":22,"layerId":2})"), "diR");
+    std::vector<std::uint8_t> right;
+    pushRectColor(right, 0.2f, -0.8f, 0.8f, 0.8f, 0xFF00FF00u);  // green
+    requireOk(cp.applyJsonText(R"({"cmd":"createBuffer","id":21,"byteLength":24})"), "bufR");
+    store.setCpuData(21, right.data(), static_cast<std::uint32_t>(right.size()));
+    requireOk(cp.applyJsonText(
+        R"({"cmd":"createGeometry","id":201,"vertexBufferId":21,"vertexCount":1,"format":"rect4_color"})"),
+        "geomR");
+    requireOk(cp.applyJsonText(
+        R"({"cmd":"bindDrawItem","drawItemId":22,"pipeline":"instancedRectColor@1","geometryId":201})"),
+        "bindR");
+    requireOk(cp.applyJsonText(
+        R"({"cmd":"setDrawItemStyle","drawItemId":22,"cornerRadius":0})"), "styleR");
+
+    const int yMid = H / 2;
+    auto rl = pick.renderPick(dev, scene, store, W, H, 16, yMid);
+    auto rr = pick.renderPick(dev, scene, store, W, H, 48, yMid);
+    auto rg = pick.renderPick(dev, scene, store, W, H, 32, yMid);
+    std::printf("  rectColor pick left (x=16):  id=%u (expect 11)\n", rl.drawItemId);
+    std::printf("  rectColor pick right (x=48): id=%u (expect 22)\n", rr.drawItemId);
+    std::printf("  rectColor pick gap (x=32):   id=%u (expect 0)\n", rg.drawItemId);
+    check(rl.drawItemId == 11, "instRectColor pick left -> 11");
+    check(rr.drawItemId == 22, "instRectColor pick right -> 22");
+    check(rg.drawItemId == 0, "instRectColor pick gap -> 0 (background)");
+  }
+
+  // -- Test 5 (ENC-652): instancedPointColor@1 is pickable. ----------------
+  // Two per-point-color dots (LEFT id 33, RIGHT id 44), each a fixed-pixel disc.
+  // A probe on a dot's center decodes its id; the gap between them is background.
+  // Dots are large (32px) so the centers land squarely inside the footprint.
+  {
+    dc::Scene scene;
+    dc::ResourceRegistry reg;
+    dc::CommandProcessor cp(scene, reg);
+    dc::CpuBufferStore store;
+
+    requireOk(cp.applyJsonText(R"({"cmd":"createPane","id":1,"name":"P"})"), "pane");
+    requireOk(cp.applyJsonText(R"({"cmd":"createLayer","id":2,"paneId":1})"), "layer");
+
+    // LEFT dot id 33 at clip (-0.5, 0) -> px x≈16. RIGHT dot id 44 at clip (0.5,0)
+    // -> px x≈48. y=0 -> framebuffer mid-row. 16px discs: left covers px[8,24],
+    // right px[40,56], so the x=32 gap probe is clearly background.
+    requireOk(cp.applyJsonText(R"({"cmd":"createDrawItem","id":33,"layerId":2})"), "diL");
+    std::vector<std::uint8_t> ld;
+    pushPointColor(ld, -0.5f, 0.0f, 0xFF0000FFu, 16.0f);
+    requireOk(cp.applyJsonText(R"({"cmd":"createBuffer","id":50,"byteLength":16})"), "bufL");
+    store.setCpuData(50, ld.data(), static_cast<std::uint32_t>(ld.size()));
+    requireOk(cp.applyJsonText(
+        R"({"cmd":"createGeometry","id":500,"vertexBufferId":50,"vertexCount":1,"format":"point4_color"})"),
+        "geomL");
+    requireOk(cp.applyJsonText(
+        R"({"cmd":"bindDrawItem","drawItemId":33,"pipeline":"instancedPointColor@1","geometryId":500})"),
+        "bindL");
+
+    requireOk(cp.applyJsonText(R"({"cmd":"createDrawItem","id":44,"layerId":2})"), "diR");
+    std::vector<std::uint8_t> rd;
+    pushPointColor(rd, 0.5f, 0.0f, 0xFF00FF00u, 16.0f);
+    requireOk(cp.applyJsonText(R"({"cmd":"createBuffer","id":51,"byteLength":16})"), "bufR");
+    store.setCpuData(51, rd.data(), static_cast<std::uint32_t>(rd.size()));
+    requireOk(cp.applyJsonText(
+        R"({"cmd":"createGeometry","id":501,"vertexBufferId":51,"vertexCount":1,"format":"point4_color"})"),
+        "geomR");
+    requireOk(cp.applyJsonText(
+        R"({"cmd":"bindDrawItem","drawItemId":44,"pipeline":"instancedPointColor@1","geometryId":501})"),
+        "bindR");
+
+    const int yMid = H / 2;
+    auto rl = pick.renderPick(dev, scene, store, W, H, 16, yMid);
+    auto rr = pick.renderPick(dev, scene, store, W, H, 48, yMid);
+    auto rg = pick.renderPick(dev, scene, store, W, H, 32, yMid);
+    std::printf("  pointColor pick left (x=16):  id=%u (expect 33)\n", rl.drawItemId);
+    std::printf("  pointColor pick right (x=48): id=%u (expect 44)\n", rr.drawItemId);
+    std::printf("  pointColor pick gap (x=32):   id=%u (expect 0)\n", rg.drawItemId);
+    check(rl.drawItemId == 33, "instPointColor pick left -> 33");
+    check(rr.drawItemId == 44, "instPointColor pick right -> 44");
+    check(rg.drawItemId == 0, "instPointColor pick gap -> 0 (background)");
   }
 
   std::printf("=== D29.3 Dawn picking: %d passed, %d failed ===\n",
