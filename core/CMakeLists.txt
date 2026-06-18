@@ -458,6 +458,13 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_uce_selection_filter PRIVATE dc)
   add_test(NAME dc_uce_selection_filter COMMAND dc_uce_selection_filter)
 
+  # ENC-635 (E1) — FrameClock: per-frame heartbeat driving the AnimationManager(s).
+  add_executable(dc_uce_frame_clock
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_uce_frame_clock.cpp"
+  )
+  target_link_libraries(dc_uce_frame_clock PRIVATE dc)
+  add_test(NAME dc_uce_frame_clock COMMAND dc_uce_frame_clock)
+
   # ENC-633 (D3) — BrushGesture: a drag -> interval/rect selection signal (live).
   add_executable(dc_uce_brush_gesture
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_uce_brush_gesture.cpp"
