@@ -95,11 +95,38 @@ using SignalValue =
 class SignalStore {
  public:
   SignalStore() = default;
-  explicit SignalStore(ReactiveGraph* graph) : graph_(graph) {}
+  explicit SignalStore(ReactiveGraph* graph) {
+    if (graph) graphs_.push_back(graph);
+  }
 
-  // Bind (or rebind) the ReactiveGraph that mutations notify. nullptr detaches.
-  void setGraph(ReactiveGraph* graph) { graph_ = graph; }
-  ReactiveGraph* graph() const { return graph_; }
+  // Bind exactly one ReactiveGraph (clears any existing subscribers). nullptr
+  // detaches all. Back-compat sugar over the multi-graph subscriber set below.
+  void setGraph(ReactiveGraph* graph) {
+    graphs_.clear();
+    if (graph) graphs_.push_back(graph);
+  }
+  // First subscribed graph (or nullptr) — back-compat accessor.
+  ReactiveGraph* graph() const { return graphs_.empty() ? nullptr : graphs_.front(); }
+
+  // ENC-638 (F1): cross-view fan-out. Subscribe an ADDITIONAL ReactiveGraph so a
+  // signal mutation dirties dependents in EVERY subscribed view's DAG — the basis
+  // for one shared selection driving multiple coordinated views (ViewSession).
+  // Idempotent; nullptr ignored.
+  void addGraph(ReactiveGraph* graph) {
+    if (!graph) return;
+    for (auto* g : graphs_)
+      if (g == graph) return;
+    graphs_.push_back(graph);
+  }
+  void removeGraph(ReactiveGraph* graph) {
+    for (std::size_t i = 0; i < graphs_.size(); ++i) {
+      if (graphs_[i] == graph) {
+        graphs_.erase(graphs_.begin() + static_cast<std::ptrdiff_t>(i));
+        return;
+      }
+    }
+  }
+  std::size_t graphCount() const { return graphs_.size(); }
 
   // Define (or redefine) a signal with an initial value. Marks it dirty.
   void define(Id signalId, SignalValue value);
@@ -143,11 +170,14 @@ class SignalStore {
   bool matchesValue(Id signalId, double value) const;
 
  private:
-  ReactiveGraph* graph_{nullptr};
+  std::vector<ReactiveGraph*> graphs_;
   std::unordered_map<Id, SignalValue> signals_;
 
+  // Fan the dirty mark to every subscribed view DAG (one for a single view, N for
+  // a cross-view ViewSession).
   void notify(Id signalId) {
-    if (graph_) graph_->markSignalDirty(signalId);
+    for (auto* g : graphs_)
+      if (g) g->markSignalDirty(signalId);
   }
 };
 
