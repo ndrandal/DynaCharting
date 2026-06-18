@@ -101,6 +101,15 @@ class DawnPickBackend {
                     const DrawItem& di, int viewW, int viewH,
                     const float idColor[4]);
 
+  // ENC-628 (C2b): draw ONLY `di`'s instances into the active (2nd pick) pass with
+  // each fragment emitting (instance_index + 1) as 24-bit RGB. Dispatches on
+  // di.pipeline to the matching idx* pipeline; a no-op for non-instanced or
+  // not-yet-supported pipelines (instanceIndex then stays -1, DrawItem-level pick
+  // only). Returns true if it issued an instance-index draw.
+  bool drawInstanceIndexItem(GpuDevice& device, const Scene& scene,
+                             CpuBufferStore& gpu, const DrawItem& di, int viewW,
+                             int viewH);
+
   // One pick pipeline per geometry kind (see header comment).
   PipelineHandle pickFlat_{};
   PipelineHandle pickInstRect_{};
@@ -113,6 +122,17 @@ class DawnPickBackend {
   // pick shader is shared with pickInstRect_.
   PipelineHandle pickInstRectColor_{};
   PipelineHandle pickInstPointColor_{};
+
+  // ENC-628 (C2b): per-instance-INDEX pipelines. Same vertex geometry as the
+  // matching pick pipeline above, but the fragment emits the (instance_index + 1)
+  // encoded as 24-bit RGB instead of the DrawItem id color. A second pick pass
+  // renders ONLY the hit DrawItem's instances through these, so reading the same
+  // pixel decodes the hit instance index (the +1 keeps instance 0 distinct from the
+  // cleared-to-zero background). rect16 serves instancedRect@1 / texturedQuad@1;
+  // rect24 serves instancedRectColor@1; point serves instancedPointColor@1.
+  PipelineHandle idxInstRect_{};       // stride 16 (rect4 / pos2uv4 lead)
+  PipelineHandle idxInstRectColor_{};  // stride 24 (Rect4Color)
+  PipelineHandle idxInstPointColor_{}; // stride 16 (Point4Color: pos2 + size)
 
   // Per-geometry scratch GPU buffers for the pick draw, keyed by geometryId.
   // The flat path uploads the raw pos2-strided vertex buffer; the instanced

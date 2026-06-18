@@ -206,6 +206,96 @@ fn vs_main(@builtin(vertex_index) vid : u32,
 fn fs_main() -> @location(0) vec4<f32> { return u.color; }
 )WGSL";
 
+// ---- ENC-628 (C2b): instance-INDEX shaders ---------------------------------
+//
+// Same vertex geometry as the matching pick shader, but the fragment emits
+// (instance_index + 1) as 24-bit RGB (R=low byte) instead of the DrawItem id
+// color. The +1 keeps instance 0 distinct from the cleared-to-zero background, so
+// a readback of 0 decodes to "no instance" (-1) and N>0 decodes to instance N-1.
+// The transform uniform is the only one rects/quads need; points also need the
+// viewport to reproduce the fixed-pixel dot footprint.
+
+// idxInstRect: per-instance rect4 (shared by the 16B instancedRect/texturedQuad
+// and, with a 24B stride, the Rect4Color path). Mirrors kPickInstRectWgsl's vs.
+const char* kIdxInstRectWgsl = R"WGSL(
+struct U { c0:vec4<f32>, c1:vec4<f32>, c2:vec4<f32>, };
+@group(0) @binding(0) var<uniform> u : U;
+struct VsOut {
+  @builtin(position) pos : vec4<f32>,
+  @location(0) @interpolate(flat) idx1 : u32,
+};
+@vertex
+fn vs_main(@builtin(vertex_index) vid : u32,
+           @builtin(instance_index) iid : u32,
+           @location(0) a_rect : vec4<f32>) -> VsOut {
+  let v = vid % 6u;
+  var uv : vec2<f32>;
+  if (v == 0u)      { uv = vec2<f32>(0.0, 0.0); }
+  else if (v == 1u) { uv = vec2<f32>(1.0, 0.0); }
+  else if (v == 2u) { uv = vec2<f32>(0.0, 1.0); }
+  else if (v == 3u) { uv = vec2<f32>(0.0, 1.0); }
+  else if (v == 4u) { uv = vec2<f32>(1.0, 0.0); }
+  else              { uv = vec2<f32>(1.0, 1.0); }
+  let x = mix(a_rect.x, a_rect.z, uv.x);
+  let y = mix(a_rect.y, a_rect.w, uv.y);
+  let m = mat3x3<f32>(u.c0.xyz, u.c1.xyz, u.c2.xyz);
+  let p = m * vec3<f32>(x, y, 1.0);
+  var out : VsOut;
+  out.pos = vec4<f32>(p.x, -p.y, 0.0, 1.0);
+  out.idx1 = iid + 1u;
+  return out;
+}
+@fragment
+fn fs_main(@location(0) @interpolate(flat) idx1 : u32) -> @location(0) vec4<f32> {
+  return vec4<f32>(f32(idx1 & 0xFFu) / 255.0,
+                   f32((idx1 >> 8u) & 0xFFu) / 255.0,
+                   f32((idx1 >> 16u) & 0xFFu) / 255.0, 1.0);
+}
+)WGSL";
+
+// idxInstPointColor: Point4Color fixed-pixel dot (mirrors kPickInstPointColorWgsl)
+// emitting the instance index. a_pos @0, a_size @12; the color lane @8 is skipped.
+const char* kIdxInstPointColorWgsl = R"WGSL(
+struct U {
+  c0:vec4<f32>, c1:vec4<f32>, c2:vec4<f32>,
+  _color:vec4<f32>,    // unused here; kept so u_viewportSize lands at float 16
+  viewport:vec2<f32>,
+  _pad:vec2<f32>,
+};
+@group(0) @binding(0) var<uniform> u : U;
+struct VsOut {
+  @builtin(position) pos : vec4<f32>,
+  @location(0) @interpolate(flat) idx1 : u32,
+};
+@vertex
+fn vs_main(@builtin(vertex_index) vid : u32,
+           @builtin(instance_index) iid : u32,
+           @location(0) a_pos : vec2<f32>,
+           @location(1) a_size : f32) -> VsOut {
+  let v = vid % 6u;
+  var uv : vec2<f32>;
+  if (v == 0u)      { uv = vec2<f32>(0.0, 0.0); }
+  else if (v == 1u) { uv = vec2<f32>(1.0, 0.0); }
+  else if (v == 2u) { uv = vec2<f32>(0.0, 1.0); }
+  else if (v == 3u) { uv = vec2<f32>(0.0, 1.0); }
+  else if (v == 4u) { uv = vec2<f32>(1.0, 0.0); }
+  else              { uv = vec2<f32>(1.0, 1.0); }
+  let m = mat3x3<f32>(u.c0.xyz, u.c1.xyz, u.c2.xyz);
+  let c = m * vec3<f32>(a_pos, 1.0);
+  let offsetClip = (uv - vec2<f32>(0.5)) * a_size * 2.0 / u.viewport;
+  var out : VsOut;
+  out.pos = vec4<f32>(c.x + offsetClip.x, -(c.y) + offsetClip.y, 0.0, 1.0);
+  out.idx1 = iid + 1u;
+  return out;
+}
+@fragment
+fn fs_main(@location(0) @interpolate(flat) idx1 : u32) -> @location(0) vec4<f32> {
+  return vec4<f32>(f32(idx1 & 0xFFu) / 255.0,
+                   f32((idx1 >> 8u) & 0xFFu) / 255.0,
+                   f32((idx1 >> 16u) & 0xFFu) / 255.0, 1.0);
+}
+)WGSL";
+
 PipelineHandle makeFlatPipeline(GpuDevice& device, const char* wgsl,
                                 const char* name) {
   VertexAttribute attr;
@@ -335,9 +425,47 @@ bool DawnPickBackend::init(GpuDevice& device) {
     pickInstPointColor_ = device.createPipeline(desc);
   }
 
+  // ENC-628 (C2b): instance-index pipelines. The rect index shader serves both the
+  // 16B (instancedRect/texturedQuad) and 24B (instancedRectColor) strides; the
+  // uniform is transform-only (48B).
+  idxInstRect_ = makeRect4Pipeline(device, kIdxInstRectWgsl, "idxInstRect",
+                                   /*uniformBytes*/ 48, /*stride*/ 16);
+  idxInstRectColor_ = makeRect4Pipeline(device, kIdxInstRectWgsl, "idxInstRectColor",
+                                        /*uniformBytes*/ 48, /*stride*/ 24);
+  {
+    // idxInstPointColor: Point4Color (a_pos vec2 @0, a_size f32 @12), viewport
+    // needed for the dot footprint -> 80B uniform (matches the point pick block).
+    VertexAttribute attrs[2];
+    attrs[0].location = 0;
+    attrs[0].componentCount = 2;
+    attrs[0].type = VertexComponentType::Float32;
+    attrs[0].offsetBytes = 0;
+    attrs[1].location = 1;
+    attrs[1].componentCount = 1;
+    attrs[1].type = VertexComponentType::Float32;
+    attrs[1].offsetBytes = 12;
+    VertexBufferLayout layout;
+    layout.strideBytes = 16;
+    layout.stepInstance = true;
+    layout.attributes = attrs;
+    layout.attributeCount = 2;
+    PipelineDesc desc;
+    desc.debugName = "idxInstPointColor";
+    desc.vertexSource = kIdxInstPointColorWgsl;
+    desc.vertexBuffers = &layout;
+    desc.vertexBufferCount = 1;
+    desc.topology = PrimitiveTopology::Triangles;
+    desc.blend = DeviceBlendMode::Normal;
+    desc.clip = ClipMode::None;
+    desc.uniformBytes = 80;
+    idxInstPointColor_ = device.createPipeline(desc);
+  }
+
   return pickFlat_.valid() && pickInstRect_.valid() &&
          pickInstCandle_.valid() && pickLineAA_.valid() &&
-         pickInstRectColor_.valid() && pickInstPointColor_.valid();
+         pickInstRectColor_.valid() && pickInstPointColor_.valid() &&
+         idxInstRect_.valid() && idxInstRectColor_.valid() &&
+         idxInstPointColor_.valid();
 }
 
 DawnPickBackend::GeoBuffers& DawnPickBackend::ensureGeoBuffers(
@@ -632,6 +760,83 @@ void DawnPickBackend::drawPickItem(GpuDevice& device, const Scene& scene,
   // textSDF@1 and anything else: not pickable (matches GL).
 }
 
+bool DawnPickBackend::drawInstanceIndexItem(GpuDevice& device, const Scene& scene,
+                                            CpuBufferStore& gpu, const DrawItem& di,
+                                            int viewW, int viewH) {
+  const Geometry* geo = scene.getGeometry(di.geometryId);
+  if (!geo) return false;
+
+  // Reuse the SAME gathered instance buffer the id pass built (ensureGeoBuffers is
+  // keyed by geometryId and cached), so the instance ordering the index shader sees
+  // is identical to the visible/id draw. For the encode path the geometry is
+  // non-indexed, so instance_index == record index == EncodeResult::instanceRowIds
+  // index (the C1 table key). (Manual D26-indexed geometry repacks the order; that
+  // lockstep is handled in ENC-653.)
+  GeoBuffers& gb = ensureGeoBuffers(device, scene, gpu, di);
+  if (!gb.vertexBuffer.valid() || gb.instanceCount == 0) return false;
+
+  const float* xform = resolveTransform(di, scene);
+
+  // rect-family (16B instancedRect/texturedQuad, 24B instancedRectColor): a
+  // transform-only uniform; the index pipeline differs only by vertex stride.
+  PipelineHandle rectPipe{};
+  if (di.pipeline == "instancedRect@1" || di.pipeline == "texturedQuad@1") {
+    rectPipe = idxInstRect_;
+  } else if (di.pipeline == "instancedRectColor@1") {
+    rectPipe = idxInstRectColor_;
+  }
+  if (rectPipe.valid()) {
+    UniformBinding uniforms[1];
+    uniforms[0].kind = UniformBinding::Kind::Mat3;
+    uniforms[0].name = "u_transform";
+    uniforms[0].data = xform;
+    BindGroupDesc bg;
+    bg.pipeline = rectPipe;
+    bg.vertexBuffers = &gb.vertexBuffer;
+    bg.vertexBufferCount = 1;
+    bg.uniforms = uniforms;
+    bg.uniformCount = 1;
+    BindGroupHandle group = device.createBindGroup(bg);
+    if (!group.valid()) return false;
+    device.bindPipeline(rectPipe);
+    DrawInstancedParams params;
+    params.vertexCountPerInstance = 6;
+    params.instanceCount = gb.instanceCount;
+    device.drawInstanced(group, params);
+    return true;
+  }
+
+  if (di.pipeline == "instancedPointColor@1") {
+    const float viewport[2] = {static_cast<float>(viewW),
+                               static_cast<float>(viewH)};
+    UniformBinding uniforms[2];
+    uniforms[0].kind = UniformBinding::Kind::Mat3;
+    uniforms[0].name = "u_transform";
+    uniforms[0].data = xform;
+    uniforms[1].kind = UniformBinding::Kind::Vec2;
+    uniforms[1].name = "u_viewportSize";
+    uniforms[1].data = viewport;
+    BindGroupDesc bg;
+    bg.pipeline = idxInstPointColor_;
+    bg.vertexBuffers = &gb.vertexBuffer;
+    bg.vertexBufferCount = 1;
+    bg.uniforms = uniforms;
+    bg.uniformCount = 2;
+    BindGroupHandle group = device.createBindGroup(bg);
+    if (!group.valid()) return false;
+    device.bindPipeline(idxInstPointColor_);
+    DrawInstancedParams params;
+    params.vertexCountPerInstance = 6;
+    params.instanceCount = gb.instanceCount;
+    device.drawInstanced(group, params);
+    return true;
+  }
+
+  // instancedCandle@1 / lineAA@1 and non-instanced pipelines: no per-instance index
+  // pass yet — instanceIndex stays -1 (DrawItem-level pick only).
+  return false;
+}
+
 DawnPickResult DawnPickBackend::renderPick(GpuDevice& device, const Scene& scene,
                                            CpuBufferStore& gpu, int viewW,
                                            int viewH, int pickX, int pickY,
@@ -696,10 +901,46 @@ DawnPickResult DawnPickBackend::renderPick(GpuDevice& device, const Scene& scene
                              (static_cast<std::uint32_t>(px[2]) << 16);
     result.drawItemId = id;
 
-    // ENC-627 (C1): resolve the durable source row id from the side table once a
-    // per-instance index is known. `instanceIndex` stays -1 until the ENC-628
-    // shader change supplies it, so rowId is -1 here (DrawItem-level pick only) —
-    // the wiring is in place for C2 to flip on with no further plumbing.
+    // ENC-628 (C2b): a SECOND pass resolves WHICH instance of the hit DrawItem was
+    // touched. Re-render only that DrawItem's instances into the same pick target,
+    // each fragment emitting (instance_index + 1) as 24-bit RGB, then read the SAME
+    // pixel. Decoding 0 == background (instance stays -1); N>0 == instance N-1.
+    if (id != 0) {
+      const DrawItem* hit = scene.getDrawItem(id);
+      if (hit && hit->visible && !hit->isClipSource) {
+        RenderPassDesc ipass;
+        ipass.target.id = kPickTargetId;
+        ipass.viewportWidth = static_cast<std::uint32_t>(viewW);
+        ipass.viewportHeight = static_cast<std::uint32_t>(viewH);
+        ipass.clear = true;
+        ipass.clearColor[0] = 0.0f;
+        ipass.clearColor[1] = 0.0f;
+        ipass.clearColor[2] = 0.0f;
+        ipass.clearColor[3] = 0.0f;
+        ipass.clearStencil = true;
+        device.beginRenderPass(ipass);
+        device.setBlendMode(DeviceBlendMode::Normal);
+        device.setClipState(ClipMode::None);
+        const bool drew =
+            drawInstanceIndexItem(device, scene, gpu, *hit, viewW, viewH);
+        device.endRenderPass();
+
+        if (drew) {
+          std::uint8_t ipx[4] = {0, 0, 0, 0};
+          device.readPixel(pickX, pickY, ipx);
+          const std::uint32_t enc = static_cast<std::uint32_t>(ipx[0]) |
+                                    (static_cast<std::uint32_t>(ipx[1]) << 8) |
+                                    (static_cast<std::uint32_t>(ipx[2]) << 16);
+          if (enc != 0) {
+            result.instanceIndex = static_cast<std::int32_t>(enc) - 1;
+          }
+        }
+      }
+    }
+
+    // ENC-627 (C1): resolve the durable source row id from the side table now that
+    // the per-instance index is known (ENC-628 above). -1 instanceIndex (or an
+    // unregistered DrawItem) yields -1 — DrawItem-level pick only.
     result.rowId = instanceTable_.rowIdForInstance(id, result.instanceIndex);
 
     if (id != 0 && bus) {
