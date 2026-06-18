@@ -14,6 +14,9 @@ struct HitResult {
   std::uint32_t recordIndex{0};
   double dataX{0}, dataY{0};
   double distancePx{0};
+  // ENC-627 (C1): durable source row id (RowIdentity) for a per-instance pick,
+  // or -1 when none (DrawItem-level hit / no row-id threading).
+  std::int32_t rowId{-1};
 };
 
 struct PickConfig {

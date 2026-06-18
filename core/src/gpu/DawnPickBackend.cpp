@@ -551,6 +551,12 @@ DawnPickResult DawnPickBackend::renderPick(GpuDevice& device, const Scene& scene
                              (static_cast<std::uint32_t>(px[2]) << 16);
     result.drawItemId = id;
 
+    // ENC-627 (C1): resolve the durable source row id from the side table once a
+    // per-instance index is known. `instanceIndex` stays -1 until the ENC-628
+    // shader change supplies it, so rowId is -1 here (DrawItem-level pick only) —
+    // the wiring is in place for C2 to flip on with no further plumbing.
+    result.rowId = instanceTable_.rowIdForInstance(id, result.instanceIndex);
+
     if (id != 0 && bus) {
       EventData ev;
       ev.type = EventType::GeometryClicked;
