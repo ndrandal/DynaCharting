@@ -466,6 +466,14 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_uce_predicate PRIVATE dc)
   add_test(NAME dc_uce_predicate COMMAND dc_uce_predicate)
 
+  # ENC-654 (B5a) — RenderBridge: materialize a TransformDag node's output into a
+  # TableStore so the existing encode pass renders transform/selection output.
+  add_executable(dc_uce_render_bridge
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_uce_render_bridge.cpp"
+  )
+  target_link_libraries(dc_uce_render_bridge PRIVATE dc)
+  add_test(NAME dc_uce_render_bridge COMMAND dc_uce_render_bridge)
+
   # ENC-627 (C1) — PickInstanceTable: (drawItemId, instanceIndex) -> durable row id
   # side table for per-instance picking (pure dc; ENC-628 supplies the index).
   add_executable(dc_uce_pick_instance_table
