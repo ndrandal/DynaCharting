@@ -458,6 +458,14 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_uce_selection_filter PRIVATE dc)
   add_test(NAME dc_uce_selection_filter COMMAND dc_uce_selection_filter)
 
+  # ENC-637 (E3) — per-instance transition lanes: scale instance opacity/size by the
+  # AnimationController's per-row progress.
+  add_executable(dc_uce_instance_transition
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_uce_instance_transition.cpp"
+  )
+  target_link_libraries(dc_uce_instance_transition PRIVATE dc)
+  add_test(NAME dc_uce_instance_transition COMMAND dc_uce_instance_transition)
+
   # ENC-636 (E2) — AnimationController: row-id diff -> enter/exit/update tweens.
   add_executable(dc_uce_animation_controller
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_uce_animation_controller.cpp"
