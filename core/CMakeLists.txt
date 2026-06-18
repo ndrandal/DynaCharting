@@ -458,6 +458,13 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_uce_selection_filter PRIVATE dc)
   add_test(NAME dc_uce_selection_filter COMMAND dc_uce_selection_filter)
 
+  # ENC-633 (D3) — BrushGesture: a drag -> interval/rect selection signal (live).
+  add_executable(dc_uce_brush_gesture
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_uce_brush_gesture.cpp"
+  )
+  target_link_libraries(dc_uce_brush_gesture PRIVATE dc)
+  add_test(NAME dc_uce_brush_gesture COMMAND dc_uce_brush_gesture)
+
   # ENC-638 (F1) — ViewSession cross-view linking: one shared selection signal
   # filters multiple coordinated views (linked brushing).
   add_executable(dc_uce_cross_view
