@@ -450,6 +450,14 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_uce_signals PRIVATE dc)
   add_test(NAME dc_uce_signals COMMAND dc_uce_signals)
 
+  # ENC-626 (B4) — selectionFilter transform: a signal selection DROPS or FLAGS
+  # rows through the ENC-624 feedback edge.
+  add_executable(dc_uce_selection_filter
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_uce_selection_filter.cpp"
+  )
+  target_link_libraries(dc_uce_selection_filter PRIVATE dc)
+  add_test(NAME dc_uce_selection_filter COMMAND dc_uce_selection_filter)
+
   # ENC-625 (B3) — SelectionPredicate: signal -> per-row boolean column over a
   # table + conditionalColorColumn (the §6.1 conditional color encoding as data).
   add_executable(dc_uce_predicate
