@@ -442,6 +442,14 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_uce_scale PRIVATE dc)
   add_test(NAME dc_uce_scale COMMAND dc_uce_scale)
 
+  # ENC-623 (B1) — SignalStore: typed mutable interaction signals + the
+  # ReactiveGraph dirty-notification path + selection predicate seeds.
+  add_executable(dc_uce_signals
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_uce_signals.cpp"
+  )
+  target_link_libraries(dc_uce_signals PRIVATE dc)
+  add_test(NAME dc_uce_signals COMMAND dc_uce_signals)
+
   # ENC-610/611 (P2) — Color scales: sequential + diverging numeric -> RGBA8.
   # Sequential ramp (auto-domain via RunningDomain) + diverging two-sided ramp
   # around a fixed mid + the class-4 baseline-policy rejection. Asserts the packed
