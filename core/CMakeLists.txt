@@ -458,6 +458,14 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_uce_predicate PRIVATE dc)
   add_test(NAME dc_uce_predicate COMMAND dc_uce_predicate)
 
+  # ENC-627 (C1) — PickInstanceTable: (drawItemId, instanceIndex) -> durable row id
+  # side table for per-instance picking (pure dc; ENC-628 supplies the index).
+  add_executable(dc_uce_pick_instance_table
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_uce_pick_instance_table.cpp"
+  )
+  target_link_libraries(dc_uce_pick_instance_table PRIVATE dc)
+  add_test(NAME dc_uce_pick_instance_table COMMAND dc_uce_pick_instance_table)
+
   # ENC-624 (B2) — Signal -> TransformDag binding: a SignalStore mutation drives a
   # transform-node recompute through the DAG's ReactiveGraph (dirty-gating kept).
   add_executable(dc_uce_signal_binding

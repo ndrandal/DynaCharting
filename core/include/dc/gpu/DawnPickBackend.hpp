@@ -32,6 +32,7 @@
 #include "dc/render/GpuDevice.hpp"
 #include "dc/event/EventBus.hpp"
 #include "dc/ids/Id.hpp"
+#include "dc/render/PickInstanceTable.hpp"
 
 #include <cstdint>
 #include <utility>
@@ -45,8 +46,16 @@ struct DrawItem;
 
 /// PickResult mirrors dc::PickResult in the GL Renderer: the decoded DrawItem id
 /// under the probed pixel (0 == no hit / background).
+///
+/// ENC-627 (C1): per-instance fields. `instanceIndex` is the hit instance within
+/// the DrawItem (-1 = unknown; the ENC-628 shader change supplies it for instanced
+/// marks), and `rowId` is the durable source row id resolved from the
+/// PickInstanceTable (-1 = none). Until ENC-628 both stay -1 and picking behaves
+/// exactly as before (DrawItem-level only).
 struct DawnPickResult {
   std::uint32_t drawItemId{0};
+  std::int32_t instanceIndex{-1};
+  std::int32_t rowId{-1};
 };
 
 class DawnPickBackend {
@@ -54,6 +63,16 @@ class DawnPickBackend {
   /// Build the four pick pipelines (flat / instRect / instCandle / lineAA) on the
   /// (Normal, None) variant. Returns false if any pipeline failed to compile.
   bool init(GpuDevice& device);
+
+  /// ENC-627 (C1): the per-DrawItem row-id side table. Register a DrawItem's
+  /// EncodeResult::instanceRowIds here so a per-instance pick (ENC-628) resolves
+  /// to a durable source row id. Borrowed/owned here; the caller updates it when
+  /// it (re)compiles a mark.
+  PickInstanceTable& instanceTable() { return instanceTable_; }
+  const PickInstanceTable& instanceTable() const { return instanceTable_; }
+  void setInstanceRowIds(Id drawItemId, std::vector<std::int32_t> rowIds) {
+    instanceTable_.setInstanceRowIds(drawItemId, std::move(rowIds));
+  }
 
   /// Walk the scene, render every pickable DrawItem's id-as-RGB into the pick
   /// target, read back the pixel at (pickX, pickY) and decode the id. Mirrors
@@ -96,6 +115,9 @@ class DawnPickBackend {
   std::vector<std::pair<Id, GeoBuffers>> geoBuffers_;
   GeoBuffers& ensureGeoBuffers(GpuDevice& device, const Scene& scene,
                                CpuBufferStore& gpu, const DrawItem& di);
+
+  // ENC-627 (C1): per-DrawItem instance row ids, for per-instance pick resolution.
+  PickInstanceTable instanceTable_;
 };
 
 }  // namespace dc
