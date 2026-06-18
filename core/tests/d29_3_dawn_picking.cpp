@@ -16,6 +16,11 @@
 //     pick uses x-separated probes (x is NOT y-flipped) so it's orientation-safe.
 //   * Test 3 (EventBus): the renderPick overload emits a GeometryClicked with
 //     the hit id.
+//   * Test 4/5 (ENC-652 C2a): instancedRectColor@1 / instancedPointColor@1 are
+//     pickable — distinct DrawItems decode to distinct ids; the gap is background.
+//   * Test 6/7 (ENC-628 C2b): per-instance index. ONE color DrawItem with THREE
+//     instances; a click on each instance's band decodes its instance_index via
+//     the 2nd pick pass, and (with the C1 PickInstanceTable populated) its rowId.
 //
 // On this headless box the only Vulkan backend may be lavapipe (software). If
 // Dawn can't find an adapter, force the ICD:
@@ -286,10 +291,10 @@ int main() {
     requireOk(cp.applyJsonText(R"({"cmd":"createBuffer","id":20,"byteLength":24})"), "bufL");
     store.setCpuData(20, left.data(), static_cast<std::uint32_t>(left.size()));
     requireOk(cp.applyJsonText(
-        R"({"cmd":"createGeometry","id":200,"vertexBufferId":20,"vertexCount":1,"format":"rect4_color"})"),
+        R"({"cmd":"createGeometry","id":410,"vertexBufferId":20,"vertexCount":1,"format":"rect4_color"})"),
         "geomL");
     requireOk(cp.applyJsonText(
-        R"({"cmd":"bindDrawItem","drawItemId":11,"pipeline":"instancedRectColor@1","geometryId":200})"),
+        R"({"cmd":"bindDrawItem","drawItemId":11,"pipeline":"instancedRectColor@1","geometryId":410})"),
         "bindL");
     requireOk(cp.applyJsonText(
         R"({"cmd":"setDrawItemStyle","drawItemId":11,"cornerRadius":0})"), "styleL");
@@ -301,10 +306,10 @@ int main() {
     requireOk(cp.applyJsonText(R"({"cmd":"createBuffer","id":21,"byteLength":24})"), "bufR");
     store.setCpuData(21, right.data(), static_cast<std::uint32_t>(right.size()));
     requireOk(cp.applyJsonText(
-        R"({"cmd":"createGeometry","id":201,"vertexBufferId":21,"vertexCount":1,"format":"rect4_color"})"),
+        R"({"cmd":"createGeometry","id":411,"vertexBufferId":21,"vertexCount":1,"format":"rect4_color"})"),
         "geomR");
     requireOk(cp.applyJsonText(
-        R"({"cmd":"bindDrawItem","drawItemId":22,"pipeline":"instancedRectColor@1","geometryId":201})"),
+        R"({"cmd":"bindDrawItem","drawItemId":22,"pipeline":"instancedRectColor@1","geometryId":411})"),
         "bindR");
     requireOk(cp.applyJsonText(
         R"({"cmd":"setDrawItemStyle","drawItemId":22,"cornerRadius":0})"), "styleR");
@@ -371,6 +376,102 @@ int main() {
     check(rl.drawItemId == 33, "instPointColor pick left -> 33");
     check(rr.drawItemId == 44, "instPointColor pick right -> 44");
     check(rg.drawItemId == 0, "instPointColor pick gap -> 0 (background)");
+  }
+
+  // -- Test 6 (ENC-628): per-instance index on instancedRectColor@1. -------
+  // ONE DrawItem, THREE rects (left/mid/right). The 2nd pick pass decodes WHICH
+  // instance was hit; with the C1 PickInstanceTable populated, rowId resolves too.
+  {
+    dc::Scene scene;
+    dc::ResourceRegistry reg;
+    dc::CommandProcessor cp(scene, reg);
+    dc::CpuBufferStore store;
+
+    requireOk(cp.applyJsonText(R"({"cmd":"createPane","id":1,"name":"P"})"), "pane");
+    requireOk(cp.applyJsonText(R"({"cmd":"createLayer","id":2,"paneId":1})"), "layer");
+    requireOk(cp.applyJsonText(R"({"cmd":"createDrawItem","id":7,"layerId":2})"), "di");
+
+    // Three full-height rects in one buffer; non-overlapping x bands.
+    //   inst 0: clip x[-0.9,-0.35] -> px center ~12
+    //   inst 1: clip x[-0.25,0.25] -> px center  32
+    //   inst 2: clip x[ 0.35,0.9 ] -> px center ~52
+    std::vector<std::uint8_t> verts;
+    pushRectColor(verts, -0.90f, -0.9f, -0.35f, 0.9f, 0xFF0000FFu);
+    pushRectColor(verts, -0.25f, -0.9f,  0.25f, 0.9f, 0xFF00FF00u);
+    pushRectColor(verts,  0.35f, -0.9f,  0.90f, 0.9f, 0xFFFF0000u);
+    requireOk(cp.applyJsonText(R"({"cmd":"createBuffer","id":10,"byteLength":72})"), "buf");
+    store.setCpuData(10, verts.data(), static_cast<std::uint32_t>(verts.size()));
+    requireOk(cp.applyJsonText(
+        R"({"cmd":"createGeometry","id":600,"vertexBufferId":10,"vertexCount":3,"format":"rect4_color"})"),
+        "geom");
+    requireOk(cp.applyJsonText(
+        R"({"cmd":"bindDrawItem","drawItemId":7,"pipeline":"instancedRectColor@1","geometryId":600})"),
+        "bind");
+    requireOk(cp.applyJsonText(
+        R"({"cmd":"setDrawItemStyle","drawItemId":7,"cornerRadius":0})"), "style");
+
+    // C1: register the durable row ids for this DrawItem (instance order).
+    pick.setInstanceRowIds(7, {1000, 2000, 3000});
+
+    const int yMid = H / 2;
+    auto r0 = pick.renderPick(dev, scene, store, W, H, 12, yMid);
+    auto r1 = pick.renderPick(dev, scene, store, W, H, 32, yMid);
+    auto r2 = pick.renderPick(dev, scene, store, W, H, 52, yMid);
+    std::printf("  rectColor inst: x12 -> id=%u inst=%d row=%d (expect 7,0,1000)\n",
+                r0.drawItemId, r0.instanceIndex, r0.rowId);
+    std::printf("  rectColor inst: x32 -> id=%u inst=%d row=%d (expect 7,1,2000)\n",
+                r1.drawItemId, r1.instanceIndex, r1.rowId);
+    std::printf("  rectColor inst: x52 -> id=%u inst=%d row=%d (expect 7,2,3000)\n",
+                r2.drawItemId, r2.instanceIndex, r2.rowId);
+    check(r0.drawItemId == 7 && r0.instanceIndex == 0, "rectColor inst0 index");
+    check(r1.drawItemId == 7 && r1.instanceIndex == 1, "rectColor inst1 index");
+    check(r2.drawItemId == 7 && r2.instanceIndex == 2, "rectColor inst2 index");
+    check(r0.rowId == 1000 && r1.rowId == 2000 && r2.rowId == 3000,
+          "rectColor per-instance rowId via PickInstanceTable");
+  }
+
+  // -- Test 7 (ENC-628): per-instance index on instancedPointColor@1. ------
+  {
+    dc::Scene scene;
+    dc::ResourceRegistry reg;
+    dc::CommandProcessor cp(scene, reg);
+    dc::CpuBufferStore store;
+
+    requireOk(cp.applyJsonText(R"({"cmd":"createPane","id":1,"name":"P"})"), "pane");
+    requireOk(cp.applyJsonText(R"({"cmd":"createLayer","id":2,"paneId":1})"), "layer");
+    requireOk(cp.applyJsonText(R"({"cmd":"createDrawItem","id":9,"layerId":2})"), "di");
+
+    // Three 16px dots at clip x = -0.6 / 0 / 0.6 -> px ~12.8 / 32 / 51.2.
+    std::vector<std::uint8_t> dots;
+    pushPointColor(dots, -0.6f, 0.0f, 0xFF0000FFu, 16.0f);
+    pushPointColor(dots,  0.0f, 0.0f, 0xFF00FF00u, 16.0f);
+    pushPointColor(dots,  0.6f, 0.0f, 0xFFFF0000u, 16.0f);
+    requireOk(cp.applyJsonText(R"({"cmd":"createBuffer","id":12,"byteLength":48})"), "buf");
+    store.setCpuData(12, dots.data(), static_cast<std::uint32_t>(dots.size()));
+    requireOk(cp.applyJsonText(
+        R"({"cmd":"createGeometry","id":120,"vertexBufferId":12,"vertexCount":3,"format":"point4_color"})"),
+        "geom");
+    requireOk(cp.applyJsonText(
+        R"({"cmd":"bindDrawItem","drawItemId":9,"pipeline":"instancedPointColor@1","geometryId":120})"),
+        "bind");
+
+    pick.setInstanceRowIds(9, {11, 22, 33});
+
+    const int yMid = H / 2;
+    auto r0 = pick.renderPick(dev, scene, store, W, H, 13, yMid);
+    auto r1 = pick.renderPick(dev, scene, store, W, H, 32, yMid);
+    auto r2 = pick.renderPick(dev, scene, store, W, H, 51, yMid);
+    std::printf("  pointColor inst: x13 -> id=%u inst=%d row=%d (expect 9,0,11)\n",
+                r0.drawItemId, r0.instanceIndex, r0.rowId);
+    std::printf("  pointColor inst: x32 -> id=%u inst=%d row=%d (expect 9,1,22)\n",
+                r1.drawItemId, r1.instanceIndex, r1.rowId);
+    std::printf("  pointColor inst: x51 -> id=%u inst=%d row=%d (expect 9,2,33)\n",
+                r2.drawItemId, r2.instanceIndex, r2.rowId);
+    check(r0.drawItemId == 9 && r0.instanceIndex == 0, "pointColor inst0 index");
+    check(r1.drawItemId == 9 && r1.instanceIndex == 1, "pointColor inst1 index");
+    check(r2.drawItemId == 9 && r2.instanceIndex == 2, "pointColor inst2 index");
+    check(r0.rowId == 11 && r1.rowId == 22 && r2.rowId == 33,
+          "pointColor per-instance rowId via PickInstanceTable");
   }
 
   std::printf("=== D29.3 Dawn picking: %d passed, %d failed ===\n",
