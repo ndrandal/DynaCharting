@@ -450,6 +450,14 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_uce_signals PRIVATE dc)
   add_test(NAME dc_uce_signals COMMAND dc_uce_signals)
 
+  # ENC-624 (B2) — Signal -> TransformDag binding: a SignalStore mutation drives a
+  # transform-node recompute through the DAG's ReactiveGraph (dirty-gating kept).
+  add_executable(dc_uce_signal_binding
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_uce_signal_binding.cpp"
+  )
+  target_link_libraries(dc_uce_signal_binding PRIVATE dc)
+  add_test(NAME dc_uce_signal_binding COMMAND dc_uce_signal_binding)
+
   # ENC-610/611 (P2) — Color scales: sequential + diverging numeric -> RGBA8.
   # Sequential ramp (auto-domain via RunningDomain) + diverging two-sided ramp
   # around a fixed mid + the class-4 baseline-policy rejection. Asserts the packed
