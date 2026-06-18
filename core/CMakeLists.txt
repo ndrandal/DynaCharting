@@ -2216,6 +2216,19 @@ if (DC_BUILD_TESTS)
     target_link_libraries(dc_d29_3_dawn_picking PRIVATE dc_gpu)
     add_test(NAME dc_d29_3_dawn_picking COMMAND dc_d29_3_dawn_picking)
 
+    # ENC-653 (C2c) — per-instance pick gather-order <-> table-order consistency.
+    # A D26-indexed instancedRectColor draws three rects in a SCRAMBLED order; the
+    # instance-index pick pass (ENC-628) numbers them in gathered/draw order, so
+    # renderPick maps that index back through the index buffer to the original
+    # record index before the C1 PickInstanceTable lookup. Asserts a click on each
+    # x band returns the ORIGINAL record's row id (not the scrambled draw position).
+    # Links only dc_gpu.
+    add_executable(dc_enc653_dawn_pick_ordering
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_enc653_dawn_pick_ordering.cpp"
+    )
+    target_link_libraries(dc_enc653_dawn_pick_ordering PRIVATE dc_gpu)
+    add_test(NAME dc_enc653_dawn_pick_ordering COMMAND dc_enc653_dawn_pick_ordering)
+
     # ENC-496 (P3.4) — post-process passes (D47 / D78.2) on Dawn. The LAST
     # Phase-3 ticket: renders a scene into an offscreen render target (the ENC-495
     # multi-target support, with the color texture now carrying TextureBinding
