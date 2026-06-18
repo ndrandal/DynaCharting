@@ -2238,6 +2238,17 @@ if (DC_BUILD_TESTS)
     target_link_libraries(dc_enc653_dawn_pick_ordering PRIVATE dc_gpu)
     add_test(NAME dc_enc653_dawn_pick_ordering COMMAND dc_enc653_dawn_pick_ordering)
 
+    # ENC-630 (C4) — per-instance pick golden / round-trip. ONE instancedRectColor
+    # DrawItem holding a 4x4 grid (16 instances); clicks every cell center and
+    # asserts the pick resolves to that cell's durable SOURCE ROW id (id pass ->
+    # instance-index pass -> PickInstanceTable), plus a background corner. The
+    # end-to-end proof of Phase C per-instance picking. Links only dc_gpu.
+    add_executable(dc_enc630_dawn_pick_grid
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_enc630_dawn_pick_grid.cpp"
+    )
+    target_link_libraries(dc_enc630_dawn_pick_grid PRIVATE dc_gpu)
+    add_test(NAME dc_enc630_dawn_pick_grid COMMAND dc_enc630_dawn_pick_grid)
+
     # ENC-496 (P3.4) — post-process passes (D47 / D78.2) on Dawn. The LAST
     # Phase-3 ticket: renders a scene into an offscreen render target (the ENC-495
     # multi-target support, with the color texture now carrying TextureBinding
