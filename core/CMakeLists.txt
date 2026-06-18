@@ -458,6 +458,13 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_uce_selection_filter PRIVATE dc)
   add_test(NAME dc_uce_selection_filter COMMAND dc_uce_selection_filter)
 
+  # ENC-636 (E2) — AnimationController: row-id diff -> enter/exit/update tweens.
+  add_executable(dc_uce_animation_controller
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_uce_animation_controller.cpp"
+  )
+  target_link_libraries(dc_uce_animation_controller PRIVATE dc)
+  add_test(NAME dc_uce_animation_controller COMMAND dc_uce_animation_controller)
+
   # ENC-635 (E1) — FrameClock: per-frame heartbeat driving the AnimationManager(s).
   add_executable(dc_uce_frame_clock
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_uce_frame_clock.cpp"
