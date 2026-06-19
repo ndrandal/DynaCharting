@@ -420,7 +420,10 @@ export class EngineHost {
   }
 
   attachTransform(targetId: number, transformId: number): void {
-    this.applyControl({ cmd: "attachTransform", targetId, transformId });
+    // The core's cmdAttachTransform reads `drawItemId` (matching bindDrawItem/
+    // setDrawItemColor); emitting `targetId` silently failed to attach, leaving
+    // the draw item on the identity transform (geometry rendered off-screen).
+    this.applyControl({ cmd: "attachTransform", drawItemId: targetId, transformId });
   }
 
   // -------------------- buffer/resource convenience (engine-host parity) -----
