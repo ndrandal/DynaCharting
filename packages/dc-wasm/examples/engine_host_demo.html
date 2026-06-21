@@ -143,13 +143,22 @@
 
       if (status !== 1) { fail('render failed (status=' + status + '): ' + msg); return; }
 
-      // Blit framebuffer -> canvas.
+      // Blit framebuffer -> canvas. Flip rows (ENC-696): the Dawn backends
+      // render with a clip-space Y negation while the readback is top-down, so
+      // a raw putImageData renders upside-down (the apex-up triangle pointed
+      // down). This mirrors EngineHost.blitFramebuffer().
       const fbW = host.framebufferWidth(), fbH = host.framebufferHeight();
       const view = host.framebuffer();
-      const bytes = new Uint8ClampedArray(view.slice(0, fbW * fbH * 4));
+      const src = view.slice(0, fbW * fbH * 4);
+      const rowBytes = fbW * 4;
+      const bytes = new Uint8ClampedArray(src.length);
+      for (let y = 0; y < fbH; y++) {
+        const s = (fbH - 1 - y) * rowBytes;
+        bytes.set(src.subarray(s, s + rowBytes), y * rowBytes);
+      }
       canvas.width = fbW; canvas.height = fbH;
       canvas.getContext('2d').putImageData(new ImageData(bytes, fbW, fbH), 0, 0);
-      log('framebuffer blitted to canvas (' + fbW + 'x' + fbH + ').');
+      log('framebuffer blitted to canvas (' + fbW + 'x' + fbH + ', row-flipped).');
 
       // Sample a couple of pixels to confirm non-black output (sanity, not the
       // authoritative pixel check — the orchestrator eyeballs the canvas).
