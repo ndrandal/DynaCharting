@@ -103,6 +103,17 @@ type EngineErrorCode =
 type EngineError = { code: EngineErrorCode; message: string; details?: unknown };
 
 /**
+ * A rejected `applyControl` command, surfaced via
+ * `EngineHostOptions.onControlRejected` (ENC-701/G5b). `command` is the JSON
+ * the WASM core rejected (e.g. an `ID_TAKEN` create or a bad bind).
+ */
+export type ControlRejection = {
+  code: EngineErrorCode;
+  message: string;
+  command: string;
+};
+
+/**
  * Options for constructing the WASM EngineHost. `factory` injects the WASM
  * module (tests / custom bundler wiring); when omitted the built artifact is
  * imported from ../wasm/dc_engine_host.js.
@@ -111,12 +122,20 @@ export type EngineHostOptions = {
   hud?: EngineHostHudSink;
   factory?: DcEngineHostFactory;
   moduleOverrides?: Record<string, unknown>;
+  /**
+   * Invoked whenever the WASM core REJECTS an applyControl command (e.g.
+   * ID_TAKEN, an invalid bind). When omitted, rejections are `console.warn`'d
+   * so they are never silently swallowed (ENC-701/G5b). Either way the rejection
+   * is also recorded on `getLastErrors()`.
+   */
+  onControlRejected?: (rejection: ControlRejection) => void;
 };
 
 export class EngineHost {
   private hud?: EngineHostHudSink;
   private factory?: DcEngineHostFactory;
   private moduleOverrides?: Record<string, unknown>;
+  private onControlRejected?: (rejection: ControlRejection) => void;
 
   private canvas: HTMLCanvasElement | null = null;
   private ctx2d: CanvasRenderingContext2D | null = null;
@@ -181,7 +200,32 @@ export class EngineHost {
       this.hud = o.hud;
       this.factory = o.factory;
       this.moduleOverrides = o.moduleOverrides;
+      this.onControlRejected = o.onControlRejected;
     }
+  }
+
+  /**
+   * Record AND surface a rejected control command. Previously rejections were
+   * pushed onto lastErrors and silently dropped by callers (e.g. ID_TAKEN never
+   * reached anyone — ENC-701/G5b). Now they additionally fire the
+   * onControlRejected callback, or console.warn by default, so they are visible.
+   */
+  private recordControlRejection(json: string, error: string): void {
+    this.lastErrors.push({
+      code: "CONTROL_REJECTED",
+      message: error,
+      details: json,
+    });
+    if (this.onControlRejected) {
+      this.onControlRejected({
+        code: "CONTROL_REJECTED",
+        message: error,
+        command: json,
+      });
+      return;
+    }
+    const cmd = json.length > 200 ? `${json.slice(0, 200)}…` : json;
+    console.warn(`[dc-wasm] applyControl rejected: ${error} :: ${cmd}`);
   }
 
   // -------------------- lifecycle --------------------
@@ -225,9 +269,7 @@ export class EngineHost {
     // Flush buffered control commands + data batches in order.
     for (const json of this.pendingControl) {
       const r = this.core.applyControl(json);
-      if (!r.ok) {
-        this.lastErrors.push({ code: "CONTROL_REJECTED", message: r.error });
-      }
+      if (!r.ok) this.recordControlRejection(json, r.error);
     }
     this.pendingControl = [];
     for (const batch of this.dataQueue) {
@@ -397,7 +439,7 @@ export class EngineHost {
 
     const r = this.core.applyControl(json);
     if (!r.ok) {
-      this.lastErrors.push({ code: "CONTROL_REJECTED", message: r.error });
+      this.recordControlRejection(json, r.error);
       return { ok: false, error: r.error };
     }
     return { ok: true };
@@ -618,7 +660,7 @@ export class EngineHost {
       this.pendingControl = [];
       for (const json of ctrl) {
         const r = this.core.applyControl(json);
-        if (!r.ok) this.lastErrors.push({ code: "CONTROL_REJECTED", message: r.error });
+        if (!r.ok) this.recordControlRejection(json, r.error);
       }
     }
     if (this.dataQueue.length > 0) {
@@ -643,7 +685,27 @@ export class EngineHost {
     // framebuffer() is a typed_memory_view into the WASM heap; copy it before
     // it can be invalidated by the next render.
     const view = core.framebuffer();
-    const bytes = new Uint8ClampedArray(view.slice(0, fbW * fbH * 4));
+    const src = view.slice(0, fbW * fbH * 4);
+
+    // Y-orientation fix (ENC-696, confirmed by ENC-695). The Dawn scene
+    // pipelines render with a clip-space Y negation in every backend shader
+    // (see DawnTriSolidBackend kTriSolidWgsl: `return vec4(p.x, -p.y, ...)`,
+    // added to match the legacy GL bottom-left readback baseline), while the
+    // framebuffer readback (DawnDevice::readFramebufferRGBA) is faithfully
+    // top-down. Net effect: an authored clip-y-up vertex lands in the BOTTOM
+    // rows of framebuffer(). putImageData is also top-down, so a raw blit
+    // renders the whole scene upside-down (high prices at the bottom — masked
+    // until now because the only live demo was an orientation-ambiguous line).
+    // This is the single place every browser frame is painted to a <canvas>,
+    // so flip rows here so clip-up == image-up. (A deeper fix — normalizing the
+    // shader Y-negation + readback C++-side — is a larger follow-up that needs
+    // re-baselining the Dawn golden PNGs and rebuilding the WASM artifact.)
+    const rowBytes = fbW * 4;
+    const bytes = new Uint8ClampedArray(src.length);
+    for (let y = 0; y < fbH; y++) {
+      const srcStart = (fbH - 1 - y) * rowBytes;
+      bytes.set(src.subarray(srcStart, srcStart + rowBytes), y * rowBytes);
+    }
     const img = new ImageData(bytes, fbW, fbH);
     if (canvas.width !== fbW) canvas.width = fbW;
     if (canvas.height !== fbH) canvas.height = fbH;
