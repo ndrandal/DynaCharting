@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<!--
+  yaxis_orientation_verify.html — ENC-695 (G1a)
+
+  Verifies the Y-axis orientation of the @repo/dc-wasm WebGPU render -> canvas
+  path, using the EXACT production blit (raw putImageData(host.framebuffer()),
+  NO row flip — identical to EngineHost.blitFramebuffer() at EngineHost.ts:633
+  and to engine_host_demo.html).
+
+  Two probes, both authored DIRECTLY in clip space so the result depends ONLY on
+  the engine readback + blit, not on any transform-sign convention:
+
+    1. Apex-UP triangle (triSolid@1): apex at clip y=+0.7, wide base at clip
+       y=-0.7. Correct orientation => apex appears at the TOP of the image
+       (narrow red run at low row index, wide base at high row index).
+
+    2. Rising candle series (instancedCandle@1): close climbs left->right, mapped
+       so higher price == higher clip-y (data-up -> clip-up, the RangeTracker
+       convention). Correct orientation => the series visually climbs up-and-right.
+
+  The page reads back host.framebuffer() and emits a machine verdict into
+  #result (class pass|fail) so cdp-shot.mjs can wait on it and screenshot.
+
+  apexAtTop === false  =>  Y-axis is INVERTED in the production blit (bug G1 confirmed).
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>ENC-695 — Y-axis orientation verify</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 16px; background:#0c0c10; color:#eee; }
+    #result { font-size: 18px; font-weight: 700; margin: 10px 0; }
+    .pass { color:#41d160; } .fail { color:#ff5b5b; } .pending { color:#f5c542; }
+    #log { font-family: ui-monospace, monospace; font-size: 12px; white-space: pre-wrap;
+           color:#9aa; margin-top:10px; border-top:1px solid #333; padding-top:6px; }
+    canvas { image-rendering: pixelated; border:1px solid #444; margin-top:8px; background:#000;
+             width:600px; height:400px; }
+  </style>
+</head>
+<body>
+  <h1 style="font-size:16px">ENC-695 — Y-axis orientation (production no-flip blit)</h1>
+  <div id="result" class="pending">Status: initializing…</div>
+  <canvas id="canvas" width="600" height="400"></canvas>
+  <div id="log"></div>
+
+  <script type="module">
+    const resultEl = document.getElementById('result');
+    const logEl = document.getElementById('log');
+    const canvas = document.getElementById('canvas');
+    const log = (m) => { logEl.textContent += m + '\n'; };
+    const verdict = (cls, m) => { resultEl.className = cls; resultEl.textContent = m; log(m); };
+    const fail = (m) => verdict('fail', 'FAIL: ' + m);
+
+    const W = 600, H = 400;
+    const OP_APPEND = 1;
+    function record(bufferId, floats) {
+      const payload = new Uint8Array(new Float32Array(floats).buffer);
+      const buf = new Uint8Array(13 + payload.length);
+      const dv = new DataView(buf.buffer);
+      dv.setUint8(0, OP_APPEND);
+      dv.setUint32(1, bufferId, true);
+      dv.setUint32(5, 0, true);
+      dv.setUint32(9, payload.length, true);
+      buf.set(payload, 13);
+      return buf;
+    }
+
+    async function main() {
+      if (!('gpu' in navigator)) { fail('navigator.gpu undefined — need WebGPU'); return; }
+      log('navigator.gpu present — loading dc_engine_host…');
+
+      let Module, host;
+      try {
+        const factory = (await import('../wasm/dc_engine_host.js')).default;
+        Module = await factory();
+        host = new Module.DcEngineHost();
+      } catch (e) { fail('module load: ' + (e?.message ?? e)); return; }
+      log('engine ready.');
+
+      let rejects = 0;
+      const ctrl = (o) => { const r = host.applyControl(JSON.stringify(o));
+        if (!r.ok) { rejects++; log('  rejected: ' + r.error + ' :: ' + JSON.stringify(o)); } return r.ok; };
+
+      // One full-frame pane + layer; both probes authored in clip space within it.
+      ctrl({ cmd:'createPane', id:1, name:'P' });
+      ctrl({ cmd:'createLayer', id:2, paneId:1 });
+
+      // --- Probe 1: apex-UP triangle (triSolid@1, RED), LEFT half, clip space ---
+      // apex (-0.5,+0.7); base-left (-0.85,-0.7); base-right (-0.15,-0.7)
+      ctrl({ cmd:'createDrawItem', id:3, layerId:2 });
+      ctrl({ cmd:'createBuffer', id:10, byteLength:24 });
+      ctrl({ cmd:'createGeometry', id:100, vertexBufferId:10, vertexCount:3, format:'pos2_clip' });
+      ctrl({ cmd:'bindDrawItem', drawItemId:3, pipeline:'triSolid@1', geometryId:100 });
+      ctrl({ cmd:'setDrawItemColor', drawItemId:3, r:1, g:0.1, b:0.1, a:1 });
+
+      // --- Probe 2: rising candle series (instancedCandle@1), RIGHT half, clip space ---
+      // higher price == higher clip-y (RangeTracker convention). close climbs L->R.
+      const N = 8;
+      const cFloats = [];
+      const xL = 0.05, xR = 0.85, yLo = -0.6, yHi = 0.6, hw = 0.035;
+      for (let i = 0; i < N; i++) {
+        const x = xL + (xR - xL) * (i / (N - 1));
+        const base = yLo + (yHi - yLo) * (i / (N - 1));   // rising center
+        const open = base - 0.05, close = base + 0.05;     // up candle (close>open)
+        const high = close + 0.04, low = open - 0.04;
+        cFloats.push(x, open, high, low, close, hw);
+      }
+      ctrl({ cmd:'createDrawItem', id:4, layerId:2 });
+      ctrl({ cmd:'createBuffer', id:11, byteLength: N*24 });
+      ctrl({ cmd:'createGeometry', id:101, vertexBufferId:11, vertexCount:N, format:'candle6' });
+      ctrl({ cmd:'bindDrawItem', drawItemId:4, pipeline:'instancedCandle@1', geometryId:101 });
+      ctrl({ cmd:'setDrawItemStyle', drawItemId:4, colorUp:[0.16,0.85,0.45,1], colorDown:[0.92,0.3,0.33,1] });
+
+      log('scene authored: ' + rejects + ' rejected commands.');
+
+      // feed geometry bytes (data plane)
+      host.applyDataBatch(record(10, [-0.5,0.7, -0.85,-0.7, -0.15,-0.7]));
+      host.applyDataBatch(record(11, cFloats));
+
+      // render
+      let st; try { st = await host.render(W, H); } catch (e) { fail('render threw: ' + (e?.message??e)); return; }
+      const s = host.stats();
+      log('render status=' + st + '  backend=' + host.backend() + '  drawCalls=' + s.drawCalls);
+      log('message: ' + host.renderMessage());
+      if (st !== 1) { fail('render status ' + st + ': ' + host.renderMessage()); return; }
+
+      // PRODUCTION BLIT: raw putImageData, NO flip (identical to EngineHost.blitFramebuffer)
+      const fbW = host.framebufferWidth(), fbH = host.framebufferHeight();
+      const view = host.framebuffer();
+      const bytes = new Uint8ClampedArray(view.slice(0, fbW*fbH*4));
+      canvas.width = fbW; canvas.height = fbH;
+      canvas.getContext('2d').putImageData(new ImageData(bytes, fbW, fbH), 0, 0);
+      log('blitted ' + fbW + 'x' + fbH + ' (raw putImageData, NO flip — production path)');
+
+      // ---- machine verdict from the framebuffer pixels ----
+      const isRed = (i) => bytes[i] > 150 && bytes[i+1] < 110 && bytes[i+2] < 110;
+      let minRow = -1, maxRow = -1;
+      const rowRed = new Int32Array(fbH);
+      for (let y = 0; y < fbH; y++) {
+        let c = 0;
+        for (let x = 0; x < fbW; x++) { if (isRed((y*fbW + x)*4)) c++; }
+        rowRed[y] = c;
+        if (c > 0) { if (minRow < 0) minRow = y; maxRow = y; }
+      }
+      if (minRow < 0) { fail('no red triangle pixels found — render likely empty'); return; }
+      const topW = rowRed[minRow];        // width of red run at the topmost red row
+      const botW = rowRed[maxRow];        // width of red run at the bottommost red row
+      // apex (narrow tip) should be at the TOP for correct orientation.
+      const apexAtTop = topW < botW;
+      log(`triangle red rows: top=${minRow} (w=${topW})  bottom=${maxRow} (w=${botW})`);
+      log(`=> apex is at the ${apexAtTop ? 'TOP' : 'BOTTOM'} of the image`);
+
+      if (apexAtTop) {
+        verdict('pass', `PASS — apex at TOP (top width ${topW} < bottom width ${botW}). ` +
+          `Production blit is RIGHT-SIDE-UP. Y-axis NOT inverted.`);
+      } else {
+        verdict('fail', `INVERTED — apex at BOTTOM (top width ${topW} > bottom width ${botW}). ` +
+          `Production blit renders Y UPSIDE-DOWN. G1 (ENC-695) CONFIRMED. ` +
+          `An apex-up triangle points down; a candle chart shows high prices at the bottom.`);
+      }
+      host.dispose();
+    }
+    main().catch(e => fail('unexpected: ' + (e?.message ?? e)));
+  </script>
+</body>
+</html>
