@@ -45,6 +45,26 @@ export {
 } from "./chart/scale";
 export type { Range, Transform1D, Transform2D, Scale } from "./chart/scale";
 
+// ENC-703 (G2): client-side scene/chart builder over applyControl. Encapsulates
+// the per-element create→bind→attach→style→data command sequence + id mgmt.
+export { SceneBuilder, encodeAppendRecord } from "./chart/SceneBuilder";
+export type {
+  SceneTarget,
+  PaneHandle,
+  LayerHandle,
+  TransformHandle,
+  DrawHandle,
+  PaneOptions,
+  LayerOptions,
+  TransformParams as SceneTransformParams,
+  Rgba,
+  LineStyle,
+  RectStyle,
+  CandleStyle,
+  Candle,
+  Rect,
+} from "./chart/SceneBuilder";
+
 // dc-wasm-specific: the WASM loader + module types (for advanced/test wiring).
 export { loadDcEngineHost } from "./wasm";
 export type {
