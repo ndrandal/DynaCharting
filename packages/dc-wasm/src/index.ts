@@ -26,6 +26,20 @@ export type {
   UniformType,
 } from "./pipelines";
 
+// ENC-699 (G4): framework-agnostic chart scale/axis/tick/grid math (pure fns).
+export {
+  scale,
+  niceTicks,
+  indexTicks,
+  fitAxis,
+  fitTransform,
+  horizontalGridSegments,
+  verticalGridSegments,
+  gridSegments,
+  padRange,
+  CLIP_RANGE,
+} from "./chart/scale";
+export type { Range, Transform1D, Transform2D, Scale } from "./chart/scale";
 // Client-builder helpers (ENC-700): id allocator over the unified namespace.
 export { createIdAllocator } from "./chart/ids";
 export type { IdAllocator, ResourceKind } from "./chart/ids";
