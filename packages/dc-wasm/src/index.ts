@@ -26,10 +26,6 @@ export type {
   UniformType,
 } from "./pipelines";
 
-// Client-builder helpers (ENC-700): id allocator over the unified namespace.
-export { createIdAllocator } from "./chart/ids";
-export type { IdAllocator, ResourceKind } from "./chart/ids";
-
 // ENC-699 (G4): framework-agnostic chart scale/axis/tick/grid math (pure fns).
 export {
   scale,
@@ -44,6 +40,19 @@ export {
   CLIP_RANGE,
 } from "./chart/scale";
 export type { Range, Transform1D, Transform2D, Scale } from "./chart/scale";
+// Client-builder helpers (ENC-700): id allocator over the unified namespace.
+export { createIdAllocator } from "./chart/ids";
+export type { IdAllocator, ResourceKind } from "./chart/ids";
+
+// dc-wasm-specific: the WASM loader + module types (for advanced/test wiring).
+export { loadDcEngineHost } from "./wasm";
+export type {
+  DcEngineHostModule,
+  DcEngineHostInstance,
+  DcEngineHostFactory,
+  DcControlResult,
+  DcEngineStatsRaw,
+} from "./wasm";
 
 // ENC-703 (G2): client-side scene/chart builder over applyControl. Encapsulates
 // the per-element create→bind→attach→style→data command sequence + id mgmt.
@@ -64,13 +73,3 @@ export type {
   Candle,
   Rect,
 } from "./chart/SceneBuilder";
-
-// dc-wasm-specific: the WASM loader + module types (for advanced/test wiring).
-export { loadDcEngineHost } from "./wasm";
-export type {
-  DcEngineHostModule,
-  DcEngineHostInstance,
-  DcEngineHostFactory,
-  DcControlResult,
-  DcEngineStatsRaw,
-} from "./wasm";
