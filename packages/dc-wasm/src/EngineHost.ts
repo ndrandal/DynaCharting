@@ -289,7 +289,16 @@ export class EngineHost {
     // touching the core (applyDataBatch) during that window aborts the runtime
     // ("multiple async operations in flight"). Queued batches are drained after
     // the render resolves (see renderOnce + drainQueued).
-    if (this.ready && this.core && !this.rendering) {
+    // Apply directly only when nothing is queued ahead of us: data must land
+    // after the control commands (scene-init) that create its buffers, and
+    // after earlier data, so once any control/data is pending we queue too.
+    if (
+      this.ready &&
+      this.core &&
+      !this.rendering &&
+      this.pendingControl.length === 0 &&
+      this.dataQueue.length === 0
+    ) {
       this.core.applyDataBatch(new Uint8Array(batch));
       this.frameDirty = true;
       return;
@@ -376,9 +385,12 @@ export class EngineHost {
     this.frameDirty = true;
 
     // Buffer until ready, or while a render is in flight (ASYNCIFY single-op
-    // constraint — see enqueueData). Buffered control replays in order after the
-    // render resolves (drainQueued).
-    if (!this.ready || !this.core || this.rendering) {
+    // constraint — see enqueueData). Also buffer whenever controls are already
+    // pending: applying directly would jump ahead of the queued commands and
+    // break FIFO order (e.g. a runtime setTransform executing before the
+    // still-buffered scene-init createTransform → "transform not found").
+    // Buffered control replays in order after the render resolves (drainQueued).
+    if (!this.ready || !this.core || this.rendering || this.pendingControl.length > 0) {
       this.pendingControl.push(json);
       return { ok: true };
     }
@@ -408,7 +420,10 @@ export class EngineHost {
   }
 
   attachTransform(targetId: number, transformId: number): void {
-    this.applyControl({ cmd: "attachTransform", targetId, transformId });
+    // The core's cmdAttachTransform reads `drawItemId` (matching bindDrawItem/
+    // setDrawItemColor); emitting `targetId` silently failed to attach, leaving
+    // the draw item on the identity transform (geometry rendered off-screen).
+    this.applyControl({ cmd: "attachTransform", drawItemId: targetId, transformId });
   }
 
   // -------------------- buffer/resource convenience (engine-host parity) -----
