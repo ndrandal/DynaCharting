@@ -25,6 +25,10 @@ export type {
   UniformType,
 } from "./pipelines";
 
+// Client-builder helpers (ENC-700): id allocator over the unified namespace.
+export { createIdAllocator } from "./chart/ids";
+export type { IdAllocator, ResourceKind } from "./chart/ids";
+
 // dc-wasm-specific: the WASM loader + module types (for advanced/test wiring).
 export { loadDcEngineHost } from "./wasm";
 export type {
