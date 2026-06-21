@@ -643,7 +643,27 @@ export class EngineHost {
     // framebuffer() is a typed_memory_view into the WASM heap; copy it before
     // it can be invalidated by the next render.
     const view = core.framebuffer();
-    const bytes = new Uint8ClampedArray(view.slice(0, fbW * fbH * 4));
+    const src = view.slice(0, fbW * fbH * 4);
+
+    // Y-orientation fix (ENC-696, confirmed by ENC-695). The Dawn scene
+    // pipelines render with a clip-space Y negation in every backend shader
+    // (see DawnTriSolidBackend kTriSolidWgsl: `return vec4(p.x, -p.y, ...)`,
+    // added to match the legacy GL bottom-left readback baseline), while the
+    // framebuffer readback (DawnDevice::readFramebufferRGBA) is faithfully
+    // top-down. Net effect: an authored clip-y-up vertex lands in the BOTTOM
+    // rows of framebuffer(). putImageData is also top-down, so a raw blit
+    // renders the whole scene upside-down (high prices at the bottom — masked
+    // until now because the only live demo was an orientation-ambiguous line).
+    // This is the single place every browser frame is painted to a <canvas>,
+    // so flip rows here so clip-up == image-up. (A deeper fix — normalizing the
+    // shader Y-negation + readback C++-side — is a larger follow-up that needs
+    // re-baselining the Dawn golden PNGs and rebuilding the WASM artifact.)
+    const rowBytes = fbW * 4;
+    const bytes = new Uint8ClampedArray(src.length);
+    for (let y = 0; y < fbH; y++) {
+      const srcStart = (fbH - 1 - y) * rowBytes;
+      bytes.set(src.subarray(srcStart, srcStart + rowBytes), y * rowBytes);
+    }
     const img = new ImageData(bytes, fbW, fbH);
     if (canvas.width !== fbW) canvas.width = fbW;
     if (canvas.height !== fbH) canvas.height = fbH;
