@@ -14,6 +14,7 @@ export type {
   PickResult,
   TransformParams,
   EngineHostOptions,
+  ControlRejection,
 } from "./EngineHost";
 
 export { PIPELINES } from "./pipelines";
