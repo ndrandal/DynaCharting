@@ -25,6 +25,21 @@ export type {
   UniformType,
 } from "./pipelines";
 
+// ENC-699 (G4): framework-agnostic chart scale/axis/tick/grid math (pure fns).
+export {
+  scale,
+  niceTicks,
+  indexTicks,
+  fitAxis,
+  fitTransform,
+  horizontalGridSegments,
+  verticalGridSegments,
+  gridSegments,
+  padRange,
+  CLIP_RANGE,
+} from "./chart/scale";
+export type { Range, Transform1D, Transform2D, Scale } from "./chart/scale";
+
 // dc-wasm-specific: the WASM loader + module types (for advanced/test wiring).
 export { loadDcEngineHost } from "./wasm";
 export type {
