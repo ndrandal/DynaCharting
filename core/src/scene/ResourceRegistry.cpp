@@ -16,6 +16,17 @@ ResourceRegistry& ResourceRegistry::operator=(const ResourceRegistry& other) {
   return *this;
 }
 
+ResourceRegistry::ResourceRegistry(ResourceRegistry&& other) noexcept
+  : next_(other.next_.load(std::memory_order_relaxed))
+  , kinds_(std::move(other.kinds_)) {}
+
+ResourceRegistry& ResourceRegistry::operator=(ResourceRegistry&& other) noexcept {
+  if (this == &other) return *this;
+  next_.store(other.next_.load(std::memory_order_relaxed), std::memory_order_relaxed);
+  kinds_ = std::move(other.kinds_);
+  return *this;
+}
+
 Id ResourceRegistry::allocate(ResourceKind kind) {
   // NOTE: not lock-free due to unordered_map; D1.x is single-threaded test harness.
   for (;;) {

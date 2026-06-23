@@ -15,8 +15,11 @@ public:
   ResourceRegistry(const ResourceRegistry& other);
   ResourceRegistry& operator=(const ResourceRegistry& other);
 
-  ResourceRegistry(ResourceRegistry&&) noexcept = default;
-  ResourceRegistry& operator=(ResourceRegistry&&) noexcept = default;
+  // std::atomic is not movable either, so the move ops can't be defaulted
+  // (that is ill-formed under a strict libc++ — the Emscripten/wasm build).
+  // Mirror the copy ops: load the counter, move the map.
+  ResourceRegistry(ResourceRegistry&& other) noexcept;
+  ResourceRegistry& operator=(ResourceRegistry&& other) noexcept;
 
   Id allocate(ResourceKind kind);               // auto-id
   bool reserve(Id id, ResourceKind kind);       // client-provided id (fails if taken)
