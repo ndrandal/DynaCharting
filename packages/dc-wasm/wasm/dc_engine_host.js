@@ -4,8 +4,7 @@
 // When targeting node and ES6 we use `await import ..` in the generated code
 // so the outer function needs to be marked as async.
 async function createDcEngineHost(moduleArg = {}) {
-  var moduleRtn;
-
+  var Module = moduleArg;
 // include: shell.js
 // include: minimum_runtime_check.js
 (function() {
@@ -64,7 +63,6 @@ async function createDcEngineHost(moduleArg = {}) {
 // after the generated code, you will need to define   var Module = {};
 // before the code. Then that object will be used in the code, and you
 // can continue to use Module afterwards as well.
-var Module = moduleArg;
 
 // Determine the runtime environment we are in. You can customize this by
 // setting the ENVIRONMENT setting at compile time (see settings.js).
@@ -335,15 +333,31 @@ function dbg(...args) {
 })();
 
 function consumedModuleProp(prop) {
-  if (!Object.getOwnPropertyDescriptor(Module, prop)) {
-    Object.defineProperty(Module, prop, {
-      configurable: true,
-      set() {
-        abort(`Attempt to set \`Module.${prop}\` after it has already been processed.  This can happen, for example, when code is injected via '--post-js' rather than '--pre-js'`);
-
+  var value = Module[prop];
+  var msg = `Attempt to modify \`Module.${prop}\` after it has already been processed.  This can happen, for example, when code is injected via '--post-js' rather than '--pre-js'`;
+  if (Array.isArray(value)) {
+    value = new Proxy(value, {
+      set(target, key, val) {
+        abort(msg);
+        return false;
+      },
+      defineProperty(target, key, descriptor) {
+        abort(msg);
+        return false;
+      },
+      deleteProperty(target, key) {
+        abort(msg);
+        return false;
       }
     });
   }
+  Object.defineProperty(Module, prop, {
+    configurable: true,
+    get() { return value; },
+    set() {
+      abort(msg);
+    }
+  });
 }
 
 function makeInvalidEarlyAccess(name) {
@@ -394,8 +408,6 @@ function unexportedRuntimeSymbol(sym) {
 }
 
 // end include: runtime_debug.js
-var readyPromiseResolve, readyPromiseReject;
-
 // Memory management
 
 var runtimeInitialized = false;
@@ -498,7 +510,6 @@ function abort(what) {
   /** @suppress {checkTypes} */
   var e = new WebAssembly.RuntimeError(what);
 
-  readyPromiseReject?.(e);
   // Throw the error whether or not MODULARIZE is set because abort is used
   // in code paths apart from instantiation where an exception is expected
   // to be thrown when abort is called.
@@ -2274,7 +2285,6 @@ async function createWasm() {
       // if exit() was called explicitly, warn the user if the runtime isn't actually being shut down
       if (keepRuntimeAlive() && !implicit) {
         var msg = `program exited (with status: ${status}), but keepRuntimeAlive() is set (counter=${runtimeKeepaliveCounter}) due to an async operation, so halting execution but not exiting the runtime or preventing further async execution (you can use emscripten_force_exit, if you want to force a true shutdown)`;
-        readyPromiseReject?.(msg);
         err(msg);
       }
   
@@ -4533,6 +4543,46 @@ ${functionBody}
   
   
   
+  var _emwgpuDevicePopErrorScope = function(devicePtr, futureId) {
+    futureId = bigintToI53Checked(futureId);
+  
+  
+      var device = WebGPU.getJsObject(devicePtr);
+       // popErrorScope
+      WebGPU.Internals.futureInsert(futureId, device.popErrorScope().then((gpuError) => {
+         // popErrorScope fulfilled
+        callUserCallback(() => {
+          var type = 5;
+          if (!gpuError) type = 1;
+          else if (gpuError instanceof GPUValidationError) type = 2;
+          else if (gpuError instanceof GPUOutOfMemoryError) type = 3;
+          else if (gpuError instanceof GPUInternalError) type = 4;
+          else assert(false);
+          var sp = stackSave();
+          var messagePtr = gpuError ? stringToUTF8OnStack(gpuError.message) : 0;
+          _emwgpuOnPopErrorScopeCompleted(futureId,
+            1, type,
+            messagePtr);
+          stackRestore(sp);
+        });
+      }, (ex) => {
+         // popErrorScope rejected
+        callUserCallback(() => {
+          var sp = stackSave();
+          var messagePtr = stringToUTF8OnStack(ex.message);
+          _emwgpuOnPopErrorScopeCompleted(futureId,
+            1, 5,
+            messagePtr);
+          stackRestore(sp);
+        });
+      }));
+    ;
+  };
+
+  
+  
+  
+  
   function _emwgpuInstanceRequestAdapter(instancePtr, futureId, options, adapterPtr) {
     futureId = bigintToI53Checked(futureId);
   
@@ -5147,6 +5197,12 @@ ${functionBody}
       var ptr = _emwgpuCreateTexture(0);
       WebGPU.Internals.jsObjectInsert(ptr, device.createTexture(desc));
       return ptr;
+    };
+
+  
+  var _wgpuDevicePushErrorScope = (devicePtr, filter) => {
+      var device = WebGPU.getJsObject(devicePtr);
+      device.pushErrorScope(WebGPU.ErrorFilter[filter]);
     };
 
   
@@ -6027,6 +6083,9 @@ function checkIncomingModuleAPI() {
   ignoredModuleProp('onRealloc');
   ignoredModuleProp('onFree');
   ignoredModuleProp('onSbrkGrow');
+  ignoredModuleProp('onCOSCacheHit');
+  ignoredModuleProp('onCOSCacheMiss');
+  ignoredModuleProp('onCOSStore');
 }
 
 // Imports from the Wasm binary.
@@ -6116,6 +6175,7 @@ var dynCall_jiiii = makeInvalidEarlyAccess('dynCall_jiiii');
 var dynCall_viijii = makeInvalidEarlyAccess('dynCall_viijii');
 var dynCall_viijijj = makeInvalidEarlyAccess('dynCall_viijijj');
 var dynCall_jijiiii = makeInvalidEarlyAccess('dynCall_jijiiii');
+var dynCall_jiii = makeInvalidEarlyAccess('dynCall_jiii');
 var dynCall_jjj = makeInvalidEarlyAccess('dynCall_jjj');
 var dynCall_viffffff = makeInvalidEarlyAccess('dynCall_viffffff');
 var dynCall_viiiiiiii = makeInvalidEarlyAccess('dynCall_viiiiiiii');
@@ -6219,6 +6279,7 @@ function assignWasmExports(wasmExports) {
   assert(typeof wasmExports['dynCall_viijii'] != 'undefined', 'missing Wasm export: dynCall_viijii');
   assert(typeof wasmExports['dynCall_viijijj'] != 'undefined', 'missing Wasm export: dynCall_viijijj');
   assert(typeof wasmExports['dynCall_jijiiii'] != 'undefined', 'missing Wasm export: dynCall_jijiiii');
+  assert(typeof wasmExports['dynCall_jiii'] != 'undefined', 'missing Wasm export: dynCall_jiii');
   assert(typeof wasmExports['dynCall_jjj'] != 'undefined', 'missing Wasm export: dynCall_jjj');
   assert(typeof wasmExports['dynCall_viffffff'] != 'undefined', 'missing Wasm export: dynCall_viffffff');
   assert(typeof wasmExports['dynCall_viiiiiiii'] != 'undefined', 'missing Wasm export: dynCall_viiiiiiii');
@@ -6318,6 +6379,7 @@ function assignWasmExports(wasmExports) {
   dynCall_viijii = dynCalls['viijii'] = createExportWrapper('dynCall_viijii', 6);
   dynCall_viijijj = dynCalls['viijijj'] = createExportWrapper('dynCall_viijijj', 7);
   dynCall_jijiiii = dynCalls['jijiiii'] = createExportWrapper('dynCall_jijiiii', 7);
+  dynCall_jiii = dynCalls['jiii'] = createExportWrapper('dynCall_jiii', 4);
   dynCall_jjj = dynCalls['jjj'] = createExportWrapper('dynCall_jjj', 3);
   dynCall_viffffff = dynCalls['viffffff'] = createExportWrapper('dynCall_viffffff', 8);
   dynCall_viiiiiiii = dynCalls['viiiiiiii'] = createExportWrapper('dynCall_viiiiiiii', 9);
@@ -6419,6 +6481,8 @@ var wasmImports = {
   /** @export */
   emwgpuDeviceDestroy: _emwgpuDeviceDestroy,
   /** @export */
+  emwgpuDevicePopErrorScope: _emwgpuDevicePopErrorScope,
+  /** @export */
   emwgpuInstanceRequestAdapter: _emwgpuInstanceRequestAdapter,
   /** @export */
   fd_close: _fd_close,
@@ -6444,6 +6508,8 @@ var wasmImports = {
   invoke_iiiiiii,
   /** @export */
   invoke_iij,
+  /** @export */
+  invoke_jiii,
   /** @export */
   invoke_jiiii,
   /** @export */
@@ -6520,6 +6586,8 @@ var wasmImports = {
   wgpuDeviceCreateSampler: _wgpuDeviceCreateSampler,
   /** @export */
   wgpuDeviceCreateTexture: _wgpuDeviceCreateTexture,
+  /** @export */
+  wgpuDevicePushErrorScope: _wgpuDevicePushErrorScope,
   /** @export */
   wgpuQueueSubmit: _wgpuQueueSubmit,
   /** @export */
@@ -6807,6 +6875,18 @@ function invoke_jijiiii(index,a1,a2,a3,a4,a5,a6) {
   }
 }
 
+function invoke_jiii(index,a1,a2,a3) {
+  var sp = stackSave();
+  try {
+    return dynCall_jiii(index,a1,a2,a3);
+  } catch(e) {
+    stackRestore(sp);
+    if (!(e instanceof EmscriptenEH)) throw e;
+    _setThrew(1, 0);
+    return 0n;
+  }
+}
+
 function invoke_jjj(index,a1,a2) {
   var sp = stackSave();
   try {
@@ -6878,42 +6958,34 @@ function stackCheckInit() {
   writeStackCookie();
 }
 
-function run() {
+async function run() {
+  assert(!calledRun);
+  calledRun = true;
 
   stackCheckInit();
 
   preRun();
 
-  function doRun() {
-    // run may have just been called through dependencies being fulfilled just in this very frame,
-    // or while the async setStatus time below was happening
-    assert(!calledRun);
-    calledRun = true;
-    Module['calledRun'] = true;
-
-    if (ABORT) return;
-
-    initRuntime();
-
-    readyPromiseResolve?.(Module);
-    Module['onRuntimeInitialized']?.();
-    consumedModuleProp('onRuntimeInitialized');
-
-    assert(!Module['_main'], 'compiled without a main, but one is present. if you added it from JS, use Module["onRuntimeInitialized"]');
-
-    postRun();
+  var setStatus = Module['setStatus'];
+  if (setStatus) {
+    setStatus('Running...');
+    // Yield to the event loop to allow the browser to paint "Running..."
+    await new Promise((resolve) => setTimeout(resolve, 1));
+    // Then we want to clear the status text, but only after the rest of this function runs.
+    setTimeout(setStatus, 1, '');
   }
 
-  if (Module['setStatus']) {
-    Module['setStatus']('Running...');
-    setTimeout(() => {
-      setTimeout(() => Module['setStatus'](''), 1);
-      doRun();
-    }, 1);
-  } else
-  {
-    doRun();
-  }
+  if (ABORT) return;
+
+  initRuntime();
+
+  Module['onRuntimeInitialized']?.();
+  consumedModuleProp('onRuntimeInitialized');
+
+  assert(!Module['_main'], 'compiled without a main, but one is present. if you added it from JS, use Module["onRuntimeInitialized"]');
+
+  postRun();
+
   checkStackCookie();
 }
 
@@ -6950,28 +7022,14 @@ var wasmExports;
 
 // In modularize mode the generated code is within a factory function so we
 // can use await here (since it's not top-level-await).
-wasmExports = await (createWasm());
-
-run();
+wasmExports = await createWasm();
+await run();
 
 // end include: postamble.js
 
 // include: postamble_modularize.js
 // In MODULARIZE mode we wrap the generated code in a factory function
 // and return either the Module itself, or a promise of the module.
-//
-// We assign to the `moduleRtn` global here and configure closure to see
-// this as an extern so it won't get minified.
-
-if (runtimeInitialized)  {
-  moduleRtn = Module;
-} else {
-  // Set up the promise that indicates the Module is initialized
-  moduleRtn = new Promise((resolve, reject) => {
-    readyPromiseResolve = resolve;
-    readyPromiseReject = reject;
-  });
-}
 
 // Assertion for attempting to access module properties on the incoming
 // moduleArg.  In the past we used this object as the prototype of the module
@@ -6992,7 +7050,7 @@ for (const prop of Object.keys(Module)) {
 
 
 
-  return moduleRtn;
+  return Module;
 }
 
 // Export using a UMD style export, or ES6 exports if selected

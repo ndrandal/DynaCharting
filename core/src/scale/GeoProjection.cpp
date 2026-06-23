@@ -1,6 +1,7 @@
 // ENC-618c — GeoProjection: closed-form lng/lat → planar (x, y). See header.
 #include "dc/scale/GeoProjection.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 namespace dc {
