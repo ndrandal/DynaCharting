@@ -17,6 +17,32 @@ export type {
   ControlRejection,
 } from "./EngineHost";
 
+// ENC-778 (Canvas & Tabs Redesign): capture the current framebuffer as a
+// downscaled PNG data URL for the saved-view gallery (ADR-0003). The method
+// lives on EngineHost; this free function matches the SPEC's
+// `captureThumbnail(host, w, h)` call shape. The pure pixel helpers are exported
+// too (flip/downscale/encode) for reuse and testing.
+import { EngineHost as _EngineHost } from "./EngineHost";
+export function captureThumbnail(
+  host: _EngineHost,
+  w?: number,
+  h?: number,
+): string {
+  return host.captureThumbnail(w, h);
+}
+export {
+  flipRowsRGBA,
+  downscaleBoxRGBA,
+  framebufferToThumbnailDataURL,
+  DEFAULT_THUMB_W,
+  DEFAULT_THUMB_H,
+} from "./thumbnail";
+export type {
+  RgbaBytes,
+  ThumbnailCanvas,
+  ThumbnailCanvasFactory,
+} from "./thumbnail";
+
 export { PIPELINES } from "./pipelines";
 export type {
   PipelineId,

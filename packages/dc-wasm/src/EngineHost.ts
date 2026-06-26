@@ -39,6 +39,12 @@ import {
   type DcEngineHostInstance,
   type DcEngineHostModule,
 } from "./wasm";
+import {
+  DEFAULT_THUMB_W,
+  DEFAULT_THUMB_H,
+  framebufferToThumbnailDataURL,
+  type ThumbnailCanvasFactory,
+} from "./thumbnail";
 
 // ---- Public types: re-exported to MATCH @repo/engine-host exactly ----------
 export type PickResult = { drawItemId: number } | null;
@@ -494,6 +500,39 @@ export class EngineHost {
     if (!this.core || this.rendering) return new Uint8Array(0);
     // getBufferBytes returns a typed_memory_view into the WASM heap; copy it.
     return Uint8Array.from(this.core.getBufferBytes(bufferId));
+  }
+
+  // -------------------- thumbnail capture (ENC-778) --------------------
+  /**
+   * Capture the CURRENT framebuffer as a downscaled PNG **data URL** (Canvas &
+   * Tabs Redesign — thumbnails captured at save time, ADR-0003). Reads whatever
+   * is already rendered: it needs NO live pipeline or data at call time (a view
+   * that has rendered once has a full frame in memory). The rows are flipped with
+   * the SAME ENC-696 logic the on-canvas blit uses, so the thumbnail matches the
+   * visible chart and is never double-flipped. Returns "" when there is nothing
+   * to capture (no core, or a render is in flight, or a zero-sized framebuffer).
+   *
+   * @param w  thumbnail width  (default 320)
+   * @param h  thumbnail height (default 200)
+   * @param canvasFactory  optional encode-surface factory (test injection)
+   */
+  captureThumbnail(
+    w: number = DEFAULT_THUMB_W,
+    h: number = DEFAULT_THUMB_H,
+    canvasFactory?: ThumbnailCanvasFactory,
+  ): string {
+    const core = this.core;
+    // Never touch the core mid-render (ASYNCIFY runtime is parked) — same guard
+    // as getBufferBytes/pick. Caller can retry; "" signals "nothing captured".
+    if (!core || this.rendering) return "";
+    const fbW = core.framebufferWidth();
+    const fbH = core.framebufferHeight();
+    if (fbW <= 0 || fbH <= 0) return "";
+    // framebuffer() is a typed_memory_view into the WASM heap; copy it before the
+    // next render can invalidate it (same precaution as blitFramebuffer).
+    const view = core.framebuffer();
+    const src = view.slice(0, fbW * fbH * 4);
+    return framebufferToThumbnailDataURL(src, fbW, fbH, w, h, canvasFactory);
   }
 
   // -------------------- picking --------------------
