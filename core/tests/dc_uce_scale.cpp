@@ -248,6 +248,89 @@ int main() {
           "updateDomain false for missing column");
   }
 
+  // ----- ENC-622: multi-field auto-domain folds ALL bound columns -----------
+  // A candle y-scale binds domainFrom:{fields:[low,high]}. The domain MUST bracket
+  // BOTH the low column's min AND the high column's max — folding only the first
+  // field (the pre-ENC-622 bug) leaves a candle whose high exceeds the [low]-only
+  // domain rendering outside the pane. Here `high` is driven WAY above low's max so
+  // the old single-field fold is provably wrong.
+  {
+    dc::IngestProcessor ingest;
+    dc::TableStore tables;
+    auto src = dc::makeBufferByteSource(ingest);
+
+    const dc::Id kLowBuf = 210, kHighBuf = 211;
+    const dc::Id kTable = 9;
+    check(tables.defineTable(kTable, "ohlc"), "enc622: defineTable ohlc");
+    check(tables.addColumn(kTable, "low", dc::DType::F32, kLowBuf),
+          "enc622: addColumn low/f32");
+    check(tables.addColumn(kTable, "high", dc::DType::F32, kHighBuf),
+          "enc622: addColumn high/f32");
+
+    dc::LinearScale yp;
+    yp.setRange(0.0, 1.0);
+    yp.bindColumns(kTable, {"low", "high"});
+    check(yp.hasBoundColumn(), "enc622: yp bound to [low,high]");
+
+    // Two candles. low = {9, 16}; high = {12, 40}. The high of candle 2 (40) is far
+    // ABOVE low's max (16): a single-field ([low]) fold would give [9,16], leaving
+    // 40 outside the domain. The correct union fold is [9,40].
+    {
+      float low[2] = {9.0f, 16.0f};
+      float high[2] = {12.0f, 40.0f};
+      std::vector<std::uint8_t> batch;
+      appendRecord(batch, kLowBuf, low, sizeof(low));
+      appendRecord(batch, kHighBuf, high, sizeof(high));
+      ingest.processBatch(batch.data(),
+                          static_cast<std::uint32_t>(batch.size()));
+    }
+    check(yp.updateDomain(tables, src), "enc622: updateDomain folds low+high");
+
+    // The core acceptance: the domain contains BOTH the low min AND the high max.
+    const double loMin = 9.0;   // min over low column
+    const double hiMax = 40.0;  // max over high column
+    check(approx(yp.domain().min, loMin),
+          "enc622: domain min is low's min (9) — low is contained");
+    check(approx(yp.domain().max, hiMax),
+          "enc622: domain max is high's max (40) — high is contained (FOLDED)");
+    check(yp.domain().min <= loMin && yp.domain().max >= hiMax,
+          "enc622: candle high AND low are BOTH inside the folded domain");
+
+    // And the scale maps both extremes to the range endpoints — proving map() uses
+    // the widened (correct) domain, so a candle's high lands inside the pane.
+    check(approx(yp.map(loMin), 0.0) && approx(yp.map(hiMax), 1.0),
+          "enc622: map() spans the union domain [9,40] -> [0,1]");
+
+    // A second tick that appends a new global-max high must widen the domain in
+    // O(Δ) (the extra column keeps its own high-water mark).
+    {
+      float low[1] = {10.0f};
+      float high[1] = {55.0f};
+      std::vector<std::uint8_t> batch;
+      appendRecord(batch, kLowBuf, low, sizeof(low));
+      appendRecord(batch, kHighBuf, high, sizeof(high));
+      ingest.processBatch(batch.data(),
+                          static_cast<std::uint32_t>(batch.size()));
+    }
+    yp.updateDomain(tables, src);
+    check(approx(yp.domain().max, 55.0),
+          "enc622: appending a new high (55) widens the folded domain O(Δ)");
+    check(approx(yp.domain().min, 9.0),
+          "enc622: domain min unchanged (no new low below 9)");
+
+    // bindColumn (single) must CLEAR the extra-column state: rebinding to just
+    // `low` folds ONLY low, so the domain no longer reaches high's values.
+    dc::LinearScale single;
+    single.setRange(0.0, 1.0);
+    single.bindColumns(kTable, {"low", "high"});
+    single.updateDomain(tables, src);
+    check(approx(single.domain().max, 55.0), "enc622: multi-bind reaches high(55)");
+    single.bindColumn(kTable, "low");  // rebind single -> clears extras
+    single.updateDomain(tables, src);
+    check(approx(single.domain().max, 16.0),
+          "enc622: rebinding bindColumn('low') clears extras -> max is low's 16");
+  }
+
   // ----- nice()-ing hook (minimal; full NiceTicks is ENC-599) ----------------
   {
     dc::LinearScale s(dc::Domain{0.3, 9.7, false}, dc::Range{0.0, 1.0});
