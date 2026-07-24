@@ -167,6 +167,9 @@ export class EngineHost {
   private dataQueue: ArrayBuffer[] = [];
   // Texture uploads buffered until the WASM module is ready (ENC-532).
   private pendingTextures: PendingTexture[] = [];
+  // Font bytes for the SDF glyph atlas, buffered until ready (ENC-715). Only the
+  // last loadFont before ready is kept — a font load replaces the atlas font.
+  private pendingFont: Uint8Array | null = null;
   private droppedBatches = 0;
   private readonly MAX_QUEUE = 512;
 
@@ -272,6 +275,16 @@ export class EngineHost {
     }
     this.pendingTextures = [];
 
+    // Load a buffered font into the SDF glyph atlas BEFORE any control command,
+    // so a buffered setTextGeometry (or a glyph8/textSDF draw) has the atlas
+    // ready (ENC-715). setTextGeometry itself is not buffered (it returns a glyph
+    // count synchronously — see setTextGeometry()), so this only covers the
+    // load-font-then-author-when-ready flow.
+    if (this.pendingFont) {
+      this.core.loadFont(this.pendingFont);
+      this.pendingFont = null;
+    }
+
     // Flush buffered control commands + data batches in order.
     for (const json of this.pendingControl) {
       const r = this.core.applyControl(json);
@@ -321,6 +334,7 @@ export class EngineHost {
     this.pendingControl = [];
     this.dataQueue = [];
     this.pendingTextures = [];
+    this.pendingFont = null;
     this.lastErrors = [];
   }
 
@@ -407,6 +421,78 @@ export class EngineHost {
       h,
       format,
     });
+  }
+
+  // -------------------- GPU text (textSDF@1, ENC-715) --------------------
+  /**
+   * Load a TTF/OTF font into the core's SDF glyph atlas so textSDF@1 text can be
+   * laid out (`setTextGeometry` / the `drawText` helper). Call once before
+   * authoring any GPU text. The atlas is core-owned (stb_truetype → shelf pack →
+   * distance-transform SDF, uploaded as an R8 texture by the Dawn textSDF
+   * backend) — there is deliberately no JS-side atlas.
+   *
+   * Buffered until the WASM module is ready (init is async), then applied before
+   * any replayed control commands. Returns the core's load result when applied
+   * immediately, or `true` optimistically while buffering (the load is retried on
+   * ready). A malformed font makes the core return `false`.
+   *
+   * @param fontBytes the raw TTF/OTF file bytes.
+   */
+  loadFont(fontBytes: Uint8Array): boolean {
+    this.frameDirty = true;
+    // Apply immediately only when ready AND no render is in flight (the WASM core
+    // is single-async-op; touching it mid-render aborts the runtime — the same
+    // guard as setTexturePixels/enqueueData).
+    if (this.ready && this.core && !this.rendering) {
+      return this.core.loadFont(fontBytes);
+    }
+    // Copy so a caller-reused buffer can't mutate the buffered font.
+    this.pendingFont = fontBytes.slice();
+    return true;
+  }
+
+  /**
+   * Lay `text` out at clip-space baseline (clipX, clipY) at `fontSize` pixels
+   * into the glyph8 instance buffer `bufferId`, and set geometry `geometryId`'s
+   * vertexCount to the glyph count — so a textSDF@1 DrawItem bound to that
+   * geometry renders the positioned text. The buffer/geometry(glyph8) scaffolding
+   * must already exist (create them via applyControl first); bind the DrawItem
+   * AFTER this call so its vertexCount is ≥ 1. Prefer the `drawText` helper
+   * (chart/text.ts), which emits the whole ordered sequence for you.
+   *
+   * Returns the glyph instance count written (0 for empty/all-whitespace text),
+   * -1 if no font has been loaded, or -1 if the core is not ready / a render is
+   * in flight / control commands are still buffered (unlike control commands
+   * this is NOT buffered — it must run against a ready core to return a count and
+   * set vertexCount, and must NOT jump ahead of still-buffered create commands
+   * for its buffer/geometry; author text after `whenReady()` and not mid-render).
+   *
+   * @returns glyph count, or -1 (no font, or not-ready/rendering/controls queued).
+   */
+  setTextGeometry(
+    bufferId: number,
+    geometryId: number,
+    text: string,
+    clipX: number,
+    clipY: number,
+    fontSize: number,
+  ): number {
+    // Refuse if not ready, mid-render, OR controls are still buffered: running
+    // now would execute against the core BEFORE those buffered createBuffer/
+    // createGeometry commands, so the target buffer/geometry may not exist yet.
+    // This mirrors applyControl's `pendingControl.length > 0` ordering gate.
+    if (!this.ready || !this.core || this.rendering || this.pendingControl.length > 0) {
+      return -1;
+    }
+    this.frameDirty = true;
+    return this.core.setTextGeometry(
+      bufferId,
+      geometryId,
+      text,
+      clipX,
+      clipY,
+      fontSize,
+    );
   }
 
   // -------------------- control plane --------------------
@@ -681,6 +767,14 @@ export class EngineHost {
    */
   private drainQueued(): void {
     if (!this.ready || !this.core || this.rendering) return;
+    // A font buffered by loadFont() while a render was in flight (ready but
+    // rendering) is only otherwise flushed in loadModule (which runs once), so
+    // it would be lost — drain it here, before any control, so a queued
+    // glyph8/textSDF command finds the atlas ready (ENC-715).
+    if (this.pendingFont) {
+      this.core.loadFont(this.pendingFont);
+      this.pendingFont = null;
+    }
     if (
       this.pendingTextures.length === 0 &&
       this.pendingControl.length === 0 &&
