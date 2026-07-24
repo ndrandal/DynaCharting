@@ -9,10 +9,16 @@
 #include "dc/ingest/IngestProcessor.hpp"
 #include "dc/viewport/Viewport.hpp"
 #include "dc/viewport/AutoScale.hpp"
+#include "dc/data/DataSource.hpp"
+#include "dc/data/LiveIngestLoop.hpp"
 
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <array>
+#include <cstring>
+#include <deque>
+#include <vector>
 
 static void requireTrue(bool cond, const char* msg) {
   if (!cond) {
@@ -27,6 +33,48 @@ static void requireOk(const dc::CmdResult& r, const char* ctx) {
                  ctx, r.err.code.c_str(), r.err.message.c_str());
     std::exit(1);
   }
+}
+
+// A deterministic, non-threaded DataSource: hands back pre-built ingest batches
+// one poll() at a time. Lets us drive LiveIngestLoop tick-by-tick with exact,
+// known candle appends (no timing/FakeDataSource nondeterminism).
+class ScriptedDataSource : public dc::DataSource {
+public:
+  void pushBatch(std::vector<std::uint8_t> b) { queue_.push_back(std::move(b)); }
+  void start() override { running_ = true; }
+  void stop() override { running_ = false; }
+  bool isRunning() const override { return running_; }
+  bool poll(std::vector<std::uint8_t>& out) override {
+    if (queue_.empty()) return false;
+    out = std::move(queue_.front());
+    queue_.pop_front();
+    return true;
+  }
+private:
+  std::deque<std::vector<std::uint8_t>> queue_;
+  bool running_{false};
+};
+
+// Build a single 13-byte-header APPEND batch that appends `candles` (each 6 f32:
+// x, open, high, low, close, halfWidth = 24 bytes) to `bufferId`.
+static std::vector<std::uint8_t> makeCandleAppendBatch(
+    std::uint32_t bufferId, const std::vector<std::array<float, 6>>& candles) {
+  std::vector<std::uint8_t> payload;
+  payload.reserve(candles.size() * 24);
+  for (const auto& c : candles) {
+    const auto* p = reinterpret_cast<const std::uint8_t*>(c.data());
+    payload.insert(payload.end(), p, p + 24);
+  }
+  std::vector<std::uint8_t> batch;
+  batch.push_back(1); // OP_APPEND
+  auto putU32 = [&](std::uint32_t v) {
+    for (int i = 0; i < 4; i++) batch.push_back(static_cast<std::uint8_t>(v >> (8 * i)));
+  };
+  putU32(bufferId);
+  putU32(0); // offset (ignored for append)
+  putU32(static_cast<std::uint32_t>(payload.size()));
+  batch.insert(batch.end(), payload.begin(), payload.end());
+  return batch;
 }
 
 int main() {
@@ -176,6 +224,99 @@ int main() {
     requireTrue(yMax > 60.0, "includeZero: yMax > 60");
 
     std::printf("  Test 3 (includeZero → extends to 0) PASS\n");
+  }
+
+  // --- Test 4 (ENC-607 / P1.16): LiveIngestLoop auto-scale-Y is O(Δ) streaming ---
+  // Drives LiveIngestLoop across several ticks, each appending known candles, and
+  // proves BOTH:
+  //   (a) correctness — the viewport Y range equals the full-data-domain
+  //       min(low)/max(high) ± 5% margin over ALL candles appended so far, and
+  //   (b) O(Δ) — autoScaleFoldedCandles() equals the TOTAL candle count (each
+  //       candle folded exactly once, ever). A regression to a per-tick O(N)
+  //       rescan would fold the triangular sum instead (here 9, not 4), so this
+  //       equality is the guard against re-introducing the full-column rescan.
+  {
+    dc::Scene scene;
+    dc::ResourceRegistry reg;
+    dc::CommandProcessor cp(scene, reg);
+    dc::IngestProcessor ingest;
+    ingest.ensureBuffer(100);
+
+    dc::Viewport vp;
+    vp.setPixelViewport(800, 600);
+    vp.setDataRange(0.0, 100.0, 0.0, 200.0);
+
+    dc::LiveIngestLoop loop;
+    dc::LiveIngestLoopConfig lc;
+    lc.autoScrollX = false; // isolate auto-scale-Y (X stays fixed)
+    lc.autoScaleY = true;
+    loop.setConfig(lc);
+    loop.addBinding({100, 101, 24}); // candle6 buffer
+    loop.setViewport(&vp);
+
+    // candle = {x, open, high, low, close, halfWidth}
+    // Three ticks: 2, then 1, then 1 candle. New global extremes appear in later
+    // ticks (low 70 / high 130 only arrive in tick 3) — so the running domain must
+    // retain earlier folds AND pick up new tails.
+    ScriptedDataSource src;
+    src.pushBatch(makeCandleAppendBatch(100, {
+        {{0.f, 100.f, 105.f, 95.f, 100.f, 0.3f}},
+        {{1.f, 100.f, 110.f, 90.f, 100.f, 0.3f}},
+    }));
+    src.pushBatch(makeCandleAppendBatch(100, {
+        {{2.f, 100.f, 115.f, 88.f, 100.f, 0.3f}},
+    }));
+    src.pushBatch(makeCandleAppendBatch(100, {
+        {{3.f, 100.f, 130.f, 70.f, 100.f, 0.3f}},
+    }));
+    src.start();
+
+    // Tick 1: batches drain fully inside a single consumeAndUpdate (poll loop),
+    // so one call would consume everything. Instead we feed one tick at a time by
+    // only pushing more between calls — but ScriptedDataSource already holds all 3.
+    // consumeAndUpdate drains ALL queued batches per call, which is the real
+    // behavior; a single call here folds all 4 candles. To exercise the per-tick
+    // tail-fold path we call it three times, pushing nothing new between calls
+    // (so calls 2 and 3 see numCandles unchanged → fold 0), proving idempotence.
+    auto t1 = loop.consumeAndUpdate(src, ingest, cp);
+    requireTrue(!t1.empty(), "tick1 touched candle buffer");
+
+    // After draining all 3 batches: 4 candles, full domain low=70 high=130.
+    requireTrue(ingest.getBufferSize(100) / 24 == 4, "4 candles ingested");
+    requireTrue(loop.autoScaleFoldedCandles() == 4,
+                "folded exactly 4 candles (O(delta), not a rescan)");
+
+    double span = 130.0 - 70.0;
+    double margin = span * 0.05; // 3.0
+    std::printf("  T4 after tick1: Y=[%.2f,%.2f] folded=%llu\n",
+                vp.dataRange().yMin, vp.dataRange().yMax,
+                static_cast<unsigned long long>(loop.autoScaleFoldedCandles()));
+    requireTrue(std::fabs(vp.dataRange().yMin - (70.0 - margin)) < 1e-6,
+                "yMin == min(low) - margin (full domain)");
+    requireTrue(std::fabs(vp.dataRange().yMax - (130.0 + margin)) < 1e-6,
+                "yMax == max(high) + margin (full domain)");
+
+    // Idempotence / true O(Δ): with no new candles, further ticks fold NOTHING.
+    loop.consumeAndUpdate(src, ingest, cp);
+    loop.consumeAndUpdate(src, ingest, cp);
+    requireTrue(loop.autoScaleFoldedCandles() == 4,
+                "no re-fold when nothing appended (still 4, not growing)");
+
+    // Now append one more candle that does NOT change the extremes; only the new
+    // tail (1 candle) is folded → total becomes 5, still O(Δ).
+    src.pushBatch(makeCandleAppendBatch(100, {
+        {{4.f, 100.f, 120.f, 80.f, 100.f, 0.3f}},
+    }));
+    loop.consumeAndUpdate(src, ingest, cp);
+    requireTrue(loop.autoScaleFoldedCandles() == 5,
+                "appending 1 candle folds exactly 1 more (delta=1)");
+    // Extremes unchanged (70/130 still bound it).
+    requireTrue(std::fabs(vp.dataRange().yMin - (70.0 - margin)) < 1e-6,
+                "yMin unchanged after non-extreme append");
+    requireTrue(std::fabs(vp.dataRange().yMax - (130.0 + margin)) < 1e-6,
+                "yMax unchanged after non-extreme append");
+
+    std::printf("  Test 4 (O(delta) streaming auto-scale-Y) PASS\n");
   }
 
   std::printf("D11.2 autoscale: ALL PASS\n");
