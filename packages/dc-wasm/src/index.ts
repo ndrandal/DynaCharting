@@ -106,6 +106,16 @@ export type {
   TransitionClock,
 } from "./interaction/SignalStore";
 
+// ENC-639 (F2): linked-brushing demo — two views share ONE SignalStore so a brush
+// in view A live-filters view B. Built directly on ENC-634's attachInteraction +
+// SignalStore (the shared-store pattern the SignalStore module note prescribes).
+export { LinkedBrushingDemo } from "./interaction/LinkedBrushingDemo";
+export type {
+  LinkableView,
+  FilterListener,
+  LinkedBrushingConfig,
+} from "./interaction/LinkedBrushingDemo";
+
 // dc-wasm-specific: the WASM loader + module types (for advanced/test wiring).
 export { loadDcEngineHost } from "./wasm";
 export type {
