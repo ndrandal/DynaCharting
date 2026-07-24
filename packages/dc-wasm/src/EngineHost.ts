@@ -45,6 +45,7 @@ import {
   framebufferToThumbnailDataURL,
   type ThumbnailCanvasFactory,
 } from "./thumbnail";
+import { EventSurface, type EventSurfaceOptions } from "./interaction/EventSurface";
 
 // ---- Public types: re-exported to MATCH @repo/engine-host exactly ----------
 export type PickResult = { drawItemId: number } | null;
@@ -172,6 +173,10 @@ export class EngineHost {
 
   private lastErrors: EngineError[] = [];
   private lastPick: number | null = null;
+
+  // The interaction event surface (ENC-634/D4), created lazily by
+  // attachInteraction() and torn down on shutdown().
+  private interaction: EventSurface | null = null;
 
   // FPS
   private frames = 0;
@@ -307,6 +312,8 @@ export class EngineHost {
     this.running = false;
     if (this.raf) cancelAnimationFrame(this.raf);
     this.raf = 0;
+    this.interaction?.detach();
+    this.interaction = null;
     try {
       this.core?.dispose();
       this.core?.delete();
@@ -560,6 +567,73 @@ export class EngineHost {
         });
     }
     return this.lastPick !== null ? { drawItemId: this.lastPick } : null;
+  }
+
+  // -------------------- interaction event surface (ENC-634/D4) --------------
+  /**
+   * Attach a browser pointer/keyboard event surface to a DOM element (defaults to
+   * the bound canvas) and route those events into interaction SIGNALS. This is the
+   * browser entry point for the interaction layer (SPEC phase-D item 4): DOM
+   * pointer/keyboard events → pick() → a JS-side `SignalStore` that mirrors the C++
+   * HoverManager / SelectionState / BrushGesture the prebuilt wasm does not expose.
+   *
+   *   - pointermove → async pick → `hover` signal (+ enter/exit callbacks)
+   *   - click       → pick → `selection` signal (single/toggle, shift/ctrl = union)
+   *   - drag        → `brush` signal (x-interval | y-interval | rect)
+   *   - Escape/arrows → clear / navigate the selection
+   *
+   * Returns the `EventSurface`; read `.store` for the live signals and call
+   * `.detach()` (or the host's `detachInteraction()` / `shutdown()`) to remove the
+   * listeners. Pass `options.store` to SHARE one store across several hosts for
+   * cross-view linked brushing (ENC-639); per-instance consumers (ENC-640) read the
+   * `hover`/`selection` predicates on that store.
+   *
+   * Idempotent per host: a second call detaches the previous surface first. Throws
+   * only if no target is available (no canvas bound and none passed).
+   */
+  attachInteraction(
+    targetOrOptions?: EventTarget | EventSurfaceOptions,
+    maybeOptions?: EventSurfaceOptions,
+  ): EventSurface {
+    // Overloads: attachInteraction(options?) uses the bound canvas;
+    // attachInteraction(target, options?) listens on an explicit element.
+    let target: EventTarget | null;
+    let options: EventSurfaceOptions | undefined;
+    if (
+      targetOrOptions &&
+      typeof (targetOrOptions as EventTarget).addEventListener === "function"
+    ) {
+      target = targetOrOptions as EventTarget;
+      options = maybeOptions;
+    } else {
+      target = this.canvas;
+      options = targetOrOptions as EventSurfaceOptions | undefined;
+    }
+    if (!target) {
+      throw new Error(
+        "attachInteraction: no target element (call init(canvas) first or pass a target)",
+      );
+    }
+    this.interaction?.detach();
+    // EventSurface only needs pickAsync; `this` satisfies PickEngine.
+    this.interaction = new EventSurface(
+      target as unknown as import("./interaction/EventSurface").ListenTarget,
+      this,
+      options,
+    );
+    return this.interaction;
+  }
+
+  /** Remove the interaction event surface's DOM listeners (no-op if none). The
+   *  signal store is left intact for any remaining subscribers. */
+  detachInteraction(): void {
+    this.interaction?.detach();
+    this.interaction = null;
+  }
+
+  /** The live interaction surface, or null if `attachInteraction` was never called. */
+  interactionSurface(): EventSurface | null {
+    return this.interaction;
   }
 
   /** Async pick that resolves to the fresh result (no staleness). */
