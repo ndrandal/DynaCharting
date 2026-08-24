@@ -70,6 +70,42 @@ export type { Range, Transform1D, Transform2D, Scale } from "./chart/scale";
 export { createIdAllocator } from "./chart/ids";
 export type { IdAllocator, ResourceKind } from "./chart/ids";
 
+// ENC-634 (D4): the interaction layer's browser entry point — a pointer/keyboard
+// event surface + the JS-side SignalStore it routes into. `EngineHost.attachInteraction()`
+// is the primary entry; these exports let ENC-639 (shared store / linked brushing)
+// and ENC-640 (per-instance pick/hover/brush) build directly on the surface.
+export { EventSurface } from "./interaction/EventSurface";
+export type {
+  PickEngine,
+  ListenTarget,
+  DataSpaceMapper,
+  SelectionModeName,
+  BrushModeName,
+  EventSurfaceOptions,
+} from "./interaction/EventSurface";
+export {
+  SignalStore,
+  emptyPoint,
+  emptyInterval,
+  emptyMulti,
+  emptyBrush,
+  inactiveHover,
+  identityCamera,
+  zeroClock,
+} from "./interaction/SignalStore";
+export type {
+  MaybeId,
+  SignalValue,
+  SignalListener,
+  PointSelection,
+  IntervalSelection,
+  MultiSelection,
+  BrushRect,
+  HoverState,
+  CameraState,
+  TransitionClock,
+} from "./interaction/SignalStore";
+
 // dc-wasm-specific: the WASM loader + module types (for advanced/test wiring).
 export { loadDcEngineHost } from "./wasm";
 export type {
