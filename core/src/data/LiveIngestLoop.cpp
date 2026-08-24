@@ -19,7 +19,16 @@ void LiveIngestLoop::addBinding(const BufferGeometryBinding& binding) {
   bindings_.push_back(binding);
 }
 
-void LiveIngestLoop::clearBindings() { bindings_.clear(); }
+void LiveIngestLoop::clearBindings() {
+  bindings_.clear();
+  // Bindings define which buffer the streaming auto-domain tracks; dropping them
+  // invalidates the running [min,max]. Reset so a fresh set of bindings re-folds
+  // from scratch instead of carrying a stale domain. (autoScaleFoldedCandles_ is a
+  // cumulative lifetime counter — intentionally NOT reset.)
+  autoScaleDomain_.reset();
+  autoScaleBufferId_ = kInvalidId;
+  autoScaleConsumedCandles_ = 0;
+}
 
 void LiveIngestLoop::setViewport(Viewport* vp) { viewport_ = vp; }
 
@@ -74,26 +83,40 @@ std::vector<Id> LiveIngestLoop::consumeAndUpdate(DataSource& source,
       }
 
       if (config_.autoScaleY) {
-        const auto& dr = viewport_->dataRange();
-        float yMin = 1e9f, yMax = -1e9f;
-        for (std::uint32_t i = 0; i < numCandles; i++) {
-          float x, high, low;
-          std::memcpy(&x, data + i * 24, sizeof(float));
+        // ENC-607 (P1.16) — O(Δ) streaming auto-domain via the P1.5 RunningDomain
+        // reducer. Instead of rescanning all `numCandles` every tick (the removed
+        // O(N) loop), fold ONLY the candles appended since the previous tick into a
+        // persistent running [min,max]. Each candle's low and high are folded once,
+        // ever; over an append-only stream the result is bit-identical to a full
+        // brute-force min(low)/max(high). (Deliberate P1.5 semantic: this is a
+        // full-data-domain auto-scale over the whole growing column — NOT the legacy
+        // visible-X-window filter, which stays on AutoScale::computeYRange.)
+        if (b.bufferId != autoScaleBufferId_ ||
+            numCandles < autoScaleConsumedCandles_) {
+          // Buffer swapped, or the row count went backwards (replaced/truncated):
+          // the running state is stale — restart the reducer for this buffer.
+          autoScaleDomain_.reset();
+          autoScaleConsumedCandles_ = 0;
+          autoScaleBufferId_ = b.bufferId;
+        }
+        for (std::uint32_t i = autoScaleConsumedCandles_; i < numCandles; i++) {
+          float high, low;
           std::memcpy(&high, data + i * 24 + 8, sizeof(float));
           std::memcpy(&low, data + i * 24 + 12, sizeof(float));
-
-          if (static_cast<double>(x) < dr.xMin ||
-              static_cast<double>(x) > dr.xMax)
-            continue;
-          yMin = std::min(yMin, low);
-          yMax = std::max(yMax, high);
+          // low <= high per candle, so folding both yields domain.min == min(lows)
+          // and domain.max == max(highs) in a single running domain.
+          autoScaleDomain_.foldOne(static_cast<double>(low));
+          autoScaleDomain_.foldOne(static_cast<double>(high));
+          ++autoScaleFoldedCandles_;
         }
-        if (yMin < yMax) {
-          float padding = (yMax - yMin) * 0.05f;
-          viewport_->setDataRange(
-              dr.xMin, dr.xMax,
-              static_cast<double>(yMin - padding),
-              static_cast<double>(yMax + padding));
+        autoScaleConsumedCandles_ = numCandles;
+
+        const Domain& dom = autoScaleDomain_.domain();
+        if (!dom.empty && dom.min < dom.max) {
+          const auto& dr = viewport_->dataRange();
+          double padding = (dom.max - dom.min) * 0.05;
+          viewport_->setDataRange(dr.xMin, dr.xMax, dom.min - padding,
+                                  dom.max + padding);
         }
       }
       break; // only process first candle binding
