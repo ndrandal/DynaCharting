@@ -116,6 +116,25 @@ export type {
   DcEngineStatsRaw,
 } from "./wasm";
 
+// ENC-715: GPU text (textSDF@1) authoring helper — wraps the core SDF glyph-atlas
+// text path (loadFont + setTextGeometry) so labels render on the GPU (and export
+// to PNG) instead of as a DOM overlay. See EngineHost.loadFont/setTextGeometry.
+export {
+  drawText,
+  planTextDraw,
+  clipXToPx,
+  clipYToPx,
+  pxToClipX,
+  pxToClipY,
+} from "./chart/text";
+export type {
+  TextDrawSpec,
+  TextStep,
+  TextPlan,
+  TextHandle,
+  TextTarget,
+} from "./chart/text";
+
 // ENC-703 (G2): client-side scene/chart builder over applyControl. Encapsulates
 // the per-element create→bind→attach→style→data command sequence + id mgmt.
 export { SceneBuilder, encodeAppendRecord } from "./chart/SceneBuilder";
