@@ -116,6 +116,26 @@ export type {
   LinkedBrushingConfig,
 } from "./interaction/LinkedBrushingDemo";
 
+// ENC-640 (G1): the end-to-end interaction PROOF on an instanced view —
+// click drill-down + hover tooltip + brush-to-filter + smooth enter/exit/update
+// transitions, composed over the ENC-634 EventSurface/SignalStore and a TS mirror
+// of the Phase-E transition stack (FrameClock/AnimationController/InstanceTransition).
+export { InteractionProof } from "./interaction/InteractionProof";
+export type {
+  InstanceDatum,
+  InstancedView,
+  TooltipInfo,
+  InstanceVisualState,
+  InteractionProofOptions,
+  AttachedProof,
+} from "./interaction/InteractionProof";
+export { TransitionController, ease } from "./interaction/Transitions";
+export type {
+  TransitionPhase,
+  TransitionOptions,
+  EasingName,
+} from "./interaction/Transitions";
+
 // dc-wasm-specific: the WASM loader + module types (for advanced/test wiring).
 export { loadDcEngineHost } from "./wasm";
 export type {
