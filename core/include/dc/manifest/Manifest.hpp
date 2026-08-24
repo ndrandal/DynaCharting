@@ -189,7 +189,8 @@ class Manifest {
     std::unique_ptr<Scale> scale;
     // auto-domain binding (empty domainTable => a literal domain was supplied).
     Id domainTable{kInvalidId};
-    std::string domainColumn;
+    std::string domainColumn;               // first domainFrom field (back-compat)
+    std::vector<std::string> domainColumns;  // ALL domainFrom fields (ENC-622)
     bool autodomain{false};
     bool nice{false};
     int niceTarget{5};

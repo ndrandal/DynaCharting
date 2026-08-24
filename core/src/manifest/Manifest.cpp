@@ -346,8 +346,9 @@ ManifestResult Manifest::parseScales(const void* scalesValue) {
 
       // Accept either `field` (single) or `fields` (a [low,high] pair, e.g. the
       // §6.2 yp bound to [low,high]) — both must resolve + carry an accepted dtype.
-      // The auto-domain reducer folds the FIRST field's column (the running
-      // min/max over the others is folded at build time too if present).
+      // A numeric (linear) scale folds ALL listed fields into its running
+      // auto-domain (ENC-622), so e.g. the candle y-scale brackets both low AND
+      // high; time/ordinal scales use the first field (single-column by design).
       std::vector<std::string> fields;
       if (const auto* fV = member(*fromV, "field")) {
         if (fV->IsString()) fields.push_back(fV->GetString());
@@ -381,11 +382,14 @@ ManifestResult Manifest::parseScales(const void* scalesValue) {
       }
       decl.domainTable = srcDecl.tableId;
       decl.domainColumn = fields.front();
+      decl.domainColumns = fields;
       decl.autodomain = true;
 
-      // Wire the concrete scale's streaming auto-domain binding.
+      // Wire the concrete scale's streaming auto-domain binding. A LinearScale
+      // folds ALL listed fields (ENC-622: e.g. candle y bound to [low,high]);
+      // time/ordinal scales bind the first field (single-column by design).
       if (auto* ls = dynamic_cast<LinearScale*>(decl.scale.get())) {
-        ls->bindColumn(decl.domainTable, decl.domainColumn);
+        ls->bindColumns(decl.domainTable, decl.domainColumns);
       } else if (auto* ts = dynamic_cast<TimeScale*>(decl.scale.get())) {
         ts->bindColumn(decl.domainTable, decl.domainColumn);
       } else if (auto* os = dynamic_cast<OrdinalScale*>(decl.scale.get())) {
