@@ -146,19 +146,53 @@ std::vector<ScaleTick> LinearScale::ticks(int targetCount) const {
 void LinearScale::bindColumn(Id tableId, std::string columnName) {
   boundTable_ = tableId;
   boundColumn_ = std::move(columnName);
+  extraColumns_.clear();
+  extraRunnings_.clear();
   bound_ = true;
   running_.reset();
+}
+
+void LinearScale::bindColumns(Id tableId, std::vector<std::string> columnNames) {
+  boundTable_ = tableId;
+  running_.reset();
+  extraColumns_.clear();
+  extraRunnings_.clear();
+  if (columnNames.empty()) {
+    boundColumn_.clear();
+    bound_ = false;
+    return;
+  }
+  boundColumn_ = std::move(columnNames[0]);
+  for (std::size_t i = 1; i < columnNames.size(); ++i) {
+    extraColumns_.push_back(std::move(columnNames[i]));
+  }
+  extraRunnings_.resize(extraColumns_.size());
+  bound_ = true;
 }
 
 bool LinearScale::updateDomain(const TableStore& tables,
                                const BufferByteSource& src) {
   if (!bound_) return false;
+  // The FIRST column anchors the update: if it is missing/non-f32 the binding is
+  // invalid (matches the single-column contract). Extra columns are best-effort —
+  // a missing extra simply does not widen the domain.
   if (!running_.reduceColumnF32(tables, boundTable_, boundColumn_, src)) {
     return false;
   }
-  const Domain& d = running_.domain();
-  if (d.empty) return false;
-  domain_ = d;
+  // Fold every listed field into the running auto-domain (ENC-622): the scale
+  // domain is the UNION of all bound columns' [min,max], so e.g. a candle whose
+  // high exceeds a [low]-only domain is fully bracketed.
+  Domain merged = running_.domain();
+  for (std::size_t i = 0; i < extraColumns_.size(); ++i) {
+    extraRunnings_[i].reduceColumnF32(tables, boundTable_, extraColumns_[i], src);
+    const Domain& ed = extraRunnings_[i].domain();
+    if (!ed.empty) {
+      merged.fold(ed.min);
+      merged.fold(ed.max);
+    }
+  }
+  if (merged.empty) return false;
+  domain_ = merged;
   return true;
 }
 

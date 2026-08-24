@@ -31,7 +31,8 @@ pnpm --filter @repo/live-viewer build               # build the live-stream view
 ### C++ Core (CMake)
 
 ```bash
-cmake -B build -DTHIRD_PARTY_ROOT=./third_party     # configure (RapidJSON required)
+git submodule update --init third_party/rapidjson    # once: vendored RapidJSON
+cmake -B build                                       # configure
 cmake --build build                                  # build library + logic tests
 ctest --test-dir build                               # run the logic tests
 ctest --test-dir build -R dc_d1_1_smoke              # run a single test by name
@@ -41,7 +42,16 @@ The **default** build (no `-DDC_FETCH_DAWN`) builds `dc` + the pure-logic tests 
 
 CMake options: `DC_BUILD_TESTS` (default ON), `DC_WARNINGS_AS_ERRORS` (default OFF), `DC_FETCH_DAWN` (default OFF — see below).
 
-**Note:** Only RapidJSON is needed under `./third_party` (or via `-DTHIRD_PARTY_ROOT`) for the default build. There are no longer any GLAD / OSMesa / GLFW dependencies — the GL backend was removed.
+**Note:** Only RapidJSON is needed under `./third_party` for the default build. It is a git
+submodule — run `git submodule update --init third_party/rapidjson` after cloning, or the
+`dc` target fails to compile. There are no longer any GLAD / OSMesa / GLFW dependencies —
+the GL backend was removed.
+
+**Do not pass a relative `-DTHIRD_PARTY_ROOT`.** CMake resolves a relative value against the
+*build* directory, so `-DTHIRD_PARTY_ROOT=./third_party` becomes `build/third_party` and the
+build fails on a missing `stb_truetype.h`. The default is already
+`${CMAKE_SOURCE_DIR}/third_party`, so just omit the flag; pass an **absolute** path only if
+your third-party tree lives elsewhere (ENC-876).
 
 ### WebGPU / Dawn backend (`dc_gpu`)
 
@@ -50,7 +60,7 @@ CMake options: `DC_BUILD_TESTS` (default ON), `DC_WARNINGS_AS_ERRORS` (default O
 Enable Dawn (fetches and builds it from source via CMake `FetchContent`). Use Ninja:
 
 ```bash
-cmake -B build-dawn -G Ninja -DTHIRD_PARTY_ROOT=./third_party -DDC_BUILD_TESTS=ON -DDC_FETCH_DAWN=ON
+cmake -B build-dawn -G Ninja -DDC_BUILD_TESTS=ON -DDC_FETCH_DAWN=ON
 cmake --build build-dawn -j$(nproc)
 # Dawn render tests need a real Vulkan ICD; on a headless box use the lavapipe fallback:
 VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json ctest --test-dir build-dawn -j$(nproc)
@@ -70,7 +80,7 @@ The Dawn build adds `dc_gpu`, the `dc_json_host` embedding host, the headless re
 The default Dawn build is **headless** (offscreen render + readback). On-screen presentation is an **additive, opt-in** build path enabled with `-DDC_DAWN_WINDOWED=ON` (default OFF, so the headless build — the 169 tests + the WASM/browser targets — stays lean and needs no windowing system).
 
 ```bash
-cmake -B build-win -G Ninja -DTHIRD_PARTY_ROOT=./third_party \
+cmake -B build-win -G Ninja \
   -DDC_FETCH_DAWN=ON -DDC_DAWN_WINDOWED=ON \
   -DFETCHCONTENT_SOURCE_DIR_DAWN=~/dawn-src
 cmake --build build-win --target dc_gpu dc_dawn_window_demo
