@@ -166,9 +166,13 @@ int main() {
     check(eqf(static_cast<float>(m.scale("xt")->domain().min), 0.0f) &&
               eqf(static_cast<float>(m.scale("xt")->domain().max), 1.0f),
           "valid: xt auto-domain folded t -> [0,1]");
-    // yp binds the FIRST domain field (low): low column is {9,16} -> [9,16].
+    // yp binds domainFrom:{fields:[low,high]} and folds BOTH (ENC-622): low is
+    // {9,16}, high is {12,21}, so the union domain is [9,21] — NOT the [9,16] a
+    // first-field-only fold produced. min comes from low (9), max from high (21).
     check(eqf(static_cast<float>(m.scale("yp")->domain().min), 9.0f),
-          "valid: yp auto-domain folded its bound column min (9)");
+          "valid: yp auto-domain folded low's min (9)");
+    check(eqf(static_cast<float>(m.scale("yp")->domain().max), 21.0f),
+          "valid: yp auto-domain folded high's max (21) — ALL fields folded (ENC-622)");
 
     // ----- the CANDLE mark: instancedCandle@1, Candle6 byte-exact -----
     const dc::CompiledMark* candle = m.compiledMark("candles");

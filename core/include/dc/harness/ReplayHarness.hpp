@@ -235,11 +235,10 @@ class CorpusGenerator {
   }
 
   // Emit one wide row: every declared field gets an event. OHLC values sit in a
-  // TIGHT band around `base` (low ≤ open/close ≤ high) so that a y-scale which
-  // auto-domains over a SINGLE channel (the merged stack folds the first domainFrom
-  // field) still BRACKETS the whole candle to within a small, bounded overshoot —
-  // the band is deliberately narrow vs. the inter-row variation. A plain line just
-  // reads field[0].
+  // TIGHT band around `base` (low ≤ open/close ≤ high). A candle y-scale that binds
+  // domainFrom:{fields:[low,high]} folds ALL those fields (ENC-622), so the domain
+  // brackets the whole candle exactly; the tight band keeps mapped positions well
+  // inside the pane pad regardless. A plain line just reads field[0].
   void emitRow(SyntheticFeed& f, std::size_t i, float base) const {
     const std::int64_t rk = rowKeyAt(i);
     for (std::size_t fi = 0; fi < schema_.fields.size(); ++fi) {

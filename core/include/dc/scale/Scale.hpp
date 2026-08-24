@@ -247,24 +247,38 @@ class LinearScale : public Scale {
 
   // ----- streaming auto-domain ----------------------------------------------
 
-  // Bind an f32 column as this scale's auto-domain source. Resets any prior
-  // accumulated streaming state.
+  // Bind a SINGLE f32 column as this scale's auto-domain source. Resets any prior
+  // accumulated streaming state (and clears any extra multi-field columns).
   void bindColumn(Id tableId, std::string columnName);
+
+  // Bind SEVERAL f32 columns (e.g. a candle y-scale's [low,high]) as the
+  // auto-domain source: updateDomain() folds the running min/max across ALL of
+  // them, so the domain brackets every listed field — not just the first
+  // (ENC-622). Empty `columnNames` unbinds. Resets prior streaming state. Each
+  // column gets its own O(Δ) RunningDomain reducer (independent high-water marks,
+  // since columns may grow at different rates); the scale domain is the UNION of
+  // their running domains.
+  void bindColumns(Id tableId, std::vector<std::string> columnNames);
 
   bool hasBoundColumn() const { return bound_; }
 
-  // Fold the bound column's NEW tail rows (O(Δ)) and adopt the running [min,max]
-  // as the scale domain. No-op (returns false) if no column is bound, the column
-  // is missing/non-f32, or no rows have arrived yet. Range is left untouched.
+  // Fold every bound column's NEW tail rows (O(Δ) each) and adopt the UNION of
+  // their running [min,max] as the scale domain. No-op (returns false) if no
+  // column is bound, the FIRST column is missing/non-f32, or no rows have arrived
+  // yet. Range is left untouched.
   bool updateDomain(const TableStore& tables, const BufferByteSource& src);
 
-  // The underlying streaming reducer (exposed for inspection / tests).
+  // The underlying streaming reducer for the FIRST bound column (exposed for
+  // inspection / tests). For a multi-field bind the scale domain is the union of
+  // this and the extra reducers; use domain() for the merged auto-domain.
   const RunningDomain& runningDomain() const { return running_; }
 
  private:
-  RunningDomain running_;
+  RunningDomain running_;                     // reducer for the first bound column
+  std::vector<RunningDomain> extraRunnings_;  // reducers for columns [1..]
   Id boundTable_{kInvalidId};
-  std::string boundColumn_;
+  std::string boundColumn_;                    // first bound column
+  std::vector<std::string> extraColumns_;      // columns [1..]
   bool bound_{false};
 };
 

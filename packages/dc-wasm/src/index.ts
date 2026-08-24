@@ -106,6 +106,16 @@ export type {
   TransitionClock,
 } from "./interaction/SignalStore";
 
+// ENC-639 (F2): linked-brushing demo — two views share ONE SignalStore so a brush
+// in view A live-filters view B. Built directly on ENC-634's attachInteraction +
+// SignalStore (the shared-store pattern the SignalStore module note prescribes).
+export { LinkedBrushingDemo } from "./interaction/LinkedBrushingDemo";
+export type {
+  LinkableView,
+  FilterListener,
+  LinkedBrushingConfig,
+} from "./interaction/LinkedBrushingDemo";
+
 // ENC-640 (G1): the end-to-end interaction PROOF on an instanced view —
 // click drill-down + hover tooltip + brush-to-filter + smooth enter/exit/update
 // transitions, composed over the ENC-634 EventSurface/SignalStore and a TS mirror
@@ -135,6 +145,25 @@ export type {
   DcControlResult,
   DcEngineStatsRaw,
 } from "./wasm";
+
+// ENC-715: GPU text (textSDF@1) authoring helper — wraps the core SDF glyph-atlas
+// text path (loadFont + setTextGeometry) so labels render on the GPU (and export
+// to PNG) instead of as a DOM overlay. See EngineHost.loadFont/setTextGeometry.
+export {
+  drawText,
+  planTextDraw,
+  clipXToPx,
+  clipYToPx,
+  pxToClipX,
+  pxToClipY,
+} from "./chart/text";
+export type {
+  TextDrawSpec,
+  TextStep,
+  TextPlan,
+  TextHandle,
+  TextTarget,
+} from "./chart/text";
 
 // ENC-703 (G2): client-side scene/chart builder over applyControl. Encapsulates
 // the per-element create→bind→attach→style→data command sequence + id mgmt.

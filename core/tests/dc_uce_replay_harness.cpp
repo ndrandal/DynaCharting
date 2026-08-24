@@ -220,10 +220,11 @@ int main() {
                  {"close", "close"}, {"volume", "volume"}});
     h.setDerivedHook(smaDerivedHook);
     h.addDomainCheck("xt", {"t"}, /*timestampColumn=*/true);
-    // yp auto-domains over `low` (the merged stack folds the FIRST domainFrom
-    // field); DomainContains is asserted over exactly that folded column. The
-    // candle's high/low ride a TIGHT band, so map() keeps them within the pane pad.
-    h.addDomainCheck("yp", {"low"});
+    // yp auto-domains over domainFrom:{fields:[low,high]} and folds BOTH (ENC-622),
+    // so DomainContains is asserted over the WHOLE candle range — the folded domain
+    // must bracket high as well as low. (Pre-ENC-622 only `low` was folded, so
+    // high's max sat just outside the domain; this check now guards the fix.)
+    h.addDomainCheck("yp", {"low", "high"});
     PaneBounds pb;            // clip pane [0,1] for "width"/"height" ranges, padded
     pb.minX = 0.0f; pb.maxX = 1.0f; pb.minY = 0.0f; pb.maxY = 1.0f; pb.pad = 0.35f;
     h.setPaneBounds(pb);
@@ -307,10 +308,11 @@ int main() {
     ReplayHarness h;
     h.configure("ohlc", "t",
                 {{"low", "low"}, {"high", "high"}});
-    // Both scales auto-domain over `low` (first domainFrom field); the rect's
-    // high edge rides the tight band within the pane pad.
-    h.addDomainCheck("xp", {"low"});
-    h.addDomainCheck("yp", {"low"});
+    // Both scales auto-domain over domainFrom:{fields:[low,high]} and fold BOTH
+    // (ENC-622), so the domain brackets the rect's high edge as well as its low
+    // edge — the DomainContains check now spans the full [low,high] range.
+    h.addDomainCheck("xp", {"low", "high"});
+    h.addDomainCheck("yp", {"low", "high"});
     PaneBounds pb;
     pb.minX = 0.0f; pb.maxX = 1.0f; pb.minY = 0.0f; pb.maxY = 1.0f; pb.pad = 0.35f;
     h.setPaneBounds(pb);
