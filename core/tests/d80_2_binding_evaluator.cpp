@@ -7,7 +7,7 @@
 #include "dc/selection/SelectionState.hpp"
 #include "dc/event/EventBus.hpp"
 
-#include <cassert>
+#include "dc_check.hpp"
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -75,31 +75,31 @@ static void testSelectionFilterBasic() {
   bindings[1001] = b;
 
   eval.loadBindings(bindings);
-  assert(eval.bindingCount() == 1);
+  DC_CHECK(eval.bindingCount() == 1);
 
   // Select record 2 on drawItem 300
   f.selection.select({300, 2});
   auto touched = eval.onSelectionChanged(f.selection);
 
   // Output buffer should have been touched
-  assert(touched.size() == 1);
-  assert(touched[0] == 110);
+  DC_CHECK(touched.size() == 1);
+  DC_CHECK(touched[0] == 110);
 
   // Verify output buffer contains record 2 only: (2.0, 2.1)
   const std::uint8_t* outData = f.ingest.getBufferData(110);
   std::uint32_t outSize = f.ingest.getBufferSize(110);
-  assert(outSize == 8);  // 1 record × 8 bytes
+  DC_CHECK(outSize == 8);  // 1 record × 8 bytes
 
   float x = 0, y = 0;
   std::memcpy(&x, outData, sizeof(float));
   std::memcpy(&y, outData + 4, sizeof(float));
-  assert(feq(x, 2.0f));
-  assert(feq(y, 2.1f));
+  DC_CHECK(feq(x, 2.0f));
+  DC_CHECK(feq(y, 2.1f));
 
   // Verify geometry vertex count was updated
   const auto* geom = f.scene.getGeometry(210);
-  assert(geom != nullptr);
-  assert(geom->vertexCount == 1);
+  DC_CHECK(geom != nullptr);
+  DC_CHECK(geom->vertexCount == 1);
 
   std::printf("  PASS: selection → filterBuffer basic\n");
 }
@@ -131,8 +131,8 @@ static void testSelectionClearedEmptyOutput() {
   eval.onSelectionChanged(f.selection);
 
   // Output should be empty
-  assert(f.ingest.getBufferSize(110) == 0);
-  assert(f.scene.getGeometry(210)->vertexCount == 0);
+  DC_CHECK(f.ingest.getBufferSize(110) == 0);
+  DC_CHECK(f.scene.getGeometry(210)->vertexCount == 0);
 
   std::printf("  PASS: selection cleared → empty output\n");
 }
@@ -163,8 +163,8 @@ static void testMultiSelect() {
   f.selection.toggle({300, 3});
   eval.onSelectionChanged(f.selection);
 
-  assert(f.ingest.getBufferSize(110) == 16);  // 2 records × 8 bytes
-  assert(f.scene.getGeometry(210)->vertexCount == 2);
+  DC_CHECK(f.ingest.getBufferSize(110) == 16);  // 2 records × 8 bytes
+  DC_CHECK(f.scene.getGeometry(210)->vertexCount == 2);
 
   std::printf("  PASS: multi-select → multiple records in output\n");
 }
@@ -194,7 +194,7 @@ static void testWrongDrawItemNoEffect() {
   eval.onSelectionChanged(f.selection);
 
   // Output should still be empty (no matching trigger)
-  assert(f.ingest.getBufferSize(110) == 0);
+  DC_CHECK(f.ingest.getBufferSize(110) == 0);
 
   std::printf("  PASS: selection on wrong drawItem → no effect\n");
 }
@@ -220,17 +220,17 @@ static void testSelectionSetVisible() {
 
   // Initially set drawItem 310 invisible
   f.cp.applyJsonText(R"({"cmd":"setDrawItemVisible","drawItemId":310,"visible":false})");
-  assert(f.scene.getDrawItem(310)->visible == false);
+  DC_CHECK(f.scene.getDrawItem(310)->visible == false);
 
   // Select → should make it visible
   f.selection.select({300, 0});
   eval.onSelectionChanged(f.selection);
-  assert(f.scene.getDrawItem(310)->visible == true);
+  DC_CHECK(f.scene.getDrawItem(310)->visible == true);
 
   // Clear selection → should revert to defaultVisible (false)
   f.selection.clear();
   eval.onSelectionChanged(f.selection);
-  assert(f.scene.getDrawItem(310)->visible == false);
+  DC_CHECK(f.scene.getDrawItem(310)->visible == false);
 
   std::printf("  PASS: selection → setVisible\n");
 }
@@ -259,15 +259,15 @@ static void testSelectionSetColor() {
   f.selection.select({300, 1});
   eval.onSelectionChanged(f.selection);
   const auto* di = f.scene.getDrawItem(310);
-  assert(feq(di->color[0], 1.0f));
-  assert(feq(di->color[1], 0.0f));
+  DC_CHECK(feq(di->color[0], 1.0f));
+  DC_CHECK(feq(di->color[1], 0.0f));
 
   // Clear → should revert to gray
   f.selection.clear();
   eval.onSelectionChanged(f.selection);
   di = f.scene.getDrawItem(310);
-  assert(feq(di->color[0], 0.5f));
-  assert(feq(di->color[1], 0.5f));
+  DC_CHECK(feq(di->color[0], 0.5f));
+  DC_CHECK(feq(di->color[1], 0.5f));
 
   std::printf("  PASS: selection → setColor\n");
 }
@@ -294,16 +294,16 @@ static void testHoverFilter() {
 
   // Hover over record 1
   auto touched = eval.onHoverChanged(300, 1);
-  assert(touched.size() == 1);
-  assert(f.ingest.getBufferSize(110) == 8);
+  DC_CHECK(touched.size() == 1);
+  DC_CHECK(f.ingest.getBufferSize(110) == 8);
 
   float x = 0;
   std::memcpy(&x, f.ingest.getBufferData(110), sizeof(float));
-  assert(feq(x, 1.0f));
+  DC_CHECK(feq(x, 1.0f));
 
   // Hover leaves (invalid index)
   eval.onHoverChanged(300, static_cast<std::uint32_t>(-1));
-  assert(f.ingest.getBufferSize(110) == 0);
+  DC_CHECK(f.ingest.getBufferSize(110) == 0);
 
   std::printf("  PASS: hover → filterBuffer\n");
 }
@@ -331,9 +331,9 @@ static void testViewportRange() {
 
   // Viewport shows x range [0.5, 2.5] → records 1 and 2 match
   auto touched = eval.onViewportChanged("main", 0.5, 2.5);
-  assert(touched.size() == 1);
-  assert(f.ingest.getBufferSize(110) == 16);  // 2 records
-  assert(f.scene.getGeometry(210)->vertexCount == 2);
+  DC_CHECK(touched.size() == 1);
+  DC_CHECK(f.ingest.getBufferSize(110) == 16);  // 2 records
+  DC_CHECK(f.scene.getGeometry(210)->vertexCount == 2);
 
   std::printf("  PASS: viewport → rangeBuffer\n");
 }
@@ -366,14 +366,14 @@ static void testThresholdVisible() {
 
   // Current last record has x=3.0 > 2.5 → condition met
   eval.onDataChanged({100});
-  assert(f.scene.getDrawItem(310)->visible == true);
+  DC_CHECK(f.scene.getDrawItem(310)->visible == true);
 
   // Overwrite buffer with lower values: last record x=1.0
   float newData[] = {0.0f, 0.0f, 1.0f, 0.0f};
   f.ingest.setBufferData(100,
     reinterpret_cast<const std::uint8_t*>(newData), sizeof(newData));
   eval.onDataChanged({100});
-  assert(f.scene.getDrawItem(310)->visible == false);
+  DC_CHECK(f.scene.getDrawItem(310)->visible == false);
 
   std::printf("  PASS: threshold → setVisible\n");
 }
@@ -406,7 +406,7 @@ static void testEventBusIntegration() {
   f.eventBus.emit(ev);
 
   // Verify the binding ran
-  assert(f.ingest.getBufferSize(110) == 8);
+  DC_CHECK(f.ingest.getBufferSize(110) == 8);
 
   eval.detach(f.eventBus);
 

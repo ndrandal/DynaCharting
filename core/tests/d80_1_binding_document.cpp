@@ -1,7 +1,7 @@
 // D80.1: Binding declarations — parse/serialize round-trip tests
 #include "dc/document/SceneDocument.hpp"
 
-#include <cassert>
+#include "dc_check.hpp"
 #include <cmath>
 #include <cstdio>
 #include <string>
@@ -28,18 +28,18 @@ static void testParseFilterBinding() {
   })";
 
   dc::SceneDocument doc;
-  assert(dc::parseSceneDocument(json, doc));
-  assert(doc.bindings.size() == 1);
-  assert(doc.bindings.count(1001) == 1);
+  DC_CHECK(dc::parseSceneDocument(json, doc));
+  DC_CHECK(doc.bindings.size() == 1);
+  DC_CHECK(doc.bindings.count(1001) == 1);
 
   const auto& b = doc.bindings.at(1001);
-  assert(b.trigger.type == "selection");
-  assert(b.trigger.drawItemId == 300);
-  assert(b.effect.type == "filterBuffer");
-  assert(b.effect.sourceBufferId == 100);
-  assert(b.effect.outputBufferId == 110);
-  assert(b.effect.recordStride == 16);
-  assert(b.effect.geometryId == 501);
+  DC_CHECK(b.trigger.type == "selection");
+  DC_CHECK(b.trigger.drawItemId == 300);
+  DC_CHECK(b.effect.type == "filterBuffer");
+  DC_CHECK(b.effect.sourceBufferId == 100);
+  DC_CHECK(b.effect.outputBufferId == 110);
+  DC_CHECK(b.effect.recordStride == 16);
+  DC_CHECK(b.effect.geometryId == 501);
 
   std::printf("  PASS: parse filterBuffer binding\n");
 }
@@ -67,20 +67,20 @@ static void testParseThresholdBinding() {
   })";
 
   dc::SceneDocument doc;
-  assert(dc::parseSceneDocument(json, doc));
-  assert(doc.bindings.count(2001) == 1);
+  DC_CHECK(dc::parseSceneDocument(json, doc));
+  DC_CHECK(doc.bindings.count(2001) == 1);
 
   const auto& b = doc.bindings.at(2001);
-  assert(b.trigger.type == "threshold");
-  assert(b.trigger.sourceBufferId == 100);
-  assert(b.trigger.fieldOffset == 4);
-  assert(b.trigger.condition == "greaterThan");
-  assert(deq(b.trigger.value, 50.0));
+  DC_CHECK(b.trigger.type == "threshold");
+  DC_CHECK(b.trigger.sourceBufferId == 100);
+  DC_CHECK(b.trigger.fieldOffset == 4);
+  DC_CHECK(b.trigger.condition == "greaterThan");
+  DC_CHECK(deq(b.trigger.value, 50.0));
 
-  assert(b.effect.type == "setVisible");
-  assert(b.effect.drawItemId == 600);
-  assert(b.effect.visible == true);
-  assert(b.effect.defaultVisible == false);
+  DC_CHECK(b.effect.type == "setVisible");
+  DC_CHECK(b.effect.drawItemId == 600);
+  DC_CHECK(b.effect.visible == true);
+  DC_CHECK(b.effect.defaultVisible == false);
 
   std::printf("  PASS: parse threshold/setVisible binding\n");
 }
@@ -102,16 +102,17 @@ static void testParseColorBinding() {
   })";
 
   dc::SceneDocument doc;
-  assert(dc::parseSceneDocument(json, doc));
+  DC_CHECK(dc::parseSceneDocument(json, doc));
 
+  DC_CHECK_CONTAINS(doc.bindings, 3001);
   const auto& b = doc.bindings.at(3001);
-  assert(b.trigger.type == "hover");
-  assert(b.trigger.drawItemId == 400);
-  assert(b.effect.type == "setColor");
-  assert(b.effect.drawItemId == 500);
-  assert(feq(b.effect.color[0], 1.0f));
-  assert(feq(b.effect.color[1], 0.8f));
-  assert(feq(b.effect.defaultColor[0], 0.5f));
+  DC_CHECK(b.trigger.type == "hover");
+  DC_CHECK(b.trigger.drawItemId == 400);
+  DC_CHECK(b.effect.type == "setColor");
+  DC_CHECK(b.effect.drawItemId == 500);
+  DC_CHECK(feq(b.effect.color[0], 1.0f));
+  DC_CHECK(feq(b.effect.color[1], 0.8f));
+  DC_CHECK(feq(b.effect.defaultColor[0], 0.5f));
 
   std::printf("  PASS: parse hover/setColor binding\n");
 }
@@ -135,14 +136,15 @@ static void testParseViewportBinding() {
   })";
 
   dc::SceneDocument doc;
-  assert(dc::parseSceneDocument(json, doc));
+  DC_CHECK(dc::parseSceneDocument(json, doc));
 
+  DC_CHECK_CONTAINS(doc.bindings, 4001);
   const auto& b = doc.bindings.at(4001);
-  assert(b.trigger.type == "viewport");
-  assert(b.trigger.viewportName == "main");
-  assert(b.effect.type == "rangeBuffer");
-  assert(b.effect.recordStride == 24);
-  assert(b.effect.xFieldOffset == 0);
+  DC_CHECK(b.trigger.type == "viewport");
+  DC_CHECK(b.trigger.viewportName == "main");
+  DC_CHECK(b.effect.type == "rangeBuffer");
+  DC_CHECK(b.effect.recordStride == 24);
+  DC_CHECK(b.effect.xFieldOffset == 0);
 
   std::printf("  PASS: parse viewport/rangeBuffer binding\n");
 }
@@ -166,18 +168,18 @@ static void testSerializeRoundTrip() {
 
   // Parse it back
   dc::SceneDocument doc2;
-  assert(dc::parseSceneDocument(json, doc2));
-  assert(doc2.bindings.size() == 1);
-  assert(doc2.bindings.count(1001) == 1);
+  DC_CHECK(dc::parseSceneDocument(json, doc2));
+  DC_CHECK(doc2.bindings.size() == 1);
+  DC_CHECK(doc2.bindings.count(1001) == 1);
 
   const auto& b2 = doc2.bindings.at(1001);
-  assert(b2.trigger.type == "selection");
-  assert(b2.trigger.drawItemId == 300);
-  assert(b2.effect.type == "filterBuffer");
-  assert(b2.effect.sourceBufferId == 100);
-  assert(b2.effect.outputBufferId == 110);
-  assert(b2.effect.recordStride == 16);
-  assert(b2.effect.geometryId == 501);
+  DC_CHECK(b2.trigger.type == "selection");
+  DC_CHECK(b2.trigger.drawItemId == 300);
+  DC_CHECK(b2.effect.type == "filterBuffer");
+  DC_CHECK(b2.effect.sourceBufferId == 100);
+  DC_CHECK(b2.effect.outputBufferId == 110);
+  DC_CHECK(b2.effect.recordStride == 16);
+  DC_CHECK(b2.effect.geometryId == 501);
 
   std::printf("  PASS: serialize round-trip\n");
 }
@@ -199,10 +201,10 @@ static void testCompactSerialize() {
   std::string json = dc::serializeSceneDocument(doc, true);
 
   // Compact should not contain "viewportName" (it's empty/default)
-  assert(json.find("viewportName") == std::string::npos);
+  DC_CHECK(json.find("viewportName") == std::string::npos);
   // But should contain the essential fields
-  assert(json.find("\"selection\"") != std::string::npos);
-  assert(json.find("\"filterBuffer\"") != std::string::npos);
+  DC_CHECK(json.find("\"selection\"") != std::string::npos);
+  DC_CHECK(json.find("\"filterBuffer\"") != std::string::npos);
 
   std::printf("  PASS: compact serialize omits defaults\n");
 }
@@ -223,14 +225,14 @@ static void testMultipleBindings() {
   })";
 
   dc::SceneDocument doc;
-  assert(dc::parseSceneDocument(json, doc));
-  assert(doc.bindings.size() == 2);
+  DC_CHECK(dc::parseSceneDocument(json, doc));
+  DC_CHECK(doc.bindings.size() == 2);
 
   // std::map preserves order
   auto it = doc.bindings.begin();
-  assert(it->first == 5001);
+  DC_CHECK(it->first == 5001);
   ++it;
-  assert(it->first == 5002);
+  DC_CHECK(it->first == 5002);
 
   std::printf("  PASS: multiple bindings ordered by ID\n");
 }
@@ -240,8 +242,8 @@ static void testEmptyBindings() {
   const char* json = R"({ "bindings": {} })";
 
   dc::SceneDocument doc;
-  assert(dc::parseSceneDocument(json, doc));
-  assert(doc.bindings.empty());
+  DC_CHECK(dc::parseSceneDocument(json, doc));
+  DC_CHECK(doc.bindings.empty());
 
   std::printf("  PASS: empty bindings section\n");
 }
