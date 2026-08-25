@@ -7,6 +7,7 @@
 #include "dc/gpu/DawnPickBackend.hpp"
 
 #include "dc/render/CpuBufferStore.hpp"
+#include "dc/render/LineAAQuad.hpp"
 #include "dc/scene/Scene.hpp"
 #include "dc/scene/Geometry.hpp"
 #include "dc/scene/Types.hpp"
@@ -151,15 +152,17 @@ fn fs_main() -> @location(0) vec4<f32> { return u.color; }
 )WGSL";
 
 // pickLineAA: per-instance segment (x0,y0,x1,y1) expanded to a thick quad.
-// Mirrors GL kPickLineAAVert (line width + AA fringe in clip units).
+// Shares the ENC-981 pixel-space quad expansion with the VISIBLE lineAA shader
+// (dc/render/LineAAQuad.hpp) so the pick footprint stays exactly the drawn
+// footprint on a non-square viewport too. lineWidth/aaWidth are PIXELS.
 const char* kPickLineAAWgsl = R"WGSL(
 struct U {
   c0:vec4<f32>, c1:vec4<f32>, c2:vec4<f32>,
   color:vec4<f32>,         // float 12 (the id color)
-  viewport:vec2<f32>,      // float 16 (unused, parity)
+  viewport:vec2<f32>,      // float 16 (pixel width/height)
   _pad0:f32,               // float 18
-  lineWidth:f32,           // float 19 (clip units)
-  aaWidth:f32,             // float 20 (clip units)
+  lineWidth:f32,           // float 19 (PIXELS)
+  aaWidth:f32,             // float 20 (PIXELS)
 };
 @group(0) @binding(0) var<uniform> u : U;
 @vertex
@@ -170,11 +173,8 @@ fn vs_main(@builtin(vertex_index) vid : u32,
   let m = mat3x3<f32>(u.c0.xyz, u.c1.xyz, u.c2.xyz);
   let c0 = (m * vec3<f32>(p0, 1.0)).xy;
   let c1 = (m * vec3<f32>(p1, 1.0)).xy;
-  let dir = c1 - c0;
-  let len = length(dir);
-  let d = select(vec2<f32>(1.0, 0.0), dir / len, len > 0.0001);
-  let perp = vec2<f32>(-d.y, d.x);
-  let totalHW = u.lineWidth * 0.5 + u.aaWidth;
+  let halfWidthPx = u.lineWidth * 0.5 + u.aaWidth;
+  let vpHalf = max(u.viewport, vec2<f32>(1.0, 1.0)) * 0.5;
   let v = vid % 6u;
   var uv : vec2<f32>;
   if (v == 0u)      { uv = vec2<f32>(0.0, -1.0); }
@@ -183,9 +183,13 @@ fn vs_main(@builtin(vertex_index) vid : u32,
   else if (v == 3u) { uv = vec2<f32>(0.0,  1.0); }
   else if (v == 4u) { uv = vec2<f32>(1.0, -1.0); }
   else              { uv = vec2<f32>(1.0,  1.0); }
-  let pos = mix(c0, c1, uv.x) + perp * (uv.y * totalHW);
-  // c0/c1 already y-up clip; negate y once for the framebuffer orientation.
-  return vec4<f32>(pos.x, -pos.y, 0.0, 1.0);
+)WGSL"
+// ENC-981 shared pixel-space quad expansion -> pos2. Here c0/c1 are y-UP clip
+// (the visible shader flips first); negating y of the finished quad is an
+// isometry, so both shaders cover exactly the same pixels.
+DC_LINEAA_QUAD_EXPAND_WGSL
+R"WGSL(
+  return vec4<f32>(pos2.x, -pos2.y, 0.0, 1.0);
 }
 @fragment
 fn fs_main() -> @location(0) vec4<f32> { return u.color; }
@@ -737,10 +741,10 @@ void DawnPickBackend::drawPickItem(GpuDevice& device, const Scene& scene,
 
   if (di.pipeline == "lineAA@1") {
     if (!gb.vertexBuffer.valid() || gb.instanceCount == 0) return;
-    const float lineWidthClip =
-        (viewW > 0) ? (di.lineWidth / static_cast<float>(viewW) * 2.0f) : 0.01f;
-    const float aaWidthClip =
-        (viewW > 0) ? (1.5f / static_cast<float>(viewW) * 2.0f) : 0.005f;
+    // ENC-981: PIXELS, matching the visible lineAA path exactly.
+    const LineAAParams lp = lineAAParams(di.lineWidth);
+    const float lineWidthPx = lp.lineWidthPx;
+    const float aaWidthPx = lp.aaWidthPx;
     const float viewport[2] = {static_cast<float>(viewW),
                                static_cast<float>(viewH)};
     UniformBinding uniforms[4];
@@ -755,12 +759,12 @@ void DawnPickBackend::drawPickItem(GpuDevice& device, const Scene& scene,
     uniforms[2].data = viewport;
     uniforms[3].kind = UniformBinding::Kind::Float;
     uniforms[3].name = "u_lineWidth";
-    uniforms[3].data = &lineWidthClip;
+    uniforms[3].data = &lineWidthPx;
     // aaWidth shares float index 20 (u_aaWidth) in the shared block.
     UniformBinding aa;
     aa.kind = UniformBinding::Kind::Float;
     aa.name = "u_aaWidth";
-    aa.data = &aaWidthClip;
+    aa.data = &aaWidthPx;
     UniformBinding all[5] = {uniforms[0], uniforms[1], uniforms[2], uniforms[3], aa};
 
     BindGroupDesc bg;

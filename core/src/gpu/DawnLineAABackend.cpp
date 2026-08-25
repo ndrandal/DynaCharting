@@ -15,6 +15,7 @@
 #include "dc/gpu/DawnLineAABackend.hpp"
 
 #include "dc/render/CpuBufferStore.hpp"
+#include "dc/render/LineAAQuad.hpp"
 #include "dc/scene/Scene.hpp"
 #include "dc/scene/Geometry.hpp"
 #include "dc/scene/Types.hpp"
@@ -47,12 +48,14 @@ constexpr std::uint32_t kRectStride = 16;
 //   * a_rect (vec4) is the single per-instance attribute at location 0
 //     (VertexStepMode::Instance): xy = segment start p0, zw = segment end p1.
 //   * Quad expansion: transform p0/p1 by the mat3 (clip space, then y-flipped to
-//     NDC); the perp is built from the flipped clip-space direction so the quad
-//     is correctly oriented; corners are mix(c0,c1,uv.x) + perp*(uv.y*totalHW),
-//     totalHW = lineWidth/2 + aaWidth (clip units).
-//   * v_dist = uv.y*totalHW/halfWidth: 0 at center, 1 at nominal edge, >1 in the
-//     AA fringe (GL parity). v_along = uv.x * segment length in PIXELS (clip
-//     delta * viewport/2) for the dash phase.
+//     NDC), then offset by the perpendicular — computed in PIXEL space, see
+//     dc/render/LineAAQuad.hpp — by uv.y * halfWidthPx, halfWidthPx =
+//     lineWidth/2 + aaWidth (PIXELS). ENC-981: the perpendicular must be
+//     normalized in pixel space, not clip space, or the quad shears and loses
+//     width on a non-square viewport (a 2px horizontal line delivered 1.125px
+//     at 1600x900 while a vertical one delivered the full 2px).
+//   * v_dist = uv.y*halfWidthPx/hw: 0 at center, 1 at nominal edge, >1 in the
+//     AA fringe. v_along = uv.x * segment length in PIXELS for the dash phase.
 //   * Fragment: dash discard (mod over dashLen+gapLen) then AA coverage
 //     a = 1 - smoothstep(1, fringeEdge, |v_dist|); composited by Normal blend.
 //
@@ -65,8 +68,8 @@ struct Uniforms {
   color        : vec4<f32>,
   viewport     : vec2<f32>,   // pixel width/height
   cornerRadius : f32,         // unused for lineAA (slot parity with instancedRect)
-  lineWidth    : f32,         // clip units
-  aaWidth      : f32,         // clip units (AA fringe beyond nominal edge)
+  lineWidth    : f32,         // PIXELS (ENC-981)
+  aaWidth      : f32,         // PIXELS (AA fringe beyond nominal edge)
   fringeEdge   : f32,         // v_dist value where coverage reaches 0
   dashLen      : f32,         // pixels (0 => solid)
   gapLen       : f32,         // pixels
@@ -93,13 +96,9 @@ fn vs_main(@builtin(vertex_index) vid : u32,
   let c0 = vec2<f32>(t0.x, -t0.y);
   let c1 = vec2<f32>(t1.x, -t1.y);
 
-  let dir = c1 - c0;
-  let len = length(dir);
-  let d = select(vec2<f32>(1.0, 0.0), dir / len, len > 0.0001);
-  let perp = vec2<f32>(-d.y, d.x);
-
   let hw = u.lineWidth * 0.5;
-  let totalHW = hw + u.aaWidth;
+  let halfWidthPx = hw + u.aaWidth;
+  let vpHalf = max(u.viewport, vec2<f32>(1.0, 1.0)) * 0.5;
 
   let v = vid % 6u;
   var uv : vec2<f32>;
@@ -110,16 +109,20 @@ fn vs_main(@builtin(vertex_index) vid : u32,
   else if (v == 4u) { uv = vec2<f32>(1.0, -1.0); }
   else              { uv = vec2<f32>(1.0,  1.0); }
 
-  let pos2 = mix(c0, c1, uv.x) + perp * (uv.y * totalHW);
+)WGSL"
+// ENC-981: the shared pixel-space quad expansion (c0,c1,uv,halfWidthPx,vpHalf
+// -> pos2, plus lenPx). ONE definition, compiled as C++ by the CPU regression
+// test dc_enc981_lineaa_width. See dc/render/LineAAQuad.hpp.
+DC_LINEAA_QUAD_EXPAND_WGSL
+R"WGSL(
 
   var out : VsOut;
   out.pos = vec4<f32>(pos2, 0.0, 1.0);
   // v_dist: 0 at center, 1.0 at nominal edge, >1.0 in the AA fringe.
-  out.vdist = uv.y * totalHW / max(hw, 0.0001);
-  // v_along: pixel-space distance along the line for the dash pattern. The clip
-  // delta (dir) maps to pixels via viewport/2 (NDC half-extent == 1).
-  let dirPx = dir * u.viewport * 0.5;
-  out.valong = uv.x * length(dirPx);
+  out.vdist = uv.y * halfWidthPx / max(hw, 0.0001);
+  // v_along: pixel-space distance along the line for the dash pattern —
+  // lenPx from the shared block is exactly that length.
+  out.valong = uv.x * lenPx;
   return out;
 }
 
@@ -278,16 +281,14 @@ BackendStats DawnLineAABackend::renderDrawItem(GpuDevice& device,
   const float viewport[2] = {static_cast<float>(viewW),
                              static_cast<float>(viewH)};
 
-  // lineWidth (px) -> clip units (NDC spans 2 over viewW pixels).
-  const float lineWidthClip =
-      (viewW > 0) ? (di.lineWidth / static_cast<float>(viewW) * 2.0f) : 0.01f;
-  // AA fringe: 1.5px beyond the nominal edge, in clip units.
-  const float aaWidthClip =
-      (viewW > 0) ? (1.5f / static_cast<float>(viewW) * 2.0f) : 0.005f;
-  // fringeEdge in v_dist space: (hw + aaWidth) / hw.
-  const float hw = lineWidthClip * 0.5f;
-  const float fringeEdge =
-      (hw > 0.0001f) ? ((hw + aaWidthClip) / hw) : 2.0f;
+  // ENC-981: lineWidth / aaWidth travel to the shader in PIXELS. The old
+  // px -> clip conversion divided by viewW alone, which is only right when
+  // viewW == viewH; the shader now converts with the full viewport after
+  // building the perpendicular in pixel space.
+  const LineAAParams lp = lineAAParams(di.lineWidth);
+  const float lineWidthPx = lp.lineWidthPx;
+  const float aaWidthPx = lp.aaWidthPx;
+  const float fringeEdge = lp.fringeEdge;
   const float cornerRadius = 0.0f;  // unused for lineAA (slot parity)
   const float dashLen = di.dashLength;
   const float gapLen = di.gapLength;
@@ -307,10 +308,10 @@ BackendStats DawnLineAABackend::renderDrawItem(GpuDevice& device,
   uniforms[3].data = &cornerRadius;
   uniforms[4].kind = UniformBinding::Kind::Float;
   uniforms[4].name = "u_lineWidth";
-  uniforms[4].data = &lineWidthClip;
+  uniforms[4].data = &lineWidthPx;
   uniforms[5].kind = UniformBinding::Kind::Float;
   uniforms[5].name = "u_aaWidth";
-  uniforms[5].data = &aaWidthClip;
+  uniforms[5].data = &aaWidthPx;
   uniforms[6].kind = UniformBinding::Kind::Float;
   uniforms[6].name = "u_fringeEdge";
   uniforms[6].data = &fringeEdge;
