@@ -767,6 +767,17 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_enc612_color_lut PRIVATE dc)
   add_test(NAME dc_enc612_color_lut COMMAND dc_enc612_color_lut)
 
+  # ENC-981 — lineAA@1 quad expansion: delivered line width must equal the
+  # requested lineWidth at EVERY angle on a NON-SQUARE viewport. Deliberately a
+  # plain `dc` test (not Dawn-gated): dc_gpu only builds with -DDC_FETCH_DAWN=ON,
+  # so a render-only guard would never run in the default build — and the Dawn
+  # lineAA test rendered at 128x128, where this bug is exactly zero.
+  add_executable(dc_enc981_lineaa_width
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_enc981_lineaa_width.cpp"
+  )
+  target_link_libraries(dc_enc981_lineaa_width PRIVATE dc)
+  add_test(NAME dc_enc981_lineaa_width COMMAND dc_enc981_lineaa_width)
+
   add_executable(dc_d1_3_atomic_frame
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/d1_3_atomic_frame.cpp"
   )

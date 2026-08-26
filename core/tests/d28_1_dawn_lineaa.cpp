@@ -24,6 +24,16 @@
 //      pixels along the center row (cross-check vs the GL d28_1_dashed_lines
 //      coloredCount/blackCount asserts).
 //
+//   3. ENC-981 ORIENTATION-INDEPENDENT WEIGHT: a horizontal and a vertical line
+//      of the SAME lineWidth, measured in pixels on a NON-SQUARE viewport, must
+//      come out the same width. The quad expansion used to normalize the
+//      perpendicular in CLIP space and convert lineWidth px->clip by dividing by
+//      viewW alone, so the delivered width was
+//        lineWidth * sqrt((H/W)^2 cos^2(theta) + sin^2(theta))
+//      — correct for vertical lines, 56% for horizontal ones at 16:9. This whole
+//      file used to render at 128x128, where that error is EXACTLY ZERO, which is
+//      why it never caught the bug. The viewport below is deliberately 16:9.
+//
 // NDC Y-FLIP: clip-space y is negated in the WGSL (same as triSolid/instancedRect).
 // The lines are horizontal and centered (y=0), so the flip is symmetric about the
 // center row — the AA fringe appears symmetrically above and below.
@@ -41,6 +51,7 @@
 #include "dc/scene/ResourceRegistry.hpp"
 #include "dc/commands/CommandProcessor.hpp"
 
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -69,11 +80,11 @@ static void check(bool cond, const char* name) {
 int main() {
   std::printf("=== D28.1 Dawn lineAA (thick AA lines + dash) ===\n");
 
-  // Square viewport so the GL-parity lineWidth->clip conversion (which divides by
-  // viewW only) maps to the same pixel scale vertically — making the AA fringe a
-  // clean, samplable band of partial-coverage pixels across the line edge.
-  constexpr std::uint32_t W = 128;
-  constexpr std::uint32_t H = 128;
+  // ENC-981: NON-SQUARE (16:9) on purpose. At aspect 1.0 the old clip-space
+  // perpendicular delivered the right width by accident, so a square viewport
+  // cannot see the bug at all.
+  constexpr std::uint32_t W = 192;
+  constexpr std::uint32_t H = 108;
 
   // --- Bring up the headless Dawn device. ---------------------------------
   dc::DawnDevice dev;
@@ -280,6 +291,105 @@ int main() {
     // A pixel sampled in a dash is green; a pixel sampled in a gap is clear.
     check(firstDashX >= 0 && dashPx[1] > 100, "dashed line: dash pixel is green");
     check(firstGapX >= 0 && gapPx[1] < 16, "dashed line: gap pixel is clear");
+  }
+
+  // =====================================================================
+  // Case 3 (ENC-981): a horizontal and a vertical line of the same lineWidth
+  // must be the same number of pixels wide on this NON-SQUARE viewport.
+  // =====================================================================
+  {
+    // Render one lineAA segment and return the >50%-coverage extent, in pixels,
+    // measured ACROSS the line. AA coverage is 1.0 out to the nominal edge and
+    // fades to 0 at the fringe edge, crossing 0.5 half an aaWidth beyond the
+    // nominal edge — so the measured extent is lineWidth + aaWidth (= 13.5px
+    // for a 12px line), the same for BOTH orientations once the perpendicular is
+    // built in pixel space.
+    // NOTE: DawnLineAABackend caches its instance buffer per GEOMETRY ID and
+    // invalidates on the CpuBufferStore data VERSION. Two fresh Scenes/stores
+    // reusing the same ids also reuse the same version numbers, so the cache
+    // would silently replay the first segment. Give each orientation its own id
+    // block (cases 1 and 2 above do the same).
+    auto renderAndMeasure = [&](bool vertical, float lineWidthPx,
+                                std::uint32_t base) -> int {
+      dc::Scene scene;
+      dc::ResourceRegistry reg;
+      dc::CommandProcessor cp(scene, reg);
+      dc::CpuBufferStore store;
+
+      char json[224];
+      std::snprintf(json, sizeof(json),
+                    R"({"cmd":"createPane","id":%u,"name":"P3"})", base);
+      requireOk(cp.applyJsonText(json), "pane3");
+      std::snprintf(json, sizeof(json),
+                    R"({"cmd":"createLayer","id":%u,"paneId":%u})", base + 1, base);
+      requireOk(cp.applyJsonText(json), "layer3");
+      std::snprintf(json, sizeof(json),
+                    R"({"cmd":"createDrawItem","id":%u,"layerId":%u})", base + 2,
+                    base + 1);
+      requireOk(cp.applyJsonText(json), "di3");
+
+      const float hSeg[4] = {-0.8f, 0.0f, 0.8f, 0.0f};
+      const float vSeg[4] = {0.0f, -0.8f, 0.0f, 0.8f};
+      std::snprintf(json, sizeof(json),
+                    R"({"cmd":"createBuffer","id":%u,"byteLength":16})", base + 3);
+      requireOk(cp.applyJsonText(json), "buf3");
+      store.setCpuData(base + 3, vertical ? vSeg : hSeg, 16);
+      std::snprintf(json, sizeof(json),
+                    R"({"cmd":"createGeometry","id":%u,"vertexBufferId":%u,)"
+                    R"("vertexCount":1,"format":"rect4"})",
+                    base + 4, base + 3);
+      requireOk(cp.applyJsonText(json), "geom3");
+      std::snprintf(json, sizeof(json),
+                    R"({"cmd":"bindDrawItem","drawItemId":%u,"pipeline":"lineAA@1",)"
+                    R"("geometryId":%u})",
+                    base + 2, base + 4);
+      requireOk(cp.applyJsonText(json), "bind3");
+      std::snprintf(json, sizeof(json),
+                    R"({"cmd":"setDrawItemColor","drawItemId":%u,)"
+                    R"("r":0,"g":1,"b":0,"a":1})", base + 2);
+      requireOk(cp.applyJsonText(json), "color3");
+      std::snprintf(json, sizeof(json),
+                    R"({"cmd":"setDrawItemStyle","drawItemId":%u,"lineWidth":%g,)"
+                    R"("dashLength":0,"gapLength":0})",
+                    base + 2, static_cast<double>(lineWidthPx));
+      requireOk(cp.applyJsonText(json), "style3");
+
+      dc::RenderPassDesc rp = makeRp();
+      dev.beginRenderPass(rp);
+      renderDi(scene, store, base + 2);
+      dev.endRenderPass();
+
+      // Scan ACROSS the line through its middle.
+      int count = 0;
+      const std::uint32_t span = vertical ? W : H;
+      for (std::uint32_t i = 0; i < span; ++i) {
+        std::uint8_t p[4];
+        if (vertical) {
+          px(i, H / 2, p);
+        } else {
+          px(W / 2, i, p);
+        }
+        if (p[1] > 127) ++count;
+      }
+      return count;
+    };
+
+    const float lw = 12.0f;
+    const int horiz = renderAndMeasure(false, lw, 40);
+    const int vert = renderAndMeasure(true, lw, 60);
+    std::printf("  ENC-981 @ %ux%u, lineWidth=%.0f: horizontal=%dpx vertical=%dpx"
+                " (expect ~%.1fpx both)\n",
+                W, H, static_cast<double>(lw), horiz, vert,
+                static_cast<double>(lw) + 1.5);
+
+    // Before the fix: horizontal came out 12 * (108/192) ~= 6.75px of nominal
+    // (7-8px measured) against 12px (13-14px measured) for the vertical.
+    check(horiz >= 12 && horiz <= 16,
+          "ENC-981: horizontal line is the requested width in PIXELS");
+    check(vert >= 12 && vert <= 16,
+          "ENC-981: vertical line is the requested width in PIXELS");
+    check(std::abs(horiz - vert) <= 1,
+          "ENC-981: horizontal and vertical weights match on a 16:9 viewport");
   }
 
   std::printf("=== Dawn lineAA: %d passed, %d failed ===\n", passed, failed);
