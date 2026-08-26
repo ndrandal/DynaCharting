@@ -1,7 +1,7 @@
 // D79.1: SceneDocument extended fields — parse/serialize round-trip tests
 #include "dc/document/SceneDocument.hpp"
 
-#include <cassert>
+#include "dc_check.hpp"
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -20,15 +20,15 @@ static void testInlineBufferParse() {
   })";
 
   dc::SceneDocument doc;
-  assert(dc::parseSceneDocument(json, doc));
-  assert(doc.buffers.count(100) == 1);
+  DC_CHECK(dc::parseSceneDocument(json, doc));
+  DC_CHECK(doc.buffers.count(100) == 1);
 
   const auto& b = doc.buffers.at(100);
-  assert(b.data.size() == 6);
-  assert(feq(b.data[0], 1.0f));
-  assert(feq(b.data[5], 6.0f));
+  DC_CHECK(b.data.size() == 6);
+  DC_CHECK(feq(b.data[0], 1.0f));
+  DC_CHECK(feq(b.data[5], 6.0f));
   // byteLength derived from data
-  assert(b.byteLength == 6 * sizeof(float));
+  DC_CHECK(b.byteLength == 6 * sizeof(float));
 
   std::printf("  PASS: inline buffer data parse\n");
 }
@@ -42,10 +42,11 @@ static void testInlineBufferWithByteLength() {
   })";
 
   dc::SceneDocument doc;
-  assert(dc::parseSceneDocument(json, doc));
+  DC_CHECK(dc::parseSceneDocument(json, doc));
   // Explicit byteLength takes precedence (not overridden by data size)
-  assert(doc.buffers.at(200).byteLength == 1024);
-  assert(doc.buffers.at(200).data.size() == 2);
+  DC_CHECK_CONTAINS(doc.buffers, 200);
+  DC_CHECK(doc.buffers.at(200).byteLength == 1024);
+  DC_CHECK(doc.buffers.at(200).data.size() == 2);
 
   std::printf("  PASS: inline buffer with explicit byteLength\n");
 }
@@ -59,9 +60,10 @@ static void testBufferNoData() {
   })";
 
   dc::SceneDocument doc;
-  assert(dc::parseSceneDocument(json, doc));
-  assert(doc.buffers.at(300).byteLength == 512);
-  assert(doc.buffers.at(300).data.empty());
+  DC_CHECK(dc::parseSceneDocument(json, doc));
+  DC_CHECK_CONTAINS(doc.buffers, 300);
+  DC_CHECK(doc.buffers.at(300).byteLength == 512);
+  DC_CHECK(doc.buffers.at(300).data.empty());
 
   std::printf("  PASS: buffer without inline data (backward compat)\n");
 }
@@ -85,29 +87,31 @@ static void testViewportParse() {
   })";
 
   dc::SceneDocument doc;
-  assert(dc::parseSceneDocument(json, doc));
-  assert(doc.viewports.size() == 2);
+  DC_CHECK(dc::parseSceneDocument(json, doc));
+  DC_CHECK(doc.viewports.size() == 2);
 
+  DC_CHECK_CONTAINS(doc.viewports, "price");
   const auto& pv = doc.viewports.at("price");
-  assert(pv.transformId == 50);
-  assert(pv.paneId == 1);
-  assert(deq(pv.xMin, 0));
-  assert(deq(pv.xMax, 100));
-  assert(deq(pv.yMin, 10));
-  assert(deq(pv.yMax, 200));
-  assert(pv.linkGroup == "time");
-  assert(pv.panX == true);
-  assert(pv.panY == false);
-  assert(pv.zoomX == true);
-  assert(pv.zoomY == false);
+  DC_CHECK(pv.transformId == 50);
+  DC_CHECK(pv.paneId == 1);
+  DC_CHECK(deq(pv.xMin, 0));
+  DC_CHECK(deq(pv.xMax, 100));
+  DC_CHECK(deq(pv.yMin, 10));
+  DC_CHECK(deq(pv.yMax, 200));
+  DC_CHECK(pv.linkGroup == "time");
+  DC_CHECK(pv.panX == true);
+  DC_CHECK(pv.panY == false);
+  DC_CHECK(pv.zoomX == true);
+  DC_CHECK(pv.zoomY == false);
 
+  DC_CHECK_CONTAINS(doc.viewports, "volume");
   const auto& vv = doc.viewports.at("volume");
-  assert(vv.transformId == 51);
+  DC_CHECK(vv.transformId == 51);
   // Defaults when not specified
-  assert(vv.panX == true);
-  assert(vv.panY == true);
-  assert(vv.zoomX == true);
-  assert(vv.zoomY == true);
+  DC_CHECK(vv.panX == true);
+  DC_CHECK(vv.panY == true);
+  DC_CHECK(vv.zoomX == true);
+  DC_CHECK(vv.zoomY == true);
 
   std::printf("  PASS: viewport declarations parse\n");
 }
@@ -126,22 +130,22 @@ static void testTextOverlayParse() {
   })";
 
   dc::SceneDocument doc;
-  assert(dc::parseSceneDocument(json, doc));
-  assert(doc.textOverlay.fontSize == 14);
-  assert(doc.textOverlay.color == "#ff0000");
-  assert(doc.textOverlay.labels.size() == 2);
+  DC_CHECK(dc::parseSceneDocument(json, doc));
+  DC_CHECK(doc.textOverlay.fontSize == 14);
+  DC_CHECK(doc.textOverlay.color == "#ff0000");
+  DC_CHECK(doc.textOverlay.labels.size() == 2);
 
   const auto& lbl0 = doc.textOverlay.labels[0];
-  assert(feq(lbl0.clipX, -0.9f));
-  assert(feq(lbl0.clipY, 0.5f));
-  assert(lbl0.text == "100.00");
-  assert(lbl0.align == "r");
-  assert(lbl0.color == "#00ff00");
-  assert(lbl0.fontSize == 0); // not specified
+  DC_CHECK(feq(lbl0.clipX, -0.9f));
+  DC_CHECK(feq(lbl0.clipY, 0.5f));
+  DC_CHECK(lbl0.text == "100.00");
+  DC_CHECK(lbl0.align == "r");
+  DC_CHECK(lbl0.color == "#00ff00");
+  DC_CHECK(lbl0.fontSize == 0); // not specified
 
   const auto& lbl1 = doc.textOverlay.labels[1];
-  assert(lbl1.align == "c");
-  assert(lbl1.fontSize == 11);
+  DC_CHECK(lbl1.align == "c");
+  DC_CHECK(lbl1.fontSize == 11);
 
   std::printf("  PASS: text overlay parse\n");
 }
@@ -183,28 +187,29 @@ static void testSerializeRoundTrip() {
 
   // Re-parse
   dc::SceneDocument doc2;
-  assert(dc::parseSceneDocument(json, doc2));
+  DC_CHECK(dc::parseSceneDocument(json, doc2));
 
   // Verify buffer data
-  assert(doc2.buffers.at(100).data.size() == 3);
-  assert(feq(doc2.buffers.at(100).data[0], 1.0f));
-  assert(feq(doc2.buffers.at(100).data[2], 3.0f));
+  DC_CHECK_CONTAINS(doc2.buffers, 100);
+  DC_CHECK(doc2.buffers.at(100).data.size() == 3);
+  DC_CHECK(feq(doc2.buffers.at(100).data[0], 1.0f));
+  DC_CHECK(feq(doc2.buffers.at(100).data[2], 3.0f));
 
   // Verify viewport
-  assert(doc2.viewports.size() == 1);
-  assert(doc2.viewports.count("price") == 1);
+  DC_CHECK(doc2.viewports.size() == 1);
+  DC_CHECK(doc2.viewports.count("price") == 1);
   const auto& vp2 = doc2.viewports.at("price");
-  assert(vp2.transformId == 50);
-  assert(vp2.paneId == 1);
-  assert(deq(vp2.xMax, 100));
-  assert(vp2.linkGroup == "time");
+  DC_CHECK(vp2.transformId == 50);
+  DC_CHECK(vp2.paneId == 1);
+  DC_CHECK(deq(vp2.xMax, 100));
+  DC_CHECK(vp2.linkGroup == "time");
 
   // Verify text overlay
-  assert(doc2.textOverlay.fontSize == 16);
-  assert(doc2.textOverlay.color == "#abcdef");
-  assert(doc2.textOverlay.labels.size() == 1);
-  assert(doc2.textOverlay.labels[0].text == "Hello");
-  assert(doc2.textOverlay.labels[0].align == "c");
+  DC_CHECK(doc2.textOverlay.fontSize == 16);
+  DC_CHECK(doc2.textOverlay.color == "#abcdef");
+  DC_CHECK(doc2.textOverlay.labels.size() == 1);
+  DC_CHECK(doc2.textOverlay.labels[0].text == "Hello");
+  DC_CHECK(doc2.textOverlay.labels[0].align == "c");
 
   std::printf("  PASS: serialize round-trip\n");
 }
@@ -216,17 +221,17 @@ static void testCompactSerialize() {
   std::string json = dc::serializeSceneDocument(doc, true);
 
   // Should not contain "viewports" or "textOverlay" or "buffers" when empty
-  assert(json.find("viewports") == std::string::npos);
-  assert(json.find("buffers") == std::string::npos);
+  DC_CHECK(json.find("viewports") == std::string::npos);
+  DC_CHECK(json.find("buffers") == std::string::npos);
 
   // Now add a viewport — it should appear
   dc::DocViewport vp;
   vp.transformId = 1; vp.paneId = 1;
   doc.viewports["test"] = vp;
   json = dc::serializeSceneDocument(doc, true);
-  assert(json.find("viewports") != std::string::npos);
+  DC_CHECK(json.find("viewports") != std::string::npos);
   // Default panX/panY/zoomX/zoomY should be omitted in compact
-  assert(json.find("panX") == std::string::npos);
+  DC_CHECK(json.find("panX") == std::string::npos);
 
   std::printf("  PASS: compact serialize omits defaults\n");
 }
@@ -271,21 +276,22 @@ static void testFullDocument() {
   })";
 
   dc::SceneDocument doc;
-  assert(dc::parseSceneDocument(json, doc));
-  assert(doc.viewportWidth == 900);
-  assert(doc.viewportHeight == 600);
-  assert(doc.buffers.size() == 1);
-  assert(doc.transforms.size() == 1);
-  assert(doc.panes.size() == 1);
-  assert(doc.layers.size() == 1);
-  assert(doc.geometries.size() == 1);
-  assert(doc.drawItems.size() == 1);
-  assert(doc.viewports.size() == 1);
-  assert(doc.textOverlay.labels.size() == 1);
+  DC_CHECK(dc::parseSceneDocument(json, doc));
+  DC_CHECK(doc.viewportWidth == 900);
+  DC_CHECK(doc.viewportHeight == 600);
+  DC_CHECK(doc.buffers.size() == 1);
+  DC_CHECK(doc.transforms.size() == 1);
+  DC_CHECK(doc.panes.size() == 1);
+  DC_CHECK(doc.layers.size() == 1);
+  DC_CHECK(doc.geometries.size() == 1);
+  DC_CHECK(doc.drawItems.size() == 1);
+  DC_CHECK(doc.viewports.size() == 1);
+  DC_CHECK(doc.textOverlay.labels.size() == 1);
 
   // Buffer data check
-  assert(doc.buffers.at(100).data.size() == 6);
-  assert(feq(doc.buffers.at(100).data[1], 0.5f));
+  DC_CHECK_CONTAINS(doc.buffers, 100);
+  DC_CHECK(doc.buffers.at(100).data.size() == 6);
+  DC_CHECK(feq(doc.buffers.at(100).data[1], 0.5f));
 
   std::printf("  PASS: full document with all sections\n");
 }

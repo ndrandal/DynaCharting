@@ -7,7 +7,7 @@
 #include "dc/scene/ResourceRegistry.hpp"
 #include "dc/scene/Types.hpp"
 
-#include <cassert>
+#include "dc_check.hpp"
 #include <cmath>
 #include <cstdio>
 #include <string>
@@ -59,26 +59,26 @@ static void testColdStart() {
   SceneDocument doc = makeTriangleDoc();
   auto result = reconciler.reconcile(doc, scene);
 
-  assert(result.ok);
-  assert(result.created > 0);
-  assert(result.deleted == 0);
+  DC_CHECK(result.ok);
+  DC_CHECK(result.created > 0);
+  DC_CHECK(result.deleted == 0);
 
   // Verify scene has all resources
-  assert(scene.hasBuffer(100));
-  assert(scene.hasTransform(50));
-  assert(scene.hasPane(1));
-  assert(scene.hasLayer(10));
-  assert(scene.hasGeometry(101));
-  assert(scene.hasDrawItem(200));
+  DC_CHECK(scene.hasBuffer(100));
+  DC_CHECK(scene.hasTransform(50));
+  DC_CHECK(scene.hasPane(1));
+  DC_CHECK(scene.hasLayer(10));
+  DC_CHECK(scene.hasGeometry(101));
+  DC_CHECK(scene.hasDrawItem(200));
 
   // Verify draw item bindings
   const DrawItem* di = scene.getDrawItem(200);
-  assert(di);
-  assert(di->pipeline == "triSolid@1");
-  assert(di->geometryId == 101);
-  assert(di->transformId == 50);
-  assert(feq(di->color[0], 1.0f));
-  assert(feq(di->color[1], 0.0f));
+  DC_CHECK(di);
+  DC_CHECK(di->pipeline == "triSolid@1");
+  DC_CHECK(di->geometryId == 101);
+  DC_CHECK(di->transformId == 50);
+  DC_CHECK(feq(di->color[0], 1.0f));
+  DC_CHECK(feq(di->color[1], 0.0f));
 
   std::printf("T1 coldStart: PASS\n");
 }
@@ -94,15 +94,15 @@ static void testNoop() {
 
   // First reconcile
   auto r1 = reconciler.reconcile(doc, scene);
-  assert(r1.ok);
+  DC_CHECK(r1.ok);
 
   // Second reconcile — no changes
   auto r2 = reconciler.reconcile(doc, scene);
-  assert(r2.ok);
-  assert(r2.created == 0);
-  assert(r2.deleted == 0);
+  DC_CHECK(r2.ok);
+  DC_CHECK(r2.created == 0);
+  DC_CHECK(r2.deleted == 0);
   // Style is not re-sent because color matches
-  assert(r2.updated == 0);
+  DC_CHECK(r2.updated == 0);
 
   std::printf("T2 noop: PASS\n");
 }
@@ -116,7 +116,7 @@ static void testUpdateColor() {
 
   SceneDocument doc = makeTriangleDoc();
   auto r1 = reconciler.reconcile(doc, scene);
-  assert(r1.ok);
+  DC_CHECK(r1.ok);
 
   // Modify color
   doc.drawItems[200].color[0] = 0.0f;
@@ -124,17 +124,17 @@ static void testUpdateColor() {
   doc.drawItems[200].color[2] = 0.0f;
 
   auto r2 = reconciler.reconcile(doc, scene);
-  assert(r2.ok);
-  assert(r2.created == 0);
-  assert(r2.deleted == 0);
-  assert(r2.updated >= 1);
+  DC_CHECK(r2.ok);
+  DC_CHECK(r2.created == 0);
+  DC_CHECK(r2.deleted == 0);
+  DC_CHECK(r2.updated >= 1);
 
   // Verify color changed in scene
   const DrawItem* di = scene.getDrawItem(200);
-  assert(di);
-  assert(feq(di->color[0], 0.0f));
-  assert(feq(di->color[1], 1.0f));
-  assert(feq(di->color[2], 0.0f));
+  DC_CHECK(di);
+  DC_CHECK(feq(di->color[0], 0.0f));
+  DC_CHECK(feq(di->color[1], 1.0f));
+  DC_CHECK(feq(di->color[2], 0.0f));
 
   std::printf("T3 updateColor: PASS\n");
 }
@@ -148,16 +148,16 @@ static void testDelete() {
 
   SceneDocument doc = makeTriangleDoc();
   auto r1 = reconciler.reconcile(doc, scene);
-  assert(r1.ok);
-  assert(scene.hasDrawItem(200));
+  DC_CHECK(r1.ok);
+  DC_CHECK(scene.hasDrawItem(200));
 
   // Remove drawItem from document
   doc.drawItems.erase(200);
 
   auto r2 = reconciler.reconcile(doc, scene);
-  assert(r2.ok);
-  assert(r2.deleted >= 1);
-  assert(!scene.hasDrawItem(200));
+  DC_CHECK(r2.ok);
+  DC_CHECK(r2.deleted >= 1);
+  DC_CHECK(!scene.hasDrawItem(200));
 
   std::printf("T4 delete: PASS\n");
 }
@@ -171,7 +171,7 @@ static void testAdd() {
 
   SceneDocument doc = makeTriangleDoc();
   auto r1 = reconciler.reconcile(doc, scene);
-  assert(r1.ok);
+  DC_CHECK(r1.ok);
 
   // Add a second draw item
   DocDrawItem di2;
@@ -182,14 +182,14 @@ static void testAdd() {
   doc.drawItems[201] = di2;
 
   auto r2 = reconciler.reconcile(doc, scene);
-  assert(r2.ok);
-  assert(r2.created >= 1);
-  assert(scene.hasDrawItem(201));
+  DC_CHECK(r2.ok);
+  DC_CHECK(r2.created >= 1);
+  DC_CHECK(scene.hasDrawItem(201));
 
   const DrawItem* newDi = scene.getDrawItem(201);
-  assert(newDi);
-  assert(newDi->pipeline == "triSolid@1");
-  assert(feq(newDi->color[2], 1.0f));
+  DC_CHECK(newDi);
+  DC_CHECK(newDi->pipeline == "triSolid@1");
+  DC_CHECK(feq(newDi->color[2], 1.0f));
 
   std::printf("T5 add: PASS\n");
 }
@@ -208,17 +208,17 @@ static void testReparentLayer() {
   doc.panes[2] = p2;
 
   auto r1 = reconciler.reconcile(doc, scene);
-  assert(r1.ok);
-  assert(scene.getLayer(10)->paneId == 1);
+  DC_CHECK(r1.ok);
+  DC_CHECK(scene.getLayer(10)->paneId == 1);
 
   // Move layer 10 to pane 2
   doc.layers[10].paneId = 2;
 
   auto r2 = reconciler.reconcile(doc, scene);
-  assert(r2.ok);
+  DC_CHECK(r2.ok);
   // Layer should now belong to pane 2
-  assert(scene.hasLayer(10));
-  assert(scene.getLayer(10)->paneId == 2);
+  DC_CHECK(scene.hasLayer(10));
+  DC_CHECK(scene.getLayer(10)->paneId == 2);
 
   std::printf("T6 reparentLayer: PASS\n");
 }
@@ -233,8 +233,8 @@ static void testFullCycle() {
   // Step 1: Create initial scene
   SceneDocument doc = makeTriangleDoc();
   auto r1 = reconciler.reconcile(doc, scene);
-  assert(r1.ok);
-  assert(scene.drawItemIds().size() == 1);
+  DC_CHECK(r1.ok);
+  DC_CHECK(scene.drawItemIds().size() == 1);
 
   // Step 2: Add second draw item + change color of first
   DocDrawItem di2;
@@ -246,18 +246,18 @@ static void testFullCycle() {
   doc.drawItems[200].color[0] = 0.5f;
 
   auto r2 = reconciler.reconcile(doc, scene);
-  assert(r2.ok);
-  assert(scene.drawItemIds().size() == 2);
-  assert(feq(scene.getDrawItem(200)->color[0], 0.5f));
+  DC_CHECK(r2.ok);
+  DC_CHECK(scene.drawItemIds().size() == 2);
+  DC_CHECK(feq(scene.getDrawItem(200)->color[0], 0.5f));
 
   // Step 3: Delete first draw item
   doc.drawItems.erase(200);
 
   auto r3 = reconciler.reconcile(doc, scene);
-  assert(r3.ok);
-  assert(scene.drawItemIds().size() == 1);
-  assert(!scene.hasDrawItem(200));
-  assert(scene.hasDrawItem(201));
+  DC_CHECK(r3.ok);
+  DC_CHECK(scene.drawItemIds().size() == 1);
+  DC_CHECK(!scene.hasDrawItem(200));
+  DC_CHECK(scene.hasDrawItem(201));
 
   // Step 4: Delete everything
   doc.drawItems.clear();
@@ -268,13 +268,13 @@ static void testFullCycle() {
   doc.buffers.clear();
 
   auto r4 = reconciler.reconcile(doc, scene);
-  assert(r4.ok);
-  assert(scene.drawItemIds().empty());
-  assert(scene.layerIds().empty());
-  assert(scene.paneIds().empty());
-  assert(scene.geometryIds().empty());
-  assert(scene.transformIds().empty());
-  assert(scene.bufferIds().empty());
+  DC_CHECK(r4.ok);
+  DC_CHECK(scene.drawItemIds().empty());
+  DC_CHECK(scene.layerIds().empty());
+  DC_CHECK(scene.paneIds().empty());
+  DC_CHECK(scene.geometryIds().empty());
+  DC_CHECK(scene.transformIds().empty());
+  DC_CHECK(scene.bufferIds().empty());
 
   std::printf("T7 fullCycle: PASS\n");
 }
@@ -288,23 +288,23 @@ static void testUpdateTransform() {
 
   SceneDocument doc = makeTriangleDoc();
   auto r1 = reconciler.reconcile(doc, scene);
-  assert(r1.ok);
+  DC_CHECK(r1.ok);
 
   const Transform* t = scene.getTransform(50);
-  assert(t);
-  assert(feq(t->params.sx, 1.0f));
+  DC_CHECK(t);
+  DC_CHECK(feq(t->params.sx, 1.0f));
 
   // Change transform
   doc.transforms[50].sx = 2.0f;
   doc.transforms[50].tx = 0.5f;
 
   auto r2 = reconciler.reconcile(doc, scene);
-  assert(r2.ok);
-  assert(r2.updated >= 1);
+  DC_CHECK(r2.ok);
+  DC_CHECK(r2.updated >= 1);
 
   t = scene.getTransform(50);
-  assert(feq(t->params.sx, 2.0f));
-  assert(feq(t->params.tx, 0.5f));
+  DC_CHECK(feq(t->params.sx, 2.0f));
+  DC_CHECK(feq(t->params.tx, 0.5f));
 
   std::printf("T8 updateTransform: PASS\n");
 }
@@ -318,18 +318,18 @@ static void testUpdatePaneRegion() {
 
   SceneDocument doc = makeTriangleDoc();
   auto r1 = reconciler.reconcile(doc, scene);
-  assert(r1.ok);
+  DC_CHECK(r1.ok);
 
   // Change pane region
   doc.panes[1].region.clipYMin = 0.1f;
   doc.panes[1].region.clipYMax = 0.9f;
 
   auto r2 = reconciler.reconcile(doc, scene);
-  assert(r2.ok);
+  DC_CHECK(r2.ok);
 
   const Pane* p = scene.getPane(1);
-  assert(feq(p->region.clipYMin, 0.1f));
-  assert(feq(p->region.clipYMax, 0.9f));
+  DC_CHECK(feq(p->region.clipYMin, 0.1f));
+  DC_CHECK(feq(p->region.clipYMax, 0.9f));
 
   std::printf("T9 updatePaneRegion: PASS\n");
 }
@@ -343,20 +343,20 @@ static void testVisibility() {
 
   SceneDocument doc = makeTriangleDoc();
   auto r1 = reconciler.reconcile(doc, scene);
-  assert(r1.ok);
-  assert(scene.getDrawItem(200)->visible);
+  DC_CHECK(r1.ok);
+  DC_CHECK(scene.getDrawItem(200)->visible);
 
   // Hide
   doc.drawItems[200].visible = false;
   auto r2 = reconciler.reconcile(doc, scene);
-  assert(r2.ok);
-  assert(!scene.getDrawItem(200)->visible);
+  DC_CHECK(r2.ok);
+  DC_CHECK(!scene.getDrawItem(200)->visible);
 
   // Show again
   doc.drawItems[200].visible = true;
   auto r3 = reconciler.reconcile(doc, scene);
-  assert(r3.ok);
-  assert(scene.getDrawItem(200)->visible);
+  DC_CHECK(r3.ok);
+  DC_CHECK(scene.getDrawItem(200)->visible);
 
   std::printf("T10 visibility: PASS\n");
 }
@@ -377,25 +377,25 @@ static void testGradientUpdate() {
   doc.drawItems[200].gradientColor1[2] = 1; doc.drawItems[200].gradientColor1[3] = 1;
 
   auto r1 = reconciler.reconcile(doc, scene);
-  assert(r1.ok);
+  DC_CHECK(r1.ok);
   const DrawItem* di = scene.getDrawItem(200);
-  assert(di->gradientType == 1); // linear
+  DC_CHECK(di->gradientType == 1); // linear
 
   // Change gradient type to radial
   doc.drawItems[200].gradientType = "radial";
   doc.drawItems[200].gradientRadius = 0.75f;
   auto r2 = reconciler.reconcile(doc, scene);
-  assert(r2.ok);
+  DC_CHECK(r2.ok);
   di = scene.getDrawItem(200);
-  assert(di->gradientType == 2); // radial
-  assert(feq(di->gradientRadius, 0.75f));
+  DC_CHECK(di->gradientType == 2); // radial
+  DC_CHECK(feq(di->gradientRadius, 0.75f));
 
   // Remove gradient
   doc.drawItems[200].gradientType = "none";
   auto r3 = reconciler.reconcile(doc, scene);
-  assert(r3.ok);
+  DC_CHECK(r3.ok);
   di = scene.getDrawItem(200);
-  assert(di->gradientType == 0); // none
+  DC_CHECK(di->gradientType == 0); // none
 
   std::printf("T11 gradientUpdate: PASS\n");
 }
@@ -413,22 +413,22 @@ static void testAnchorUpdate() {
   doc.drawItems[200].anchorOffsetY = 10.0f;
 
   auto r1 = reconciler.reconcile(doc, scene);
-  assert(r1.ok);
+  DC_CHECK(r1.ok);
   const DrawItem* di = scene.getDrawItem(200);
-  assert(di->hasAnchor);
-  assert(di->anchorPoint == 4); // center
-  assert(feq(di->anchorOffsetX, 5.0f));
-  assert(feq(di->anchorOffsetY, 10.0f));
+  DC_CHECK(di->hasAnchor);
+  DC_CHECK(di->anchorPoint == 4); // center
+  DC_CHECK(feq(di->anchorOffsetX, 5.0f));
+  DC_CHECK(feq(di->anchorOffsetY, 10.0f));
 
   // Change anchor
   doc.drawItems[200].anchorPoint = "topLeft";
   doc.drawItems[200].anchorOffsetX = 0.0f;
   doc.drawItems[200].anchorOffsetY = 0.0f;
   auto r2 = reconciler.reconcile(doc, scene);
-  assert(r2.ok);
+  DC_CHECK(r2.ok);
   di = scene.getDrawItem(200);
-  assert(di->hasAnchor);
-  assert(di->anchorPoint == 0); // topLeft
+  DC_CHECK(di->hasAnchor);
+  DC_CHECK(di->anchorPoint == 0); // topLeft
 
   std::printf("T12 anchorUpdate: PASS\n");
 }
@@ -442,26 +442,26 @@ static void testTextureUpdate() {
 
   SceneDocument doc = makeTriangleDoc();
   auto r1 = reconciler.reconcile(doc, scene);
-  assert(r1.ok);
-  assert(scene.getDrawItem(200)->textureId == 0);
+  DC_CHECK(r1.ok);
+  DC_CHECK(scene.getDrawItem(200)->textureId == 0);
 
   // Set texture
   doc.drawItems[200].textureId = 42;
   auto r2 = reconciler.reconcile(doc, scene);
-  assert(r2.ok);
-  assert(scene.getDrawItem(200)->textureId == 42);
+  DC_CHECK(r2.ok);
+  DC_CHECK(scene.getDrawItem(200)->textureId == 42);
 
   // Change texture
   doc.drawItems[200].textureId = 99;
   auto r3 = reconciler.reconcile(doc, scene);
-  assert(r3.ok);
-  assert(scene.getDrawItem(200)->textureId == 99);
+  DC_CHECK(r3.ok);
+  DC_CHECK(scene.getDrawItem(200)->textureId == 99);
 
   // Clear texture
   doc.drawItems[200].textureId = 0;
   auto r4 = reconciler.reconcile(doc, scene);
-  assert(r4.ok);
-  assert(scene.getDrawItem(200)->textureId == 0);
+  DC_CHECK(r4.ok);
+  DC_CHECK(scene.getDrawItem(200)->textureId == 0);
 
   std::printf("T13 textureUpdate: PASS\n");
 }
@@ -475,27 +475,27 @@ static void testBlendModeUpdate() {
 
   SceneDocument doc = makeTriangleDoc();
   auto r1 = reconciler.reconcile(doc, scene);
-  assert(r1.ok);
-  assert(scene.getDrawItem(200)->blendMode == BlendMode::Normal);
+  DC_CHECK(r1.ok);
+  DC_CHECK(scene.getDrawItem(200)->blendMode == BlendMode::Normal);
 
   // Change blend mode to additive
   doc.drawItems[200].blendMode = "additive";
   auto r2 = reconciler.reconcile(doc, scene);
-  assert(r2.ok);
-  assert(r2.updated >= 1);
-  assert(scene.getDrawItem(200)->blendMode == BlendMode::Additive);
+  DC_CHECK(r2.ok);
+  DC_CHECK(r2.updated >= 1);
+  DC_CHECK(scene.getDrawItem(200)->blendMode == BlendMode::Additive);
 
   // Change to screen
   doc.drawItems[200].blendMode = "screen";
   auto r3 = reconciler.reconcile(doc, scene);
-  assert(r3.ok);
-  assert(scene.getDrawItem(200)->blendMode == BlendMode::Screen);
+  DC_CHECK(r3.ok);
+  DC_CHECK(scene.getDrawItem(200)->blendMode == BlendMode::Screen);
 
   // Back to normal
   doc.drawItems[200].blendMode = "normal";
   auto r4 = reconciler.reconcile(doc, scene);
-  assert(r4.ok);
-  assert(scene.getDrawItem(200)->blendMode == BlendMode::Normal);
+  DC_CHECK(r4.ok);
+  DC_CHECK(scene.getDrawItem(200)->blendMode == BlendMode::Normal);
 
   std::printf("T14 blendModeUpdate: PASS\n");
 }
@@ -509,17 +509,17 @@ static void testPaneNameChange() {
 
   SceneDocument doc = makeTriangleDoc();
   auto r1 = reconciler.reconcile(doc, scene);
-  assert(r1.ok);
-  assert(scene.getPane(1)->name == "Main");
+  DC_CHECK(r1.ok);
+  DC_CHECK(scene.getPane(1)->name == "Main");
 
   // Rename pane
   doc.panes[1].name = "Renamed";
   auto r2 = reconciler.reconcile(doc, scene);
-  assert(r2.ok);
-  assert(r2.deleted >= 1);
-  assert(r2.created >= 1);
-  assert(scene.hasPane(1));
-  assert(scene.getPane(1)->name == "Renamed");
+  DC_CHECK(r2.ok);
+  DC_CHECK(r2.deleted >= 1);
+  DC_CHECK(r2.created >= 1);
+  DC_CHECK(scene.hasPane(1));
+  DC_CHECK(scene.getPane(1)->name == "Renamed");
 
   std::printf("T15 paneNameChange: PASS\n");
 }
@@ -533,17 +533,17 @@ static void testLayerNameChange() {
 
   SceneDocument doc = makeTriangleDoc();
   auto r1 = reconciler.reconcile(doc, scene);
-  assert(r1.ok);
-  assert(scene.getLayer(10)->name == "Data");
+  DC_CHECK(r1.ok);
+  DC_CHECK(scene.getLayer(10)->name == "Data");
 
   // Rename layer
   doc.layers[10].name = "NewLayerName";
   auto r2 = reconciler.reconcile(doc, scene);
-  assert(r2.ok);
-  assert(r2.deleted >= 1);
-  assert(r2.created >= 1);
-  assert(scene.hasLayer(10));
-  assert(scene.getLayer(10)->name == "NewLayerName");
+  DC_CHECK(r2.ok);
+  DC_CHECK(r2.deleted >= 1);
+  DC_CHECK(r2.created >= 1);
+  DC_CHECK(scene.hasLayer(10));
+  DC_CHECK(scene.getLayer(10)->name == "NewLayerName");
 
   std::printf("T16 layerNameChange: PASS\n");
 }
@@ -557,21 +557,21 @@ static void testGeometryFormatChange() {
 
   SceneDocument doc = makeTriangleDoc();
   auto r1 = reconciler.reconcile(doc, scene);
-  assert(r1.ok);
+  DC_CHECK(r1.ok);
   const Geometry* g = scene.getGeometry(101);
-  assert(g);
-  assert(g->format == VertexFormat::Pos2_Clip);
+  DC_CHECK(g);
+  DC_CHECK(g->format == VertexFormat::Pos2_Clip);
 
   // Change format
   doc.geometries[101].format = "rect4";
   doc.geometries[101].vertexCount = 1; // rect4 needs different count
   auto r2 = reconciler.reconcile(doc, scene);
-  assert(r2.ok);
-  assert(r2.deleted >= 1);
-  assert(r2.created >= 1);
+  DC_CHECK(r2.ok);
+  DC_CHECK(r2.deleted >= 1);
+  DC_CHECK(r2.created >= 1);
   g = scene.getGeometry(101);
-  assert(g);
-  assert(g->format == VertexFormat::Rect4);
+  DC_CHECK(g);
+  DC_CHECK(g->format == VertexFormat::Rect4);
 
   std::printf("T17 geometryFormatChange: PASS\n");
 }
@@ -591,17 +591,17 @@ static void testClearColorRemoval() {
   doc.panes[1].clearColor[3] = 1.0f;
 
   auto r1 = reconciler.reconcile(doc, scene);
-  assert(r1.ok);
+  DC_CHECK(r1.ok);
   const Pane* p = scene.getPane(1);
-  assert(p->hasClearColor);
-  assert(feq(p->clearColor[0], 0.1f));
+  DC_CHECK(p->hasClearColor);
+  DC_CHECK(feq(p->clearColor[0], 0.1f));
 
   // Remove clear color
   doc.panes[1].hasClearColor = false;
   auto r2 = reconciler.reconcile(doc, scene);
-  assert(r2.ok);
+  DC_CHECK(r2.ok);
   p = scene.getPane(1);
-  assert(!p->hasClearColor);
+  DC_CHECK(!p->hasClearColor);
 
   std::printf("T18 clearColorRemoval: PASS\n");
 }
@@ -618,9 +618,9 @@ static void testViewportInResult() {
   doc.viewportHeight = 1080;
 
   auto r = reconciler.reconcile(doc, scene);
-  assert(r.ok);
-  assert(r.viewportWidth == 1920);
-  assert(r.viewportHeight == 1080);
+  DC_CHECK(r.ok);
+  DC_CHECK(r.viewportWidth == 1920);
+  DC_CHECK(r.viewportHeight == 1080);
 
   std::printf("T19 viewportInResult: PASS\n");
 }
@@ -637,14 +637,14 @@ static void testGradientNoop() {
   doc.drawItems[200].gradientAngle = 0.5f;
 
   auto r1 = reconciler.reconcile(doc, scene);
-  assert(r1.ok);
+  DC_CHECK(r1.ok);
 
   // Second reconcile with identical gradient — should be a no-op
   auto r2 = reconciler.reconcile(doc, scene);
-  assert(r2.ok);
-  assert(r2.created == 0);
-  assert(r2.deleted == 0);
-  assert(r2.updated == 0);
+  DC_CHECK(r2.ok);
+  DC_CHECK(r2.created == 0);
+  DC_CHECK(r2.deleted == 0);
+  DC_CHECK(r2.updated == 0);
 
   std::printf("T20 gradientNoop: PASS\n");
 }
@@ -662,14 +662,14 @@ static void testAnchorNoop() {
   doc.drawItems[200].anchorOffsetY = 7.0f;
 
   auto r1 = reconciler.reconcile(doc, scene);
-  assert(r1.ok);
+  DC_CHECK(r1.ok);
 
   // Second reconcile with identical anchor — should be a no-op
   auto r2 = reconciler.reconcile(doc, scene);
-  assert(r2.ok);
-  assert(r2.created == 0);
-  assert(r2.deleted == 0);
-  assert(r2.updated == 0);
+  DC_CHECK(r2.ok);
+  DC_CHECK(r2.created == 0);
+  DC_CHECK(r2.deleted == 0);
+  DC_CHECK(r2.updated == 0);
 
   std::printf("T21 anchorNoop: PASS\n");
 }

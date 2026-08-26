@@ -3,7 +3,7 @@
 #include "dc/style/Theme.hpp"
 #include "dc/style/ThemeManager.hpp"
 
-#include <cassert>
+#include "dc_check.hpp"
 #include <cmath>
 #include <cstdio>
 #include <algorithm>
@@ -22,19 +22,19 @@ static void testPresetsDistinct() {
 
   std::vector<std::string> names;
   for (const auto& t : presets) {
-    assert(!t.name.empty());
+    DC_CHECK(!t.name.empty());
     // Check name is unique
-    assert(std::find(names.begin(), names.end(), t.name) == names.end());
+    DC_CHECK(std::find(names.begin(), names.end(), t.name) == names.end());
     names.push_back(t.name);
 
     // Background color should be non-trivial (not all zeros for non-black themes)
     float sum = t.backgroundColor[0] + t.backgroundColor[1] + t.backgroundColor[2];
     // At least alpha should be 1
-    assert(feq(t.backgroundColor[3], 1.0f));
+    DC_CHECK(feq(t.backgroundColor[3], 1.0f));
     (void)sum;
   }
 
-  assert(names.size() == 6);
+  DC_CHECK(names.size() == 6);
   std::printf("T1 presetsDistinct: PASS\n");
 }
 
@@ -44,9 +44,9 @@ static void testOverlayColors8() {
 
   for (int i = 0; i < 8; ++i) {
     const float* c = dc::chart_theme::overlay(t, i);
-    assert(feq(c[3], 1.0f));
+    DC_CHECK(feq(c[3], 1.0f));
     float rgb = c[0] + c[1] + c[2];
-    assert(rgb > 0.0f);
+    DC_CHECK(rgb > 0.0f);
   }
 
   std::printf("T2 overlaySlots: PASS\n");
@@ -57,17 +57,17 @@ static void testNewFieldDefaults() {
   dc::Theme t; // default constructor
 
   // Grid dash defaults (solid)
-  assert(feq(t.gridDashLength, 0.0f));
-  assert(feq(t.gridGapLength, 0.0f));
-  assert(feq(t.gridOpacity, 1.0f));
+  DC_CHECK(feq(t.gridDashLength, 0.0f));
+  DC_CHECK(feq(t.gridGapLength, 0.0f));
+  DC_CHECK(feq(t.gridOpacity, 1.0f));
 
   // Border defaults (no border)
-  assert(feq(t.paneBorderWidth, 0.0f));
-  assert(feq(t.paneBorderColor[3], 1.0f));
+  DC_CHECK(feq(t.paneBorderWidth, 0.0f));
+  DC_CHECK(feq(t.paneBorderColor[3], 1.0f));
 
   // Separator defaults (no separator)
-  assert(feq(t.separatorWidth, 0.0f));
-  assert(feq(t.separatorColor[3], 1.0f));
+  DC_CHECK(feq(t.separatorWidth, 0.0f));
+  DC_CHECK(feq(t.separatorColor[3], 1.0f));
 
   std::printf("T3 newFieldDefaults: PASS\n");
 }
@@ -75,16 +75,16 @@ static void testNewFieldDefaults() {
 // T4: Neon theme has dash pattern, Bloomberg has dash pattern
 static void testThemeDashPatterns() {
   dc::Theme neon = dc::neonTheme();
-  assert(neon.gridDashLength > 0.0f);
-  assert(neon.gridGapLength > 0.0f);
+  DC_CHECK(neon.gridDashLength > 0.0f);
+  DC_CHECK(neon.gridGapLength > 0.0f);
 
   dc::Theme bb = dc::bloombergTheme();
-  assert(bb.gridDashLength > 0.0f);
-  assert(bb.gridGapLength > 0.0f);
+  DC_CHECK(bb.gridDashLength > 0.0f);
+  DC_CHECK(bb.gridGapLength > 0.0f);
 
   // Dark should have solid grid (default)
   dc::Theme dark = dc::darkTheme();
-  assert(feq(dark.gridDashLength, 0.0f));
+  DC_CHECK(feq(dark.gridDashLength, 0.0f));
 
   std::printf("T4 themeDashPatterns: PASS\n");
 }
@@ -93,20 +93,20 @@ static void testThemeDashPatterns() {
 static void testManagerPresets() {
   dc::ThemeManager mgr;
   auto names = mgr.registeredThemes();
-  assert(names.size() == 6);
+  DC_CHECK(names.size() == 6);
 
   // Check all expected names are present
   std::vector<std::string> expected = {
     "Bloomberg", "Dark", "Light", "Midnight", "Neon", "Pastel"
   };
   std::sort(names.begin(), names.end());
-  assert(names == expected);
+  DC_CHECK(names == expected);
 
   // Set each theme by name
   for (const auto& name : expected) {
     mgr.setTheme(name);
-    assert(mgr.themeName() == name);
-    assert(mgr.getTheme().name == name);
+    DC_CHECK(mgr.themeName() == name);
+    DC_CHECK(mgr.getTheme().name == name);
   }
 
   std::printf("T5 managerPresets: PASS\n");
@@ -121,31 +121,31 @@ static void testInterpolateNewFields() {
 
   // Grid dash length should be halfway
   float expected = (a.gridDashLength + b.gridDashLength) * 0.5f;
-  assert(feq(mid.gridDashLength, expected));
+  DC_CHECK(feq(mid.gridDashLength, expected));
 
   // Grid opacity should be interpolated
   float expectedOp = (a.gridOpacity + b.gridOpacity) * 0.5f;
-  assert(feq(mid.gridOpacity, expectedOp));
+  DC_CHECK(feq(mid.gridOpacity, expectedOp));
 
   // Border width should be interpolated
   float expectedBW = (a.paneBorderWidth + b.paneBorderWidth) * 0.5f;
-  assert(feq(mid.paneBorderWidth, expectedBW));
+  DC_CHECK(feq(mid.paneBorderWidth, expectedBW));
 
   // Separator width
   float expectedSW = (a.separatorWidth + b.separatorWidth) * 0.5f;
-  assert(feq(mid.separatorWidth, expectedSW));
+  DC_CHECK(feq(mid.separatorWidth, expectedSW));
 
   // Overlay color 5 (chart_theme::overlay(_, 4)) should be interpolated.
   for (int j = 0; j < 4; ++j) {
     float exp = (dc::chart_theme::overlay(a, 4)[j]
                  + dc::chart_theme::overlay(b, 4)[j]) * 0.5f;
-    assert(feq(dc::chart_theme::overlay(mid, 4)[j], exp));
+    DC_CHECK(feq(dc::chart_theme::overlay(mid, 4)[j], exp));
   }
 
   // Border color should be interpolated
   for (int j = 0; j < 4; ++j) {
     float exp = (a.paneBorderColor[j] + b.paneBorderColor[j]) * 0.5f;
-    assert(feq(mid.paneBorderColor[j], exp));
+    DC_CHECK(feq(mid.paneBorderColor[j], exp));
   }
 
   std::printf("T6 interpolateNewFields: PASS\n");
@@ -154,8 +154,8 @@ static void testInterpolateNewFields() {
 // T7: Pastel theme has reduced grid opacity
 static void testPastelGridOpacity() {
   dc::Theme t = dc::pastelTheme();
-  assert(t.gridOpacity < 1.0f);
-  assert(t.gridOpacity > 0.0f);
+  DC_CHECK(t.gridOpacity < 1.0f);
+  DC_CHECK(t.gridOpacity > 0.0f);
 
   std::printf("T7 pastelGridOpacity: PASS\n");
 }
@@ -163,14 +163,14 @@ static void testPastelGridOpacity() {
 // T8: Midnight/Neon/Bloomberg have pane borders enabled
 static void testPaneBorders() {
   dc::Theme midnight = dc::midnightTheme();
-  assert(midnight.paneBorderWidth > 0.0f);
+  DC_CHECK(midnight.paneBorderWidth > 0.0f);
 
   dc::Theme neon = dc::neonTheme();
-  assert(neon.paneBorderWidth > 0.0f);
-  assert(neon.separatorWidth > 0.0f);
+  DC_CHECK(neon.paneBorderWidth > 0.0f);
+  DC_CHECK(neon.separatorWidth > 0.0f);
 
   dc::Theme bb = dc::bloombergTheme();
-  assert(bb.paneBorderWidth > 0.0f);
+  DC_CHECK(bb.paneBorderWidth > 0.0f);
 
   std::printf("T8 paneBorders: PASS\n");
 }

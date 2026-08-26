@@ -1,7 +1,7 @@
 // D78.4: Grid dash/gap/opacity in AxisRecipe
 #include "dc/recipe/AxisRecipe.hpp"
 
-#include <cassert>
+#include "dc_check.hpp"
 #include <cmath>
 #include <cstdio>
 #include <string>
@@ -26,12 +26,12 @@ static void testGridDashCommands() {
     if (cmd.find("dashLength") != std::string::npos) {
       foundDash = true;
       // Verify it contains the right values
-      assert(cmd.find("5") != std::string::npos);
-      assert(cmd.find("3") != std::string::npos);
+      DC_CHECK(cmd.find("5") != std::string::npos);
+      DC_CHECK(cmd.find("3") != std::string::npos);
       break;
     }
   }
-  assert(foundDash);
+  DC_CHECK(foundDash);
 
   std::printf("T1 gridDashCommands: PASS\n");
 }
@@ -61,7 +61,7 @@ static void testGridOpacity() {
       break;
     }
   }
-  assert(foundAlpha);
+  DC_CHECK(foundAlpha);
 
   std::printf("T2 gridOpacity: PASS\n");
 }
@@ -81,7 +81,7 @@ static void testDefaultSolidGrid() {
 
   // Should NOT contain dashLength command
   for (const auto& cmd : result.createCommands) {
-    assert(cmd.find("dashLength") == std::string::npos);
+    DC_CHECK(cmd.find("dashLength") == std::string::npos);
   }
 
   std::printf("T3 defaultSolidGrid: PASS\n");
@@ -101,7 +101,7 @@ static void testGridDisabled() {
 
   // No grid-related commands should be present
   for (const auto& cmd : result.createCommands) {
-    assert(cmd.find("Grid") == std::string::npos ||
+    DC_CHECK(cmd.find("Grid") == std::string::npos ||
            cmd.find("gridSpine") != std::string::npos ||
            cmd.find("hGrid") == std::string::npos);
   }
@@ -112,9 +112,9 @@ static void testGridDisabled() {
 // T5: AxisRecipeConfig new fields have correct defaults
 static void testConfigDefaults() {
   dc::AxisRecipeConfig cfg;
-  assert(std::fabs(cfg.gridDashLength) < 1e-6f);
-  assert(std::fabs(cfg.gridGapLength) < 1e-6f);
-  assert(std::fabs(cfg.gridOpacity - 1.0f) < 1e-6f);
+  DC_CHECK(std::fabs(cfg.gridDashLength) < 1e-6f);
+  DC_CHECK(std::fabs(cfg.gridGapLength) < 1e-6f);
+  DC_CHECK(std::fabs(cfg.gridOpacity - 1.0f) < 1e-6f);
 
   std::printf("T5 configDefaults: PASS\n");
 }
