@@ -54,11 +54,34 @@ The `.js` + `.wasm` in `wasm/` are committed for direct consumption by Vite.
 To rebuild from the C++ core:
 
 ```bash
-source ~/emsdk/emsdk_env.sh
-# RapidJSON is header-only + gitignored; provision once:
-git clone --depth 1 https://github.com/Tencent/rapidjson.git third_party/rapidjson
-pnpm -C packages/dc-wasm build:wasm   # == bash scripts/build-wasm.sh
+source ~/emsdk/emsdk_env.sh                    # see emsdk setup below
+pnpm -C packages/dc-wasm build:wasm            # == bash scripts/build-wasm.sh
 ```
+
+That is the whole command. The script provisions RapidJSON itself — it is a git
+**submodule**, and `git worktree add` does not populate submodules, which is why
+an apparently clean worktree used to fail here (ENC-989).
+
+One-time emsdk setup (no sudo; everything under `$HOME`):
+
+```bash
+git clone https://github.com/emscripten-core/emsdk.git ~/emsdk
+cd ~/emsdk && ./emsdk install 6.0.9 && ./emsdk activate 6.0.9
+source ~/emsdk/emsdk_env.sh
+```
+
+The version is pinned to **6.0.9** in `scripts/build-wasm.sh`. Because the
+artifacts are committed, an unpinned toolchain would make every rebuild produce
+a diff unrelated to any source change. With the pin the build is
+byte-reproducible — including across different checkout paths, which needs the
+`-ffile-prefix-map` flag `build-wasm.sh` passes, since `__FILE__` otherwise
+bakes the absolute source path into the module. Verified by building the same
+commit from two different directories. A rebuild that changes nothing is the
+expected result. To bump: change `EMSDK_VERSION`,
+rebuild, and commit the artifact churn on its own.
+
+The first build downloads and caches Emscripten's `emdawnwebgpu` port, so it is
+slow; later builds are not.
 
 The build target is `dc_engine_host` (EMSCRIPTEN-gated in `core/CMakeLists.txt`);
 it is additive and **does not affect the native `dc` build**.

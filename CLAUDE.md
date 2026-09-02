@@ -24,7 +24,7 @@ DynaCharting is a high-performance real-time charting engine intended as an embe
 
 ```bash
 pnpm install                                        # install all workspace deps
-pnpm --filter @repo/dc-wasm build                   # type-check the WASM+WebGPU browser package
+pnpm --filter @repo/dc-wasm build                   # type-check the browser package (does NOT rebuild the wasm — see below)
 pnpm --filter @repo/live-viewer build               # build the live-stream viewer
 ```
 
@@ -52,6 +52,69 @@ the GL backend was removed.
 build fails on a missing `stb_truetype.h`. The default is already
 `${CMAKE_SOURCE_DIR}/third_party`, so just omit the flag; pass an **absolute** path only if
 your third-party tree lives elsewhere (ENC-876).
+
+### WASM / browser build (`@repo/dc-wasm`)
+
+The browser artifacts (`packages/dc-wasm/wasm/dc_engine_host.{js,wasm}`) are
+**committed**, and they are rebuilt from the C++ core by one command:
+
+```bash
+source ~/emsdk/emsdk_env.sh                          # once per shell
+bash packages/dc-wasm/scripts/build-wasm.sh
+node packages/dc-wasm/scripts/validate-node.mjs      # functional check of the result
+```
+
+**One-time emsdk provisioning.** No sudo; everything lands under `$HOME`:
+
+```bash
+git clone https://github.com/emscripten-core/emsdk.git ~/emsdk
+cd ~/emsdk && ./emsdk install 6.0.9 && ./emsdk activate 6.0.9
+source ~/emsdk/emsdk_env.sh
+```
+
+That is the whole prerequisite list. `build-wasm.sh` provisions RapidJSON itself
+(`git worktree add` does **not** populate submodules, which is why a worktree
+that looks clean still failed to build), and Ninja and a C++20 clang come from
+emsdk. The `emdawnwebgpu` port — the Dawn/WebGPU implementation — is downloaded
+by Emscripten on first link and cached, so the first build is slow and later
+ones are not. If the command above fails on a clean checkout with emsdk
+sourced, that is a bug in the script, not in your setup.
+
+**The emsdk version is pinned (6.0.9) and that matters.** Because the artifacts
+are committed, an unpinned toolchain makes a rebuild produce a diff for reasons
+unrelated to any source change — which is how a toolchain bump rides into an
+unrelated PR unnoticed. The pin also fixes the `emdawnwebgpu` port version,
+since Emscripten selects it. `build-wasm.sh` warns (but does not fail) if your
+`emcc` differs.
+
+With the pin, the build is **byte-reproducible**, and reproducible across
+*checkout locations* — verified by building the same commit from two different
+directories and comparing hashes. The second part needs
+`-ffile-prefix-map` (passed by `build-wasm.sh`): without it, `__FILE__` bakes
+the absolute source path into the module, so two developers with different
+checkout paths produce different bytes from identical source. With committed
+artifacts that would mean a spurious diff on every rebuild.
+
+So a rebuild that produces no diff is the expected outcome, and a diff means
+something real changed:
+
+```bash
+sha256sum packages/dc-wasm/wasm/dc_engine_host.wasm   # before
+bash packages/dc-wasm/scripts/build-wasm.sh
+git diff --stat -- packages/dc-wasm/wasm/            # expect: no change
+```
+
+**Bumping emsdk** is deliberate: change `EMSDK_VERSION` in `build-wasm.sh`,
+rebuild, and commit the artifact churn on its own rather than folded into a
+source change.
+
+**What is *not* in the module.** The browser surface is the single Embind
+`DcEngineHost` class in `core/wasm/dc_engine_host.cpp`. The C++ `dc::*Recipe`
+family (`core/src/recipe/`) is **not bound**, so it is dead-code-eliminated and
+`strings dc_engine_host.wasm | grep -ci recipe` is `0` — before and after this
+build. Exposing recipes to the browser is ENC-990; provisioning the toolchain
+(ENC-989) is what unblocks it, and does not by itself change what the module
+exports.
 
 ### WebGPU / Dawn backend (`dc_gpu`)
 
