@@ -140,16 +140,45 @@ struct MarkSpec {
 MarkSpec markSpecOf(Mark mark, LineStyle lineStyle = LineStyle::LineAA);
 
 // ---------------------------------------------------------------------------
-// ENC-613 — ArcOptions: how an Arc/wedge mark is tessellated + placed in polar
-// coords. Only consulted for Mark::Arc; ignored by every other mark.
+// ENC-613 / ENC-995 — ArcOptions: how an Arc/wedge mark is tessellated + placed
+// in polar coords. Only consulted for Mark::Arc; ignored by every other mark.
 //   * polar — the clip-space center the (angle, radius) is measured from.
-//   * segments — triangle fan segments PER UNIT of angular span (clamped to a
-//     sane min/max per wedge) controlling the smoothness of the arc edge.
+//
+// ENC-995 — ANGULAR resolution, not a per-wedge count. Before ENC-995 every
+// wedge got a FIXED 24 chords regardless of how much of the circle it covered,
+// so the chord angle — and therefore the error — scaled with the wedge's span:
+// one wedge spanning the full turn got 15 deg/chord (3.85 px off the true arc at
+// a 450 px radius) while a 12-slice pie got 1.25 deg/chord (0.025 px) for 12x the
+// geometry. The budget went precisely the wrong way. The count is now DERIVED so
+// the chord ANGLE is bounded instead:
+//
+//   segs = ceil(segmentsPerTurn * widestWedgeSpan / 2pi)   [>= 1]
+//
+// which caps the chord at (360 / segmentsPerTurn) degrees however the table
+// splits the circle, so the deviation from the true arc is at most
+// R * (1 - cos(pi / segmentsPerTurn)) pixels at pixel-radius R — 0.43 px at
+// R = 450 with the default 72. It is derived from the WIDEST wedge and applied
+// uniformly to every row on purpose: compileArc's incremental path needs row r's
+// bytes at a regular r * (segs * 6 * stride) offset, which a per-row count would
+// break. See dc_enc995_arc_tessellation for the measured table.
 // ---------------------------------------------------------------------------
 struct ArcOptions {
   PolarParams polar{};       // center (defaults to clip origin 0,0)
-  int segmentsPerArc{24};    // fan segments across each wedge's angular span
+
+  // 0 (the default) => derive from segmentsPerTurn as above. A POSITIVE value is
+  // an explicit per-wedge override and reproduces the pre-ENC-995 behaviour
+  // exactly (the byte-level tests pin it that way).
+  int segmentsPerArc{0};
+
+  // Chords per FULL TURN when deriving. 72 => 5 deg/chord => <= 0.43 px error at
+  // a 450 px radius (a 900 px viewport at clip r = 1.0).
+  int segmentsPerTurn{72};
 };
+
+// ENC-995 — the derived per-wedge chord count for a wedge span of `spanRadians`
+// under `opts`. Exposed so callers (and tests) can size a buffer without
+// recompiling. Returns opts.segmentsPerArc unchanged when that is positive.
+int arcSegmentsFor(const ArcOptions& opts, double spanRadians);
 
 // ---------------------------------------------------------------------------
 // EncodeError — why a compile was rejected (the validateDrawItem-at-compile gate
