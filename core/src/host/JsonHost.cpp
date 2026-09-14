@@ -7,9 +7,9 @@
 // ENC-501 (P5 cutover) — Dawn-only. dc_gl has been deleted; JsonHost now REQUIRES
 // the WebGPU/Dawn backend (DC_HAS_DAWN). It renders through DawnDevice +
 // CpuBufferStore + DawnSceneRenderer and reads the frame back via
-// DawnDevice::readFramebufferRGBA. Everything else (parse, reconcile, ingest, bindings,
-// viewports, the input loop) is backend-agnostic and shared. The host is only
-// built when Dawn is available (see core/CMakeLists.txt).
+// DawnDevice::readFramebufferRGBA. Everything else (parse, reconcile, ingest,
+// bindings, viewports, the input loop) is backend-agnostic and shared. The host
+// is only built when Dawn is available (see core/CMakeLists.txt).
 
 #include "dc/document/SceneDocument.hpp"
 #include "dc/document/SceneReconciler.hpp"
