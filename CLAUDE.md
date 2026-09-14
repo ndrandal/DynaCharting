@@ -6,6 +6,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 DynaCharting is a high-performance real-time charting engine intended as an embeddable library for internal use. The C++ core does the heavy lifting for both data processing and rendering. The TypeScript/WebGL2 frontend served as a prototype to prove out concepts (scene graph, pipelines, data ingestion); it has been **fully retired** (ENC-508) now that the C++ core owns rendering. The browser/WASM path is `@repo/dc-wasm` (C++ core compiled to WebAssembly, rendering via WebGPU).
 
+> **Read [`LIMITATIONS.md`](LIMITATIONS.md) before designing around a constraint.** It is the
+> repo-local, dated log of what this engine cannot do, what it does differently than you
+> expect, and what is built but unreachable — each entry with a paste-able `Re-check` command
+> and the commit it was last verified at. It also records what *stopped* being true (§R) and
+> which confidently-held beliefs were wrong (§C). **Keeping it true is part of the definition
+> of done** — see [Workflow](#workflow).
+
 **Current milestone:** WebGPU/Dawn is the C++ renderer (`dc_gpu`). The original OpenGL backend has been removed (ENC-501); the full pipeline set renders headless through Dawn with offscreen readback. The TypeScript/WebGL2 prototype (`engine-host`/`chart-controller`/`hello-engine`) has been retired (ENC-508) — `@repo/dc-wasm` is the browser path. Windowed/on-screen presentation is next (ENC-497).
 
 ## Repository Layout
@@ -39,6 +46,14 @@ ctest --test-dir build -R dc_d1_1_smoke              # run a single test by name
 ```
 
 The **default** build (no `-DDC_FETCH_DAWN`) builds `dc` + the pure-logic tests only — no renderer, fast, and needs no graphics API. To get the renderer + render/golden tests, opt into Dawn (see below).
+
+> **A green default `ctest` proves nothing about the renderer (LIMITATIONS.md DC-L01).** The
+> default configure registers **188** of the repo's **231** tests; the other **43** — every
+> Dawn render and golden-parity test — plus `dc_gpu`, `dc_json_host` and the four headless
+> servers are excluded at *configure* time, so nothing reports them as missing. "188/188
+> passed" is compatible with the renderer being completely broken. Verify with
+> `grep -c '^add_test(' build/core/CTestTestfile.cmake` (188) against
+> `grep -cE '^\s*add_test\(' core/CMakeLists.txt` (231).
 
 CMake options: `DC_BUILD_TESTS` (default ON), `DC_WARNINGS_AS_ERRORS` (default OFF), `DC_FETCH_DAWN` (default OFF — see below).
 
@@ -233,3 +248,16 @@ Pipeline types (owned by the C++ core's `PipelineCatalog`; the retired TS protot
 
 - Use `feature/<name>` branches. Features can be stacked. Small changes can go directly on `main`.
 - Tests are for regression defense, not coverage targets. Name test files after the feature milestone (e.g., `d1_1_smoke.cpp`).
+- **Definition of done includes `LIMITATIONS.md` (ENC-991).** Before opening a PR:
+  1. **Did you fix a limitation?** Move its entry to §R with your commit and ticket. Do not
+     delete it — a log that silently drops entries is indistinguishable from one nobody
+     maintains, which is exactly how the previous attempt died.
+  2. **Did you find one?** Add an entry: a `Re-check` command you have actually run, a
+     `Verified at <sha>, <date>` stamp, a severity, a workaround, and a ticket (or an explicit
+     "None"). If you cannot write the one-line re-check, you have an impression, not a
+     limitation.
+  3. **Did you touch a file some entry's `Re-check` names?** Run that re-check and either
+     restamp the entry or retire it. This is the whole maintenance burden, and it is scoped to
+     files you already have open.
+  4. **Did you disprove something everyone believed?** That goes in §C (Corrections), not into
+     a commit message nobody will search.
