@@ -68,7 +68,7 @@ std::vector<std::string> richScene() {
 
       R"({"cmd":"createDrawItem","id":300,"layerId":10,"name":"ohlc"})",
       R"({"cmd":"bindDrawItem","drawItemId":300,"pipeline":"instancedCandle@1","geometryId":200})",
-      R"({"cmd":"attachTransform","targetId":300,"transformId":30})",
+      R"({"cmd":"attachTransform","drawItemId":300,"transformId":30})",
       // One setDrawItemStyle carries every style family the Scene has
       // (colors / sizes / dash / corner / blend / clip) — that is the real
       // command surface; there is no separate setDrawItemDash or
