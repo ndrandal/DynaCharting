@@ -1,0 +1,296 @@
+// ENC-984: sceneToDocument — read a SceneDocument back out of a live Scene.
+//
+// The gap this closes: serializeSceneDocument() has been round-trip tested since
+// D77, but only ever against a document that came from parseSceneDocument. A
+// Scene built the way every real host builds one — CommandProcessor JSON
+// commands — could not be turned into a document at all, so a live chart had no
+// exportable structure. These tests drive the FULL loop:
+//
+//   commands -> Scene -> sceneToDocument -> serialize -> parse -> reconcile
+//            -> a SECOND Scene -> sceneToDocument -> serialize
+//
+// and require the two JSON strings to be byte-identical. That is the property
+// that makes the export worth anything: the document you save restores the scene
+// you saved it from.
+#include "dc/document/SceneExport.hpp"
+#include "dc/document/SceneReconciler.hpp"
+#include "dc/commands/CommandProcessor.hpp"
+#include "dc/scene/Scene.hpp"
+#include "dc/scene/ResourceRegistry.hpp"
+#include "dc_check.hpp"
+
+#include <string>
+#include <vector>
+
+using namespace dc;
+
+namespace {
+
+// Apply a list of JSON commands, asserting each is accepted. Returns false on
+// the first rejection (with the failing command printed).
+bool applyAll(CommandProcessor& cp, const std::vector<std::string>& cmds) {
+  for (const auto& c : cmds) {
+    CmdResult r = cp.applyJsonText(c);
+    if (!r.ok) {
+      std::printf("  command rejected: %s\n    -> %s: %s\n", c.c_str(),
+                  r.err.code.c_str(), r.err.message.c_str());
+      return false;
+    }
+  }
+  return true;
+}
+
+// A scene that exercises every field sceneToDocument has to carry: two panes
+// (one with a clear color and a non-default region), two layers, a transform,
+// an index buffer, a non-default vertex format, and a draw item with a
+// non-default value in each style family (colors, widths, blend, clip, texture,
+// anchor, visibility, gradient).
+std::vector<std::string> richScene() {
+  return {
+      R"({"cmd":"createPane","id":1,"name":"price"})",
+      R"({"cmd":"setPaneRegion","paneId":1,"clipYMin":0.1,"clipYMax":0.9,"clipXMin":-0.8,"clipXMax":0.8})",
+      R"({"cmd":"setPaneClearColor","paneId":1,"r":0.05,"g":0.06,"b":0.07,"a":1.0})",
+      R"({"cmd":"createPane","id":2,"name":"volume"})",
+
+      R"({"cmd":"createLayer","id":10,"paneId":1,"name":"candles"})",
+      R"({"cmd":"createLayer","id":11,"paneId":2,"name":"bars"})",
+
+      R"({"cmd":"createTransform","id":30})",
+      R"({"cmd":"setTransform","transformId":30,"tx":-0.25,"ty":0.5,"sx":2.5,"sy":0.125})",
+
+      R"({"cmd":"createBuffer","id":100,"byteLength":240})",
+      R"({"cmd":"createBuffer","id":101,"byteLength":24})",
+
+      R"({"cmd":"createGeometry","id":200,"vertexBufferId":100,"vertexCount":10,"format":"candle6","indexBufferId":101,"indexCount":6})",
+      R"({"cmd":"createGeometry","id":201,"vertexBufferId":100,"vertexCount":4,"format":"pos2_clip"})",
+
+      R"({"cmd":"createDrawItem","id":300,"layerId":10,"name":"ohlc"})",
+      R"({"cmd":"bindDrawItem","drawItemId":300,"pipeline":"instancedCandle@1","geometryId":200})",
+      R"({"cmd":"attachTransform","targetId":300,"transformId":30})",
+      R"({"cmd":"setDrawItemColor","drawItemId":300,"r":0.2,"g":0.4,"b":0.6,"a":0.8})",
+      R"({"cmd":"setDrawItemStyle","drawItemId":300,"colorUp":[0.1,0.9,0.2,1.0],"colorDown":[0.9,0.1,0.2,1.0],"pointSize":7.5,"lineWidth":3.25})",
+      R"({"cmd":"setDrawItemDash","drawItemId":300,"dashLength":6.0,"gapLength":2.5})",
+      R"({"cmd":"setDrawItemCornerRadius","drawItemId":300,"cornerRadius":4.0})",
+      R"({"cmd":"setDrawItemBlendMode","drawItemId":300,"blendMode":"additive"})",
+      R"({"cmd":"setDrawItemTexture","drawItemId":300,"textureId":7})",
+      R"({"cmd":"setDrawItemAnchor","drawItemId":300,"anchor":"bottomRight","offsetX":12,"offsetY":-8})",
+      R"({"cmd":"setDrawItemGradient","drawItemId":300,"type":"radial","angle":1.25,"color0":[1,0,0,1],"color1":[0,0,1,1],"centerX":0.25,"centerY":0.75,"radius":0.9})",
+
+      R"({"cmd":"createDrawItem","id":301,"layerId":11,"name":"vol"})",
+      R"({"cmd":"bindDrawItem","drawItemId":301,"pipeline":"instancedRect@1","geometryId":201})",
+      R"({"cmd":"setDrawItemVisible","drawItemId":301,"visible":false})",
+      R"({"cmd":"setDrawItemClip","drawItemId":301,"isClipSource":true,"useClipMask":true})",
+  };
+}
+
+}  // namespace
+
+// ---------------------------------------------------------------------------
+// 1. Extraction sees the whole scene, with the right values in the right slots.
+// ---------------------------------------------------------------------------
+static bool test_extract_fields() {
+  std::printf("[enc984] extract: every resource and style field reaches the document\n");
+  Scene scene;
+  ResourceRegistry reg;
+  CommandProcessor cp(scene, reg);
+  DC_CHECK(applyAll(cp, richScene()));
+
+  SceneDocument doc;
+  sceneToDocument(scene, doc);
+
+  DC_CHECK(doc.panes.size() == 2);
+  DC_CHECK(doc.layers.size() == 2);
+  DC_CHECK(doc.buffers.size() == 2);
+  DC_CHECK(doc.geometries.size() == 2);
+  DC_CHECK(doc.drawItems.size() == 2);
+  DC_CHECK(doc.transforms.size() == 1);
+
+  // Pane: name, region, clear color.
+  const DocPane& p1 = doc.panes.at(1);
+  DC_CHECK(p1.name == "price");
+  DC_CHECK(std::fabs(p1.region.clipYMin - 0.1f) < 1e-5f);
+  DC_CHECK(std::fabs(p1.region.clipXMax - 0.8f) < 1e-5f);
+  DC_CHECK(p1.hasClearColor);
+  DC_CHECK(std::fabs(p1.clearColor[2] - 0.07f) < 1e-5f);
+  DC_CHECK(!doc.panes.at(2).hasClearColor);
+
+  // Layer -> pane parentage.
+  DC_CHECK(doc.layers.at(10).paneId == 1);
+  DC_CHECK(doc.layers.at(11).paneId == 2);
+  DC_CHECK(doc.layers.at(10).name == "candles");
+
+  // Buffer byteLength survives; bytes deliberately do NOT (they are not in the
+  // Scene — hosts read them with their own buffer readback).
+  DC_CHECK(doc.buffers.at(100).byteLength == 240);
+  DC_CHECK(doc.buffers.at(100).data.empty());
+
+  // Transform params.
+  const DocTransform& t = doc.transforms.at(30);
+  DC_CHECK(std::fabs(t.tx + 0.25f) < 1e-5f);
+  DC_CHECK(std::fabs(t.sx - 2.5f) < 1e-5f);
+  DC_CHECK(std::fabs(t.sy - 0.125f) < 1e-5f);
+
+  // Geometry: the vertex FORMAT must come back as the same string the parser
+  // accepts, not as a number.
+  const DocGeometry& g = doc.geometries.at(200);
+  DC_CHECK(g.format == "candle6");
+  DC_CHECK(g.vertexBufferId == 100);
+  DC_CHECK(g.vertexCount == 10);
+  DC_CHECK(g.indexBufferId == 101);
+  DC_CHECK(g.indexCount == 6);
+  DC_CHECK(doc.geometries.at(201).format == "pos2_clip");
+
+  // DrawItem: one assertion per style family.
+  const DocDrawItem& d = doc.drawItems.at(300);
+  DC_CHECK(d.layerId == 10);
+  DC_CHECK(d.name == "ohlc");
+  DC_CHECK(d.pipeline == "instancedCandle@1");
+  DC_CHECK(d.geometryId == 200);
+  DC_CHECK(d.transformId == 30);
+  DC_CHECK(std::fabs(d.color[1] - 0.4f) < 1e-5f);
+  DC_CHECK(std::fabs(d.colorUp[1] - 0.9f) < 1e-5f);
+  DC_CHECK(std::fabs(d.colorDown[0] - 0.9f) < 1e-5f);
+  DC_CHECK(std::fabs(d.pointSize - 7.5f) < 1e-5f);
+  DC_CHECK(std::fabs(d.lineWidth - 3.25f) < 1e-5f);
+  DC_CHECK(std::fabs(d.dashLength - 6.0f) < 1e-5f);
+  DC_CHECK(std::fabs(d.gapLength - 2.5f) < 1e-5f);
+  DC_CHECK(std::fabs(d.cornerRadius - 4.0f) < 1e-5f);
+  DC_CHECK(d.blendMode == "additive");       // enum -> the parser's spelling
+  DC_CHECK(d.textureId == 7);
+  DC_CHECK(d.anchorPoint == "bottomRight");  // enum -> the parser's spelling
+  DC_CHECK(std::fabs(d.anchorOffsetX - 12.0f) < 1e-5f);
+  DC_CHECK(std::fabs(d.anchorOffsetY + 8.0f) < 1e-5f);
+  DC_CHECK(d.gradientType == "radial");      // enum -> the parser's spelling
+  DC_CHECK(std::fabs(d.gradientAngle - 1.25f) < 1e-5f);
+  DC_CHECK(std::fabs(d.gradientRadius - 0.9f) < 1e-5f);
+  DC_CHECK(std::fabs(d.gradientCenter[1] - 0.75f) < 1e-5f);
+  DC_CHECK(d.visible);
+
+  const DocDrawItem& d2 = doc.drawItems.at(301);
+  DC_CHECK(!d2.visible);
+  DC_CHECK(d2.isClipSource);
+  DC_CHECK(d2.useClipMask);
+  // An UNanchored item must leave anchorPoint empty — that is how both the
+  // parser and the reconciler spell "no anchor" (there is no hasAnchor field in
+  // the document). Emitting "topLeft" here would silently anchor it on restore.
+  DC_CHECK(d2.anchorPoint.empty());
+  // Likewise no gradient -> empty, not "none" and not "linear".
+  DC_CHECK(d2.gradientType.empty());
+
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// 2. The full loop: export a live scene, restore it into a FRESH scene through
+//    the real parse+reconcile path, export that, and demand identical JSON.
+// ---------------------------------------------------------------------------
+static bool test_round_trip_through_reconciler(bool compact) {
+  std::printf("[enc984] round trip (compact=%d): scene -> json -> scene -> json\n",
+              compact ? 1 : 0);
+
+  Scene a;
+  ResourceRegistry regA;
+  CommandProcessor cpA(a, regA);
+  DC_CHECK(applyAll(cpA, richScene()));
+
+  const std::string json1 = serializeScene(a, compact);
+  DC_CHECK(!json1.empty());
+
+  // Restore into a completely fresh scene the way a real host would.
+  SceneDocument parsed;
+  DC_CHECK(parseSceneDocument(json1, parsed));
+
+  Scene b;
+  ResourceRegistry regB;
+  CommandProcessor cpB(b, regB);
+  SceneReconciler rec(cpB);
+  ReconcileResult rr = rec.reconcile(parsed, b);
+  if (!rr.ok) {
+    for (const auto& e : rr.errors) std::printf("  reconcile error: %s\n", e.c_str());
+  }
+  DC_CHECK(rr.ok);
+
+  // Same resource population.
+  DC_CHECK(b.paneIds().size() == a.paneIds().size());
+  DC_CHECK(b.layerIds().size() == a.layerIds().size());
+  DC_CHECK(b.drawItemIds().size() == a.drawItemIds().size());
+  DC_CHECK(b.bufferIds().size() == a.bufferIds().size());
+  DC_CHECK(b.geometryIds().size() == a.geometryIds().size());
+  DC_CHECK(b.transformIds().size() == a.transformIds().size());
+
+  // And — the real bar — re-exporting the restored scene reproduces the SAME
+  // document text. Byte equality here is what proves nothing was dropped,
+  // defaulted or re-spelled anywhere in the loop.
+  const std::string json2 = serializeScene(b, compact);
+  if (json1 != json2) {
+    std::printf("  json1: %s\n", json1.c_str());
+    std::printf("  json2: %s\n", json2.c_str());
+  }
+  DC_CHECK(json1 == json2);
+
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// 3. An empty scene exports a valid, re-parseable document (the save-before-
+//    anything-is-drawn case).
+// ---------------------------------------------------------------------------
+static bool test_empty_scene() {
+  std::printf("[enc984] empty scene exports a valid document\n");
+  Scene s;
+  const std::string json = serializeScene(s, false);
+  DC_CHECK(!json.empty());
+
+  SceneDocument doc;
+  DC_CHECK(parseSceneDocument(json, doc));
+  DC_CHECK(doc.panes.empty());
+  DC_CHECK(doc.drawItems.empty());
+  DC_CHECK(doc.version == 1);
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// 4. The export tracks DELETIONS — a stale document would be worse than none.
+// ---------------------------------------------------------------------------
+static bool test_tracks_deletion() {
+  std::printf("[enc984] export reflects deletions (cascade included)\n");
+  Scene scene;
+  ResourceRegistry reg;
+  CommandProcessor cp(scene, reg);
+  DC_CHECK(applyAll(cp, richScene()));
+
+  SceneDocument before;
+  sceneToDocument(scene, before);
+  DC_CHECK(before.drawItems.count(301) == 1);
+  DC_CHECK(before.layers.count(11) == 1);
+
+  // Deleting pane 2 cascades to layer 11 and draw item 301.
+  CmdResult r = cp.applyJsonText(R"({"cmd":"delete","kind":"pane","id":2})");
+  DC_CHECK(r.ok);
+
+  SceneDocument after;
+  sceneToDocument(scene, after);
+  DC_CHECK(after.panes.count(2) == 0);
+  DC_CHECK(after.layers.count(11) == 0);
+  DC_CHECK(after.drawItems.count(301) == 0);
+  // …and the untouched pane's subtree is still there.
+  DC_CHECK(after.panes.count(1) == 1);
+  DC_CHECK(after.drawItems.count(300) == 1);
+  return true;
+}
+
+int main() {
+  int failures = 0;
+  if (!test_extract_fields()) failures++;
+  if (!test_round_trip_through_reconciler(false)) failures++;
+  if (!test_round_trip_through_reconciler(true)) failures++;
+  if (!test_empty_scene()) failures++;
+  if (!test_tracks_deletion()) failures++;
+
+  if (failures) {
+    std::printf("ENC-984 scene export: %d test(s) FAILED\n", failures);
+    return 1;
+  }
+  std::printf("ENC-984 scene export: all tests passed\n");
+  return 0;
+}
