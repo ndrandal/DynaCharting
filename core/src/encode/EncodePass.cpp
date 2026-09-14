@@ -3,7 +3,6 @@
 // See EncodePass.hpp for the contract.
 #include "dc/encode/EncodePass.hpp"
 
-#include <algorithm>
 #include <cmath>
 #include <cstring>
 
@@ -238,17 +237,8 @@ int arcSegmentsFor(const ArcOptions& opts, double spanRadians) {
   constexpr double kTwoPi = 6.283185307179586;
   int perTurn = opts.segmentsPerTurn;
   if (perTurn < 1) perTurn = 1;
-  if (perTurn > kMaxArcSegments) perTurn = kMaxArcSegments;
-  // CLAMP AT A FULL TURN. A wedge wider than 2pi covers the circle and nothing
-  // more, so chords beyond that buy no accuracy — but without the clamp they are
-  // still paid for, and the angle column is exactly where a unit mistake lands:
-  // degrees fed to a radians channel makes a 360-"radian" span and a 170x vertex
-  // blow-up (589,824 B/row against 3,456 B before ENC-995), through the DEFAULT
-  // ArcOptions every manifest `arc` mark gets. It also keeps the chord cap below
-  // honest: with span <= 2pi the derived count never reaches kMaxArcSegments, so
-  // the clamp can no longer silently break the 2pi/segmentsPerTurn bound.
-  const double span = std::min(std::fabs(spanRadians), kTwoPi);
-  if (!(span > 0.0)) return 1;  // also catches NaN
+  const double span = std::fabs(spanRadians);
+  if (!(span > 0.0)) return 1;
   // The RELATIVE epsilon keeps an exact full turn at `perTurn` chords: 2pi
   // round-tripped through the f32 angle columns lands ~3e-8 above 2pi, and a bare
   // ceil would answer perTurn+1. Shaving 1e-6 of the quotient can only drop a
@@ -656,8 +646,7 @@ static void compileArc(const PipelineCatalog& catalog, const Encoding& enc,
   // r * wedgeBytes offset the incremental path below depends on. The scan reads
   // two f32 columns and does no trig; it is cheap next to the tessellation.
   int segs = arcOpts.segmentsPerArc;
-  const bool derivedSegs = (segs <= 0);
-  if (derivedSegs) {
+  if (segs <= 0) {
     double maxSpan = 0.0;
     for (std::size_t r = 0; r < totalRows; ++r) {
       // Only the two ANGLE channels, not a full resolveRow: the radii and the
@@ -693,27 +682,18 @@ static void compileArc(const PipelineCatalog& catalog, const Encoding& enc,
 
   std::size_t packFrom = fromRow;
   if (packFrom > totalRows) packFrom = totalRows;
-  // ENC-995 — a DERIVED `segs` can change when an appended row is wider than
+  // ENC-995 — a derived `segs` can CHANGE when an appended row is wider than
   // every row before it, which retroactively invalidates the bytes already in
-  // the store: they were packed at the old stride. So a derived count always
-  // repacks the whole table rather than appending onto a layout that may no
-  // longer exist.
-  //
-  // The tempting cheaper test — "does the store still hold exactly packFrom
-  // wedges at the current stride?" — is NOT sound, and the counterexample is
-  // small: 10 wedges at 9 chords and 9 wedges at 10 chords are the same number
-  // of bytes. A caller re-packing a suffix after an in-place OP_UPDATE_RANGE
-  // widened the last row hits exactly that, the size matches, the append is
-  // allowed, and every earlier wedge is then read at the wrong stride — silent
-  // garbage, where the pre-ENC-995 fixed stride was merely redundant. The store
-  // cannot tell us what stride its bytes were written at, so do not ask it.
-  //
-  // An EXPLICIT segmentsPerArc keeps the true tail append: the stride is the
-  // caller's constant, cannot move under them, and the pre-ENC-995 behaviour is
-  // reproduced exactly — which is the documented escape hatch for the arc table
-  // large enough to care. (Arc tables are pies, gauges and radials: units to
-  // dozens of rows, where repacking is microseconds.)
-  if (store && derivedSegs && packFrom > 0) packFrom = 0;
+  // the store (they were packed at the old stride). Detect it by the one fact
+  // that betrays it — the store no longer holds exactly packFrom wedges at the
+  // current stride — and repack the whole table instead of appending onto a
+  // layout that no longer exists. Callers already re-read geometry.vertexCount
+  // after every compile, so the draw follows.
+  if (store && packFrom > 0 &&
+      store->getCpuDataSize(vertexBufferId) !=
+          static_cast<std::uint32_t>(packFrom) * wedgeBytes) {
+    packFrom = 0;
+  }
   const std::uint32_t storeOffset =
       static_cast<std::uint32_t>(packFrom) * wedgeBytes;
 
@@ -755,13 +735,6 @@ static void compileArc(const PipelineCatalog& catalog, const Encoding& enc,
   }
 
   if (store && !out.empty()) {
-    // ENC-995 — writeRange grows but never shrinks, so a repack at a SMALLER
-    // stride would leave the old, larger buffer behind: correct to draw (
-    // vertexCount covers only the fresh prefix) but permanently bloated, and
-    // 12x is easy to hit (72 chords down to 6). Size it exactly first.
-    if (packFrom == 0)
-      store->reserve(vertexBufferId,
-                     static_cast<std::uint32_t>(totalRows) * wedgeBytes);
     store->writeRange(vertexBufferId, storeOffset, out.data(),
                       static_cast<std::uint32_t>(out.size()));
   } else if (store && out.empty() && packFrom == 0) {
