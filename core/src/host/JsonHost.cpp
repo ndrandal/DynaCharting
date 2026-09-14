@@ -7,9 +7,9 @@
 // ENC-501 (P5 cutover) — Dawn-only. dc_gl has been deleted; JsonHost now REQUIRES
 // the WebGPU/Dawn backend (DC_HAS_DAWN). It renders through DawnDevice +
 // CpuBufferStore + DawnSceneRenderer and reads the frame back via
-// DawnDevice::readPixel. Everything else (parse, reconcile, ingest, bindings,
-// viewports, the input loop) is backend-agnostic and shared. The host is only
-// built when Dawn is available (see core/CMakeLists.txt).
+// DawnDevice::readFramebufferRGBA. Everything else (parse, reconcile, ingest,
+// bindings, viewports, the input loop) is backend-agnostic and shared. The host
+// is only built when Dawn is available (see core/CMakeLists.txt).
 
 #include "dc/document/SceneDocument.hpp"
 #include "dc/document/SceneReconciler.hpp"
@@ -137,7 +137,8 @@ struct HostRenderBackend {
 // Owns a DawnSceneRenderer (which owns a DawnDevice + all 10 pipeline backends)
 // and a CpuBufferStore. The scene's CPU buffer bytes are pushed into the store;
 // render() walks the whole scene through the Dawn backend registry and reads the
-// offscreen target back per-pixel via DawnDevice::readPixel (already top-down).
+// offscreen target back in a single copy+map via DawnDevice::readFramebufferRGBA
+// (already top-down, and de-padded from WebGPU's 256-byte row alignment).
 class DawnHostBackend final : public HostRenderBackend {
  public:
   // Optional glyph atlas (textSDF@1) + texture source (texturedQuad@1) are wired
@@ -158,8 +159,38 @@ class DawnHostBackend final : public HostRenderBackend {
   void render(const dc::Scene& scene, int W, int H,
               std::vector<std::uint8_t>& outRgba) override {
     renderer_->render(scene, store_, W, H);
-    // DawnDevice::readPixel is TOP-DOWN origin already.
     outRgba.assign(static_cast<std::size_t>(W) * H * 4, 0);
+
+    // ENC-1093 — read the frame back in ONE copyTextureToBuffer + map.
+    //
+    // This used to call DawnDevice::readPixel(x, y) once per pixel. readPixel is
+    // not a cheap point query: it copies the ENTIRE target into a fresh readback
+    // buffer, maps it synchronously (blocking on the instance event pump), reads
+    // the one texel and unmaps. So the loop performed W*H *full-frame* GPU round
+    // trips to produce a single frame — 540,000 of them at the default 900x600,
+    // which pushed a --png capture past 300 seconds.
+    //
+    // readFramebufferRGBA does exactly one of those round trips and returns the
+    // whole image, so the bytes are identical by construction: same target (the
+    // one bound by the most recent beginRenderPass, which is what readPixel's
+    // activeTarget_ resolves to as well), same TOP-DOWN origin, same RGBA8 texel
+    // order, and it de-pads WebGPU's 256-byte-aligned bytesPerRow row by row into
+    // the tight W*H*4 buffer this interface promises. (Row padding is the reason
+    // a naive single-copy readback gets this wrong: at 900px wide a row is 3600
+    // bytes on the CPU side but 3840 in the mapped buffer.)
+    std::uint32_t gotW = 0, gotH = 0;
+    if (renderer_->device().readFramebufferRGBA(outRgba.data(), outRgba.size(),
+                                                &gotW, &gotH) &&
+        gotW == static_cast<std::uint32_t>(W) &&
+        gotH == static_cast<std::uint32_t>(H)) {
+      return;
+    }
+
+    // Fallback: keep the old per-pixel path for the cases readFramebufferRGBA
+    // declines (no bound target, a target whose size does not match the frame we
+    // were asked for, or a failed map) so behaviour is unchanged there rather
+    // than silently zero-filled. It should never run on the --png path; when it
+    // does, there is no bound target and each readPixel returns immediately.
     for (int y = 0; y < H; ++y) {
       for (int x = 0; x < W; ++x) {
         std::uint8_t px[4] = {0, 0, 0, 0};
