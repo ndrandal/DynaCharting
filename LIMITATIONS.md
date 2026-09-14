@@ -112,45 +112,58 @@ the behaviour changed when it was written down.
 
 ---
 
-## DC-L03 — `--png` does one GPU round trip per pixel 🔴 *(fix in flight)*
+## DC-L03 — `--png` does one GPU round trip per pixel ✅ *(RETIRED — fixed by ENC-1093)*
 
-**Claim.** `DawnHostBackend::render` reads the framebuffer back **one pixel at a time**
-(`core/src/host/JsonHost.cpp:162-166`: `for y { for x { readPixel(x, y, px) } }`). At the
-default 900×600 that is **540,000** blocking round trips, and a capture exceeds **300 seconds**.
+**Retired 2026-09-14**, the day it was written, by ENC-1093 (`7169457`). Kept in place rather
+than deleted, and kept here rather than moved to §R, because §R holds the *previous* document's
+`L*` ids — this is the first `DC-L*` entry to fall, and the point of §H is that a falsification
+is visible where the claim was.
 
-Each `readPixel` (`core/src/gpu/DawnDevice.cpp:1642-1720`) creates a *fresh* readback buffer
-(`:1665`), copies the **entire** texture (`:1682`, `copySize = {targetW_, targetH_, 1}`),
-submits (`:1684`), maps async (`:1694`) and busy-waits (`:1701`) — to extract 4 bytes
-(`:1715`). Its own comment at `:1652-1655` admits the full copy is for convenience. At 900×600
-with 256-byte row padding that is ~1.24 TB copied per capture.
+**What the claim said.** `DawnHostBackend::render` read the framebuffer one pixel at a time, so
+a 900×600 capture cost 540,000 blocking round trips and exceeded 300 seconds. That was true and
+the mechanism was correctly traced: each `readPixel` copied the *entire* texture to extract four
+bytes, as `DawnDevice.cpp:1653` admits in its own comment.
 
-**Why it bites.** `docs/trial-rules.md:199` prescribes `--png` for all 277 trials, and the
-corpus charts are authored at 1000×700 and 1200×900 — larger than the case that already takes
-five minutes. The documented workflow is one nobody can run at the size the charts are designed
-for, so people silently capture at a resolution that does not match what they are auditing.
-That is how DC-L02's evidence ended up at 320×240.
+**What fixed it.** Exactly the remedy this entry named — `JsonHost.cpp` now calls
+`DawnDevice::readFramebufferRGBA()` (ENC-503), one copy and one map, which every other readback
+caller already used. `core/demos/dawn_server_util.hpp` carried the same loop and got the same
+change. 56 insertions, 9 deletions.
 
-**The fix already exists in the same codebase and this path does not use it.**
-`DawnDevice::readFramebufferRGBA()` (`core/include/dc/gpu/DawnDevice.hpp:155-162`, ENC-503) does
-one full copy + one map. Its callers today are `core/demos/dawn_window_demo.cpp:173`,
-`core/src/gpu/DawnWindowContext.cpp:437,440`, `core/wasm/dc_engine_host.cpp:329` and
-`core/tests/dc_enc993_dawn_default_line.cpp:199`. `JsonHost.cpp` is not among them.
+**Measured, which this entry could not be.** 900×600, `charts/072-polar-rose.json`:
+
+| adapter | before | after | speedup |
+|---|---:|---:|---:|
+| NVIDIA RTX 3070 Ti (Mesa NVK) | 302.0 s | 1.399 s | **216×** |
+| llvmpipe / lavapipe | 516.8 s | 1.397 s | **370×** |
+
+Output proven unchanged: five 900×600 charts sha256-identical as PNGs **and** as raw FRME
+frames (2.16 MB of raw RGBA each, no encoder in between, so row order, alpha and 256-byte row
+padding are proven directly). `dc_gallery`'s five PPM cards identical too, 207.9 s → 1.42 s.
+
+**Two corrections this retirement carries** — both bear on entries that remain:
+
+- **This box is not lavapipe.** Dawn's default adapter here is a real NVIDIA RTX 3070 Ti via
+  Mesa NVK. The ">300 s" figure above was a lavapipe measurement presented as the general case;
+  hardware was 302 s, so the conclusion held, but *this entry's* environment label was wrong.
+  DC-L01 is not affected: it pins the adapter explicitly with
+  `VK_ICD_FILENAMES=.../lvp_icd.x86_64.json` and says "on lavapipe" in words — it was right, and
+  this correction is only about the figure in the paragraph above.
+- **The Dawn suite is 229/231 on hardware, not 231/231.** `dc_enc619_dawn_fft` and
+  `dc_enc619_dawn_marching_squares` fail identically on the *unmodified* tree
+  (`maxRelErr=4.485e-03` against a `1e-3` tolerance) and pass under lavapipe. Pre-existing, in
+  GPU *compute*, unrelated to readback. DC-L01 already scopes its 231/231 to lavapipe correctly;
+  what is new here is that the *hardware* number was never measured until now, and it is 229.
 
 **Re-check.**
 ```bash
-sed -n '157,173p' core/src/host/JsonHost.cpp    # the per-pixel loop
-grep -rn 'ENC-1093' core packages docs           # no hits => not yet fixed
+grep -n 'readFramebufferRGBA(' core/src/host/JsonHost.cpp   # a real CALL (~:182) => fixed
+grep -c 'for (int y' core/src/host/JsonHost.cpp             # the per-pixel loop survives only as fallback
 ```
 
-**Ticket.** [ENC-1093](https://linear.app/encultured/issue/ENC-1093) — **In Progress as of
-2026-09-14**, actively being fixed in a parallel worktree. **Re-check before relying on this
-entry; it is the one most likely to be stale.** The ">300s" figure is the ENC-992 session's
-measurement on lavapipe (software Vulkan), not a committed benchmark — ENC-1093's AC requires
-before/after numbers precisely because none are recorded.
+**Ticket.** [ENC-1093](https://linear.app/encultured/issue/ENC-1093) — merged `7169457`.
 
-**Verified at** `6684a00`, 2026-09-14 — loop and `readPixel` implementation read in source;
-`grep -rn ENC-1093` over the tree returns zero hits, so no fix had landed at this commit. Not
-timed here: `dc_json_host` does not exist in a default build (DC-L01).
+**Verified at** `7169457`, 2026-09-14 — retirement confirmed by the managing session against
+merged main, independently of the implementing agent.
 
 ---
 
