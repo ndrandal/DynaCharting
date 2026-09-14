@@ -34,6 +34,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -314,6 +315,10 @@ int main() {
               std::to_string(narrowSegs) + " -> " + std::to_string(wideSegs));
     check(store.getCpuDataSize(300) != sizeAfter3 + (sizeAfter3 / 3),
           "the store is NOT the old 3 wedges plus one appended tail");
+    check(r2.bytes.size() == store.getCpuDataSize(300),
+          "a derived count repacks: bytes covers the WHOLE table, per the "
+          "compileInto contract note");
+    (void)sizeAfter3;
 
     // the store must now be byte-identical to a clean full compile
     auto full = pass.compile(dc::Mark::Arc, f.enc, f.tables, Fixture::kTable, src,
@@ -328,6 +333,70 @@ int main() {
           "byte (" + std::to_string(full.bytes.size()) + " B)");
     check(r2.geometry.vertexCount == full.geometry.vertexCount,
           "and reports the same vertexCount as the full compile");
+  }
+
+  // =======================================================================
+  // [6] An EXPLICIT segmentsPerArc keeps compileInto's TRUE TAIL APPEND.
+  //     The first cut of ENC-995 ran its repack guard on this path too, so a
+  //     pinned count silently re-packed the whole table: the store stayed
+  //     correct, but `bytes` and `instanceRowIds` quietly became whole-table
+  //     and the append went O(N) — falsifying "a positive segmentsPerArc
+  //     reproduces the pre-ENC-995 behaviour exactly".
+  // =======================================================================
+  {
+    std::printf("-- [6] an explicit count still appends a TAIL, not the table --\n");
+    Fixture f;
+    for (int i = 0; i < 4; ++i)
+      f.add(kPi * (20.0 * i) / 180.0, kPi * (20.0 * (i + 1)) / 180.0, kROuter);
+    auto src = dc::makeBufferByteSource(f.ingest);
+    dc::ArcOptions pinned; pinned.segmentsPerArc = 12;
+    dc::CpuBufferStore store;
+    pass.compileInto(dc::Mark::Arc, f.enc, f.tables, Fixture::kTable, src, store,
+                     100, 200, 300, /*fromRow=*/0, nullptr,
+                     dc::LineStyle::Line2d, pinned);
+
+    // append ONE much wider wedge — under a derived count this would move the
+    // stride; under a pinned one nothing may move.
+    f.add(kPi * 20.0 / 180.0, kPi * 320.0 / 180.0, kROuter);
+    auto tail = pass.compileInto(dc::Mark::Arc, f.enc, f.tables, Fixture::kTable,
+                                 src, store, 100, 200, 300, /*fromRow=*/4,
+                                 nullptr, dc::LineStyle::Line2d, pinned);
+    const std::size_t oneWedgeBytes = 12u * 6u * 24u;
+    check(tail.ok && tail.bytes.size() == oneWedgeBytes,
+          "pinned segmentsPerArc=12: the append wrote ONE wedge (" +
+              std::to_string(tail.bytes.size()) + " B, expected " +
+              std::to_string(oneWedgeBytes) + ")");
+    check(tail.instanceRowIds.size() == 1,
+          "pinned: instanceRowIds carries the ONE new row, not all 5");
+    check(store.getCpuDataSize(300) == 5u * oneWedgeBytes,
+          "pinned: the store holds 5 wedges at the unchanged stride");
+  }
+
+  // =======================================================================
+  // [7] A span wider than a full turn is CLAMPED. The angle column is where a
+  //     degrees-for-radians mistake lands, and it reaches the derivation
+  //     through the default ArcOptions every manifest `arc` mark gets.
+  // =======================================================================
+  {
+    std::printf("-- [7] a runaway span is clamped at one full turn --\n");
+    dc::ArcOptions ao;
+    const int full = dc::arcSegmentsFor(ao, kTwoPi);
+    check(dc::arcSegmentsFor(ao, 360.0) == full,
+          "360 'radians' (degrees fed to a radians channel) costs the same as a "
+          "full turn, not " + std::to_string((int)(72.0 * 360.0 / kTwoPi)) + "x");
+    check(dc::arcSegmentsFor(ao, 1e9) == full, "1e9 radians is clamped too");
+    const double inf = std::numeric_limits<double>::infinity();
+    check(dc::arcSegmentsFor(ao, inf) == full, "+inf is clamped too");
+    check(dc::arcSegmentsFor(ao, std::nan("")) == 1, "NaN derives 1 chord");
+    // and with the clamp in place the chord cap holds for EVERY span, including
+    // the ones that used to drive the count into its 4096 ceiling
+    for (double span : {kTwoPi, 7.0, 360.0, 1e9}) {
+      const int segs = dc::arcSegmentsFor(ao, span);
+      const double chord = std::min(span, kTwoPi) / segs;
+      check(chord <= (kTwoPi / ao.segmentsPerTurn) * (1.0 + 1e-6),
+            "span " + std::to_string(span) + ": chord " + std::to_string(chord) +
+                " rad still within the 2pi/72 cap");
+    }
   }
 
   std::printf("\n=== %d passed, %d failed ===\n", passed, failed);
