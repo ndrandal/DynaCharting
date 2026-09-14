@@ -1,3 +1,8 @@
+// ENC-993 — this line renders through lineAA@1 (rect4 instanced quads), not the
+// 1px line2d@1 LineList it used to. The float payload is UNCHANGED: compute()
+// already emits one (x0,y0,x1,y1) endpoint pair per segment, which is byte-for-byte
+// a rect4 instance record, so only the declared format + pipeline move. The counts
+// reported below are therefore SEGMENTS (rect4 instances), not pos2 vertices.
 #include "dc/recipe/BollingerRecipe.hpp"
 #include "dc/math/Normalize.hpp"
 #include <cmath>
@@ -19,14 +24,14 @@ void BollingerRecipe::buildLineCommands(RecipeBuildResult& result,
   result.createCommands.push_back(
     R"({"cmd":"createGeometry","id":)" + idStr(geomId) +
     R"(,"vertexBufferId":)" + idStr(bufId) +
-    R"(,"format":"pos2_clip","vertexCount":2})");
+    R"(,"format":"rect4","vertexCount":1})");
   result.createCommands.push_back(
     R"({"cmd":"createDrawItem","id":)" + idStr(diId) +
     R"(,"layerId":)" + idStr(layerId) +
     R"(,"name":")" + name + R"("})");
   result.createCommands.push_back(
     R"({"cmd":"bindDrawItem","drawItemId":)" + idStr(diId) +
-    R"(,"pipeline":"line2d@1","geometryId":)" + idStr(geomId) + "}");
+    R"(,"pipeline":"lineAA@1","geometryId":)" + idStr(geomId) + "}");
 }
 
 RecipeBuildResult BollingerRecipe::build() const {
@@ -59,9 +64,9 @@ RecipeBuildResult BollingerRecipe::build() const {
     R"(,"pipeline":"triSolid@1","geometryId":)" + idStr(fillGeomId()) + "}");
 
   // Subscriptions
-  result.subscriptions.push_back({middleBufferId(), middleGeomId(), VertexFormat::Pos2_Clip});
-  result.subscriptions.push_back({upperBufferId(), upperGeomId(), VertexFormat::Pos2_Clip});
-  result.subscriptions.push_back({lowerBufferId(), lowerGeomId(), VertexFormat::Pos2_Clip});
+  result.subscriptions.push_back({middleBufferId(), middleGeomId(), VertexFormat::Rect4});
+  result.subscriptions.push_back({upperBufferId(), upperGeomId(), VertexFormat::Rect4});
+  result.subscriptions.push_back({lowerBufferId(), lowerGeomId(), VertexFormat::Rect4});
   result.subscriptions.push_back({fillBufferId(), fillGeomId(), VertexFormat::Pos2_Clip});
 
   // Shared transform
@@ -172,9 +177,11 @@ BollingerRecipe::BollingerData BollingerRecipe::compute(
   }
 
   std::uint32_t segments = static_cast<std::uint32_t>(validCount - 1);
-  data.middleVC = segments * 2;
-  data.upperVC = segments * 2;
-  data.lowerVC = segments * 2;
+  // ENC-993: the three BANDS are rect4 instances (segments) now; the FILL stays
+  // triSolid@1 and keeps its pos2 vertex count.
+  data.middleVC = segments;
+  data.upperVC = segments;
+  data.lowerVC = segments;
   data.fillVC = segments * 6;
 
   return data;

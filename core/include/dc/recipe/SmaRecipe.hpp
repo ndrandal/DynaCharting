@@ -5,8 +5,8 @@
 
 namespace dc {
 
-// SMA overlay recipe. Uses line2d@1 to render a simple moving average.
-// For N candles, period P → (N-P) valid points → (N-P-1)*2 vertices.
+// SMA overlay recipe. Uses lineAA@1 (ENC-993) to render a simple moving average.
+// For N candles, period P → (N-P+1) valid points → (N-P) rect4 segments.
 //
 // ID layout (offsets from idBase):
 //   0: Buffer

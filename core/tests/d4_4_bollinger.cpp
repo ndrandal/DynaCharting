@@ -46,10 +46,12 @@ int main() {
                             95.0f, 135.0f, -0.8f, 0.8f);
 
     // 30 - 5 + 1 = 26 valid points → 25 segments
-    requireTrue(data.middleVC == 50, "middle: 25×2=50 verts");
-    requireTrue(data.upperVC == 50, "upper: 50 verts");
-    requireTrue(data.lowerVC == 50, "lower: 50 verts");
-    requireTrue(data.fillVC == 150, "fill: 25×6=150 verts");
+    // ENC-993: the three BANDS render through lineAA@1, so their counts are rect4
+    // INSTANCES (one per segment). The FILL is still triSolid@1 pos2 vertices.
+    requireTrue(data.middleVC == 25, "middle: 25 rect4 segments");
+    requireTrue(data.upperVC == 25, "upper: 25 rect4 segments");
+    requireTrue(data.lowerVC == 25, "lower: 25 rect4 segments");
+    requireTrue(data.fillVC == 150, "fill: 25×6=150 verts (still triSolid@1)");
     std::printf("  vertexCounts: middle=%u upper=%u lower=%u fill=%u: OK\n",
                 data.middleVC, data.upperVC, data.lowerVC, data.fillVC);
 
@@ -105,9 +107,9 @@ int main() {
     std::printf("  13 resources: OK\n");
 
     // Verify pipelines
-    requireTrue(scene.getDrawItem(502)->pipeline == "line2d@1", "middle line2d");
-    requireTrue(scene.getDrawItem(505)->pipeline == "line2d@1", "upper line2d");
-    requireTrue(scene.getDrawItem(508)->pipeline == "line2d@1", "lower line2d");
+    requireTrue(scene.getDrawItem(502)->pipeline == "lineAA@1", "middle lineAA");
+    requireTrue(scene.getDrawItem(505)->pipeline == "lineAA@1", "upper lineAA");
+    requireTrue(scene.getDrawItem(508)->pipeline == "lineAA@1", "lower lineAA");
     requireTrue(scene.getDrawItem(511)->pipeline == "triSolid@1", "fill triSolid");
     std::printf("  pipelines: OK\n");
 

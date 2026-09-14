@@ -448,11 +448,19 @@ ManifestResult Manifest::parseMarks(const void* marksValue) {
     decl.tableId = srcDecl.tableId;
 
     // pipeline: explicit key, else the mark's default. The line style is inferred
-    // from the resolved pipeline (lineAA@1 => LineAA), then markSpecOf is the
-    // authority on the pipeline key + required channels.
+    // from the resolved pipeline, then markSpecOf is the authority on the pipeline
+    // key + required channels.
+    //
+    // ENC-993: a line mark now DEFAULTS to lineAA@1, so the inference must read
+    // BOTH ways — a manifest that pins "line2d@1" is opting OUT of the default and
+    // must still resolve to line2d@1 rather than tripping the mismatch check below.
     std::string pipelineReq = strOr(mkV, "pipeline");
-    if (decl.mark == Mark::Line && pipelineReq.rfind("lineAA", 0) == 0)
-      decl.lineStyle = LineStyle::LineAA;
+    if (decl.mark == Mark::Line) {
+      if (pipelineReq.rfind("line2d", 0) == 0)
+        decl.lineStyle = LineStyle::Line2d;
+      else if (pipelineReq.rfind("lineAA", 0) == 0)
+        decl.lineStyle = LineStyle::LineAA;
+    }
     MarkSpec spec = markSpecOf(decl.mark, decl.lineStyle);
     decl.pipeline = spec.pipeline;
     if (!pipelineReq.empty() && pipelineReq != spec.pipeline) {

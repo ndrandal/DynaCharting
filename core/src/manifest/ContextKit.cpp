@@ -154,17 +154,19 @@ std::string ContextKit::marksSection() {
   o << "## MARKS (mark -> pipeline + required channels)\n\n";
   o << "| mark | pipeline | required channels |\n|---|---|---|\n";
   for (Mark m : kAllMarks) {
-    // A line resolves to line2d@1 by default; surface the lineAA variant too.
+    // ENC-993: a line resolves to the ANTIALIASED lineAA@1 by default; surface the
+    // 1px line2d@1 opt-out as the second row so the grammar card names both.
     MarkSpec spec = markSpecOf(m);
     o << "| `" << toString(m) << "` | `" << spec.pipeline << "` | ";
     for (std::size_t i = 0; i < spec.required.size(); ++i)
       o << (i ? ", " : "") << "`" << toString(spec.required[i]) << "`";
     o << " |\n";
     if (m == Mark::Line) {
-      MarkSpec aa = markSpecOf(Mark::Line, LineStyle::LineAA);
-      o << "| `line` (antialiased) | `" << aa.pipeline << "` | ";
-      for (std::size_t i = 0; i < aa.required.size(); ++i)
-        o << (i ? ", " : "") << "`" << toString(aa.required[i]) << "`";
+      MarkSpec flat = markSpecOf(Mark::Line, LineStyle::Line2d);
+      o << "| `line` (1px, opt out with `\"pipeline\":\"line2d@1\"`) | `"
+        << flat.pipeline << "` | ";
+      for (std::size_t i = 0; i < flat.required.size(); ++i)
+        o << (i ? ", " : "") << "`" << toString(flat.required[i]) << "`";
       o << " |\n";
     }
   }

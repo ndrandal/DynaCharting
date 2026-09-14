@@ -12,7 +12,7 @@ class GlyphAtlas;
 // Horizontal price level lines with labels.
 //
 // ID layout (offsets from idBase, 6 slots):
-//   0-2: Lines (buffer, geometry, drawItem) — line2d@1
+//   0-2: Lines (buffer, geometry, drawItem) — lineAA@1 (ENC-993)
 //   3-5: Labels (buffer, geometry, drawItem) — textSDF@1
 
 struct LevelLineRecipeConfig {

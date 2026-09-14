@@ -1,3 +1,8 @@
+// ENC-993 — this line renders through lineAA@1 (rect4 instanced quads), not the
+// 1px line2d@1 LineList it used to. The float payload is UNCHANGED: compute()
+// already emits one (x0,y0,x1,y1) endpoint pair per segment, which is byte-for-byte
+// a rect4 instance record, so only the declared format + pipeline move. The counts
+// reported below are therefore SEGMENTS (rect4 instances), not pos2 vertices.
 #include "dc/recipe/SmaRecipe.hpp"
 #include "dc/math/Normalize.hpp"
 #include <string>
@@ -18,7 +23,7 @@ RecipeBuildResult SmaRecipe::build() const {
   result.createCommands.push_back(
     R"({"cmd":"createGeometry","id":)" + idStr(geometryId()) +
     R"(,"vertexBufferId":)" + idStr(bufferId()) +
-    R"(,"format":"pos2_clip","vertexCount":2})");
+    R"(,"format":"rect4","vertexCount":1})");
 
   result.createCommands.push_back(
     R"({"cmd":"createDrawItem","id":)" + idStr(drawItemId()) +
@@ -27,7 +32,7 @@ RecipeBuildResult SmaRecipe::build() const {
 
   result.createCommands.push_back(
     R"({"cmd":"bindDrawItem","drawItemId":)" + idStr(drawItemId()) +
-    R"(,"pipeline":"line2d@1","geometryId":)" + idStr(geometryId()) + "}");
+    R"(,"pipeline":"lineAA@1","geometryId":)" + idStr(geometryId()) + "}");
 
   if (config_.createTransform) {
     result.createCommands.push_back(
@@ -38,7 +43,7 @@ RecipeBuildResult SmaRecipe::build() const {
   }
 
   // Subscriptions
-  result.subscriptions.push_back({bufferId(), geometryId(), VertexFormat::Pos2_Clip});
+  result.subscriptions.push_back({bufferId(), geometryId(), VertexFormat::Rect4});
 
   if (config_.createTransform) {
     result.disposeCommands.push_back(
@@ -88,7 +93,8 @@ SmaRecipe::SmaData SmaRecipe::compute(const float* closePrices,
     data.lineVerts.push_back(x1); data.lineVerts.push_back(y1);
   }
 
-  data.vertexCount = static_cast<std::uint32_t>((validPoints - 1) * 2);
+  // ENC-993: rect4 instances (segments), not pos2 vertices — see the header.
+  data.vertexCount = static_cast<std::uint32_t>(validPoints - 1);
   return data;
 }
 

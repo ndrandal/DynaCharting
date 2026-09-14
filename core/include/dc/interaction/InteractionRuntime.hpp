@@ -53,7 +53,7 @@ class InteractionRuntime {
   std::size_t addMark(std::string id, NodeId node, Mark mark, Encoding enc,
                       Id geometryId, Id drawItemId, Id vertexBufferId,
                       Id tableId = 1, Id firstBufferId = 1000,
-                      LineStyle lineStyle = LineStyle::Line2d);
+                      LineStyle lineStyle = LineStyle::LineAA);
 
   // Re-evaluate the DAG, then materialize + re-encode every registered mark from
   // its CURRENT output. Returns the compiled marks (the rendered scene). Call
@@ -74,7 +74,7 @@ class InteractionRuntime {
     Encoding enc;
     Id geometryId{kInvalidId}, drawItemId{kInvalidId}, vertexBufferId{kInvalidId};
     Id tableId{1}, firstBufferId{1000};
-    LineStyle lineStyle{LineStyle::Line2d};
+    LineStyle lineStyle{LineStyle::LineAA};  // ENC-993: AA by default
     // Per-mark materialization backing (overwritten in place each refresh).
     IngestProcessor ingest;
     TableStore table;

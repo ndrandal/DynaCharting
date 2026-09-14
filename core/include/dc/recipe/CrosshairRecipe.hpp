@@ -15,6 +15,11 @@ class GlyphAtlas;
 //   3-5:  V-line (buffer, geometry, drawItem) — line2d@1
 //   6-8:  Price label (buffer, geometry, drawItem) — textSDF@1
 //   9-11: Time label (buffer, geometry, drawItem) — textSDF@1
+//
+// ENC-993 deliberately LEFT the crosshair on line2d@1 while every data-carrying
+// line moved to lineAA@1: this is a cursor-follow 1px hairline redrawn on every
+// mouse move, where the crisp single-pixel look is the intent and quad expansion
+// buys nothing. It is the recipe-layer example of the escape hatch.
 
 struct CrosshairRecipeConfig {
   Id paneId{0};

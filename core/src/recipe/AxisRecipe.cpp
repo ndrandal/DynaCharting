@@ -88,35 +88,45 @@ RecipeBuildResult AxisRecipe::build() const {
 
   // ---- Existing slots 0-9 (unchanged) ----
 
-  // Y-tick lines (line2d@1)
+  // Y-tick lines (lineAA@1) — ENC-993. The tick line is a data-space chart line;
+  // it renders through the AA pipeline like every other line mark. The float
+  // payload is unchanged (one (x0,y0,x1,y1) endpoint pair per tick = one rect4
+  // instance), so only the declared format + pipeline move, and the *VertexCount
+  // fields below now report SEGMENTS (rect4 instances).
+  //
+  // NOTE: `enableAALines` (slots 16-21) is a DIFFERENT thing and is deliberately
+  // left defaulting to false. It does not antialias these tick lines — it adds a
+  // SECOND, shorter set of tick marks hugging the axis (yAxisClipX - yTickLength
+  // .. yAxisClipX) alongside them. Flipping it on would double-draw ticks, not
+  // smooth them.
   result.createCommands.push_back(
     R"({"cmd":"createBuffer","id":)" + idStr(yTickBufferId()) + R"(,"byteLength":0})");
   result.createCommands.push_back(
     R"({"cmd":"createGeometry","id":)" + idStr(yTickGeomId()) +
     R"(,"vertexBufferId":)" + idStr(yTickBufferId()) +
-    R"(,"format":"pos2_clip","vertexCount":2})");
+    R"(,"format":"rect4","vertexCount":1})");
   result.createCommands.push_back(
     R"({"cmd":"createDrawItem","id":)" + idStr(yTickDrawItemId()) +
     R"(,"layerId":)" + idStr(config_.tickLayerId) +
     R"(,"name":")" + config_.name + "_yTicks" + R"("})");
   result.createCommands.push_back(
     R"({"cmd":"bindDrawItem","drawItemId":)" + idStr(yTickDrawItemId()) +
-    R"(,"pipeline":"line2d@1","geometryId":)" + idStr(yTickGeomId()) + "}");
+    R"(,"pipeline":"lineAA@1","geometryId":)" + idStr(yTickGeomId()) + "}");
 
-  // X-tick lines (line2d@1)
+  // X-tick lines (lineAA@1) — ENC-993
   result.createCommands.push_back(
     R"({"cmd":"createBuffer","id":)" + idStr(xTickBufferId()) + R"(,"byteLength":0})");
   result.createCommands.push_back(
     R"({"cmd":"createGeometry","id":)" + idStr(xTickGeomId()) +
     R"(,"vertexBufferId":)" + idStr(xTickBufferId()) +
-    R"(,"format":"pos2_clip","vertexCount":2})");
+    R"(,"format":"rect4","vertexCount":1})");
   result.createCommands.push_back(
     R"({"cmd":"createDrawItem","id":)" + idStr(xTickDrawItemId()) +
     R"(,"layerId":)" + idStr(config_.tickLayerId) +
     R"(,"name":")" + config_.name + "_xTicks" + R"("})");
   result.createCommands.push_back(
     R"({"cmd":"bindDrawItem","drawItemId":)" + idStr(xTickDrawItemId()) +
-    R"(,"pipeline":"line2d@1","geometryId":)" + idStr(xTickGeomId()) + "}");
+    R"(,"pipeline":"lineAA@1","geometryId":)" + idStr(xTickGeomId()) + "}");
 
   // Labels (textSDF@1, identity transform)
   result.createCommands.push_back(
@@ -151,8 +161,8 @@ RecipeBuildResult AxisRecipe::build() const {
   }
 
   // Subscriptions for base slots
-  result.subscriptions.push_back({yTickBufferId(), yTickGeomId(), VertexFormat::Pos2_Clip});
-  result.subscriptions.push_back({xTickBufferId(), xTickGeomId(), VertexFormat::Pos2_Clip});
+  result.subscriptions.push_back({yTickBufferId(), yTickGeomId(), VertexFormat::Rect4});
+  result.subscriptions.push_back({xTickBufferId(), xTickGeomId(), VertexFormat::Rect4});
   result.subscriptions.push_back({labelBufferId(), labelGeomId(), VertexFormat::Glyph8});
 
   // ---- D12: Optional grid lines (slots 10-15) ----
@@ -315,7 +325,7 @@ AxisRecipe::AxisData AxisRecipe::computeAxisData(
     // Horizontal tick line
     data.yTickVerts.push_back(clipXMin); data.yTickVerts.push_back(clipY);
     data.yTickVerts.push_back(config_.yAxisClipX); data.yTickVerts.push_back(clipY);
-    data.yTickVertexCount += 2;
+    data.yTickVertexCount += 1;  // ENC-993: rect4 instances (segments)
 
     // Y-axis label
     char buf[32];
@@ -338,7 +348,7 @@ AxisRecipe::AxisData AxisRecipe::computeAxisData(
       // Vertical tick line
       data.xTickVerts.push_back(clipX); data.xTickVerts.push_back(clipYMin);
       data.xTickVerts.push_back(clipX); data.xTickVerts.push_back(config_.xAxisClipY);
-      data.xTickVertexCount += 2;
+      data.xTickVertexCount += 1;  // ENC-993: rect4 instances (segments)
 
       // X-axis label
       char buf[16];
@@ -422,7 +432,7 @@ AxisRecipe::AxisData AxisRecipe::computeAxisDataV2(
     // Horizontal tick line (line2d)
     data.yTickVerts.push_back(clipXMin); data.yTickVerts.push_back(clipY);
     data.yTickVerts.push_back(config_.yAxisClipX); data.yTickVerts.push_back(clipY);
-    data.yTickVertexCount += 2;
+    data.yTickVertexCount += 1;  // ENC-993: rect4 instances (segments)
 
     // Y-axis label — right-aligned left of spine
     char buf[32];
@@ -459,7 +469,7 @@ AxisRecipe::AxisData AxisRecipe::computeAxisDataV2(
     // Vertical tick line (line2d)
     data.xTickVerts.push_back(clipX); data.xTickVerts.push_back(clipYMin);
     data.xTickVerts.push_back(clipX); data.xTickVerts.push_back(config_.xAxisClipY);
-    data.xTickVertexCount += 2;
+    data.xTickVertexCount += 1;  // ENC-993: rect4 instances (segments)
 
     // X-axis label — centered below tick
     std::string labelStr;

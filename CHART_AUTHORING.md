@@ -170,10 +170,12 @@ Any polygon can be triangulated into `triSolid@1`. Use `triAA@1` for smooth edge
 
 | Pipeline | Format | Stride | What It Does |
 |----------|--------|--------|-------------|
-| `line2d@1` | pos2_clip (8B) | `[x, y]` × 2 per segment | 1px lines, no AA |
-| `lineAA@1` | rect4 (16B) | `[x0, y0, x1, y1]` per segment | AA lines with width, optional dash |
+| `lineAA@1` | rect4 (16B) | `[x0, y0, x1, y1]` per segment | AA lines with width, optional dash — **the default** |
+| `line2d@1` | pos2_clip (8B) | `[x, y]` × 2 per segment | 1px lines, no AA — explicit opt-out |
 
 `lineAA@1` is the workhorse — it expands each segment into a quad with configurable `lineWidth`, `dashLength`, `gapLength`.
+
+**`lineAA@1` is what a line mark gets by default (ENC-993).** There is no MSAA anywhere in the renderer (every target is `sampleCount = 1`), so lineAA's shader coverage is the only antialiasing the engine has, and it is the only line pipeline that honours `lineWidth` / the dash pattern. Reach for `line2d@1` only when you deliberately want a raw 1px hairline (cursor chrome, debug overlays) — declare it by pinning `"pipeline": "line2d@1"` on the mark, or by passing `LineStyle::Line2d` to the encode pass. Cost of the default: the CPU packs the *same* 16 bytes per segment either way; on the GPU lineAA expands each segment to a 6-vertex quad instead of 2 LineList vertices.
 
 ### Points
 

@@ -1,3 +1,8 @@
+// ENC-993 — this line renders through lineAA@1 (rect4 instanced quads), not the
+// 1px line2d@1 LineList it used to. The float payload is UNCHANGED: compute()
+// already emits one (x0,y0,x1,y1) endpoint pair per segment, which is byte-for-byte
+// a rect4 instance record, so only the declared format + pipeline move. The counts
+// reported below are therefore SEGMENTS (rect4 instances), not pos2 vertices.
 #include "dc/recipe/MacdRecipe.hpp"
 #include "dc/math/Ema.hpp"
 #include "dc/math/Normalize.hpp"
@@ -15,35 +20,35 @@ RecipeBuildResult MacdRecipe::build() const {
   RecipeBuildResult result;
   auto idStr = [](Id id) { return std::to_string(id); };
 
-  // MACD line (line2d@1)
+  // MACD line (lineAA@1) — ENC-993
   result.createCommands.push_back(
     R"({"cmd":"createBuffer","id":)" + idStr(macdLineBufferId()) + R"(,"byteLength":0})");
   result.createCommands.push_back(
     R"({"cmd":"createGeometry","id":)" + idStr(macdLineGeomId()) +
     R"(,"vertexBufferId":)" + idStr(macdLineBufferId()) +
-    R"(,"format":"pos2_clip","vertexCount":2})");
+    R"(,"format":"rect4","vertexCount":1})");
   result.createCommands.push_back(
     R"({"cmd":"createDrawItem","id":)" + idStr(macdLineDrawItemId()) +
     R"(,"layerId":)" + idStr(config_.lineLayerId) +
     R"(,"name":")" + config_.name + "_macd" + R"("})");
   result.createCommands.push_back(
     R"({"cmd":"bindDrawItem","drawItemId":)" + idStr(macdLineDrawItemId()) +
-    R"(,"pipeline":"line2d@1","geometryId":)" + idStr(macdLineGeomId()) + "}");
+    R"(,"pipeline":"lineAA@1","geometryId":)" + idStr(macdLineGeomId()) + "}");
 
-  // Signal line (line2d@1)
+  // Signal line (lineAA@1) — ENC-993
   result.createCommands.push_back(
     R"({"cmd":"createBuffer","id":)" + idStr(signalLineBufferId()) + R"(,"byteLength":0})");
   result.createCommands.push_back(
     R"({"cmd":"createGeometry","id":)" + idStr(signalLineGeomId()) +
     R"(,"vertexBufferId":)" + idStr(signalLineBufferId()) +
-    R"(,"format":"pos2_clip","vertexCount":2})");
+    R"(,"format":"rect4","vertexCount":1})");
   result.createCommands.push_back(
     R"({"cmd":"createDrawItem","id":)" + idStr(signalLineDrawItemId()) +
     R"(,"layerId":)" + idStr(config_.lineLayerId) +
     R"(,"name":")" + config_.name + "_signal" + R"("})");
   result.createCommands.push_back(
     R"({"cmd":"bindDrawItem","drawItemId":)" + idStr(signalLineDrawItemId()) +
-    R"(,"pipeline":"line2d@1","geometryId":)" + idStr(signalLineGeomId()) + "}");
+    R"(,"pipeline":"lineAA@1","geometryId":)" + idStr(signalLineGeomId()) + "}");
 
   // Positive histogram (instancedRect@1)
   result.createCommands.push_back(
@@ -76,8 +81,8 @@ RecipeBuildResult MacdRecipe::build() const {
     R"(,"pipeline":"instancedRect@1","geometryId":)" + idStr(negHistGeomId()) + "}");
 
   // Subscriptions
-  result.subscriptions.push_back({macdLineBufferId(), macdLineGeomId(), VertexFormat::Pos2_Clip});
-  result.subscriptions.push_back({signalLineBufferId(), signalLineGeomId(), VertexFormat::Pos2_Clip});
+  result.subscriptions.push_back({macdLineBufferId(), macdLineGeomId(), VertexFormat::Rect4});
+  result.subscriptions.push_back({signalLineBufferId(), signalLineGeomId(), VertexFormat::Rect4});
   result.subscriptions.push_back({posHistBufferId(), posHistGeomId(), VertexFormat::Rect4});
   result.subscriptions.push_back({negHistBufferId(), negHistGeomId(), VertexFormat::Rect4});
 
@@ -191,9 +196,10 @@ MacdRecipe::MacdData MacdRecipe::compute(
     data.signalLineVerts.push_back(x1); data.signalLineVerts.push_back(sy1);
   }
 
+  // ENC-993: rect4 instances (segments), not pos2 vertices — see the header.
   std::uint32_t lineSegs = static_cast<std::uint32_t>(histCount - 1);
-  data.macdVC = lineSegs * 2;
-  data.signalVC = lineSegs * 2;
+  data.macdVC = lineSegs;
+  data.signalVC = lineSegs;
 
   // Generate histogram bars (rect4: x0, y0, x1, y1)
   for (int i = histStart; i < macdCount; i++) {

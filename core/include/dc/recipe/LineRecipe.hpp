@@ -4,7 +4,9 @@
 
 namespace dc {
 
-// A line recipe creates: buffer, geometry, drawItem, and binds to line2d@1.
+// A line recipe creates: buffer, geometry, drawItem, and binds to lineAA@1
+// (ENC-993). The vertex buffer holds rect4 segment records: (x0,y0,x1,y1) per
+// segment — byte-identical to the LineList endpoint pairs it used to take.
 // Requires a pane and layer to already exist.
 //
 // ID layout (offsets from idBase):

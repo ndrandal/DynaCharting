@@ -95,7 +95,10 @@ std::vector<std::string> DebugOverlay::generateCommands(
       w.Key("layerId"); w.Uint(debugLayerId);
     }));
 
-    // bindDrawItem
+    // bindDrawItem — ENC-993 deliberately keeps the debug overlay on line2d@1
+    // while every data-carrying line moved to lineAA@1. This is diagnostic chrome
+    // drawn over the real scene: a 1px hairline is the intended look and the
+    // cheapest thing the renderer can do, so it takes the explicit opt-out.
     cmds.push_back(makeCmd([&](auto& w) {
       w.Key("cmd"); w.String("bindDrawItem");
       w.Key("drawItemId"); w.Uint(diId);

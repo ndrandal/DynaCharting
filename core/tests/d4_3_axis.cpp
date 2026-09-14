@@ -98,8 +98,11 @@ int main() {
     std::printf("  10 resources: OK\n");
 
     // Verify pipelines
+    // ENC-993: the base tick lines render through lineAA@1 / rect4.
     const auto* yDi = scene.getDrawItem(202);
-    requireTrue(yDi->pipeline == "line2d@1", "yTick pipeline");
+    requireTrue(yDi->pipeline == "lineAA@1", "yTick pipeline");
+    requireTrue(scene.getGeometry(201)->format == dc::VertexFormat::Rect4,
+                "yTick geometry is rect4");
     const auto* lDi = scene.getDrawItem(208);
     requireTrue(lDi->pipeline == "textSDF@1", "label pipeline");
 

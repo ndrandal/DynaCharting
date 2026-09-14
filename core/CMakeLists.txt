@@ -1880,6 +1880,15 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_d81_2_composite_source PRIVATE dc)
   add_test(NAME dc_d81_2_composite_source COMMAND dc_d81_2_composite_source)
 
+  # ENC-993 lineAA@1 is the DEFAULT for line marks (encode pass + every
+  # data-carrying line recipe), with LineStyle::Line2d / "pipeline":"line2d@1"
+  # kept as the explicit escape hatch. Pure logic — no Dawn needed.
+  add_executable(dc_enc993_lineaa_default
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_enc993_lineaa_default.cpp"
+  )
+  target_link_libraries(dc_enc993_lineaa_default PRIVATE dc)
+  add_test(NAME dc_enc993_lineaa_default COMMAND dc_enc993_lineaa_default)
+
   # D81.3 Partial GPU uploads (coalesced dirty ranges)
 
   # ENC-480 (P0.2) Headless Dawn device: clear an offscreen target to a known
@@ -2215,6 +2224,17 @@ if (DC_BUILD_TESTS)
     )
     target_link_libraries(dc_d28_1_dawn_lineaa PRIVATE dc_gpu)
     add_test(NAME dc_d28_1_dawn_lineaa COMMAND dc_d28_1_dawn_lineaa)
+
+    # ENC-993 PIXEL PROOF: the DEFAULT line mark renders antialiased. Compiles the
+    # same table twice through the real EncodePass (default vs the explicit
+    # LineStyle::Line2d escape hatch), renders both through the real Dawn
+    # backends, and asserts lineAA@1 produces partial-coverage edge pixels while
+    # line2d@1 produces none. Dawn-gated — invisible in the default build.
+    add_executable(dc_enc993_dawn_default_line
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_enc993_dawn_default_line.cpp"
+    )
+    target_link_libraries(dc_enc993_dawn_default_line PRIVATE dc_gpu)
+    add_test(NAME dc_enc993_dawn_default_line COMMAND dc_enc993_dawn_default_line)
 
     # ENC-493 (P3.1) — blend modes as immutable pipeline permutations (D29.1).
     # WebGPU bakes blend state into the immutable pipeline (unlike GL's per-draw

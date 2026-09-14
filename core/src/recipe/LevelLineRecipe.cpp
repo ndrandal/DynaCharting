@@ -1,3 +1,8 @@
+// ENC-993 — this line renders through lineAA@1 (rect4 instanced quads), not the
+// 1px line2d@1 LineList it used to. The float payload is UNCHANGED: compute()
+// already emits one (x0,y0,x1,y1) endpoint pair per segment, which is byte-for-byte
+// a rect4 instance record, so only the declared format + pipeline move. The counts
+// reported below are therefore SEGMENTS (rect4 instances), not pos2 vertices.
 #include "dc/recipe/LevelLineRecipe.hpp"
 #include "dc/text/TextLayout.hpp"
 #include "dc/math/Normalize.hpp"
@@ -11,20 +16,20 @@ RecipeBuildResult LevelLineRecipe::build() const {
   RecipeBuildResult result;
   auto idStr = [](Id id) { return std::to_string(id); };
 
-  // Lines (line2d@1)
+  // Lines (lineAA@1) — ENC-993
   result.createCommands.push_back(
     R"({"cmd":"createBuffer","id":)" + idStr(lineBufferId()) + R"(,"byteLength":0})");
   result.createCommands.push_back(
     R"({"cmd":"createGeometry","id":)" + idStr(lineGeomId()) +
     R"(,"vertexBufferId":)" + idStr(lineBufferId()) +
-    R"(,"format":"pos2_clip","vertexCount":2})");
+    R"(,"format":"rect4","vertexCount":1})");
   result.createCommands.push_back(
     R"({"cmd":"createDrawItem","id":)" + idStr(lineDrawItemId()) +
     R"(,"layerId":)" + idStr(config_.lineLayerId) +
     R"(,"name":")" + config_.name + "_lines" + R"("})");
   result.createCommands.push_back(
     R"({"cmd":"bindDrawItem","drawItemId":)" + idStr(lineDrawItemId()) +
-    R"(,"pipeline":"line2d@1","geometryId":)" + idStr(lineGeomId()) + "}");
+    R"(,"pipeline":"lineAA@1","geometryId":)" + idStr(lineGeomId()) + "}");
 
   // Labels (textSDF@1)
   result.createCommands.push_back(
@@ -42,7 +47,7 @@ RecipeBuildResult LevelLineRecipe::build() const {
     R"(,"pipeline":"textSDF@1","geometryId":)" + idStr(labelGeomId()) + "}");
 
   // Subscriptions
-  result.subscriptions.push_back({lineBufferId(), lineGeomId(), VertexFormat::Pos2_Clip});
+  result.subscriptions.push_back({lineBufferId(), lineGeomId(), VertexFormat::Rect4});
   result.subscriptions.push_back({labelBufferId(), labelGeomId(), VertexFormat::Glyph8});
 
   // Dispose (reverse order)
@@ -77,7 +82,7 @@ LevelLineRecipe::LevelData LevelLineRecipe::computeLevels(
     data.lineVerts.push_back(clipY);
     data.lineVerts.push_back(clipRegion.clipXMax);
     data.lineVerts.push_back(clipY);
-    data.lineVertexCount += 2;
+    data.lineVertexCount += 1;  // ENC-993: rect4 instances (segments)
 
     // Right-aligned label
     auto layout = layoutTextRightAligned(atlas, label.c_str(),

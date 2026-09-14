@@ -132,7 +132,8 @@ int main() {
     // Check all Y label glyph x1 values (every 8 floats: x0,y0,x1,y1,u0,v0,u1,v1)
     // Y labels come first in the label instances array
     // We need to count Y ticks to know how many Y label glyphs there are
-    int yTickCount = data.yTickVertexCount / 2;
+    // ENC-993: yTickVertexCount counts rect4 SEGMENTS (one per tick) now.
+    int yTickCount = static_cast<int>(data.yTickVertexCount);
     requireTrue(yTickCount > 0, "has Y ticks");
 
     // Check that at least some glyphs have x1 < yAxisClipX (right-aligned left of spine)

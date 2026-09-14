@@ -42,12 +42,22 @@ MarkSpec markSpecOf(Mark mark, LineStyle lineStyle) {
       // points@1 — Pos2_Clip (x, y), one vertex per row.
       return {"points@1", VertexFormat::Pos2_Clip, {Channel::X, Channel::Y}};
     case Mark::Line:
-      if (lineStyle == LineStyle::LineAA) {
-        // lineAA@1 — Rect4 (segment p0=xy, p1=zw), instanced.
-        return {"lineAA@1", VertexFormat::Rect4, {Channel::X, Channel::Y}};
+      // ENC-993 — lineAA@1 is the DEFAULT; line2d@1 is the explicit opt-out.
+      // There is no MSAA in the renderer, so lineAA's shader coverage is the only
+      // antialiasing available, and it is the only line pipeline that can honour
+      // DrawItem::lineWidth / the dash pattern.
+      //
+      // COST: the two pack the SAME number of bytes per segment (line2d = 2 x 8B
+      // Pos2_Clip vertices, lineAA = 1 x 16B Rect4 instance), so the encode pass
+      // is byte-for-byte the same work. The difference is on the GPU: lineAA
+      // expands each segment to a 6-vertex quad instead of emitting 2 LineList
+      // vertices — 3x the vertex-shader invocations plus a fragment coverage term.
+      if (lineStyle == LineStyle::Line2d) {
+        // line2d@1 — Pos2_Clip (x, y) LineList. Opt-out: 1px, no width, no dash.
+        return {"line2d@1", VertexFormat::Pos2_Clip, {Channel::X, Channel::Y}};
       }
-      // line2d@1 — Pos2_Clip (x, y) LineList.
-      return {"line2d@1", VertexFormat::Pos2_Clip, {Channel::X, Channel::Y}};
+      // lineAA@1 — Rect4 (segment p0=xy, p1=zw), instanced.
+      return {"lineAA@1", VertexFormat::Rect4, {Channel::X, Channel::Y}};
     case Mark::Rect:
       // instancedRect@1 — Rect4 (x0, y0, x1, y1), one instance per row.
       return {"instancedRect@1", VertexFormat::Rect4,

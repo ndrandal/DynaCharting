@@ -100,7 +100,7 @@ struct ManifestResult {
 struct CompiledMark {
   std::string id;        // the manifest mark id (e.g. "candles")
   Mark mark{Mark::Point};
-  LineStyle lineStyle{LineStyle::Line2d};
+  LineStyle lineStyle{LineStyle::LineAA};  // ENC-993: AA by default
   std::string pipeline;  // resolved pipeline key (e.g. "instancedCandle@1")
   EncodeResult result;   // the encode pass output (geometry + drawItem + bytes)
 };
@@ -207,7 +207,7 @@ class Manifest {
   struct MarkDecl {
     std::string id;
     Mark mark{Mark::Point};
-    LineStyle lineStyle{LineStyle::Line2d};
+    LineStyle lineStyle{LineStyle::LineAA};  // ENC-993: AA by default
     std::string pipeline;     // resolved + validated pipeline key
     std::string from;         // data-source id the mark draws from
     Id tableId{kInvalidId};

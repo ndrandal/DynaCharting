@@ -10,8 +10,8 @@ class GlyphAtlas;
 // Axis recipe: Y-axis ticks + X-axis ticks + tick labels + optional grid/spine/AA.
 //
 // ID layout (offsets from idBase, 26 slots):
-//   0-2:   Y-tick lines  (buf/geom/di) — line2d@1
-//   3-5:   X-tick lines  (buf/geom/di) — line2d@1
+//   0-2:   Y-tick lines  (buf/geom/di) — lineAA@1  (ENC-993, was line2d@1)
+//   3-5:   X-tick lines  (buf/geom/di) — lineAA@1  (ENC-993, was line2d@1)
 //   6-8:   Labels        (buf/geom/di) — textSDF@1
 //   9:     Label identity transform
 //  10-12:  H-grid lines  (buf/geom/di) — lineAA@1  [enableGrid]
@@ -32,6 +32,9 @@ struct AxisRecipeConfig {
   // D12 extensions
   bool enableGrid{false};
   Id gridLayerId{0};
+  // NOT "antialias the tick lines" — those are lineAA@1 unconditionally since
+  // ENC-993. This adds a SECOND, shorter set of tick marks (slots 16-21) hugging
+  // the axis, so it stays off by default: turning it on doubles the ticks.
   bool enableAALines{false};
   float yTickLength{0.03f};
   float xTickLength{0.03f};
@@ -95,6 +98,8 @@ public:
   struct AxisData {
     std::vector<float> yTickVerts, xTickVerts;
     std::vector<float> labelInstances;
+    // ENC-993: the tick geometries are rect4/lineAA@1, so these count SEGMENTS
+    // (one rect4 instance per tick), not pos2 vertices.
     std::uint32_t yTickVertexCount{0}, xTickVertexCount{0}, labelGlyphCount{0};
 
     // D12 extensions
