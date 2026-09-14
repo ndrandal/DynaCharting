@@ -154,7 +154,12 @@ The Dawn build adds `dc_gpu`, the `dc_json_host` embedding host, the headless re
 > `textSDF@1` draw items are silently skipped there too. Don't read a textless
 > capture as a rendering bug. `dc_json_host --help`, the comment at the `--png`
 > early return in `core/src/host/JsonHost.cpp`, and CHART_AUTHORING.md §15 all
-> spell this out.
+> spell this out. Full mechanism: LIMITATIONS.md **DC-L02**.
+>
+> **`--png` is also pathologically slow (LIMITATIONS.md DC-L03).** It does one
+> `readPixel()` GPU round trip *per pixel* — 540,000 of them at the default
+> 900×600 — so a full-size capture exceeds 300 seconds. Being fixed under
+> ENC-1093; re-check DC-L03 before planning around it.
 
 - **Pinned Dawn revision:** commit `58263faefe3c52fac4656825c6d55f85ee3c7536` — the immutable tip of branch `chromium/7880` as of **2026-06-09**. We pin an explicit commit hash (never a moving branch) for reproducibility. Update this hash deliberately when bumping Dawn.
 - **Source:** `https://dawn.googlesource.com/dawn`. Dawn's own dependencies are fetched with its `fetch_dawn_dependencies.py` helper (`DAWN_FETCH_DEPENDENCIES=ON`), so `depot_tools` is **not** required.

@@ -2,6 +2,13 @@
 
 This document teaches you how to build **anything** with DynaCharting's JSON interface. It is not a catalog of chart types. It is a guide to thinking in composable primitives so you can construct any 2D visualization — charts, dashboards, diagrams, heatmaps, custom UI — from a small set of building blocks.
 
+> This guide describes what the engine is *for*. [`LIMITATIONS.md`](LIMITATIONS.md) records what
+> it currently **cannot do**, what it does **differently than you expect**, and what is **built
+> but unreachable** — with a paste-able re-check for every entry. Where the two disagree,
+> `LIMITATIONS.md` is dated and this one is not. Entries relevant here: **DC-L02** (PNG captures
+> never contain text), **DC-L04** (`setDrawItemGradient` renders nothing), **DC-L08** (the
+> treemap and collision solver exist but are unreachable; there is no text wrapping).
+
 ---
 
 ## 1. Mental Model
@@ -371,13 +378,20 @@ Nine anchor points: `topLeft`, `topCenter`, `topRight`, `middleLeft`, `center`, 
 
 ### Pattern: Gradient Fills
 
-Apply a gradient to any DrawItem:
+> **⚠️ `setDrawItemGradient` does not render (LIMITATIONS.md DC-L04).** The command is accepted
+> with `ok:true` and the state is stored on the DrawItem, but **no renderer backend reads it** —
+> `grep -rl 'gradientType\|gradientAngle\|gradientColor' core/src/gpu/ | wc -l` is `0`. The item
+> draws in its flat base colour. Its only real consumer is the SVG exporter, where gradients
+> *do* work. **Use `triGradient@1` (per-vertex colour) for gradients on the GPU path** — that is
+> how real linear, radial and area gradients are produced today.
+
+Apply a gradient to any DrawItem — **SVG export only**, inert on the GPU:
 
 ```json
 {"cmd":"setDrawItemGradient","drawItemId":200,"type":"linear","angle":90,"color0":{"r":0,"g":0.3,"b":0.8,"a":0.6},"color1":{"r":0,"g":0.1,"b":0.3,"a":0.0}}
 ```
 
-Types: `linear` (with `angle` in degrees) and `radial` (with `center` and `radius`). Combined with `triSolid@1` area fills, this creates gradient area charts.
+Types: `linear` (with `angle` in degrees) and `radial` (with `center` and `radius`).
 
 ---
 
@@ -385,7 +399,7 @@ Types: `linear` (with `angle` in degrees) and `radial` (with `center` and `radiu
 
 The engine has no concept of "chart." These primitives build anything:
 
-**Dashboard panels** — `instancedRect@1` with `cornerRadius` and gradient fills. Layer text on top with `textSDF@1`.
+**Dashboard panels** — `instancedRect@1` with `cornerRadius`, plus `triGradient@1` behind it if you want a gradient (`setDrawItemGradient` is inert on the GPU — LIMITATIONS.md DC-L04). Layer text on top with `textSDF@1`.
 
 **Heatmaps** — Grid of `instancedRect@1` rectangles, each colored by value. No transforms needed if you pre-compute clip positions.
 
