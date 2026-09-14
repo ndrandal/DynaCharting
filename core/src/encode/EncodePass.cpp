@@ -649,13 +649,14 @@ static void compileArc(const PipelineCatalog& catalog, const Encoding& enc,
   if (segs <= 0) {
     double maxSpan = 0.0;
     for (std::size_t r = 0; r < totalRows; ++r) {
-      RowVals rv;
-      EncodeError scanErr = EncodeError::Ok;
-      // A row that will not resolve is reported by the packing loop below with
-      // its real error; here it simply contributes no span.
-      if (!resolveRow(Mark::Arc, enc, r, tables, tableId, src, rv, scanErr))
-        continue;
-      const double span = std::fabs(rv.x2 - rv.x);
+      // Only the two ANGLE channels, not a full resolveRow: the radii and the
+      // color play no part in the chord count, and skipping them halves the scan.
+      // A row that will not resolve contributes no span here and is rejected with
+      // its real error by the packing loop below.
+      auto t0 = enc.resolve(Channel::X, r, tables, tableId, src);
+      auto t1 = enc.resolve(Channel::X2, r, tables, tableId, src);
+      if (!t0 || !t1) continue;
+      const double span = std::fabs(*t1 - *t0);
       if (span > maxSpan) maxSpan = span;
     }
     segs = arcSegmentsFor(arcOpts, maxSpan);
