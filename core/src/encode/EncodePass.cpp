@@ -552,13 +552,6 @@ static void compileCore(const PipelineCatalog& catalog, Mark mark,
 
   // ----- incremental write into the store -------------------------------------
   if (store && !out.empty()) {
-    // ENC-995 — writeRange grows but never shrinks, so a repack at a SMALLER
-    // stride would leave the old, larger buffer behind: correct to draw (
-    // vertexCount covers only the fresh prefix) but permanently bloated, and
-    // 12x is easy to hit (72 chords down to 6). Size it exactly first.
-    if (packFrom == 0)
-      store->reserve(vertexBufferId,
-                     static_cast<std::uint32_t>(totalRows) * wedgeBytes);
     store->writeRange(vertexBufferId, storeOffset, out.data(),
                       static_cast<std::uint32_t>(out.size()));
   } else if (store && out.empty() && packFrom == 0) {
