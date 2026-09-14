@@ -237,7 +237,7 @@ so a caller that ignores the return value gets a chart that draws nothing plus a
 warning. Author bugs still present as "nothing rendered".
 
 **What ENC-701 (`181c305`) fixed.** Rejections now route through
-`recordControlRejection` (`packages/dc-wasm/src/EngineHost.ts:226-243`) at all three call sites
+`recordControlRejection` (`packages/dc-wasm/src/EngineHost.ts:227-244`) at all three call sites
 (`:296`, `:539-541`, `:869-870`): they fire `onControlRejected` if supplied, else `console.warn`,
 and are always recorded on `getLastErrors()`. Regression test:
 `packages/dc-wasm/src/EngineHost.rejections.test.ts` (4 cases).
@@ -262,7 +262,7 @@ and are always recorded on `getLastErrors()`. Regression test:
 
 **Re-check.**
 ```bash
-sed -n '226,244p' packages/dc-wasm/src/EngineHost.ts    # warn-by-default, no throw
+sed -n '227,244p' packages/dc-wasm/src/EngineHost.ts    # warn-by-default, no throw
 sed -n '533,536p' packages/dc-wasm/src/EngineHost.ts    # pre-ready commands return {ok:true}
 npx vitest run packages/dc-wasm/src/EngineHost.rejections.test.ts
 ```
