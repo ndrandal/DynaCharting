@@ -16,7 +16,7 @@ because the previous attempt at this document did not.
 
 **Verified in full at `6684a00` on 2026-09-14**, except six entries ENC-984 had to re-verify
 because it changed files their `Re-check` commands name: DC-L01, DC-L05, DC-L06, DC-L07 and
-DC-L08 at `3780752`, and DC-L10 at `0dbb0a3`. Every command below was executed at the commit
+DC-L08 at `5ac198a`, and DC-L10 at `5ac198a`. Every command below was executed at the commit
 **its own entry stamps**, and produced the output shown there. A stamp naming a commit where the
 command does not yet hold is a bug in the entry, not a shortcut — ENC-984 shipped five of those
 and corrected them.
@@ -64,7 +64,7 @@ test, taking the pair from 188/231 to **189/232** — the gap is still exactly t
 block. Read the *difference*, not the left-hand number: a change that grows the registered count
 tells you nothing about the renderer either.
 
-**Verified at** `3780752`, 2026-09-14 — counted statically from `core/CMakeLists.txt` and
+**Verified at** `5ac198a`, 2026-09-14 — counted statically from `core/CMakeLists.txt` and
 empirically from a real default configure in the ENC-984 worktree; both give 189 of 232, gap 43.
 
 ---
@@ -247,7 +247,7 @@ sed -n '921,940p' packages/dc-wasm/src/EngineHost.ts    # the deferral is stated
 **Ticket.** None for the deep fix. [ENC-696](https://linear.app/encultured/issue/ENC-696)
 (`d6b5acd`) fixed the blit only.
 
-**Verified at** `3780752`, 2026-09-14 — re-run in the ENC-984 worktree (which edits
+**Verified at** `5ac198a`, 2026-09-14 — re-run in the ENC-984 worktree (which edits
 `EngineHost.ts`, shifting the `sed` range by +25): both real `core.framebuffer()` consumers
 (`captureThumbnail`, `blitFramebuffer`) still copy-then-flip.
 
@@ -292,7 +292,7 @@ npx vitest run packages/dc-wasm/src/EngineHost.rejections.test.ts
 
 **Ticket.** None for the residuals.
 
-**Verified at** `3780752`, 2026-09-14 — all four residuals read in source and unmoved by
+**Verified at** `5ac198a`, 2026-09-14 — all four residuals read in source and unmoved by
 ENC-984 (its insertion is below both `sed` ranges); regression test run green as part of
 `pnpm test` (18 files, 185 tests — ENC-984 adds `EngineHost.sceneDocument.test.ts`).
 
@@ -332,7 +332,7 @@ See §C3 — this exact confusion produced a wrong diagnosis once already.
 **Ticket.** None. Export `renderPick` / document the raw contract if the raw surface is ever
 meant to be used directly.
 
-**Verified at** `3780752`, 2026-09-14 — re-run in the ENC-984 worktree, which edits
+**Verified at** `5ac198a`, 2026-09-14 — re-run in the ENC-984 worktree, which edits
 `dc_engine_host.cpp` (+1 line above `pick`, bindings block now `584-624`) **and rebuilds the
 committed wasm**. `renderPick` is still absent from the rebuilt artifact: adding an export does
 not drag in neighbouring symbols.
@@ -393,7 +393,7 @@ is vertex-buffer byte packing (ENC-714).
 **Ticket.** None. Either expose the hierarchy transforms through the manifest op dispatch or
 mark them explicitly as internal/unshipped.
 
-**Verified at** `3780752`, 2026-09-14 — dispatch tables read; `strings` re-run on the wasm
+**Verified at** `5ac198a`, 2026-09-14 — dispatch tables read; `strings` re-run on the wasm
 **as rebuilt by ENC-984** (`treemap` still 0, and so is `recipe`), per-header includer counts
 re-run. A rebuild that adds one export does not resurrect dead-stripped code — only a binding
 does.
@@ -507,9 +507,9 @@ why "serialize the scene" is not sufficient for it) and
 `byteLength` and you read the contents with `getBufferBytes(id)`. Structure and bytes are
 separate calls on purpose.
 
-**Verified at** `0dbb0a3`, 2026-09-14 — the node snippet and the grep run in the ENC-984
+**Verified at** `5ac198a`, 2026-09-14 — the node snippet and the grep run in the ENC-984
 worktree against the rebuilt wasm; cases 2/3/4 reproduced standalone against `libdc.a` and then
-pinned as test assertions. Stamped at `0dbb0a3` and not at its parent on purpose: the `ctest`
+pinned as test assertions. Stamped at `5ac198a` and not at its parent on purpose: the `ctest`
 line above only produces the shown output once `test_known_lossy_round_trips` exists, and a
 stamp naming a commit where the command does not yet hold is exactly the defect this entry's
 own PR had to fix in five other entries.
