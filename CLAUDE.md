@@ -131,6 +131,16 @@ VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json ctest --test-dir bu
 
 The Dawn build adds `dc_gpu`, the `dc_json_host` embedding host, the headless render servers (`dc_showcase_server`, `dc_live_server`, `dc_dashboard_server`, `dc_gallery`), the per-pipeline Dawn render tests, and the Dawn-golden parity tests.
 
+> **`dc_json_host --png` captures contain no text (ENC-992).** A chart's
+> `textOverlay` labels are not rasterized by the engine — they are emitted as a
+> `TEXT` protocol message for the browser client to composite, so a one-shot PNG
+> is the chart minus every title, axis label and legend. The GPU text pipeline
+> (`textSDF@1`) is also unregistered in this host (it wires no `GlyphAtlas`), so
+> `textSDF@1` draw items are silently skipped there too. Don't read a textless
+> capture as a rendering bug. `dc_json_host --help`, the comment at the `--png`
+> early return in `core/src/host/JsonHost.cpp`, and CHART_AUTHORING.md §15 all
+> spell this out.
+
 - **Pinned Dawn revision:** commit `58263faefe3c52fac4656825c6d55f85ee3c7536` — the immutable tip of branch `chromium/7880` as of **2026-06-09**. We pin an explicit commit hash (never a moving branch) for reproducibility. Update this hash deliberately when bumping Dawn.
 - **Source:** `https://dawn.googlesource.com/dawn`. Dawn's own dependencies are fetched with its `fetch_dawn_dependencies.py` helper (`DAWN_FETCH_DEPENDENCIES=ON`), so `depot_tools` is **not** required.
 - **Build cost (heads-up):** build-from-source is **slow** — the first configure clones ~3-4 GB of Dawn + its third-party deps, and a full compile takes **30-60+ minutes** and needs `python3` and `ninja`. Subsequent incremental builds are fast. The full Dawn build is validated in CI (ENC-499).

@@ -761,9 +761,19 @@ The `dc_json_host` binary eliminates the need for per-chart C++ code. A single `
 # Direct rendering (outputs TEXT/FRME frames to stdout):
 echo '{"cmd":"render"}' | build/core/dc_json_host charts/candle_chart.json > /tmp/frame.bin
 
+# One-shot PNG capture (renders one frame, writes the file, exits):
+build/core/dc_json_host --png /tmp/chart.png charts/candle_chart.json
+
 # Interactive via live-viewer (opens at http://localhost:3000):
 DC_CHART=charts/candle_chart.json node apps/live-viewer/server.mjs
 ```
+
+`dc_json_host --help` prints this usage.
+
+> **⚠️ `--png` captures contain no text.** `textOverlay` labels are composited by
+> the browser client, not rasterized by the engine, so a one-shot PNG is the chart
+> minus every title, axis label and legend. See "Text and static captures" below
+> before you choose how to draw text.
 
 ### Extended SceneDocument Format
 
@@ -816,7 +826,12 @@ When the user presses `Home`, all viewports reset to their initial ranges.
 
 #### 3. Text Overlay
 
-Text labels rendered by the browser overlay (not by GL). Positions are in clip space.
+Text labels rendered by the **browser overlay**, not by the GPU. Positions are in clip space.
+
+The host does not draw these labels. It serializes them into a `TEXT` protocol
+message; the client (live-viewer) positions them as DOM nodes over the canvas it
+receives. **They therefore exist only in protocol mode** — see "Text and static
+captures" below.
 
 ```json
 "textOverlay": {
@@ -840,6 +855,45 @@ Text labels rendered by the browser overlay (not by GL). Positions are in clip s
 | `labels[].fontSize` | (overlay default) | Per-label font size override |
 
 Clip-to-pixel conversion: `px = (clipX+1)/2 × W`, `py = (1−clipY)/2 × H`.
+
+#### Text and static captures (ENC-992)
+
+There are two ways to put text on a chart, and **they do not survive the same
+outputs**. Pick deliberately:
+
+| | `textOverlay` | `textSDF@1` draw item |
+|---|---|---|
+| Drawn by | Browser client, as DOM nodes | The GPU, into the frame |
+| In live-viewer | Yes | Yes (needs a `GlyphAtlas`) |
+| In a `--png` capture | **No** | **No — not in `dc_json_host`** (see below) |
+| Authoring cost | Trivial (clip coords + string) | Glyph atlas + `glyph8` vertices |
+
+Two independent reasons a `--png` capture has no text:
+
+1. **`textOverlay` is never rasterized.** `--png` mode writes the GPU frame and
+   exits without emitting the `TEXT` message, and even in protocol mode the FRME
+   pixels carry no label — the client draws it. Nothing about the PNG path could
+   pick these up short of the engine learning to draw them.
+2. **`textSDF@1` is not wired up in this host.** `dc_json_host` constructs its
+   render backend with a null `GlyphAtlas`, so the `textSDF@1` pipeline is never
+   registered and any such draw item is **silently skipped** — no error, no
+   warning, just missing glyphs. (The pipeline itself works; it is exercised by
+   the Dawn render tests and used by the recipes. It is this host that omits it.)
+
+**What this means for you:**
+
+- If your output is the **live-viewer**, use `textOverlay`. It is the cheap,
+  intended path and it is what 76 of the 81 bundled charts do.
+- If your output is a **static image**, do not rely on text to carry meaning.
+  Encode it in geometry the GPU can draw — colored borders, separators, size,
+  position, direct-labeled shapes — so the chart reads without labels.
+- **Do not reserve layout margins for labels that only appear in the browser.**
+  A `clipXMax` pulled in to leave room for Y-axis text becomes dead space in a
+  capture.
+- For a static image *with* chrome, the showcase harness
+  (`apps/showcase/tools/snap-stills.mjs`) screenshots the canvas **and** its
+  composited HTML overlay together, which is the pattern that actually yields a
+  labeled still.
 
 ### Complete Self-Contained Example
 
