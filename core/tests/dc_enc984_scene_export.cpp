@@ -19,6 +19,8 @@
 #include "dc/scene/ResourceRegistry.hpp"
 #include "dc_check.hpp"
 
+#include <cmath>
+#include <cstdio>
 #include <string>
 #include <vector>
 
@@ -48,15 +50,15 @@ bool applyAll(CommandProcessor& cp, const std::vector<std::string>& cmds) {
 std::vector<std::string> richScene() {
   return {
       R"({"cmd":"createPane","id":1,"name":"price"})",
-      R"({"cmd":"setPaneRegion","paneId":1,"clipYMin":0.1,"clipYMax":0.9,"clipXMin":-0.8,"clipXMax":0.8})",
-      R"({"cmd":"setPaneClearColor","paneId":1,"r":0.05,"g":0.06,"b":0.07,"a":1.0})",
+      R"({"cmd":"setPaneRegion","id":1,"clipYMin":0.1,"clipYMax":0.9,"clipXMin":-0.8,"clipXMax":0.8})",
+      R"({"cmd":"setPaneClearColor","id":1,"r":0.05,"g":0.0625,"b":0.075,"a":1.0})",
       R"({"cmd":"createPane","id":2,"name":"volume"})",
 
       R"({"cmd":"createLayer","id":10,"paneId":1,"name":"candles"})",
       R"({"cmd":"createLayer","id":11,"paneId":2,"name":"bars"})",
 
       R"({"cmd":"createTransform","id":30})",
-      R"({"cmd":"setTransform","transformId":30,"tx":-0.25,"ty":0.5,"sx":2.5,"sy":0.125})",
+      R"({"cmd":"setTransform","id":30,"tx":-0.25,"ty":0.5,"sx":2.5,"sy":0.125})",
 
       R"({"cmd":"createBuffer","id":100,"byteLength":240})",
       R"({"cmd":"createBuffer","id":101,"byteLength":24})",
@@ -67,19 +69,26 @@ std::vector<std::string> richScene() {
       R"({"cmd":"createDrawItem","id":300,"layerId":10,"name":"ohlc"})",
       R"({"cmd":"bindDrawItem","drawItemId":300,"pipeline":"instancedCandle@1","geometryId":200})",
       R"({"cmd":"attachTransform","targetId":300,"transformId":30})",
-      R"({"cmd":"setDrawItemColor","drawItemId":300,"r":0.2,"g":0.4,"b":0.6,"a":0.8})",
-      R"({"cmd":"setDrawItemStyle","drawItemId":300,"colorUp":[0.1,0.9,0.2,1.0],"colorDown":[0.9,0.1,0.2,1.0],"pointSize":7.5,"lineWidth":3.25})",
-      R"({"cmd":"setDrawItemDash","drawItemId":300,"dashLength":6.0,"gapLength":2.5})",
-      R"({"cmd":"setDrawItemCornerRadius","drawItemId":300,"cornerRadius":4.0})",
-      R"({"cmd":"setDrawItemBlendMode","drawItemId":300,"blendMode":"additive"})",
+      // One setDrawItemStyle carries every style family the Scene has
+      // (colors / sizes / dash / corner / blend / clip) — that is the real
+      // command surface; there is no separate setDrawItemDash or
+      // setDrawItemBlendMode verb.
+      R"({"cmd":"setDrawItemStyle","drawItemId":300,)"
+      R"("r":0.25,"g":0.5,"b":0.625,"a":0.75,)"
+      R"("colorUpR":0.125,"colorUpG":0.875,"colorUpB":0.25,"colorUpA":1.0,)"
+      R"("colorDownR":0.875,"colorDownG":0.125,"colorDownB":0.25,"colorDownA":1.0,)"
+      R"("pointSize":7.5,"lineWidth":3.25,"dashLength":6.0,"gapLength":2.5,"cornerRadius":4.0,)"
+      R"("blendMode":"additive"})",
       R"({"cmd":"setDrawItemTexture","drawItemId":300,"textureId":7})",
       R"({"cmd":"setDrawItemAnchor","drawItemId":300,"anchor":"bottomRight","offsetX":12,"offsetY":-8})",
-      R"({"cmd":"setDrawItemGradient","drawItemId":300,"type":"radial","angle":1.25,"color0":[1,0,0,1],"color1":[0,0,1,1],"centerX":0.25,"centerY":0.75,"radius":0.9})",
+      R"({"cmd":"setDrawItemGradient","drawItemId":300,"type":"radial","angle":1.25,)"
+      R"("color0":{"r":1,"g":0,"b":0,"a":1},"color1":{"r":0,"g":0,"b":1,"a":1},)"
+      R"("center":{"x":0.25,"y":0.75},"radius":0.875})",
 
       R"({"cmd":"createDrawItem","id":301,"layerId":11,"name":"vol"})",
       R"({"cmd":"bindDrawItem","drawItemId":301,"pipeline":"instancedRect@1","geometryId":201})",
       R"({"cmd":"setDrawItemVisible","drawItemId":301,"visible":false})",
-      R"({"cmd":"setDrawItemClip","drawItemId":301,"isClipSource":true,"useClipMask":true})",
+      R"({"cmd":"setDrawItemStyle","drawItemId":301,"isClipSource":true,"useClipMask":true})",
   };
 }
 
@@ -111,7 +120,7 @@ static bool test_extract_fields() {
   DC_CHECK(std::fabs(p1.region.clipYMin - 0.1f) < 1e-5f);
   DC_CHECK(std::fabs(p1.region.clipXMax - 0.8f) < 1e-5f);
   DC_CHECK(p1.hasClearColor);
-  DC_CHECK(std::fabs(p1.clearColor[2] - 0.07f) < 1e-5f);
+  DC_CHECK(std::fabs(p1.clearColor[2] - 0.075f) < 1e-5f);
   DC_CHECK(!doc.panes.at(2).hasClearColor);
 
   // Layer -> pane parentage.
@@ -147,9 +156,9 @@ static bool test_extract_fields() {
   DC_CHECK(d.pipeline == "instancedCandle@1");
   DC_CHECK(d.geometryId == 200);
   DC_CHECK(d.transformId == 30);
-  DC_CHECK(std::fabs(d.color[1] - 0.4f) < 1e-5f);
-  DC_CHECK(std::fabs(d.colorUp[1] - 0.9f) < 1e-5f);
-  DC_CHECK(std::fabs(d.colorDown[0] - 0.9f) < 1e-5f);
+  DC_CHECK(std::fabs(d.color[1] - 0.5f) < 1e-5f);
+  DC_CHECK(std::fabs(d.colorUp[1] - 0.875f) < 1e-5f);
+  DC_CHECK(std::fabs(d.colorDown[0] - 0.875f) < 1e-5f);
   DC_CHECK(std::fabs(d.pointSize - 7.5f) < 1e-5f);
   DC_CHECK(std::fabs(d.lineWidth - 3.25f) < 1e-5f);
   DC_CHECK(std::fabs(d.dashLength - 6.0f) < 1e-5f);
@@ -162,7 +171,7 @@ static bool test_extract_fields() {
   DC_CHECK(std::fabs(d.anchorOffsetY + 8.0f) < 1e-5f);
   DC_CHECK(d.gradientType == "radial");      // enum -> the parser's spelling
   DC_CHECK(std::fabs(d.gradientAngle - 1.25f) < 1e-5f);
-  DC_CHECK(std::fabs(d.gradientRadius - 0.9f) < 1e-5f);
+  DC_CHECK(std::fabs(d.gradientRadius - 0.875f) < 1e-5f);
   DC_CHECK(std::fabs(d.gradientCenter[1] - 0.75f) < 1e-5f);
   DC_CHECK(d.visible);
 
