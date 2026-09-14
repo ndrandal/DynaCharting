@@ -21,20 +21,20 @@ commit and produced the output shown.
 
 ## DC-L01 — A green default `ctest` says nothing about the renderer 🔴
 
-**Claim.** `cmake -B build && ctest --test-dir build` runs **188** tests and builds **no
+**Claim.** `cmake -B build && ctest --test-dir build` runs **189** tests and builds **no
 renderer at all**. `dc_gpu`, `dc_json_host`, all four headless demo servers and **43 render
 tests** are excluded at *configure* time by `DC_FETCH_DAWN` (default `OFF`,
 `core/CMakeLists.txt:165`). They are not "skipped" — they never enter `CTestTestfile.cmake`,
 so nothing reports them as missing.
 
-**Why it bites.** "188/188 passed" is the most reassuring possible output and it is compatible
+**Why it bites.** "189/189 passed" is the most reassuring possible output and it is compatible
 with the renderer being completely broken. Every pixel-level guarantee in this engine lives in
 the 43 tests that did not run.
 
 **Re-check.**
 ```bash
-grep -cE '^\s*add_test\(' core/CMakeLists.txt            # 231  — all tests that exist
-grep -c '^add_test('  build/core/CTestTestfile.cmake     # 188  — all tests you just ran
+grep -cE '^\s*add_test\(' core/CMakeLists.txt            # 232  — all tests that exist
+grep -c '^add_test('  build/core/CTestTestfile.cmake     # 189  — all tests you just ran
 grep -n 'DC_FETCH_DAWN:BOOL' build/CMakeCache.txt        # OFF
 ```
 The 43-test gap is the single `if (DC_HAS_DAWN)` block at `core/CMakeLists.txt:1899-2447`.
@@ -55,8 +55,13 @@ independent gate for `dc_dawn_window_demo` — `-DDC_FETCH_DAWN=ON` alone gets 5
 **Ticket.** [ENC-994](https://linear.app/encultured/issue/ENC-994) (Backlog) covers two of the
 43 (`d28_1_dawn_lineaa`, `d29_1_dawn_blend`). The other 41 have no owner.
 
-**Verified at** `6684a00`, 2026-09-14 — counted statically from `core/CMakeLists.txt` and
-empirically from a real default configure in this worktree; both give 188.
+**The absolute numbers move; the 43-test gap does not.** ENC-984 added one always-built logic
+test, taking the pair from 188/231 to **189/232** — the gap is still exactly the `DC_HAS_DAWN`
+block. Read the *difference*, not the left-hand number: a change that grows the registered count
+tells you nothing about the renderer either.
+
+**Verified at** `937538a`, 2026-09-14 — counted statically from `core/CMakeLists.txt` and
+empirically from a real default configure in the ENC-984 worktree; both give 189 of 232, gap 43.
 
 ---
 
@@ -232,14 +237,15 @@ survived undetected until the only live demo stopped being an orientation-ambigu
 ```bash
 grep -rn 'core.framebuffer()' packages/dc-wasm/src --include='*.ts' | grep -v test
 # every hit must be followed by a flip (flipRowsRGBA, or the fbH-1-y loop)
-sed -n '896,915p' packages/dc-wasm/src/EngineHost.ts    # the deferral is stated in the comment
+sed -n '921,940p' packages/dc-wasm/src/EngineHost.ts    # the deferral is stated in the comment
 ```
 
 **Ticket.** None for the deep fix. [ENC-696](https://linear.app/encultured/issue/ENC-696)
 (`d6b5acd`) fixed the blit only.
 
-**Verified at** `6684a00`, 2026-09-14 — three `core.framebuffer()` call sites enumerated
-(one is a type declaration), both real consumers confirmed to flip.
+**Verified at** `937538a`, 2026-09-14 — re-run in the ENC-984 worktree (which edits
+`EngineHost.ts`, shifting the `sed` range by +25): both real `core.framebuffer()` consumers
+(`captureThumbnail`, `blitFramebuffer`) still copy-then-flip.
 
 ---
 
@@ -282,8 +288,9 @@ npx vitest run packages/dc-wasm/src/EngineHost.rejections.test.ts
 
 **Ticket.** None for the residuals.
 
-**Verified at** `6684a00`, 2026-09-14 — all four residuals read in source; regression test run
-green as part of `pnpm test` (17 files, 181 tests).
+**Verified at** `937538a`, 2026-09-14 — all four residuals read in source and unmoved by
+ENC-984 (its insertion is below both `sed` ranges); regression test run green as part of
+`pnpm test` (18 files, 185 tests — ENC-984 adds `EngineHost.sceneDocument.test.ts`).
 
 ---
 
@@ -307,13 +314,13 @@ single authoritative hit test — use `pickAsync` there.
 
 **Re-check.**
 ```bash
-sed -n '428,434p' core/wasm/dc_engine_host.cpp                            # double pick(int w, int h, int x, int y)
+sed -n '429,435p' core/wasm/dc_engine_host.cpp                            # double pick(int w, int h, int x, int y)
 grep -n 'function("pick"' core/wasm/dc_engine_host.cpp                    # the only pick export
 strings packages/dc-wasm/wasm/dc_engine_host.wasm | grep -c renderPick    # 0
 ```
 
 **Not reproducible under node**, and this matters: `pick` returns 0 there because there is no
-WebGPU device (`ensureRenderer()` fails, `core/wasm/dc_engine_host.cpp:430`), not because the
+WebGPU device (`ensureRenderer()` fails, `core/wasm/dc_engine_host.cpp:431`), not because the
 pick path is unwired. `packages/dc-wasm/scripts/validate-node.mjs:6-7` says so; the browser
 harness is `examples/engine_host_demo.html`. **A zero from node is not evidence about picking.**
 See §C3 — this exact confusion produced a wrong diagnosis once already.
@@ -321,8 +328,10 @@ See §C3 — this exact confusion produced a wrong diagnosis once already.
 **Ticket.** None. Export `renderPick` / document the raw contract if the raw surface is ever
 meant to be used directly.
 
-**Verified at** `6684a00`, 2026-09-14 — bindings block read at `core/wasm/dc_engine_host.cpp:563-587`;
-`renderPick` absent from the committed wasm.
+**Verified at** `937538a`, 2026-09-14 — re-run in the ENC-984 worktree, which edits
+`dc_engine_host.cpp` (+1 line above `pick`, bindings block now `584-624`) **and rebuilds the
+committed wasm**. `renderPick` is still absent from the rebuilt artifact: adding an export does
+not drag in neighbouring symbols.
 
 ---
 
@@ -380,8 +389,10 @@ is vertex-buffer byte packing (ENC-714).
 **Ticket.** None. Either expose the hierarchy transforms through the manifest op dispatch or
 mark them explicitly as internal/unshipped.
 
-**Verified at** `6684a00`, 2026-09-14 — dispatch tables read, `strings` on the committed wasm,
-per-header includer counts run in this worktree.
+**Verified at** `937538a`, 2026-09-14 — dispatch tables read; `strings` re-run on the wasm
+**as rebuilt by ENC-984** (`treemap` still 0, and so is `recipe`), per-header includer counts
+re-run. A rebuild that adds one export does not resurrect dead-stripped code — only a binding
+does.
 
 ---
 
@@ -409,6 +420,67 @@ contradicts this file, this file is newer by construction.
 **Ticket.** None for a regeneration.
 
 **Verified at** `6684a00`, 2026-09-14 — counts produced by the commands above.
+
+---
+
+## DC-L10 — An exported scene document cannot carry viewports, text overlay or bindings 🟠
+
+**Claim.** `getSceneDocument()` / `dc::sceneToDocument` (ENC-984) export a `SceneDocument` from
+the live `Scene`, and that document is **structurally complete for everything the Scene holds**
+— panes, layers, transforms, buffers (byteLength), geometries, draw items and every style field,
+proven byte-identical across a full save/restore loop by `dc_enc984_scene_export`. But three
+sections of the `SceneDocument` schema come back **empty, always**: `viewports`, `textOverlay`
+and `bindings`.
+
+**Why.** Those three are *document-only* declarations. `SceneReconciler::reconcile` never
+applies them to the `Scene` — it reconciles buffers, transforms, panes, layers, geometries and
+draw items, and nothing else — and hosts read them straight off the parsed document instead
+(`JsonHost` consumes `textOverlay` as a `TEXT` protocol message; `BindingEvaluator` takes
+`DocBinding` values directly). There is therefore nothing in a `Scene` from which they could be
+reconstructed, and inventing plausible values would be worse than omitting them.
+
+**What this costs you.** Round-tripping a document *through* a Scene is lossy in exactly these
+three places:
+
+    parse(json) -> reconcile -> Scene -> sceneToDocument -> serialize
+
+loses the viewports / textOverlay / bindings that `json` carried. `DocViewport` is the one that
+bites: it holds the `xMin/xMax/yMin/yMax` data-space window and the pan/zoom/link flags, so a
+naive "export the scene to save the view" **does not save the view**. The affine `DocTransform`
+that the pan/zoom currently drives *is* exported, so the visible framing survives; the declared
+data window and the interaction policy do not.
+
+**Re-check.**
+```bash
+node -e 'const m=await import("./packages/dc-wasm/wasm/dc_engine_host.js");
+const M=await m.default(), h=new M.DcEngineHost();
+h.applyControl(JSON.stringify({cmd:"createPane",id:1,name:"p"}));
+const d=JSON.parse(h.getSceneDocument(false));
+console.log("viewports",JSON.stringify(d.viewports),"textOverlay",JSON.stringify(d.textOverlay),
+            "bindings",JSON.stringify(d.bindings));' --input-type=module
+# -> viewports {} textOverlay {"fontSize":12,"color":"#b2b5bc","labels":[]} bindings {}
+#    i.e. present in the schema and empty of content — the textOverlay is the struct
+#    default (12px, #b2b5bc, zero labels), not anything the scene actually declared.
+grep -c 'viewports\|textOverlay\|bindings' core/src/document/SceneReconciler.cpp   # 0
+```
+
+**Workaround.** Keep the document you applied. A host that got its scene from
+`parseSceneDocument` already holds the `viewports` / `textOverlay` / `bindings` it parsed;
+merge those three sections back into the exported document before saving. A host that built its
+scene from commands never had them and must track them itself.
+
+**Ticket.** None for the deep fix (it needs the Scene to own the three declarations, or the host
+to own a document alongside the Scene). Relevant to
+[ENC-949](https://linear.app/encultured/issue/ENC-949) (view-state persistence — this is the
+entry that says why "serialize the scene" is not sufficient for it) and
+[ENC-986](https://linear.app/encultured/issue/ENC-986) (snapshot/restore).
+
+**See also** the same boundary for *buffer bytes*, which is deliberate rather than a
+limitation: the document carries each buffer's `byteLength` and you read the contents with
+`getBufferBytes(id)`. Structure and bytes are separate calls on purpose.
+
+**Verified at** `937538a`, 2026-09-14 — both commands above run in the ENC-984 worktree against
+the rebuilt wasm; reconciler grep gives 0 hits.
 
 ---
 
