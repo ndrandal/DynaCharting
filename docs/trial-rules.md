@@ -68,7 +68,7 @@ Claude examines the rendered image and JSON with the highest level of critique. 
 **Spatial accuracy**
 - Are pane regions non-overlapping and correctly positioned?
 - Is data visible within its intended pane (not clipped off-screen, not overflowing)?
-- Do text labels land at their intended positions without overlap?
+- Do text labels land at their intended positions without overlap? (Not visible in the PNG — check the `textOverlay` clip coords in the JSON, or the live-viewer. See "Image Capture".)
 - Are gaps between panes intentionally sized (not accidental)?
 - Does the pixel-space result match what the clip-space math predicts?
 
@@ -77,7 +77,7 @@ Claude examines the rendered image and JSON with the highest level of critique. 
 - Are elements visually distinguishable (sufficient contrast)?
 - Is there appropriate padding/margin around content?
 - Are pane separations visible (borders, background contrast, or whitespace)?
-- Does text have readable size and placement?
+- Does text have readable size and placement? (Not visible in the PNG — judge from `textOverlay` `fontSize` + clip coords. See "Image Capture".)
 
 **Specification compliance**
 - Does the output match what the spec asked for?
@@ -198,6 +198,11 @@ INSTRUCTIONS — follow this exact sequence:
 7. CAPTURE PNG
    Run: build/core/dc_json_host --png docs/trials/{{TRIAL_NUMBER}}-{{SLUG}}.png docs/trials/{{TRIAL_NUMBER}}-{{SLUG}}.json
    Verify the PNG file was created.
+   NOTE: the PNG will contain NO text — no title, no axis labels, no legend.
+   "textOverlay" labels are composited by the browser client, not rasterized by
+   the engine, so they cannot appear in a one-shot capture (ENC-992). This is
+   expected. Do not redesign the chart to work around it, and do not report it
+   as a defect.
 
 8. REPORT
    When done, report back:
@@ -215,7 +220,9 @@ CONSTRAINTS:
 
 ### What the orchestrator does after the agent returns
 
-1. Read the PNG at `docs/trials/NNN-slug.png` using the Read tool (it renders images)
+1. Read the PNG at `docs/trials/NNN-slug.png` using the Read tool (it renders images).
+   Remember the PNG has no text in it (see "Image Capture") — every label you
+   expect to see is missing by construction, so audit text from the JSON instead.
 2. Read the JSON at `docs/trials/NNN-slug.json`
 3. Perform the full audit per the Phase 3 checklist
 4. Write the trial document at `docs/trials/NNN-slug.md`
@@ -235,6 +242,38 @@ build/core/dc_json_host charts/my_chart.json
 ```
 
 When `--png` is given, the host renders one frame, writes the PNG, and exits with code 0 on success.
+
+> ### ⚠️ PNG captures never contain text (ENC-992)
+>
+> **A `--png` capture is the chart MINUS every one of its labels.** Titles, axis
+> tick labels, legends, annotations, value callouts — all absent. The PNG is not
+> broken and the chart is not broken; this is what the flag produces.
+>
+> Why: a chart's `textOverlay` labels are **not rasterized by the engine**. The
+> host serializes them into a `TEXT` protocol message and the *client* (the
+> browser live-viewer) composites them over the frame as positioned DOM nodes. In
+> `--png` mode there is no client, so the labels go nowhere. Separately, the GPU
+> text pipeline (`textSDF@1`) is unavailable in this host — `dc_json_host` wires
+> no `GlyphAtlas` into the renderer, so `textSDF@1` draw items are silently
+> skipped. See the comment at the `--png` early return in
+> `core/src/host/JsonHost.cpp`, and `dc_json_host --help`.
+>
+> **Consequences for the trial process — read before auditing:**
+>
+> - **Do not report missing titles/labels/legends as a chart defect.** 76 of the
+>   existing trial writeups already record "Text labels invisible in PNG capture"
+>   as a finding. It is the same structural limitation every time, not 76 agent
+>   errors.
+> - **Text-placement audit items cannot be answered from a PNG.** Judge "do text
+>   labels land at their intended positions without overlap?" and "does text have
+>   readable size and placement?" from the `textOverlay` clip coordinates in the
+>   JSON (`px = (clipX+1)/2 × W`, `py = (1−clipY)/2 × H`), or from the browser
+>   live-viewer — never from the capture.
+> - **Blank margins reserved for labels are expected.** A chart that reserves
+>   right-hand space for Y-axis labels shows dead space in the PNG. That is
+>   correct authoring, not wasted space.
+> - **To see a chart *with* its text**, use the live-viewer instead:
+>   `DC_CHART=charts/my_chart.json node apps/live-viewer/server.mjs`.
 
 ---
 
