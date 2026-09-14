@@ -202,7 +202,7 @@ static bool test_round_trip_through_reconciler(bool compact) {
   CommandProcessor cpA(a, regA);
   DC_CHECK(applyAll(cpA, richScene()));
 
-  const std::string json1 = serializeScene(a, compact);
+  const std::string json1 = serializeSceneAsDocument(a, compact);
   DC_CHECK(!json1.empty());
 
   // Restore into a completely fresh scene the way a real host would.
@@ -227,10 +227,17 @@ static bool test_round_trip_through_reconciler(bool compact) {
   DC_CHECK(b.geometryIds().size() == a.geometryIds().size());
   DC_CHECK(b.transformIds().size() == a.transformIds().size());
 
-  // And — the real bar — re-exporting the restored scene reproduces the SAME
-  // document text. Byte equality here is what proves nothing was dropped,
-  // defaulted or re-spelled anywhere in the loop.
-  const std::string json2 = serializeScene(b, compact);
+  // And — the bar for THIS scene — re-exporting the restored scene reproduces
+  // the same document text.
+  //
+  // Read this for exactly what it is: byte equality over the states richScene()
+  // builds. It is NOT a proof that the loop is lossless in general, and saying
+  // so would be wrong in two directions at once: `test_known_lossy_round_trips`
+  // below exhibits states where json1 != json2, and — worse — states where
+  // COMPACT mode reports "identical" precisely because both sides dropped the
+  // same field. An equality criterion cannot see a value that neither side
+  // serialized.
+  const std::string json2 = serializeSceneAsDocument(b, compact);
   if (json1 != json2) {
     std::printf("  json1: %s\n", json1.c_str());
     std::printf("  json2: %s\n", json2.c_str());
@@ -247,7 +254,7 @@ static bool test_round_trip_through_reconciler(bool compact) {
 static bool test_empty_scene() {
   std::printf("[enc984] empty scene exports a valid document\n");
   Scene s;
-  const std::string json = serializeScene(s, false);
+  const std::string json = serializeSceneAsDocument(s, false);
   DC_CHECK(!json.empty());
 
   SceneDocument doc;
@@ -288,6 +295,183 @@ static bool test_tracks_deletion() {
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// 5. Every enum->string table, exhaustively. These are the mappings most likely
+//    to rot: a new BlendMode / AnchorPoint / VertexFormat added to the Scene
+//    silently falls through to the default arm of the switch in SceneExport.cpp
+//    and exports as the WRONG value rather than failing. richScene() pins one
+//    value of each; this pins all of them.
+// ---------------------------------------------------------------------------
+static bool test_all_enum_spellings() {
+  std::printf("[enc984] every blendMode / anchorPoint / gradientType / vertex format\n");
+
+  // All 9 vertex formats survive as the string the parser accepts.
+  const char* kFormats[] = {"pos2_clip", "rect4", "candle6", "glyph8", "pos2_alpha",
+                            "pos2_color4", "pos2_uv4", "rect4_color", "point4_color"};
+  for (int i = 0; i < 9; i++) {
+    Scene sc; ResourceRegistry rg; CommandProcessor cp(sc, rg);
+    DC_CHECK(applyAll(cp, {
+        R"({"cmd":"createBuffer","id":10,"byteLength":256})",
+        std::string(R"({"cmd":"createGeometry","id":100,"vertexBufferId":10,"vertexCount":3,"format":")") +
+            kFormats[i] + R"("})"}));
+    SceneDocument d; sceneToDocument(sc, d);
+    if (d.geometries.at(100).format != kFormats[i]) {
+      std::printf("  format %s exported as '%s'\n", kFormats[i], d.geometries.at(100).format.c_str());
+    }
+    DC_CHECK(d.geometries.at(100).format == kFormats[i]);
+  }
+
+  // All 4 blend modes.
+  const char* kBlends[] = {"normal", "additive", "multiply", "screen"};
+  // All 9 anchor points, in enum order.
+  const char* kAnchors[] = {"topLeft", "topCenter", "topRight", "middleLeft", "center",
+                            "middleRight", "bottomLeft", "bottomCenter", "bottomRight"};
+  // Both real gradient types ("none" is the absence, covered in test 1).
+  const char* kGradients[] = {"linear", "radial"};
+
+  for (int i = 0; i < 4; i++) {
+    Scene sc; ResourceRegistry rg; CommandProcessor cp(sc, rg);
+    DC_CHECK(applyAll(cp, {
+        R"({"cmd":"createPane","id":1})", R"({"cmd":"createLayer","id":2,"paneId":1})",
+        R"({"cmd":"createDrawItem","id":3,"layerId":2})",
+        std::string(R"({"cmd":"setDrawItemStyle","drawItemId":3,"blendMode":")") + kBlends[i] + R"("})"}));
+    SceneDocument d; sceneToDocument(sc, d);
+    DC_CHECK(d.drawItems.at(3).blendMode == kBlends[i]);
+  }
+
+  for (int i = 0; i < 9; i++) {
+    Scene sc; ResourceRegistry rg; CommandProcessor cp(sc, rg);
+    DC_CHECK(applyAll(cp, {
+        R"({"cmd":"createPane","id":1})", R"({"cmd":"createLayer","id":2,"paneId":1})",
+        R"({"cmd":"createDrawItem","id":3,"layerId":2})",
+        std::string(R"({"cmd":"setDrawItemAnchor","drawItemId":3,"anchor":")") + kAnchors[i] + R"("})"}));
+    SceneDocument d; sceneToDocument(sc, d);
+    DC_CHECK(d.drawItems.at(3).anchorPoint == kAnchors[i]);
+  }
+
+  for (int i = 0; i < 2; i++) {
+    Scene sc; ResourceRegistry rg; CommandProcessor cp(sc, rg);
+    DC_CHECK(applyAll(cp, {
+        R"({"cmd":"createPane","id":1})", R"({"cmd":"createLayer","id":2,"paneId":1})",
+        R"({"cmd":"createDrawItem","id":3,"layerId":2})",
+        std::string(R"({"cmd":"setDrawItemGradient","drawItemId":3,"type":")") + kGradients[i] + R"("})"}));
+    SceneDocument d; sceneToDocument(sc, d);
+    DC_CHECK(d.drawItems.at(3).gradientType == kGradients[i]);
+  }
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// 6. The KNOWN-LOSSY round trips, pinned deliberately.
+//
+// These assert that the loop LOSES something. That reads backwards until you
+// notice the alternative: leaving them untested means the loss is invisible,
+// and the compact-mode cases are invisible even to the byte-equality test above
+// because both sides drop the same field. Pinning them here makes the boundary
+// explicit, documents it in the place someone will look, and turns any future
+// FIX into a loud test failure rather than a silent behaviour change.
+//
+// In all three cases sceneToDocument itself is FAITHFUL — it exports the value
+// the Scene holds. The loss is downstream, in SceneReconciler (cases A and B)
+// or in the SceneDocument schema (case C). See LIMITATIONS.md DC-L10.
+// ---------------------------------------------------------------------------
+static bool test_known_lossy_round_trips() {
+  std::printf("[enc984] known-lossy cases are pinned, not papered over\n");
+
+  // --- A. Gradient params behind a cleared gradientType. -------------------
+  // setDrawItemGradient accepts type:"none" and still writes the params below
+  // it (CommandProcessor.cpp), so the Scene legitimately holds gradientType=0
+  // with a non-default angle/center/radius. The export carries them; the
+  // reconciler only emits setDrawItemGradient when the type is non-empty, so
+  // they do not come back.
+  {
+    Scene a; ResourceRegistry ra; CommandProcessor ca(a, ra);
+    DC_CHECK(applyAll(ca, {
+        R"({"cmd":"createPane","id":1})", R"({"cmd":"createLayer","id":2,"paneId":1})",
+        R"({"cmd":"createDrawItem","id":3,"layerId":2})",
+        R"({"cmd":"setDrawItemGradient","drawItemId":3,"type":"linear","angle":1.25,"center":{"x":0.25,"y":0.75},"radius":0.875})",
+        R"({"cmd":"setDrawItemGradient","drawItemId":3,"type":"none"})"}));
+
+    SceneDocument d; sceneToDocument(a, d);
+    // The EXPORT is faithful: the stale params are in the document.
+    DC_CHECK(d.drawItems.at(3).gradientType.empty());
+    DC_CHECK(std::fabs(d.drawItems.at(3).gradientAngle - 1.25f) < 1e-5f);
+    DC_CHECK(std::fabs(d.drawItems.at(3).gradientRadius - 0.875f) < 1e-5f);
+
+    // The RESTORE is not. Non-compact, so the fields are on the wire both ways.
+    const std::string json1 = serializeSceneAsDocument(a, false);
+    SceneDocument parsed; DC_CHECK(parseSceneDocument(json1, parsed));
+    Scene b; ResourceRegistry rb; CommandProcessor cb(b, rb);
+    SceneReconciler rec(cb);
+    DC_CHECK(rec.reconcile(parsed, b).ok);
+    const DrawItem* di = b.getDrawItem(3);
+    DC_CHECK(di != nullptr);
+    DC_CHECK(std::fabs(di->gradientAngle - 0.0f) < 1e-5f);      // 1.25 was lost
+    DC_CHECK(std::fabs(di->gradientRadius - 0.5f) < 1e-5f);     // 0.875 was lost
+    DC_CHECK(serializeSceneAsDocument(b, false) != json1);      // and it SHOWS, non-compact
+
+    // …but in COMPACT mode the same loop reports "identical", because both
+    // sides omit gradient params when the type is empty. This is the case the
+    // round-trip test structurally cannot detect.
+    const std::string c1 = serializeSceneAsDocument(a, true);
+    SceneDocument pc; DC_CHECK(parseSceneDocument(c1, pc));
+    Scene cScene; ResourceRegistry rc; CommandProcessor cc(cScene, rc);
+    SceneReconciler rec2(cc);
+    DC_CHECK(rec2.reconcile(pc, cScene).ok);
+    DC_CHECK(serializeSceneAsDocument(cScene, true) == c1);     // "identical" — and lossy
+  }
+
+  // --- B. Clear color behind hasClearColor=false. --------------------------
+  // setPaneClearColor enabled:false clears only the FLAG, leaving the colour in
+  // the Scene. The export carries it (non-compact writes clearColor either way);
+  // SceneReconciler::reconcilePanes only emits setPaneClearColor when the doc
+  // says hasClearColor, so the colour resets to the default on restore.
+  {
+    Scene a; ResourceRegistry ra; CommandProcessor ca(a, ra);
+    DC_CHECK(applyAll(ca, {
+        R"({"cmd":"createPane","id":1})",
+        R"({"cmd":"setPaneClearColor","id":1,"r":0.5,"g":0.25,"b":0.125,"a":1})",
+        R"({"cmd":"setPaneClearColor","id":1,"enabled":false})"}));
+
+    SceneDocument d; sceneToDocument(a, d);
+    DC_CHECK(!d.panes.at(1).hasClearColor);
+    DC_CHECK(std::fabs(d.panes.at(1).clearColor[0] - 0.5f) < 1e-5f);   // export faithful
+
+    const std::string json1 = serializeSceneAsDocument(a, false);
+    SceneDocument parsed; DC_CHECK(parseSceneDocument(json1, parsed));
+    Scene b; ResourceRegistry rb; CommandProcessor cb(b, rb);
+    SceneReconciler rec(cb);
+    DC_CHECK(rec.reconcile(parsed, b).ok);
+    const Pane* p = b.getPane(1);
+    DC_CHECK(p != nullptr);
+    DC_CHECK(std::fabs(p->clearColor[0] - 0.0f) < 1e-5f);              // 0.5 was lost
+  }
+
+  // --- C. Geometry bounds have no SceneDocument field at all. --------------
+  // boundsMin/boundsMax/boundsValid are live Scene state (DawnSceneRenderer
+  // frustum-culls on them), set by the real setGeometryBounds command. The
+  // SceneDocument schema has no slot for them, so they cannot be exported —
+  // note the D45 dc::serializeScene DOES carry them, so relative to that older
+  // serializer this dialect is less faithful here.
+  {
+    Scene a; ResourceRegistry ra; CommandProcessor ca(a, ra);
+    DC_CHECK(applyAll(ca, {
+        R"({"cmd":"createBuffer","id":10,"byteLength":24})",
+        R"({"cmd":"createGeometry","id":100,"vertexBufferId":10,"vertexCount":3})",
+        R"({"cmd":"setGeometryBounds","geometryId":100,"minX":-1,"minY":-2,"maxX":3,"maxY":4})"}));
+    const Geometry* g = a.getGeometry(100);
+    DC_CHECK(g != nullptr && g->boundsValid);
+    DC_CHECK(std::fabs(g->boundsMin[0] + 1.0f) < 1e-5f);
+
+    // Nothing in the exported document mentions bounds, in either mode.
+    const std::string json = serializeSceneAsDocument(a, false);
+    DC_CHECK(json.find("bounds") == std::string::npos);
+    DC_CHECK(serializeSceneAsDocument(a, true).find("bounds") == std::string::npos);
+  }
+
+  return true;
+}
+
 int main() {
   int failures = 0;
   if (!test_extract_fields()) failures++;
@@ -295,6 +479,8 @@ int main() {
   if (!test_round_trip_through_reconciler(true)) failures++;
   if (!test_empty_scene()) failures++;
   if (!test_tracks_deletion()) failures++;
+  if (!test_all_enum_spellings()) failures++;
+  if (!test_known_lossy_round_trips()) failures++;
 
   if (failures) {
     std::printf("ENC-984 scene export: %d test(s) FAILED\n", failures);
