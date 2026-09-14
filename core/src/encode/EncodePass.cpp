@@ -229,8 +229,9 @@ inline std::uint32_t tessellateWedge(std::vector<std::uint8_t>& out,
 // ENC-995 — derive the per-wedge chord count. A positive segmentsPerArc is an
 // explicit override; otherwise hold the chord ANGLE at 2pi/segmentsPerTurn by
 // giving a wedge of `spanRadians` its proportional share, rounded UP so the
-// bound is never exceeded. Clamped to [1, kMaxArcSegments] so a nonsense span or
-// segmentsPerTurn cannot make the vertex count explode.
+// bound is never exceeded. The span is clamped at a full turn and the result at
+// [1, kMaxArcSegments], so no angle-column value can make the vertex count
+// explode — see the clamp note below for why that is not a theoretical worry.
 // ---------------------------------------------------------------------------
 int arcSegmentsFor(const ArcOptions& opts, double spanRadians) {
   if (opts.segmentsPerArc > 0) return opts.segmentsPerArc;
