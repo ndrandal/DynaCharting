@@ -538,7 +538,7 @@ and tessellating pie geometry by hand, never touching `Mark::Arc` — which is t
 
 **Why it bites.** The arc mark looks fully wired: the validator knows `"arc"`, the encode pass
 compiles it, `dc_enc613_dawn_polar_arc` renders it green. What none of that exercises is the
-manifest path, because the corpus contains no `arc` chart at all (`grep -l '"arc"' charts/*.json`
+manifest path — nor the browser, which does not carry the encode pass at all (check 5 below); because the corpus contains no `arc` chart at all (`grep -l '"arc"' charts/*.json`
 -> nothing; `charts/072-polar-rose.json` is precomputed vertex data, not an arc mark). The first
 person to author a pie in a manifest gets one centred on the middle of the viewport whether they
 want that or not, and egg-shaped unless their pane happens to be square.
@@ -560,6 +560,16 @@ grep -rn 'segmentsPerArc\|segmentsPerTurn\|PolarParams' core/src/manifest/
 
 # 4 — and no chart in the corpus uses the mark
 grep -l '"arc"' charts/*.json | wc -l        # -> 0
+
+# 5 — the browser module does not contain the encode pass AT ALL. dc_engine_host
+#     compiles 18 objects (the Dawn backends + the embind host) and links libdc.a;
+#     nothing in it references EncodePass, so the archive member is never pulled.
+strings packages/dc-wasm/wasm/dc_engine_host.wasm | grep -c 'lockstep broken'   # -> 0
+strings packages/dc-wasm/wasm/dc_engine_host.wasm | grep -c 'triGradient@1'     # -> 1
+# i.e. the PIPELINE names are in there (catalog + backends) and the compiler that
+# feeds them is not. Rebuilding the wasm after changing EncodePass.cpp is the
+# other half of the proof: ENC-995 did, and got a byte-identical artifact
+# (sha256 3bb50045...8ec9 before and after).
 ```
 Rendered proof of the aspect half, on the real Dawn path: a full-turn wedge with equal inner and
 outer clip radii, drawn to a 1200x600 offscreen target, occupies **1140 px wide x 570 px tall,
