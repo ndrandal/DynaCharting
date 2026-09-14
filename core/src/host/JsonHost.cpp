@@ -276,24 +276,51 @@ static void syncTouchedBuffersToGpu(const std::vector<dc::Id>& touchedIds,
 // Main
 // ---------------------------------------------------------------------------
 
+// Usage text. Printed to stdout, and only on paths that exit immediately, so it
+// can never interleave with the binary TEXT/FRME protocol stdout writes.
+//
+// The `--png` note is load-bearing, not boilerplate: see the ENC-992 comment at
+// the --png early-return below. A PNG contains only what the GPU rasterized, and
+// the engine rasterizes no text in this host, so captures are always textless.
+static void usage() {
+  std::printf(
+    "Usage: dc_json_host [--png <out.png>] <chart.json>\n"
+    "\n"
+    "  <chart.json>      SceneDocument to render.\n"
+    "  --png <out.png>   Render one frame, write it as a PNG, and exit.\n"
+    "                    Without it, the host speaks the TEXT/FRME protocol on\n"
+    "                    stdin/stdout and runs the interactive input loop.\n"
+    "\n"
+    "PNG captures never contain text (ENC-992).\n"
+    "  A chart's `textOverlay` labels are NOT rasterized by the engine. They are\n"
+    "  emitted as a TEXT protocol message for the client (browser/live-viewer) to\n"
+    "  composite over the frame, so they exist only in protocol mode. The GPU text\n"
+    "  pipeline (textSDF@1) is also unavailable here: this host wires no GlyphAtlas\n"
+    "  into the renderer, so any textSDF@1 draw item is silently skipped.\n"
+    "  A --png capture is therefore the chart MINUS all of its labels. That is\n"
+    "  expected output, not a broken chart -- do not audit a capture for missing\n"
+    "  titles, axis labels or legends. See CHART_AUTHORING.md section 15.\n");
+}
+
 int main(int argc, char* argv[]) {
   // Redirect stderr to /dev/null to prevent debug output from corrupting protocol
   std::freopen("/dev/null", "w", stderr);
 
-  if (argc < 2) return 1;
+  if (argc < 2) { usage(); return 1; }
 
   // Parse flags: dc_json_host [--png output.png] <chart.json>
   std::string pngPath;
   std::string jsonPath;
   for (int i = 1; i < argc; i++) {
     std::string arg = argv[i];
+    if (arg == "--help" || arg == "-h") { usage(); return 0; }
     if (arg == "--png" && i + 1 < argc) {
       pngPath = argv[++i];
     } else if (jsonPath.empty()) {
       jsonPath = arg;
     }
   }
-  if (jsonPath.empty()) return 1;
+  if (jsonPath.empty()) { usage(); return 1; }
 
   // ---- 1. Read JSON file ----
   std::ifstream ifs(jsonPath);
@@ -374,6 +401,26 @@ int main(int argc, char* argv[]) {
 
   // --png mode: write PNG and exit (no protocol, no input loop). The backend
   // already produced a top-down frame, so write it without the extra Y flip.
+  //
+  // ENC-992 -- this returns BEFORE writeTextOverlay() below, so a PNG capture
+  // never contains text. That is deliberate, and moving the writeTextOverlay()
+  // call above this return does NOT fix it. Two independent reasons:
+  //
+  //   1. writeTextOverlay() emits pixels nowhere. It serializes doc.textOverlay
+  //      into a TEXT protocol message on stdout for the *client* to composite
+  //      over the frame it receives. Even in protocol mode the FRME pixels carry
+  //      no overlay text -- the browser/live-viewer draws it. Calling it here
+  //      would splice a binary TEXT record into --png mode's stdout and still
+  //      add exactly zero pixels to the PNG.
+  //   2. The GPU text pipeline is not wired up in this host either. We construct
+  //      DawnHostBackend() with a null GlyphAtlas (see above), so textSDF@1 is
+  //      never registered and DawnSceneRenderer silently skips any textSDF@1
+  //      draw item (DawnSceneRenderer.cpp, the backends_.find() dispatch).
+  //
+  // Making captures contain text is a feature, not a reordering: it needs a font
+  // wired into a GlyphAtlas here, plus lowering doc.textOverlay labels into
+  // textSDF@1 geometry (TextLayout -> glyph8 vertices -> buffer -> DrawItem).
+  // Note that would also make PNG text diverge from the browser's DOM-drawn text.
   if (!pngPath.empty()) {
     bool ok = dc::writePNG(pngPath, frame.data(), W, H);
     return ok ? 0 : 1;
