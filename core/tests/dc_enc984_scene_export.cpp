@@ -202,7 +202,7 @@ static bool test_round_trip_through_reconciler(bool compact) {
   CommandProcessor cpA(a, regA);
   DC_CHECK(applyAll(cpA, richScene()));
 
-  const std::string json1 = serializeScene(a, compact);
+  const std::string json1 = serializeSceneAsDocument(a, compact);
   DC_CHECK(!json1.empty());
 
   // Restore into a completely fresh scene the way a real host would.
@@ -230,7 +230,7 @@ static bool test_round_trip_through_reconciler(bool compact) {
   // And — the real bar — re-exporting the restored scene reproduces the SAME
   // document text. Byte equality here is what proves nothing was dropped,
   // defaulted or re-spelled anywhere in the loop.
-  const std::string json2 = serializeScene(b, compact);
+  const std::string json2 = serializeSceneAsDocument(b, compact);
   if (json1 != json2) {
     std::printf("  json1: %s\n", json1.c_str());
     std::printf("  json2: %s\n", json2.c_str());
@@ -247,7 +247,7 @@ static bool test_round_trip_through_reconciler(bool compact) {
 static bool test_empty_scene() {
   std::printf("[enc984] empty scene exports a valid document\n");
   Scene s;
-  const std::string json = serializeScene(s, false);
+  const std::string json = serializeSceneAsDocument(s, false);
   DC_CHECK(!json.empty());
 
   SceneDocument doc;

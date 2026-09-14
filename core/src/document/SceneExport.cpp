@@ -171,7 +171,7 @@ void sceneToDocument(const Scene& scene, SceneDocument& out) {
   }
 }
 
-std::string serializeScene(const Scene& scene, bool compact) {
+std::string serializeSceneAsDocument(const Scene& scene, bool compact) {
   SceneDocument doc;
   sceneToDocument(scene, doc);
   return serializeSceneDocument(doc, compact);

@@ -48,6 +48,15 @@ namespace dc {
 void sceneToDocument(const Scene& scene, SceneDocument& out);
 
 // Convenience: extract and serialize in one step.
-std::string serializeScene(const Scene& scene, bool compact = false);
+//
+// NAMED `...AsDocument`, not `serializeScene`, on purpose: `dc::serializeScene`
+// ALREADY EXISTS (`dc/session/SceneSerializer.hpp`, D45) and emits a DIFFERENT,
+// incompatible JSON dialect from the same input. As plain overloads in one
+// namespace the two compile fine until a translation unit includes both headers,
+// at which point `serializeScene(scene)` is ambiguous — and until then the real
+// hazard is a reader picking the wrong one by name. The two serializers are also
+// not interchangeable in fidelity: D45's carries Geometry bounds and the
+// `hasAnchor` flag, which the SceneDocument schema has no field for (see above).
+std::string serializeSceneAsDocument(const Scene& scene, bool compact = false);
 
 } // namespace dc
