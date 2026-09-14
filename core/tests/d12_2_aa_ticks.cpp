@@ -63,8 +63,11 @@ int main() {
     // Old tick resources still exist
     requireTrue(scene.hasBuffer(300), "yTickBuf");
     requireTrue(scene.hasDrawItem(302), "yTickDI");
+    // ENC-993: the BASE tick lines are lineAA@1 now too. `enableAALines` was never
+    // "antialias the ticks" — it adds a SECOND, shorter set of tick marks beside
+    // them (slots 16-21), which is what the rest of this test covers.
     const auto* oldDi = scene.getDrawItem(302);
-    requireTrue(oldDi->pipeline == "line2d@1", "old yTick pipeline");
+    requireTrue(oldDi->pipeline == "lineAA@1", "base yTick pipeline (ENC-993)");
 
     // AA tick resources exist
     requireTrue(scene.hasBuffer(316), "yTickAABuf");

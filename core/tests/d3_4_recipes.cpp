@@ -67,7 +67,10 @@ int main() {
     requireTrue(scene.hasTransform(103), "xform 103 exists");
 
     const auto* di = scene.getDrawItem(102);
-    requireTrue(di->pipeline == "line2d@1", "pipeline is line2d@1");
+    // ENC-993: LineRecipe binds lineAA@1 (rect4 segments), not the 1px line2d@1.
+    requireTrue(di->pipeline == "lineAA@1", "pipeline is lineAA@1");
+    requireTrue(scene.getGeometry(101)->format == dc::VertexFormat::Rect4,
+                "geometry is rect4");
     requireTrue(di->geometryId == 101, "geometryId bound");
     requireTrue(di->transformId == 103, "transformId attached");
     std::printf("  create: OK\n");

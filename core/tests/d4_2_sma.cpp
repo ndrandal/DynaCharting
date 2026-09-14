@@ -45,9 +45,13 @@ int main() {
 
     auto data = sma.compute(prices, xPos, 10, 0.0f, 10.0f, -1.0f, 1.0f);
 
-    // SMA(3) values: 2, 3, 4, 5, 6, 7, 8, 9 → 8 valid points → 7 segments → 14 verts
-    requireTrue(data.vertexCount == 14, "SMA3 of 10: 14 vertices");
-    std::printf("  vertexCount=%u: OK\n", data.vertexCount);
+    // SMA(3) values: 2, 3, 4, 5, 6, 7, 8, 9 → 8 valid points → 7 segments.
+    // ENC-993: the SMA renders through lineAA@1, so the count is rect4 INSTANCES
+    // (one per segment), not the 14 pos2 LineList vertices it used to be. The
+    // float payload is unchanged — 7 * (x0,y0,x1,y1) = 28 floats either way.
+    requireTrue(data.vertexCount == 7, "SMA3 of 10: 7 rect4 segments");
+    requireTrue(data.lineVerts.size() == 28, "SMA3 of 10: 28 floats (7 * 4)");
+    std::printf("  segmentCount=%u: OK\n", data.vertexCount);
 
     // Verify first SMA value maps correctly: SMA=2.0, mapped from [0,10]→[-1,1] = -0.6
     float expectedY0 = -1.0f + (2.0f / 10.0f) * 2.0f; // -0.6
@@ -89,7 +93,9 @@ int main() {
     requireTrue(scene.hasBuffer(200), "buffer exists");
     const auto* di = scene.getDrawItem(202);
     requireTrue(di != nullptr, "di exists");
-    requireTrue(di->pipeline == "line2d@1", "pipeline is line2d@1");
+    requireTrue(di->pipeline == "lineAA@1", "pipeline is lineAA@1");  // ENC-993
+    requireTrue(scene.getGeometry(201)->format == dc::VertexFormat::Rect4,
+                "geometry is rect4");
     requireTrue(di->transformId == 203, "transform attached");
     std::printf("  create: OK\n");
 
@@ -109,7 +115,7 @@ int main() {
     cfg.period = 5;
     dc::SmaRecipe sma(300, cfg);
     auto data = sma.compute(prices, xPos, 3, 0.0f, 10.0f, -1.0f, 1.0f);
-    requireTrue(data.vertexCount == 0, "period > count: no vertices");
+    requireTrue(data.vertexCount == 0, "period > count: no segments");
     std::printf("  period > count: OK\n");
   }
 

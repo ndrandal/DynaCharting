@@ -46,7 +46,7 @@ int main() {
     dc::LineRecipe r(200, cfg);
     auto br = r.build();
     requireTrue(br.subscriptions.size() == 1, "line: 1 subscription");
-    requireTrue(br.subscriptions[0].format == dc::VertexFormat::Pos2_Clip, "line: format");
+    requireTrue(br.subscriptions[0].format == dc::VertexFormat::Rect4, "line: format");
     requireTrue(br.subscriptions[0].bufferId == 200, "line: bufferId");
     auto ids = r.drawItemIds();
     requireTrue(ids.size() == 1 && ids[0] == 202, "line: drawItemIds");
@@ -60,7 +60,7 @@ int main() {
     dc::SmaRecipe r(300, cfg);
     auto br = r.build();
     requireTrue(br.subscriptions.size() == 1, "sma: 1 subscription");
-    requireTrue(br.subscriptions[0].format == dc::VertexFormat::Pos2_Clip, "sma: format");
+    requireTrue(br.subscriptions[0].format == dc::VertexFormat::Rect4, "sma: format");
     auto ids = r.drawItemIds();
     requireTrue(ids.size() == 1 && ids[0] == 302, "sma: drawItemIds");
     std::printf("  SmaRecipe PASS\n");
@@ -86,9 +86,11 @@ int main() {
     dc::BollingerRecipe r(500, cfg);
     auto br = r.build();
     requireTrue(br.subscriptions.size() == 4, "bollinger: 4 subscriptions");
-    // middle, upper, lower = Pos2_Clip; fill = Pos2_Clip
-    for (std::size_t i = 0; i < 4; i++)
-      requireTrue(br.subscriptions[i].format == dc::VertexFormat::Pos2_Clip, "bollinger: format");
+    // ENC-993: middle, upper, lower are lineAA@1 -> Rect4; the fill is still
+    // triSolid@1 -> Pos2_Clip.
+    for (std::size_t i = 0; i < 3; i++)
+      requireTrue(br.subscriptions[i].format == dc::VertexFormat::Rect4, "bollinger: band format");
+    requireTrue(br.subscriptions[3].format == dc::VertexFormat::Pos2_Clip, "bollinger: fill format");
     requireTrue(br.subscriptions[0].bufferId == 500, "bollinger: middle bufferId");
     requireTrue(br.subscriptions[1].bufferId == 503, "bollinger: upper bufferId");
     requireTrue(br.subscriptions[2].bufferId == 506, "bollinger: lower bufferId");
@@ -107,8 +109,8 @@ int main() {
     dc::MacdRecipe r(600, cfg);
     auto br = r.build();
     requireTrue(br.subscriptions.size() == 4, "macd: 4 subscriptions");
-    requireTrue(br.subscriptions[0].format == dc::VertexFormat::Pos2_Clip, "macd: line format");
-    requireTrue(br.subscriptions[1].format == dc::VertexFormat::Pos2_Clip, "macd: signal format");
+    requireTrue(br.subscriptions[0].format == dc::VertexFormat::Rect4, "macd: line format");
+    requireTrue(br.subscriptions[1].format == dc::VertexFormat::Rect4, "macd: signal format");
     requireTrue(br.subscriptions[2].format == dc::VertexFormat::Rect4, "macd: posHist format");
     requireTrue(br.subscriptions[3].format == dc::VertexFormat::Rect4, "macd: negHist format");
     auto ids = r.drawItemIds();
@@ -125,8 +127,8 @@ int main() {
     dc::AxisRecipe r(700, cfg);
     auto br = r.build();
     requireTrue(br.subscriptions.size() == 3, "axis: 3 subscriptions");
-    requireTrue(br.subscriptions[0].format == dc::VertexFormat::Pos2_Clip, "axis: yTick format");
-    requireTrue(br.subscriptions[1].format == dc::VertexFormat::Pos2_Clip, "axis: xTick format");
+    requireTrue(br.subscriptions[0].format == dc::VertexFormat::Rect4, "axis: yTick format");
+    requireTrue(br.subscriptions[1].format == dc::VertexFormat::Rect4, "axis: xTick format");
     requireTrue(br.subscriptions[2].format == dc::VertexFormat::Glyph8, "axis: label format");
     auto ids = r.drawItemIds();
     requireTrue(ids.size() == 3, "axis: 3 drawItemIds");
@@ -160,7 +162,7 @@ int main() {
     dc::LevelLineRecipe r(900, cfg);
     auto br = r.build();
     requireTrue(br.subscriptions.size() == 2, "levelLine: 2 subscriptions");
-    requireTrue(br.subscriptions[0].format == dc::VertexFormat::Pos2_Clip, "levelLine: line");
+    requireTrue(br.subscriptions[0].format == dc::VertexFormat::Rect4, "levelLine: line");
     requireTrue(br.subscriptions[1].format == dc::VertexFormat::Glyph8, "levelLine: label");
     auto ids = r.drawItemIds();
     requireTrue(ids.size() == 2, "levelLine: 2 drawItemIds");

@@ -238,17 +238,18 @@ bool channelOf(const std::string& key, Channel& out) {
 struct MarkInfo {
   bool known{false};
   Mark mark{Mark::Point};
-  LineStyle lineStyle{LineStyle::Line2d};
+  LineStyle lineStyle{LineStyle::LineAA};  // ENC-993: AA by default
 };
 
 // Resolve a manifest mark `type` string to a Mark + lineStyle, given the requested
-// pipeline (a line draws line2d@1 by default, lineAA@1 when so requested).
+// pipeline (ENC-993: a line draws lineAA@1 by default, line2d@1 when pinned).
 MarkInfo markOf(const std::string& type, const std::string& pipeline) {
   MarkInfo mi;
   if (type == "point") { mi.known = true; mi.mark = Mark::Point; }
   else if (type == "line" || type == "rule") {
     mi.known = true; mi.mark = Mark::Line;
-    if (pipeline.rfind("lineAA", 0) == 0) mi.lineStyle = LineStyle::LineAA;
+    if (pipeline.rfind("line2d", 0) == 0) mi.lineStyle = LineStyle::Line2d;
+    else if (pipeline.rfind("lineAA", 0) == 0) mi.lineStyle = LineStyle::LineAA;
   }
   else if (type == "rect") {
     mi.known = true;

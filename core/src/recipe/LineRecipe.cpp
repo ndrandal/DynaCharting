@@ -18,7 +18,7 @@ RecipeBuildResult LineRecipe::build() const {
   result.createCommands.push_back(
     R"({"cmd":"createGeometry","id":)" + idStr(geometryId()) +
     R"(,"vertexBufferId":)" + idStr(bufferId()) +
-    R"(,"format":"pos2_clip","vertexCount":2})");
+    R"(,"format":"rect4","vertexCount":1})");
 
   result.createCommands.push_back(
     R"({"cmd":"createDrawItem","id":)" + idStr(drawItemId()) +
@@ -27,7 +27,7 @@ RecipeBuildResult LineRecipe::build() const {
 
   result.createCommands.push_back(
     R"({"cmd":"bindDrawItem","drawItemId":)" + idStr(drawItemId()) +
-    R"(,"pipeline":"line2d@1","geometryId":)" + idStr(geometryId()) + "}");
+    R"(,"pipeline":"lineAA@1","geometryId":)" + idStr(geometryId()) + "}");
 
   if (config_.createTransform) {
     result.createCommands.push_back(
@@ -38,7 +38,7 @@ RecipeBuildResult LineRecipe::build() const {
   }
 
   // Subscriptions
-  result.subscriptions.push_back({bufferId(), geometryId(), VertexFormat::Pos2_Clip});
+  result.subscriptions.push_back({bufferId(), geometryId(), VertexFormat::Rect4});
 
   // Dispose commands (reverse order)
   if (config_.createTransform) {

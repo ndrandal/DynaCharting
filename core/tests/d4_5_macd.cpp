@@ -116,7 +116,11 @@ int main() {
     requireTrue(scene.hasDrawItem(711), "negHist DI");
     requireTrue(scene.hasTransform(712), "shared transform");
 
-    requireTrue(scene.getDrawItem(702)->pipeline == "line2d@1", "MACD line pipeline");
+    // ENC-993: MACD + signal lines render through lineAA@1 / rect4.
+    requireTrue(scene.getDrawItem(702)->pipeline == "lineAA@1", "MACD line pipeline");
+    requireTrue(scene.getDrawItem(705)->pipeline == "lineAA@1", "signal line pipeline");
+    requireTrue(scene.getGeometry(701)->format == dc::VertexFormat::Rect4,
+                "MACD line geometry is rect4");
     requireTrue(scene.getDrawItem(708)->pipeline == "instancedRect@1", "posHist pipeline");
     std::printf("  resources: OK\n");
 

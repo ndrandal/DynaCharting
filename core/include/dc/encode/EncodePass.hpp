@@ -74,7 +74,7 @@ namespace dc {
 // Mark — the four Phase-1 mark primitives (RESEARCH §4.3), each mapped to ONE
 // existing pipeline + the channels it consumes.
 //   Point  -> points@1         (x, y)
-//   Line   -> line2d@1 (default) or lineAA@1 (when antialiased)  (x, y per row)
+//   Line   -> lineAA@1 (DEFAULT) or line2d@1 (LineStyle::Line2d opt-out)
 //   Rect   -> instancedRect@1   (x, y, x2, y2)
 //   Candle -> instancedCandle@1 (x, open, high, low, close, size=halfWidth)
 // ---------------------------------------------------------------------------
@@ -109,9 +109,19 @@ enum class Mark : std::uint8_t {
 const char* toString(Mark m);
 
 // Line rendering variant: line2d (1px LineList) vs lineAA (instanced AA quads).
+//
+// ENC-993 — LineAA is the DEFAULT everywhere a line mark is compiled. There is no
+// MSAA anywhere in the renderer (every render target is sampleCount == 1), so the
+// lineAA fragment shader's coverage term is the ONLY antialiasing the engine has;
+// falling back to line2d@1 meant every unannotated line rendered as a raw 1px
+// aliased LineList that also could not honour DrawItem::lineWidth or the D28.1
+// dash pattern. Line2d remains as an EXPLICIT opt-out for callers that genuinely
+// want the cheap hairline (transient cursor chrome, debug overlays): it is 2
+// vertices per segment against lineAA's 6, and the CPU-side packing is the same
+// 16 bytes per segment either way (see the perf note in EncodePass.cpp).
 enum class LineStyle : std::uint8_t {
-  Line2d,  // line2d@1  — Pos2_Clip LineList
-  LineAA,  // lineAA@1  — Rect4 instanced segments
+  Line2d,  // line2d@1  — Pos2_Clip LineList   (explicit opt-out)
+  LineAA,  // lineAA@1  — Rect4 instanced segments  (the DEFAULT)
 };
 
 // ---------------------------------------------------------------------------
@@ -127,7 +137,7 @@ struct MarkSpec {
 
 // Resolve a (mark, lineStyle) to its MarkSpec. lineStyle is ignored for non-line
 // marks.
-MarkSpec markSpecOf(Mark mark, LineStyle lineStyle = LineStyle::Line2d);
+MarkSpec markSpecOf(Mark mark, LineStyle lineStyle = LineStyle::LineAA);
 
 // ---------------------------------------------------------------------------
 // ENC-613 — ArcOptions: how an Arc/wedge mark is tessellated + placed in polar
@@ -214,7 +224,7 @@ class EncodePass {
                        Id tableId, const BufferByteSource& src, Id geometryId,
                        Id drawItemId, Id vertexBufferId,
                        const RowIdentity* rowIds = nullptr,
-                       LineStyle lineStyle = LineStyle::Line2d,
+                       LineStyle lineStyle = LineStyle::LineAA,
                        const ArcOptions& arc = ArcOptions{}) const;
 
   // Incremental compile: pack ONLY rows [fromRow, totalRows) and writeRange()
@@ -231,7 +241,7 @@ class EncodePass {
                            Id geometryId, Id drawItemId, Id vertexBufferId,
                            std::size_t fromRow,
                            const RowIdentity* rowIds = nullptr,
-                           LineStyle lineStyle = LineStyle::Line2d,
+                           LineStyle lineStyle = LineStyle::LineAA,
                            const ArcOptions& arc = ArcOptions{}) const;
 
  private:

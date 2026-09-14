@@ -48,12 +48,14 @@ int main() {
     std::printf("  X range [100, 200]: xTickVertexCount=%u, yTickVertexCount=%u\n",
                 data.xTickVertexCount, data.yTickVertexCount);
 
-    requireTrue(data.xTickVertexCount >= 4, "at least 2 X ticks (4 vertices)");
-    requireTrue(data.yTickVertexCount >= 4, "at least 2 Y ticks (4 vertices)");
+    // ENC-993: the tick geometry is rect4/lineAA@1, so the count is SEGMENTS —
+    // one rect4 instance per tick, not two pos2 vertices.
+    requireTrue(data.xTickVertexCount >= 2, "at least 2 X ticks (2 rect4 segments)");
+    requireTrue(data.yTickVertexCount >= 2, "at least 2 Y ticks (2 rect4 segments)");
     requireTrue(data.labelGlyphCount > 0, "has labels");
 
     // X tick positions should be at nice intervals (e.g. 100, 120, 140, 160, 180, 200)
-    // Each tick has 2 vertices (4 floats per vertex pair: x,y, x,y)
+    // Each tick is ONE rect4 segment = 4 floats (x0,y0,x1,y1)
     // First tick x position is at xTickVerts[0]
     std::printf("  X ticks: %u vertices, Y ticks: %u vertices, labels: %u glyphs\n",
                 data.xTickVertexCount, data.yTickVertexCount, data.labelGlyphCount);
