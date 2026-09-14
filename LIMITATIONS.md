@@ -436,11 +436,16 @@ being triggered. That was wrong on both counts: `pick` *does* call `renderPick`
 (`core/src/gpu/DawnSceneRenderer.cpp:160`). The zero came from `ensureRenderer()` failing under
 node, which has no `navigator.gpu`. See DC-L07.
 
-### C4 — `CHART_AUTHORING.md` §8/§9 promise GPU gradient fills that do not render
+### C4 — `CHART_AUTHORING.md` §8/§9 used to promise GPU gradient fills that do not render
 
-`CHART_AUTHORING.md` describes applying a gradient to any DrawItem and building gradient area
-charts and dashboard panels. On the GPU path that is false — see DC-L04. The sections now carry
-a pointer here; the prose itself needs a ticket.
+Until ENC-991, §8 ("Apply a gradient to any DrawItem… this creates gradient area charts") and
+§9 ("Dashboard panels — `instancedRect@1` with `cornerRadius` and gradient fills") described
+behaviour that does not exist on the GPU path — see DC-L04. Anyone following the guide would
+have authored a chart that silently rendered flat. Both passages were corrected in the same PR
+as this file, and now point at DC-L04 and at the `triGradient@1` workaround.
+
+Worth noting as a pattern: the authoring guide and the limitations log had drifted into
+contradicting each other, and the guide was the one people read.
 
 ---
 
@@ -505,11 +510,12 @@ entry was wrong.
    reader who cannot see the log correcting itself has no reason to believe the entries that
    remain.
 
-5. **Pointers live where the limitation is hit**, not only here — `CLAUDE.md`,
-   `CHART_AUTHORING.md` §5/§8/§9/§15, `dc_json_host --help`, and the source comments cited by
-   each entry. Adding those pointers is part of adding an entry. The DC-L02 evidence is the
-   argument: 76 of 277 trial writeups filed the same by-design behaviour as a bug because the
-   only record of it was somewhere they were not.
+5. **Pointers live where the limitation is hit**, not only here. This PR installed them rather
+   than promising them: `CLAUDE.md` (top, the `ctest` block → DC-L01, the `--png` block →
+   DC-L02/DC-L03) and `CHART_AUTHORING.md` (header, §8 and §9 → DC-L04). Adding the pointer is
+   part of adding an entry. The DC-L02 evidence is the argument for doing it: 76 of 277 trial
+   writeups filed the same by-design behaviour as a bug, because the only record of it was
+   somewhere they were not.
 
 6. **Entry ids are stable and greppable.** `DC-L04` can be cited from a code comment, a Linear
    ticket or a PR description without ambiguity, and reusing an id for different content is
