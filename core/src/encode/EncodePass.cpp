@@ -225,10 +225,40 @@ inline std::uint32_t tessellateWedge(std::vector<std::uint8_t>& out,
 }  // namespace
 
 // ---------------------------------------------------------------------------
+// ENC-995 — derive the per-wedge chord count. A positive segmentsPerArc is an
+// explicit override; otherwise hold the chord ANGLE at 2pi/segmentsPerTurn by
+// giving a wedge of `spanRadians` its proportional share, rounded UP so the
+// bound is never exceeded. Clamped to [1, kMaxArcSegments] so a nonsense span or
+// segmentsPerTurn cannot make the vertex count explode.
+// ---------------------------------------------------------------------------
+int arcSegmentsFor(const ArcOptions& opts, double spanRadians) {
+  if (opts.segmentsPerArc > 0) return opts.segmentsPerArc;
+  constexpr int kMaxArcSegments = 4096;
+  constexpr double kTwoPi = 6.283185307179586;
+  int perTurn = opts.segmentsPerTurn;
+  if (perTurn < 1) perTurn = 1;
+  const double span = std::fabs(spanRadians);
+  if (!(span > 0.0)) return 1;
+  // The RELATIVE epsilon keeps an exact full turn at `perTurn` chords: 2pi
+  // round-tripped through the f32 angle columns lands ~3e-8 above 2pi, and a bare
+  // ceil would answer perTurn+1. Shaving 1e-6 of the quotient can only drop a
+  // count that was within a millionth of an integer, which moves the chord angle
+  // (and so the error bound) by the same millionth.
+  const double want =
+      std::ceil(static_cast<double>(perTurn) * span / kTwoPi * (1.0 - 1e-6));
+  if (!(want >= 1.0)) return 1;
+  if (want >= static_cast<double>(kMaxArcSegments)) return kMaxArcSegments;
+  return static_cast<int>(want);
+}
+
+// ---------------------------------------------------------------------------
 // ENC-613 — the polar ARC/wedge compile. Each row is an INDEPENDENT wedge (no
-// adjacent-row coupling like lines), tessellated to a FIXED `segmentsPerArc * 6`
-// Pos2Color4 vertices, so the byte offset of row r's tail is regular (r * fixed
-// stride) and the incremental class-1 path works exactly like rect/point. Color
+// adjacent-row coupling like lines), tessellated to `segs * 6` Pos2Color4
+// vertices where `segs` is UNIFORM across the table, so the byte offset of row
+// r's tail is regular (r * fixed stride) and the incremental class-1 path works
+// exactly like rect/point. ENC-995 derives that uniform `segs` from the WIDEST
+// wedge in the table rather than hardcoding 24 (see ArcOptions); deriving it
+// per row would give each row its own stride and break exactly that. Color
 // is the per-row resolved color (setColorField packed RGBA8 -> 0..1, or the
 // constant fallback), baked per-vertex into the gradient format.
 // ---------------------------------------------------------------------------
@@ -610,9 +640,29 @@ static void compileArc(const PipelineCatalog& catalog, const Encoding& enc,
   }
   const std::size_t totalRows = tables.rowCount(tableId, src);
 
+  // ENC-995 — one chord count for the WHOLE table, derived from the widest
+  // wedge so the chord angle is bounded however the rows split the circle. A
+  // per-row count would give each row its own stride and break the regular
+  // r * wedgeBytes offset the incremental path below depends on. The scan reads
+  // two f32 columns and does no trig; it is cheap next to the tessellation.
   int segs = arcOpts.segmentsPerArc;
+  if (segs <= 0) {
+    double maxSpan = 0.0;
+    for (std::size_t r = 0; r < totalRows; ++r) {
+      // Only the two ANGLE channels, not a full resolveRow: the radii and the
+      // color play no part in the chord count, and skipping them halves the scan.
+      // A row that will not resolve contributes no span here and is rejected with
+      // its real error by the packing loop below.
+      auto t0 = enc.resolve(Channel::X, r, tables, tableId, src);
+      auto t1 = enc.resolve(Channel::X2, r, tables, tableId, src);
+      if (!t0 || !t1) continue;
+      const double span = std::fabs(*t1 - *t0);
+      if (span > maxSpan) maxSpan = span;
+    }
+    segs = arcSegmentsFor(arcOpts, maxSpan);
+  }
   if (segs < 1) segs = 1;
-  // Fixed per-wedge geometry: segs angular slices * 6 verts/slice * 24B/vertex.
+  // Per-wedge geometry: segs angular slices * 6 verts/slice * 24B/vertex.
   const std::uint32_t vertsPerWedge = static_cast<std::uint32_t>(segs) * 6u;
   const std::uint32_t stride = strideOf(spec.format);  // 24B (Pos2Color4)
   const std::uint32_t wedgeBytes = vertsPerWedge * stride;
@@ -632,6 +682,18 @@ static void compileArc(const PipelineCatalog& catalog, const Encoding& enc,
 
   std::size_t packFrom = fromRow;
   if (packFrom > totalRows) packFrom = totalRows;
+  // ENC-995 — a derived `segs` can CHANGE when an appended row is wider than
+  // every row before it, which retroactively invalidates the bytes already in
+  // the store (they were packed at the old stride). Detect it by the one fact
+  // that betrays it — the store no longer holds exactly packFrom wedges at the
+  // current stride — and repack the whole table instead of appending onto a
+  // layout that no longer exists. Callers already re-read geometry.vertexCount
+  // after every compile, so the draw follows.
+  if (store && packFrom > 0 &&
+      store->getCpuDataSize(vertexBufferId) !=
+          static_cast<std::uint32_t>(packFrom) * wedgeBytes) {
+    packFrom = 0;
+  }
   const std::uint32_t storeOffset =
       static_cast<std::uint32_t>(packFrom) * wedgeBytes;
 

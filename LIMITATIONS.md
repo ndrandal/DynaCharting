@@ -25,20 +25,20 @@ and corrected them.
 
 ## DC-L01 — A green default `ctest` says nothing about the renderer 🔴
 
-**Claim.** `cmake -B build && ctest --test-dir build` runs **189** tests and builds **no
+**Claim.** `cmake -B build && ctest --test-dir build` runs **190** tests and builds **no
 renderer at all**. `dc_gpu`, `dc_json_host`, all four headless demo servers and **43 render
 tests** are excluded at *configure* time by `DC_FETCH_DAWN` (default `OFF`,
 `core/CMakeLists.txt:165`). They are not "skipped" — they never enter `CTestTestfile.cmake`,
 so nothing reports them as missing.
 
-**Why it bites.** "189/189 passed" is the most reassuring possible output and it is compatible
+**Why it bites.** "190/190 passed" is the most reassuring possible output and it is compatible
 with the renderer being completely broken. Every pixel-level guarantee in this engine lives in
 the 43 tests that did not run.
 
 **Re-check.**
 ```bash
-grep -cE '^\s*add_test\(' core/CMakeLists.txt            # 232  — all tests that exist
-grep -c '^add_test('  build/core/CTestTestfile.cmake     # 189  — all tests you just ran
+grep -cE '^\s*add_test\(' core/CMakeLists.txt            # 233  — all tests that exist
+grep -c '^add_test('  build/core/CTestTestfile.cmake     # 190  — all tests you just ran
 grep -n 'DC_FETCH_DAWN:BOOL' build/CMakeCache.txt        # OFF
 ```
 The 43-test gap is the single `if (DC_HAS_DAWN)` block at `core/CMakeLists.txt:1899-2447`.
@@ -50,22 +50,27 @@ Target-level gap: **51** targets (`dc_gpu`, `dc_glfw_system`, `dc_json_host`,
 ```bash
 cmake -B build-dawn -G Ninja -DDC_BUILD_TESTS=ON -DDC_FETCH_DAWN=ON
 cmake --build build-dawn -j$(nproc)
-VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json ctest --test-dir build-dawn -j$(nproc)   # 231/231
+VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json ctest --test-dir build-dawn -j$(nproc)   # 233/233
 ```
-Two sessions did exactly this on 2026-09-14 (ENC-992, ENC-993) and both got 231/231 on
-lavapipe, so it is feasible, not theoretical. `-DDC_DAWN_WINDOWED=ON` is a *second*,
+Three sessions did exactly this on 2026-09-14 (ENC-992, ENC-993, ENC-995), so it is feasible,
+not theoretical. ENC-992/993 got 231/231 on lavapipe; ENC-995 added one always-built test and
+got 233/233 on lavapipe and 231/233 on Vulkan/NVK hardware — the two hardware failures
+being the `dc_enc619_dawn_fft` / `dc_enc619_dawn_marching_squares` pair the correction below
+already pins to the *unmodified* tree. `-DDC_DAWN_WINDOWED=ON` is a *second*,
 independent gate for `dc_dawn_window_demo` — `-DDC_FETCH_DAWN=ON` alone gets 50 of the 51.
 
 **Ticket.** [ENC-994](https://linear.app/encultured/issue/ENC-994) (Backlog) covers two of the
 43 (`d28_1_dawn_lineaa`, `d29_1_dawn_blend`). The other 41 have no owner.
 
 **The absolute numbers move; the 43-test gap does not.** ENC-984 added one always-built logic
-test, taking the pair from 188/231 to **189/232** — the gap is still exactly the `DC_HAS_DAWN`
-block. Read the *difference*, not the left-hand number: a change that grows the registered count
-tells you nothing about the renderer either.
+test, taking the pair from 188/231 to 189/232; ENC-995 added another, taking it to **190/233**.
+The gap is still exactly the `DC_HAS_DAWN` block, both times. Read the *difference*, not the
+left-hand number: a change that grows the registered count tells you nothing about the renderer
+either — which is the whole point, and is why two consecutive tickets moving this number changed
+nothing about what the default build proves.
 
-**Verified at** `5ac198a`, 2026-09-14 — counted statically from `core/CMakeLists.txt` and
-empirically from a real default configure in the ENC-984 worktree; both give 189 of 232, gap 43.
+**Verified at** `ENC-995 HEAD`, 2026-09-14 — counted statically from `core/CMakeLists.txt` and
+empirically from a real default configure in the ENC-995 worktree; both give 190 of 233, gap 43.
 
 ---
 
@@ -515,6 +520,72 @@ stamp naming a commit where the command does not yet hold is exactly the defect 
 own PR had to fix in five other entries.
 
 ---
+
+## DC-L11 — A manifest `arc` mark is centred at the clip origin, and is an ellipse 🟠
+
+**Claim.** `ArcOptions` — the polar centre and the chord count for `Mark::Arc` — is a
+**defaulted parameter that no production caller ever passes**. Both call sites,
+`Manifest::build` and `InteractionRuntime::compileAll`, stop at `lineStyle`. So every `arc`
+mark authored through a manifest (`"type":"arc"`, `ManifestValidator.cpp:260`) is pinned to
+`polar.centerX/centerY = 0,0`, and there is no manifest key that moves it.
+
+Worse, `polarToClip` maps `(theta, r)` to `cx + r*cos(theta), cy + r*sin(theta)` in **clip**
+units on **both** axes, and clip units are not square. On any viewport that is not 1:1 a polar
+"circle" comes out stretched to exactly the viewport's aspect ratio — measured below at 2.000
+on a 1200x600 target. The two headless demo servers sidestep this by computing `pieRadiusX` and
+`pieRadiusY` separately from `W` and `H` (`showcase_server.cpp:617`, `dashboard_server.cpp:718`)
+and tessellating pie geometry by hand, never touching `Mark::Arc` — which is the tell.
+
+**Why it bites.** The arc mark looks fully wired: the validator knows `"arc"`, the encode pass
+compiles it, `dc_enc613_dawn_polar_arc` renders it green. What none of that exercises is the
+manifest path — nor the browser, which does not carry the encode pass at all (check 5 below); because the corpus contains no `arc` chart at all (`grep -l '"arc"' charts/*.json`
+-> nothing; `charts/072-polar-rose.json` is precomputed vertex data, not an arc mark). The first
+person to author a pie in a manifest gets one centred on the middle of the viewport whether they
+want that or not, and egg-shaped unless their pane happens to be square.
+
+**Re-check.**
+```bash
+# 1 — neither production caller passes ArcOptions (both stop at lineStyle)
+grep -n -A3 'encodePass_.compile' core/src/manifest/Manifest.cpp
+grep -n -A3 'encode_.compile'     core/src/interaction/InteractionRuntime.cpp
+# -> ..., nullptr, md.lineStyle);   /   ..., /*rowIds=*/nullptr, s.lineStyle);
+
+# 2 — the polar map carries no aspect term
+grep -n -A4 'inline void polarToClip' core/src/encode/EncodePass.cpp
+# -> outX = p.centerX + r * cos(theta);  outY = p.centerY + r * sin(theta);
+
+# 3 — no manifest key reaches either field
+grep -rn 'segmentsPerArc\|segmentsPerTurn\|PolarParams' core/src/manifest/
+# -> (no output)
+
+# 4 — and no chart in the corpus uses the mark
+grep -l '"arc"' charts/*.json | wc -l        # -> 0
+
+# 5 — the browser module does not contain the encode pass AT ALL. dc_engine_host
+#     compiles 18 objects (the Dawn backends + the embind host) and links libdc.a;
+#     nothing in it references EncodePass, so the archive member is never pulled.
+strings packages/dc-wasm/wasm/dc_engine_host.wasm | grep -c 'lockstep broken'   # -> 0
+strings packages/dc-wasm/wasm/dc_engine_host.wasm | grep -c 'triGradient@1'     # -> 1
+# i.e. the PIPELINE names are in there (catalog + backends) and the compiler that
+# feeds them is not. Rebuilding the wasm after changing EncodePass.cpp is the
+# other half of the proof: ENC-995 did, and got a byte-identical artifact
+# (sha256 3bb50045...8ec9 before and after).
+```
+Rendered proof of the aspect half, on the real Dawn path: a full-turn wedge with equal inner and
+outer clip radii, drawn to a 1200x600 offscreen target, occupies **1140 px wide x 570 px tall,
+aspect 2.000** — the viewport's aspect, exactly. The same geometry on 900x900 is 855 x 855.
+
+**Working around it.** Pre-scale the radius per axis yourself, as both demo servers do, and
+accept the clip-origin centre — or drive `EncodePass::compile` directly with an explicit
+`ArcOptions` instead of going through `Manifest::build`. ENC-995 fixed the *chord count* half of
+the default (it is now derived from the wedge span rather than a fixed 24), which is why this
+entry is about the centre and the aspect and not about smoothness.
+
+**Ticket.** None yet — `ArcOptions` needs a manifest surface, and `PolarParams` needs either an
+aspect term or a documented "clip units, pre-scale yourself" contract.
+
+**Verified at** `ENC-995 HEAD`, 2026-09-14 — greps 1-4 run in the ENC-995 worktree; the render
+measurement from a `dc_gpu` harness against `build-dawn` on Vulkan/NVK.
 
 # §C — Corrections
 
