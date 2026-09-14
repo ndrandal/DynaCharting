@@ -50,22 +50,27 @@ Target-level gap: **51** targets (`dc_gpu`, `dc_glfw_system`, `dc_json_host`,
 ```bash
 cmake -B build-dawn -G Ninja -DDC_BUILD_TESTS=ON -DDC_FETCH_DAWN=ON
 cmake --build build-dawn -j$(nproc)
-VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json ctest --test-dir build-dawn -j$(nproc)   # 232/233
+VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json ctest --test-dir build-dawn -j$(nproc)   # 233/233
 ```
-Two sessions did exactly this on 2026-09-14 (ENC-992, ENC-993) and both got 231/231 on
-lavapipe, so it is feasible, not theoretical. `-DDC_DAWN_WINDOWED=ON` is a *second*,
+Three sessions did exactly this on 2026-09-14 (ENC-992, ENC-993, ENC-995), so it is feasible,
+not theoretical. ENC-992/993 got 231/231 on lavapipe; ENC-995 added one always-built test and
+got 233/233 on lavapipe and 231/233 on Vulkan/NVK hardware — the two hardware failures
+being the `dc_enc619_dawn_fft` / `dc_enc619_dawn_marching_squares` pair the correction below
+already pins to the *unmodified* tree. `-DDC_DAWN_WINDOWED=ON` is a *second*,
 independent gate for `dc_dawn_window_demo` — `-DDC_FETCH_DAWN=ON` alone gets 50 of the 51.
 
 **Ticket.** [ENC-994](https://linear.app/encultured/issue/ENC-994) (Backlog) covers two of the
 43 (`d28_1_dawn_lineaa`, `d29_1_dawn_blend`). The other 41 have no owner.
 
 **The absolute numbers move; the 43-test gap does not.** ENC-984 added one always-built logic
-test, taking the pair from 188/231 to **189/232** — the gap is still exactly the `DC_HAS_DAWN`
-block. Read the *difference*, not the left-hand number: a change that grows the registered count
-tells you nothing about the renderer either.
+test, taking the pair from 188/231 to 189/232; ENC-995 added another, taking it to **190/233**.
+The gap is still exactly the `DC_HAS_DAWN` block, both times. Read the *difference*, not the
+left-hand number: a change that grows the registered count tells you nothing about the renderer
+either — which is the whole point, and is why two consecutive tickets moving this number changed
+nothing about what the default build proves.
 
-**Verified at** `5ac198a`, 2026-09-14 — counted statically from `core/CMakeLists.txt` and
-empirically from a real default configure in the ENC-984 worktree; both give 189 of 232, gap 43.
+**Verified at** `ENC-995 HEAD`, 2026-09-14 — counted statically from `core/CMakeLists.txt` and
+empirically from a real default configure in the ENC-995 worktree; both give 190 of 233, gap 43.
 
 ---
 
