@@ -64,7 +64,7 @@ std::vector<std::string> richScene() {
       R"({"cmd":"createBuffer","id":101,"byteLength":24})",
 
       R"({"cmd":"createGeometry","id":200,"vertexBufferId":100,"vertexCount":10,"format":"candle6","indexBufferId":101,"indexCount":6})",
-      R"({"cmd":"createGeometry","id":201,"vertexBufferId":100,"vertexCount":4,"format":"pos2_clip"})",
+      R"({"cmd":"createGeometry","id":201,"vertexBufferId":100,"vertexCount":4,"format":"rect4"})",
 
       R"({"cmd":"createDrawItem","id":300,"layerId":10,"name":"ohlc"})",
       R"({"cmd":"bindDrawItem","drawItemId":300,"pipeline":"instancedCandle@1","geometryId":200})",
@@ -147,7 +147,7 @@ static bool test_extract_fields() {
   DC_CHECK(g.vertexCount == 10);
   DC_CHECK(g.indexBufferId == 101);
   DC_CHECK(g.indexCount == 6);
-  DC_CHECK(doc.geometries.at(201).format == "pos2_clip");
+  DC_CHECK(doc.geometries.at(201).format == "rect4");
 
   // DrawItem: one assertion per style family.
   const DocDrawItem& d = doc.drawItems.at(300);

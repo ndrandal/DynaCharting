@@ -595,6 +595,27 @@ export class EngineHost {
     return Uint8Array.from(this.core.getBufferBytes(bufferId));
   }
 
+  /**
+   * Export the live scene as a **SceneDocument JSON string** (ENC-984) — the
+   * structural half of a save/snapshot: panes, layers, transforms, geometries,
+   * draw items and every style field, in the exact JSON shape the engine's own
+   * `parseSceneDocument` + `SceneReconciler` restore from.
+   *
+   * Pairs with {@link getBufferBytes}: this gives you the STRUCTURE (including
+   * each buffer's `byteLength`), that gives you the BYTES. The document does
+   * not inline vertex data.
+   *
+   * Returns `""` when there is no core yet or a render is in flight — the same
+   * rule getBufferBytes follows, because any WASM entry during an ASYNCIFY
+   * render aborts it. Callers retry.
+   *
+   * @param compact omit fields sitting at their default value (default false)
+   */
+  getSceneDocument(compact = false): string {
+    if (!this.core || this.rendering) return "";
+    return this.core.getSceneDocument(compact);
+  }
+
   // -------------------- thumbnail capture (ENC-778) --------------------
   /**
    * Capture the CURRENT framebuffer as a downscaled PNG **data URL** (Canvas &
