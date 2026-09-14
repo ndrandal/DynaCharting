@@ -144,18 +144,20 @@ padding are proven directly). `dc_gallery`'s five PPM cards identical too, 207.9
 
 - **This box is not lavapipe.** Dawn's default adapter here is a real NVIDIA RTX 3070 Ti via
   Mesa NVK. The ">300 s" figure above was a lavapipe measurement presented as the general case;
-  hardware was 302 s, so the conclusion held, but the environment label was wrong. Anything in
-  this file citing lavapipe timings inherits that caveat.
+  hardware was 302 s, so the conclusion held, but *this entry's* environment label was wrong.
+  DC-L01 is not affected: it pins the adapter explicitly with
+  `VK_ICD_FILENAMES=.../lvp_icd.x86_64.json` and says "on lavapipe" in words — it was right, and
+  this correction is only about the figure in the paragraph above.
 - **The Dawn suite is 229/231 on hardware, not 231/231.** `dc_enc619_dawn_fft` and
   `dc_enc619_dawn_marching_squares` fail identically on the *unmodified* tree
   (`maxRelErr=4.485e-03` against a `1e-3` tolerance) and pass under lavapipe. Pre-existing, in
-  GPU *compute*, unrelated to readback. The 231/231 recorded by two earlier sessions — and in
-  DC-L01's own numbers — was a lavapipe-only result.
+  GPU *compute*, unrelated to readback. DC-L01 already scopes its 231/231 to lavapipe correctly;
+  what is new here is that the *hardware* number was never measured until now, and it is 229.
 
 **Re-check.**
 ```bash
-grep -n 'readFramebufferRGBA' core/src/host/JsonHost.cpp   # present => fixed
-grep -n 'readPixel' core/src/host/JsonHost.cpp             # fallback only, not the main path
+grep -n 'readFramebufferRGBA(' core/src/host/JsonHost.cpp   # a real CALL (~:182) => fixed
+grep -c 'for (int y' core/src/host/JsonHost.cpp             # the per-pixel loop survives only as fallback
 ```
 
 **Ticket.** [ENC-1093](https://linear.app/encultured/issue/ENC-1093) — merged `7169457`.
