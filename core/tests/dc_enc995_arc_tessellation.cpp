@@ -34,6 +34,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -71,6 +72,23 @@ static void appendI32(dc::IngestProcessor& ing, dc::Id buf,
                       const std::vector<std::int32_t>& v) {
   std::vector<std::uint8_t> b;
   appendRecord(b, buf, v.data(), static_cast<std::uint32_t>(v.size() * 4));
+  ing.processBatch(b.data(), static_cast<std::uint32_t>(b.size()));
+}
+// OP_UPDATE_RANGE (op=2) — patch an already-ingested f32 in place. This is the
+// op that makes [8] possible: it edits a row the encode pass has already packed.
+static void updateF32(dc::IngestProcessor& ing, dc::Id buf,
+                      std::uint32_t byteOffset, float v) {
+  std::vector<std::uint8_t> b;
+  auto u32 = [&b](std::uint32_t x) {
+    for (int i = 0; i < 4; ++i)
+      b.push_back(static_cast<std::uint8_t>((x >> (8 * i)) & 0xFF));
+  };
+  b.push_back(2);
+  u32(static_cast<std::uint32_t>(buf));
+  u32(byteOffset);
+  u32(4);
+  const auto* p = reinterpret_cast<const std::uint8_t*>(&v);
+  b.insert(b.end(), p, p + 4);
   ing.processBatch(b.data(), static_cast<std::uint32_t>(b.size()));
 }
 static float f32At(const std::vector<std::uint8_t>& b, std::size_t off) {
@@ -314,6 +332,10 @@ int main() {
               std::to_string(narrowSegs) + " -> " + std::to_string(wideSegs));
     check(store.getCpuDataSize(300) != sizeAfter3 + (sizeAfter3 / 3),
           "the store is NOT the old 3 wedges plus one appended tail");
+    check(r2.bytes.size() == store.getCpuDataSize(300),
+          "a derived count repacks: bytes covers the WHOLE table, per the "
+          "compileInto contract note");
+    (void)sizeAfter3;
 
     // the store must now be byte-identical to a clean full compile
     auto full = pass.compile(dc::Mark::Arc, f.enc, f.tables, Fixture::kTable, src,
@@ -328,6 +350,126 @@ int main() {
           "byte (" + std::to_string(full.bytes.size()) + " B)");
     check(r2.geometry.vertexCount == full.geometry.vertexCount,
           "and reports the same vertexCount as the full compile");
+  }
+
+  // =======================================================================
+  // [6] An EXPLICIT segmentsPerArc keeps compileInto's TRUE TAIL APPEND.
+  //     The first cut of ENC-995 ran its repack guard on this path too, so a
+  //     pinned count silently re-packed the whole table: the store stayed
+  //     correct, but `bytes` and `instanceRowIds` quietly became whole-table
+  //     and the append went O(N) — falsifying "a positive segmentsPerArc
+  //     reproduces the pre-ENC-995 behaviour exactly".
+  // =======================================================================
+  {
+    std::printf("-- [6] an explicit count still appends a TAIL, not the table --\n");
+    Fixture f;
+    for (int i = 0; i < 4; ++i)
+      f.add(kPi * (20.0 * i) / 180.0, kPi * (20.0 * (i + 1)) / 180.0, kROuter);
+    auto src = dc::makeBufferByteSource(f.ingest);
+    f.add(kPi * 80.0 / 180.0, kPi * 100.0 / 180.0, kROuter);  // 5 rows total
+    dc::ArcOptions pinned; pinned.segmentsPerArc = 12;
+    dc::CpuBufferStore store;
+    pass.compileInto(dc::Mark::Arc, f.enc, f.tables, Fixture::kTable, src, store,
+                     100, 200, 300, /*fromRow=*/0, nullptr,
+                     dc::LineStyle::Line2d, pinned);
+    const std::size_t oneWedgeBytes = 12u * 6u * 24u;
+
+    // RE-PACK A SUFFIX of rows that are already in the store — what a caller
+    // does after an in-place OP_UPDATE_RANGE edits the last row. `fromRow` is 4
+    // while the store already holds 5 wedges, so the sizes deliberately do NOT
+    // agree. With a pinned stride nothing can have moved, and the pre-ENC-995
+    // code wrote exactly one wedge here; a guard keyed on the store's SIZE
+    // instead of on whether the count was derived repacks all five.
+    auto tail = pass.compileInto(dc::Mark::Arc, f.enc, f.tables, Fixture::kTable,
+                                 src, store, 100, 200, 300, /*fromRow=*/4,
+                                 nullptr, dc::LineStyle::Line2d, pinned);
+    check(tail.ok && tail.bytes.size() == oneWedgeBytes,
+          "pinned segmentsPerArc=12: re-packing a suffix wrote ONE wedge (" +
+              std::to_string(tail.bytes.size()) + " B, expected " +
+              std::to_string(oneWedgeBytes) + ")");
+    check(tail.instanceRowIds.size() == 1,
+          "pinned: instanceRowIds carries the ONE re-packed row, not all 5");
+    check(store.getCpuDataSize(300) == 5u * oneWedgeBytes,
+          "pinned: the store still holds 5 wedges at the unchanged stride");
+  }
+
+  // =======================================================================
+  // [7] A span wider than a full turn is CLAMPED. The angle column is where a
+  //     degrees-for-radians mistake lands, and it reaches the derivation
+  //     through the default ArcOptions every manifest `arc` mark gets.
+  // =======================================================================
+  {
+    std::printf("-- [7] a runaway span is clamped at one full turn --\n");
+    dc::ArcOptions ao;
+    const int full = dc::arcSegmentsFor(ao, kTwoPi);
+    check(dc::arcSegmentsFor(ao, 360.0) == full,
+          "360 'radians' (degrees fed to a radians channel) costs the same as a "
+          "full turn, not " + std::to_string((int)(72.0 * 360.0 / kTwoPi)) + "x");
+    check(dc::arcSegmentsFor(ao, 1e9) == full, "1e9 radians is clamped too");
+    const double inf = std::numeric_limits<double>::infinity();
+    check(dc::arcSegmentsFor(ao, inf) == full, "+inf is clamped too");
+    check(dc::arcSegmentsFor(ao, std::nan("")) == 1, "NaN derives 1 chord");
+    // and with the clamp in place the chord cap holds for EVERY span, including
+    // the ones that used to drive the count into its 4096 ceiling
+    for (double span : {kTwoPi, 7.0, 360.0, 1e9}) {
+      const int segs = dc::arcSegmentsFor(ao, span);
+      const double chord = std::min(span, kTwoPi) / segs;
+      check(chord <= (kTwoPi / ao.segmentsPerTurn) * (1.0 + 1e-6),
+            "span " + std::to_string(span) + ": chord " + std::to_string(chord) +
+                " rad still within the 2pi/72 cap");
+    }
+  }
+
+  // =======================================================================
+  // [8] The stride cannot be recovered from the store's SIZE, and ENC-995's
+  //     first cut tried. 10 wedges at 9 chords and 9 wedges at 10 chords are
+  //     the same number of bytes, so a size-equality guard sees nothing when an
+  //     in-place OP_UPDATE_RANGE widens the last row and the caller re-packs
+  //     it: the append is allowed, and wedges 0..8 are then read at a stride
+  //     they were not written at. Silent garbage, where the pre-ENC-995 fixed
+  //     stride was merely redundant.
+  // =======================================================================
+  {
+    std::printf("-- [8] a size-equality guard cannot see a changed stride --\n");
+    Fixture f;
+    for (int i = 0; i < 10; ++i)                    // ten 45 deg wedges -> 9 chords
+      f.add(kPi * (45.0 * i) / 180.0, kPi * (45.0 * (i + 1)) / 180.0, kROuter);
+    auto src = dc::makeBufferByteSource(f.ingest);
+    dc::ArcOptions ao;                              // derived
+    dc::CpuBufferStore store;
+    auto first = pass.compileInto(dc::Mark::Arc, f.enc, f.tables, Fixture::kTable,
+                                  src, store, 100, 200, 300, /*fromRow=*/0,
+                                  nullptr, dc::LineStyle::Line2d, ao);
+    const std::uint32_t segs0 = first.geometry.vertexCount / (6u * 10u);
+    check(segs0 == 9, "ten 45 deg wedges derive 9 chords each (store " +
+                          std::to_string(store.getCpuDataSize(300)) + " B)");
+
+    // widen row 9 from 45 to 46 degrees IN PLACE -> the derived count becomes 10,
+    // and 10 wedges x 9 chords == 9 wedges x 10 chords, so the byte count the
+    // old guard compared against matches by coincidence.
+    // row 9 spans [405 deg, 450 deg]; move its end to 451 deg -> a 46 deg span.
+    updateF32(f.ingest, Fixture::kT1, /*byteOffset=*/9 * 4,
+              static_cast<float>(kPi * 451.0 / 180.0));
+    auto again = pass.compileInto(dc::Mark::Arc, f.enc, f.tables, Fixture::kTable,
+                                  src, store, 100, 200, 300, /*fromRow=*/9,
+                                  nullptr, dc::LineStyle::Line2d, ao);
+    const std::uint32_t segs1 = again.geometry.vertexCount / (6u * 10u);
+    check(segs1 > segs0, "the in-place widen RAISED the derived count " +
+                             std::to_string(segs0) + " -> " +
+                             std::to_string(segs1));
+    check(static_cast<std::size_t>(10) * segs0 ==
+              static_cast<std::size_t>(9) * segs1,
+          "and the two layouts are the SAME byte count (10*" +
+              std::to_string(segs0) + " == 9*" + std::to_string(segs1) +
+              ") — which is why a size check cannot see it");
+
+    auto clean = pass.compile(dc::Mark::Arc, f.enc, f.tables, Fixture::kTable, src,
+                              100, 200, 300, nullptr, dc::LineStyle::Line2d, ao);
+    const bool ok = store.getCpuDataSize(300) >= clean.bytes.size() &&
+                    std::memcmp(store.getCpuData(300), clean.bytes.data(),
+                                clean.bytes.size()) == 0;
+    check(ok, "the store still matches a clean full compile byte for byte (" +
+                  std::to_string(clean.bytes.size()) + " B)");
   }
 
   std::printf("\n=== %d passed, %d failed ===\n", passed, failed);
