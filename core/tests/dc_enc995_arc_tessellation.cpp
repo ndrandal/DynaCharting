@@ -74,6 +74,23 @@ static void appendI32(dc::IngestProcessor& ing, dc::Id buf,
   appendRecord(b, buf, v.data(), static_cast<std::uint32_t>(v.size() * 4));
   ing.processBatch(b.data(), static_cast<std::uint32_t>(b.size()));
 }
+// OP_UPDATE_RANGE (op=2) — patch an already-ingested f32 in place. This is the
+// op that makes [8] possible: it edits a row the encode pass has already packed.
+static void updateF32(dc::IngestProcessor& ing, dc::Id buf,
+                      std::uint32_t byteOffset, float v) {
+  std::vector<std::uint8_t> b;
+  auto u32 = [&b](std::uint32_t x) {
+    for (int i = 0; i < 4; ++i)
+      b.push_back(static_cast<std::uint8_t>((x >> (8 * i)) & 0xFF));
+  };
+  b.push_back(2);
+  u32(static_cast<std::uint32_t>(buf));
+  u32(byteOffset);
+  u32(4);
+  const auto* p = reinterpret_cast<const std::uint8_t*>(&v);
+  b.insert(b.end(), p, p + 4);
+  ing.processBatch(b.data(), static_cast<std::uint32_t>(b.size()));
+}
 static float f32At(const std::vector<std::uint8_t>& b, std::size_t off) {
   float v = 0.0f; std::memcpy(&v, b.data() + off, 4); return v;
 }
@@ -401,6 +418,57 @@ int main() {
             "span " + std::to_string(span) + ": chord " + std::to_string(chord) +
                 " rad still within the 2pi/72 cap");
     }
+  }
+
+  // =======================================================================
+  // [8] The stride cannot be recovered from the store's SIZE, and ENC-995's
+  //     first cut tried. 10 wedges at 9 chords and 9 wedges at 10 chords are
+  //     the same number of bytes, so a size-equality guard sees nothing when an
+  //     in-place OP_UPDATE_RANGE widens the last row and the caller re-packs
+  //     it: the append is allowed, and wedges 0..8 are then read at a stride
+  //     they were not written at. Silent garbage, where the pre-ENC-995 fixed
+  //     stride was merely redundant.
+  // =======================================================================
+  {
+    std::printf("-- [8] a size-equality guard cannot see a changed stride --\n");
+    Fixture f;
+    for (int i = 0; i < 10; ++i)                    // ten 45 deg wedges -> 9 chords
+      f.add(kPi * (45.0 * i) / 180.0, kPi * (45.0 * (i + 1)) / 180.0, kROuter);
+    auto src = dc::makeBufferByteSource(f.ingest);
+    dc::ArcOptions ao;                              // derived
+    dc::CpuBufferStore store;
+    auto first = pass.compileInto(dc::Mark::Arc, f.enc, f.tables, Fixture::kTable,
+                                  src, store, 100, 200, 300, /*fromRow=*/0,
+                                  nullptr, dc::LineStyle::Line2d, ao);
+    const std::uint32_t segs0 = first.geometry.vertexCount / (6u * 10u);
+    check(segs0 == 9, "ten 45 deg wedges derive 9 chords each (store " +
+                          std::to_string(store.getCpuDataSize(300)) + " B)");
+
+    // widen row 9 from 45 to 46 degrees IN PLACE -> the derived count becomes 10,
+    // and 10 wedges x 9 chords == 9 wedges x 10 chords, so the byte count the
+    // old guard compared against matches by coincidence.
+    updateF32(f.ingest, Fixture::kT1, /*byteOffset=*/9 * 4,
+              static_cast<float>(kPi * (360.0 + 1.0) / 180.0));
+    auto again = pass.compileInto(dc::Mark::Arc, f.enc, f.tables, Fixture::kTable,
+                                  src, store, 100, 200, 300, /*fromRow=*/9,
+                                  nullptr, dc::LineStyle::Line2d, ao);
+    const std::uint32_t segs1 = again.geometry.vertexCount / (6u * 10u);
+    check(segs1 > segs0, "the in-place widen RAISED the derived count " +
+                             std::to_string(segs0) + " -> " +
+                             std::to_string(segs1));
+    check(static_cast<std::size_t>(10) * segs0 ==
+              static_cast<std::size_t>(9) * segs1,
+          "and the two layouts are the SAME byte count (10*" +
+              std::to_string(segs0) + " == 9*" + std::to_string(segs1) +
+              ") — which is why a size check cannot see it");
+
+    auto clean = pass.compile(dc::Mark::Arc, f.enc, f.tables, Fixture::kTable, src,
+                              100, 200, 300, nullptr, dc::LineStyle::Line2d, ao);
+    const bool ok = store.getCpuDataSize(300) >= clean.bytes.size() &&
+                    std::memcmp(store.getCpuData(300), clean.bytes.data(),
+                                clean.bytes.size()) == 0;
+    check(ok, "the store still matches a clean full compile byte for byte (" +
+                  std::to_string(clean.bytes.size()) + " B)");
   }
 
   std::printf("\n=== %d passed, %d failed ===\n", passed, failed);
