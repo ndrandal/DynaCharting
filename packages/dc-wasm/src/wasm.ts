@@ -85,6 +85,17 @@ export interface DcEngineHostInstance {
   listResources(): string;
   getBufferBytes(bufferId: number): Uint8Array;
   bufferSize(bufferId: number): number;
+  /**
+   * Export the LIVE scene as SceneDocument JSON — the structural half of a
+   * save/snapshot (ENC-984). Returns a COPIED JS string, unlike
+   * getBufferBytes()/framebuffer() which hand back a live view into the WASM
+   * heap that the next call can invalidate; a document is meant to be held, so
+   * it is copied at the boundary and is safe to keep across renders.
+   *
+   * Buffer BYTES are not inlined — the document carries each buffer's
+   * byteLength and you read the contents with getBufferBytes(id).
+   */
+  getSceneDocument(compact: boolean): string;
   delete(): void;
 }
 

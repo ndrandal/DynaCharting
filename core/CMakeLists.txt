@@ -1864,6 +1864,14 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_d80_2_binding_evaluator PRIVATE dc)
   add_test(NAME dc_d80_2_binding_evaluator COMMAND dc_d80_2_binding_evaluator)
 
+  # ENC-984 Scene -> SceneDocument export (the inverse of SceneReconciler);
+  # full loop: commands -> Scene -> document -> JSON -> Scene -> identical JSON.
+  add_executable(dc_enc984_scene_export
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_enc984_scene_export.cpp"
+  )
+  target_link_libraries(dc_enc984_scene_export PRIVATE dc)
+  add_test(NAME dc_enc984_scene_export COMMAND dc_enc984_scene_export)
+
   # D80.3 Binding GL integration (needs OSMesa)
 
   # D81.1 Ingest backpressure (drop counter + overflow callback)

@@ -171,6 +171,69 @@ for (const k of statsKeys) {
 }
 
 // ---------------------------------------------------------------------------
+// 3b. getSceneDocument — ENC-984. The structural half of a save/snapshot: the
+//     LIVE scene exported as SceneDocument JSON, in the exact shape the engine's
+//     own parseSceneDocument/SceneReconciler restore from. Before ENC-984 the
+//     C++ serializeSceneDocument existed and was round-trip tested, but was
+//     never bound here — `strings dc_engine_host.wasm | grep -c sceneDocument`
+//     was 0 and this method did not exist on the module, so a browser could
+//     build a chart and never read its structure back.
+// ---------------------------------------------------------------------------
+console.log("\n[getSceneDocument] export the live scene as SceneDocument JSON");
+
+assert(typeof host.getSceneDocument === "function", "getSceneDocument() present on the module");
+
+const docJson = host.getSceneDocument(false);
+assert(typeof docJson === "string" && docJson.length > 0, "returns a non-empty string");
+
+// A copied JS string, not a view into the WASM heap: it must survive the kind of
+// call that invalidates getBufferBytes()'s typed_memory_view.
+const heldDoc = docJson;
+host.applyDataBatch(encodeBatch([{ op: OP_APPEND, bufferId: 20, offset: 4, payload: Uint8Array.from([9, 9]) }]));
+assert(heldDoc === docJson && heldDoc.length > 0, "the returned document survives a later applyDataBatch (it is a copy)");
+
+const doc = JSON.parse(docJson);
+assert(doc.version === 1, `document version == 1 (got ${doc.version})`);
+
+// The scene built in step 1: pane 1, layer 2, drawItem 3, buffers 10 & 20,
+// geometry 100. Every id must be present, with its real properties — not just
+// an id list (which is all listResources() has ever given).
+assert(!!doc.panes && !!doc.panes["1"], "pane 1 present");
+assert(doc.panes["1"].name === "P", `pane 1 name == "P" (got ${doc.panes?.["1"]?.name})`);
+assert(!!doc.layers?.["2"] && doc.layers["2"].paneId === 1, "layer 2 present and parented to pane 1");
+assert(!!doc.geometries?.["100"], "geometry 100 present");
+assert(
+  doc.geometries["100"].vertexBufferId === 10 && doc.geometries["100"].format === "pos2_clip",
+  "geometry 100 carries vertexBufferId 10 + format pos2_clip",
+);
+const di = doc.drawItems?.["3"];
+assert(!!di, "drawItem 3 present");
+assert(di?.layerId === 2, "drawItem 3 parented to layer 2");
+assert(di?.pipeline === "triSolid@1", `drawItem 3 pipeline == triSolid@1 (got ${di?.pipeline})`);
+assert(di?.geometryId === 100, "drawItem 3 bound to geometry 100");
+assert(
+  Array.isArray(di?.color) && di.color[0] === 1 && di.color[1] === 0 && di.color[2] === 0,
+  `drawItem 3 color == red (got ${JSON.stringify(di?.color)})`,
+);
+
+// Structure here, BYTES there: the document reports byteLength and the caller
+// reads the contents with the existing getBufferBytes(id).
+assert(!!doc.buffers?.["10"], "buffer 10 present in the document");
+assert(
+  doc.buffers["10"].byteLength === 24,
+  `buffer 10 byteLength == 24 (got ${doc.buffers?.["10"]?.byteLength})`,
+);
+assert(
+  doc.buffers["10"].data === undefined,
+  "buffer bytes are NOT inlined (read them with getBufferBytes)",
+);
+
+// compact=true must drop defaulted fields and stay a strict subset in size.
+const compactJson = host.getSceneDocument(true);
+assert(compactJson.length < docJson.length, `compact document is smaller (${compactJson.length} < ${docJson.length})`);
+assert(JSON.parse(compactJson).drawItems["3"].pipeline === "triSolid@1", "compact document still carries the pipeline binding");
+
+// ---------------------------------------------------------------------------
 // 4. render()/pick() are present (callable) but require WebGPU. We only assert
 //    the methods exist on the surface (the browser harness validates pixels).
 // ---------------------------------------------------------------------------
@@ -187,4 +250,4 @@ if (failures > 0) {
   console.error(`\nENC-506 dc-wasm node validation FAILED (${failures} assertion(s))`);
   process.exit(1);
 }
-console.log("\nENC-506 @repo/dc-wasm node core+ingest validation PASS");
+console.log("\nENC-506 @repo/dc-wasm node core+ingest validation PASS (incl. ENC-984 getSceneDocument)");

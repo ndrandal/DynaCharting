@@ -57,6 +57,7 @@
 #include "dc/text/TextLayout.hpp"
 #include "dc/scene/Geometry.hpp"
 #include "dc/debug/Stats.hpp"
+#include "dc/document/SceneExport.hpp"
 
 namespace {
 
@@ -482,6 +483,41 @@ public:
         ingest_.getBufferSize(static_cast<dc::Id>(bufferId)));
   }
 
+  // ---- ENC-984: getSceneDocument(compact) -> SceneDocument JSON -----------
+  // Export the LIVE scene as a SceneDocument JSON string — the structural half
+  // of a save/snapshot. dc::serializeSceneDocument has existed and been
+  // round-trip tested since D77 (d77_1/d79_1/d80_1) but had exactly one
+  // non-test caller, the Dawn-gated gallery demo, and was never bound here: the
+  // browser could build a chart and never read its structure back. This is that
+  // binding, plus the Scene -> SceneDocument extraction it needs (this host
+  // owns a Scene, not a document — see dc/document/SceneExport.hpp).
+  //
+  // RETURN SHAPE — a std::string, i.e. a COPIED JS string, deliberately NOT a
+  // typed_memory_view like framebuffer()/getBufferBytes(). Those two return a
+  // live view into the WASM heap that the very next render()/applyDataBatch()
+  // invalidates, which is why both their callers must copy immediately (see the
+  // Uint8Array.from in EngineHost.getBufferBytes). For a document that tradeoff
+  // is backwards: it is kilobytes, read at save time rather than per frame, and
+  // its whole purpose is to be HELD (stringified, stored, sent) across exactly
+  // the operations that would dangle a view. Embind copies std::string into a
+  // JS string at the call, so the result is owned by the caller and safe
+  // forever; the caller also gets JSON.parse directly instead of having to
+  // slice + TextDecode a byte view.
+  //
+  // The bytes behind the buffers are NOT inlined: the document carries each
+  // buffer's byteLength, and the caller reads the contents with the existing
+  // getBufferBytes(id). Structure here, bytes there.
+  //
+  // viewport width/height come from the last successful render() (0 before the
+  // first one), which is the only place this host learns the surface size.
+  std::string getSceneDocument(bool compact) const {
+    dc::SceneDocument doc;
+    dc::sceneToDocument(scene_, doc);
+    doc.viewportWidth = lastWidth_;
+    doc.viewportHeight = lastHeight_;
+    return dc::serializeSceneDocument(doc, compact);
+  }
+
 private:
   // Bring up the DawnSceneRenderer on first use (device acquisition SUSPENDS via
   // ASYNCIFY in the browser). No atlas / textures supplied, so textSDF@1 /
@@ -584,5 +620,6 @@ EMSCRIPTEN_BINDINGS(dc_engine_host) {
       .function("geometryCount", &DcEngineHost::geometryCount)
       .function("listResources", &DcEngineHost::listResources)
       .function("getBufferBytes", &DcEngineHost::getBufferBytes)
-      .function("bufferSize", &DcEngineHost::bufferSize);
+      .function("bufferSize", &DcEngineHost::bufferSize)
+      .function("getSceneDocument", &DcEngineHost::getSceneDocument);
 }

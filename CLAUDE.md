@@ -48,12 +48,13 @@ ctest --test-dir build -R dc_d1_1_smoke              # run a single test by name
 The **default** build (no `-DDC_FETCH_DAWN`) builds `dc` + the pure-logic tests only — no renderer, fast, and needs no graphics API. To get the renderer + render/golden tests, opt into Dawn (see below).
 
 > **A green default `ctest` proves nothing about the renderer (LIMITATIONS.md DC-L01).** The
-> default configure registers **188** of the repo's **231** tests; the other **43** — every
+> default configure registers **189** of the repo's **232** tests; the other **43** — every
 > Dawn render and golden-parity test — plus `dc_gpu`, `dc_json_host` and the four headless
-> servers are excluded at *configure* time, so nothing reports them as missing. "188/188
+> servers are excluded at *configure* time, so nothing reports them as missing. "189/189
 > passed" is compatible with the renderer being completely broken. Verify with
-> `grep -c '^add_test(' build/core/CTestTestfile.cmake` (188) against
-> `grep -cE '^\s*add_test\(' core/CMakeLists.txt` (231).
+> `grep -c '^add_test(' build/core/CTestTestfile.cmake` (189) against
+> `grep -cE '^\s*add_test\(' core/CMakeLists.txt` (232). The pair moves as tests are added
+> (it was 188/231 before ENC-984); the **43-test gap** is the number that matters.
 
 CMake options: `DC_BUILD_TESTS` (default ON), `DC_WARNINGS_AS_ERRORS` (default OFF), `DC_FETCH_DAWN` (default OFF — see below).
 
@@ -130,6 +131,26 @@ family (`core/src/recipe/`) is **not bound**, so it is dead-code-eliminated and
 build. Exposing recipes to the browser is ENC-990; provisioning the toolchain
 (ENC-989) is what unblocks it, and does not by itself change what the module
 exports.
+
+> **Unbound means dead-stripped, and that is the whole mechanism (ENC-984).** A
+> tested C++ function that nothing in `dc_engine_host.cpp` names is simply not in
+> the artifact — `serializeSceneDocument` had been round-trip tested since D77 and
+> `strings dc_engine_host.wasm | grep -ci sceneDocument` was **0**. Adding one
+> `.function(...)` line to `EMSCRIPTEN_BINDINGS` is what makes it real, and the
+> artifact is committed, so **the export does not exist until you rebuild the wasm
+> and commit it**. Check an export the same way: `strings` for the name, then call
+> it from `scripts/validate-node.mjs`. Binding one function pulled in its
+> transitive code and grew the wasm by ~209 KB (2.72 MB → 2.93 MB) — expect that,
+> and do not read it as unrelated churn.
+
+**Scene export (ENC-984).** `getSceneDocument(compact)` returns the live scene as
+`SceneDocument` JSON — a **copied string**, not a `typed_memory_view` like
+`framebuffer()`/`getBufferBytes()`, so it is safe to hold across renders. Buffer
+**bytes** are deliberately not inlined: the document carries each buffer's
+`byteLength` and you read the contents with `getBufferBytes(id)`. Three schema
+sections always come back empty (`viewports`, `textOverlay`, `bindings`) because
+the `Scene` has no representation for them — **LIMITATIONS.md DC-L10**, which is
+the reason "serialize the scene" is not by itself view-state persistence.
 
 ### WebGPU / Dawn backend (`dc_gpu`)
 
