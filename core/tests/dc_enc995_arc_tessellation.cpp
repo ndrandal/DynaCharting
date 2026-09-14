@@ -349,27 +349,31 @@ int main() {
     for (int i = 0; i < 4; ++i)
       f.add(kPi * (20.0 * i) / 180.0, kPi * (20.0 * (i + 1)) / 180.0, kROuter);
     auto src = dc::makeBufferByteSource(f.ingest);
+    f.add(kPi * 80.0 / 180.0, kPi * 100.0 / 180.0, kROuter);  // 5 rows total
     dc::ArcOptions pinned; pinned.segmentsPerArc = 12;
     dc::CpuBufferStore store;
     pass.compileInto(dc::Mark::Arc, f.enc, f.tables, Fixture::kTable, src, store,
                      100, 200, 300, /*fromRow=*/0, nullptr,
                      dc::LineStyle::Line2d, pinned);
+    const std::size_t oneWedgeBytes = 12u * 6u * 24u;
 
-    // append ONE much wider wedge — under a derived count this would move the
-    // stride; under a pinned one nothing may move.
-    f.add(kPi * 20.0 / 180.0, kPi * 320.0 / 180.0, kROuter);
+    // RE-PACK A SUFFIX of rows that are already in the store — what a caller
+    // does after an in-place OP_UPDATE_RANGE edits the last row. `fromRow` is 4
+    // while the store already holds 5 wedges, so the sizes deliberately do NOT
+    // agree. With a pinned stride nothing can have moved, and the pre-ENC-995
+    // code wrote exactly one wedge here; a guard keyed on the store's SIZE
+    // instead of on whether the count was derived repacks all five.
     auto tail = pass.compileInto(dc::Mark::Arc, f.enc, f.tables, Fixture::kTable,
                                  src, store, 100, 200, 300, /*fromRow=*/4,
                                  nullptr, dc::LineStyle::Line2d, pinned);
-    const std::size_t oneWedgeBytes = 12u * 6u * 24u;
     check(tail.ok && tail.bytes.size() == oneWedgeBytes,
-          "pinned segmentsPerArc=12: the append wrote ONE wedge (" +
+          "pinned segmentsPerArc=12: re-packing a suffix wrote ONE wedge (" +
               std::to_string(tail.bytes.size()) + " B, expected " +
               std::to_string(oneWedgeBytes) + ")");
     check(tail.instanceRowIds.size() == 1,
-          "pinned: instanceRowIds carries the ONE new row, not all 5");
+          "pinned: instanceRowIds carries the ONE re-packed row, not all 5");
     check(store.getCpuDataSize(300) == 5u * oneWedgeBytes,
-          "pinned: the store holds 5 wedges at the unchanged stride");
+          "pinned: the store still holds 5 wedges at the unchanged stride");
   }
 
   // =======================================================================
