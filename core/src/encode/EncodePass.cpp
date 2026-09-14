@@ -239,7 +239,13 @@ int arcSegmentsFor(const ArcOptions& opts, double spanRadians) {
   if (perTurn < 1) perTurn = 1;
   const double span = std::fabs(spanRadians);
   if (!(span > 0.0)) return 1;
-  const double want = std::ceil(static_cast<double>(perTurn) * span / kTwoPi);
+  // The RELATIVE epsilon keeps an exact full turn at `perTurn` chords: 2pi
+  // round-tripped through the f32 angle columns lands ~3e-8 above 2pi, and a bare
+  // ceil would answer perTurn+1. Shaving 1e-6 of the quotient can only drop a
+  // count that was within a millionth of an integer, which moves the chord angle
+  // (and so the error bound) by the same millionth.
+  const double want =
+      std::ceil(static_cast<double>(perTurn) * span / kTwoPi * (1.0 - 1e-6));
   if (!(want >= 1.0)) return 1;
   if (want >= static_cast<double>(kMaxArcSegments)) return kMaxArcSegments;
   return static_cast<int>(want);
