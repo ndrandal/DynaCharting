@@ -14,11 +14,12 @@ If a re-check disagrees with the entry, the entry is wrong — fix it in the sam
 you were doing. See [§H — How this file stays true](#h--how-this-file-stays-true); it exists
 because the previous attempt at this document did not.
 
-**Verified in full at `6684a00` on 2026-09-14**, except the six entries restamped `3780752`
-(DC-L01, DC-L05, DC-L06, DC-L07, DC-L08, DC-L10 — ENC-984 changed files their `Re-check`
-commands name). Every command below was executed at the commit its entry stamps, and produced
-the output shown **there**. A stamp naming an earlier commit than the one that makes the command
-true is a bug in the entry, not a shortcut.
+**Verified in full at `6684a00` on 2026-09-14**, except six entries ENC-984 had to re-verify
+because it changed files their `Re-check` commands name: DC-L01, DC-L05, DC-L06, DC-L07 and
+DC-L08 at `3780752`, and DC-L10 at `0dbb0a3`. Every command below was executed at the commit
+**its own entry stamps**, and produced the output shown there. A stamp naming a commit where the
+command does not yet hold is a bug in the entry, not a shortcut — ENC-984 shipped five of those
+and corrected them.
 
 ---
 
@@ -506,9 +507,12 @@ why "serialize the scene" is not sufficient for it) and
 `byteLength` and you read the contents with `getBufferBytes(id)`. Structure and bytes are
 separate calls on purpose.
 
-**Verified at** `3780752`, 2026-09-14 — the node snippet and the grep run in the ENC-984
+**Verified at** `0dbb0a3`, 2026-09-14 — the node snippet and the grep run in the ENC-984
 worktree against the rebuilt wasm; cases 2/3/4 reproduced standalone against `libdc.a` and then
-pinned as test assertions.
+pinned as test assertions. Stamped at `0dbb0a3` and not at its parent on purpose: the `ctest`
+line above only produces the shown output once `test_known_lossy_round_trips` exists, and a
+stamp naming a commit where the command does not yet hold is exactly the defect this entry's
+own PR had to fix in five other entries.
 
 ---
 
