@@ -152,11 +152,9 @@ void sceneToDocument(const Scene& scene, SceneDocument& out) {
 
     // An unanchored item keeps anchorPoint EMPTY — that is how both the parser
     // and the reconciler spell "no anchor" (hasAnchor has no document field).
-    if (d->hasAnchor) {
-      dd.anchorPoint = anchorName(d->anchorPoint);
-      dd.anchorOffsetX = d->anchorOffsetX;
-      dd.anchorOffsetY = d->anchorOffsetY;
-    }
+    dd.anchorPoint = anchorName(d->anchorPoint);
+    dd.anchorOffsetX = d->anchorOffsetX;
+    dd.anchorOffsetY = d->anchorOffsetY;
 
     dd.visible = d->visible;
 
