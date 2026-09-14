@@ -562,6 +562,15 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_uce_encode PRIVATE dc)
   add_test(NAME dc_uce_encode COMMAND dc_uce_encode)
 
+  # ENC-995 — arc/wedge tessellation is ANGULAR, not a fixed per-wedge count:
+  # the compiled chord polyline stays within the analytic deviation bound at
+  # every span, and a widening incremental append repacks the buffer.
+  add_executable(dc_enc995_arc_tessellation
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_enc995_arc_tessellation.cpp"
+  )
+  target_link_libraries(dc_enc995_arc_tessellation PRIVATE dc)
+  add_test(NAME dc_enc995_arc_tessellation COMMAND dc_enc995_arc_tessellation)
+
   # ENC-605 (P1.14) — Manifest v0 parser (data / scales / coords / marks /
   # encoding): parses a JSON manifest, applies the §6.1 typing checks, and drives
   # the table -> scale -> encode -> mark pipeline to produce DrawItems + geometry.
