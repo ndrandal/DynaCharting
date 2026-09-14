@@ -160,14 +160,21 @@ MarkSpec markSpecOf(Mark mark, LineStyle lineStyle = LineStyle::LineAA);
 // R = 450 with the default 72. It is derived from the WIDEST wedge and applied
 // uniformly to every row on purpose: compileArc's incremental path needs row r's
 // bytes at a regular r * (segs * 6 * stride) offset, which a per-row count would
-// break. See dc_enc995_arc_tessellation for the measured table.
+// break. A span wider than a full turn is clamped to one: it covers the circle
+// and nothing more, and without the clamp a degrees-for-radians angle column
+// costs 170x the vertices through the default options every manifest arc gets.
+// See dc_enc995_arc_tessellation for the measured table.
 // ---------------------------------------------------------------------------
 struct ArcOptions {
   PolarParams polar{};       // center (defaults to clip origin 0,0)
 
   // 0 (the default) => derive from segmentsPerTurn as above. A POSITIVE value is
   // an explicit per-wedge override and reproduces the pre-ENC-995 behaviour
-  // exactly (the byte-level tests pin it that way).
+  // exactly (the byte-level tests pin it that way) — including compileInto's
+  // true tail append, which a DERIVED count cannot offer: the derived stride can
+  // move under an already-packed buffer, so compileInto repacks the whole table
+  // whenever the count is derived. Pin this if you have an arc table big enough
+  // for that to matter.
   int segmentsPerArc{0};
 
   // Chords per FULL TURN when deriving. 72 => 5 deg/chord => <= 0.43 px error at
@@ -264,6 +271,13 @@ class EncodePass {
   //
   // `fromRow` is the row count packed on the PREVIOUS tick (0 on the first). The
   // caller tracks it. A `fromRow` >= totalRows is a no-op tail (ok, empty bytes).
+  //
+  // ENC-995 EXCEPTION, Mark::Arc with a DERIVED chord count (the ArcOptions
+  // default): the stride is a function of the table's widest wedge, so a wider
+  // appended row changes it and invalidates what is already packed. Such a call
+  // repacks from row 0, and then `bytes` and `instanceRowIds` cover the WHOLE
+  // table, not the tail — append them and you duplicate every earlier row. Set
+  // `arc.segmentsPerArc` explicitly to keep the true tail contract above.
   EncodeResult compileInto(Mark mark, const Encoding& enc,
                            const TableStore& tables, Id tableId,
                            const BufferByteSource& src, CpuBufferStore& store,
