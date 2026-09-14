@@ -447,8 +447,9 @@ int main() {
     // widen row 9 from 45 to 46 degrees IN PLACE -> the derived count becomes 10,
     // and 10 wedges x 9 chords == 9 wedges x 10 chords, so the byte count the
     // old guard compared against matches by coincidence.
+    // row 9 spans [405 deg, 450 deg]; move its end to 451 deg -> a 46 deg span.
     updateF32(f.ingest, Fixture::kT1, /*byteOffset=*/9 * 4,
-              static_cast<float>(kPi * (360.0 + 1.0) / 180.0));
+              static_cast<float>(kPi * 451.0 / 180.0));
     auto again = pass.compileInto(dc::Mark::Arc, f.enc, f.tables, Fixture::kTable,
                                   src, store, 100, 200, 300, /*fromRow=*/9,
                                   nullptr, dc::LineStyle::Line2d, ao);
