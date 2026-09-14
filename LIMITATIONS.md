@@ -14,8 +14,11 @@ If a re-check disagrees with the entry, the entry is wrong — fix it in the sam
 you were doing. See [§H — How this file stays true](#h--how-this-file-stays-true); it exists
 because the previous attempt at this document did not.
 
-**Verified in full at `6684a00` on 2026-09-14.** Every command below was executed at that
-commit and produced the output shown.
+**Verified in full at `6684a00` on 2026-09-14**, except the six entries restamped `3780752`
+(DC-L01, DC-L05, DC-L06, DC-L07, DC-L08, DC-L10 — ENC-984 changed files their `Re-check`
+commands name). Every command below was executed at the commit its entry stamps, and produced
+the output shown **there**. A stamp naming an earlier commit than the one that makes the command
+true is a bug in the entry, not a shortcut.
 
 ---
 
@@ -60,7 +63,7 @@ test, taking the pair from 188/231 to **189/232** — the gap is still exactly t
 block. Read the *difference*, not the left-hand number: a change that grows the registered count
 tells you nothing about the renderer either.
 
-**Verified at** `937538a`, 2026-09-14 — counted statically from `core/CMakeLists.txt` and
+**Verified at** `3780752`, 2026-09-14 — counted statically from `core/CMakeLists.txt` and
 empirically from a real default configure in the ENC-984 worktree; both give 189 of 232, gap 43.
 
 ---
@@ -243,7 +246,7 @@ sed -n '921,940p' packages/dc-wasm/src/EngineHost.ts    # the deferral is stated
 **Ticket.** None for the deep fix. [ENC-696](https://linear.app/encultured/issue/ENC-696)
 (`d6b5acd`) fixed the blit only.
 
-**Verified at** `937538a`, 2026-09-14 — re-run in the ENC-984 worktree (which edits
+**Verified at** `3780752`, 2026-09-14 — re-run in the ENC-984 worktree (which edits
 `EngineHost.ts`, shifting the `sed` range by +25): both real `core.framebuffer()` consumers
 (`captureThumbnail`, `blitFramebuffer`) still copy-then-flip.
 
@@ -288,7 +291,7 @@ npx vitest run packages/dc-wasm/src/EngineHost.rejections.test.ts
 
 **Ticket.** None for the residuals.
 
-**Verified at** `937538a`, 2026-09-14 — all four residuals read in source and unmoved by
+**Verified at** `3780752`, 2026-09-14 — all four residuals read in source and unmoved by
 ENC-984 (its insertion is below both `sed` ranges); regression test run green as part of
 `pnpm test` (18 files, 185 tests — ENC-984 adds `EngineHost.sceneDocument.test.ts`).
 
@@ -328,7 +331,7 @@ See §C3 — this exact confusion produced a wrong diagnosis once already.
 **Ticket.** None. Export `renderPick` / document the raw contract if the raw surface is ever
 meant to be used directly.
 
-**Verified at** `937538a`, 2026-09-14 — re-run in the ENC-984 worktree, which edits
+**Verified at** `3780752`, 2026-09-14 — re-run in the ENC-984 worktree, which edits
 `dc_engine_host.cpp` (+1 line above `pick`, bindings block now `584-624`) **and rebuilds the
 committed wasm**. `renderPick` is still absent from the rebuilt artifact: adding an export does
 not drag in neighbouring symbols.
@@ -389,7 +392,7 @@ is vertex-buffer byte packing (ENC-714).
 **Ticket.** None. Either expose the hierarchy transforms through the manifest op dispatch or
 mark them explicitly as internal/unshipped.
 
-**Verified at** `937538a`, 2026-09-14 — dispatch tables read; `strings` re-run on the wasm
+**Verified at** `3780752`, 2026-09-14 — dispatch tables read; `strings` re-run on the wasm
 **as rebuilt by ENC-984** (`treemap` still 0, and so is `recipe`), per-header includer counts
 re-run. A rebuild that adds one export does not resurrect dead-stripped code — only a binding
 does.
@@ -423,35 +426,55 @@ contradicts this file, this file is newer by construction.
 
 ---
 
-## DC-L10 — An exported scene document cannot carry viewports, text overlay or bindings 🟠
+## DC-L10 — Exporting a Scene as a SceneDocument is lossy in four specific places 🟠
 
 **Claim.** `getSceneDocument()` / `dc::sceneToDocument` (ENC-984) export a `SceneDocument` from
-the live `Scene`, and that document is **structurally complete for everything the Scene holds**
-— panes, layers, transforms, buffers (byteLength), geometries, draw items and every style field,
-proven byte-identical across a full save/restore loop by `dc_enc984_scene_export`. But three
-sections of the `SceneDocument` schema come back **empty, always**: `viewports`, `textOverlay`
-and `bindings`.
+the live `Scene`. The extraction itself is faithful for every field the document schema has a
+slot for — pinned field-by-field, and for **every** `blendMode` / `anchorPoint` / `gradientType`
+/ vertex-format spelling, by `dc_enc984_scene_export`. But **save → restore is not the identity
+function**, in four places, and one of them is invisible to the obvious test.
 
-**Why.** Those three are *document-only* declarations. `SceneReconciler::reconcile` never
-applies them to the `Scene` — it reconciles buffers, transforms, panes, layers, geometries and
-draw items, and nothing else — and hosts read them straight off the parsed document instead
-(`JsonHost` consumes `textOverlay` as a `TEXT` protocol message; `BindingEvaluator` takes
-`DocBinding` values directly). There is therefore nothing in a `Scene` from which they could be
-reconstructed, and inventing plausible values would be worse than omitting them.
+**1. `viewports`, `textOverlay`, `bindings` always come back empty.** They are *document-only*
+declarations. `SceneReconciler::reconcile` never applies them to the `Scene` (grep: 0 hits) —
+hosts read them straight off the parsed document instead (`JsonHost` emits `textOverlay` as a
+`TEXT` protocol message; `BindingEvaluator` takes `DocBinding` values directly). Nothing in a
+`Scene` can reconstruct them. **`DocViewport` is the one that bites**: it holds the
+`xMin/xMax/yMin/yMax` data-space window and the pan/zoom/link flags, so a naive "export the
+scene to save the view" **does not save the view**. The affine `DocTransform` the pan/zoom
+currently drives *is* exported, so the visible framing survives; the declared data window and
+the interaction policy do not.
 
-**What this costs you.** Round-tripping a document *through* a Scene is lossy in exactly these
-three places:
+**2. Geometry bounds have no field in the schema.** `boundsMin`/`boundsMax`/`boundsValid` are
+live Scene state — `DawnSceneRenderer.cpp:359` frustum-culls on them — set by the real
+`setGeometryBounds` command. `DocGeometry` has no slot, so they cannot be exported at all. Note
+the *older* D45 `dc::serializeScene` (`core/src/session/SceneSerializer.cpp:156-166`) **does**
+carry them: this dialect is less faithful here, which is the reason the ENC-984 helper is named
+`serializeSceneAsDocument` rather than overloading `serializeScene`.
 
-    parse(json) -> reconcile -> Scene -> sceneToDocument -> serialize
+**3. A stale value behind a cleared flag is exported but not restored.** Two reachable cases,
+both with `reconcile.ok == 1`:
 
-loses the viewports / textOverlay / bindings that `json` carried. `DocViewport` is the one that
-bites: it holds the `xMin/xMax/yMin/yMax` data-space window and the pan/zoom/link flags, so a
-naive "export the scene to save the view" **does not save the view**. The affine `DocTransform`
-that the pan/zoom currently drives *is* exported, so the visible framing survives; the declared
-data window and the interaction policy do not.
+  * `setDrawItemGradient type:"none"` clears the type and leaves `angle`/`center`/`radius` in
+    the Scene. The export carries them; the reconciler only emits `setDrawItemGradient` when the
+    type is non-empty → `gradientAngle 1.25 → 0`, `gradientCenter [0.25,0.75] → [0.5,0.5]`,
+    `gradientRadius 0.875 → 0.5`.
+  * `setPaneClearColor enabled:false` clears only `hasClearColor` and leaves the colour. The
+    export carries it; `reconcilePanes` only emits `setPaneClearColor` when the document says
+    `hasClearColor` → `clearColor [0.5,0.25,0.125,1] → [0,0,0,1]`.
+
+  In both, **`sceneToDocument` is not the culprit** — it exports what the Scene holds. The loss
+  is in `SceneReconciler`, so it predates ENC-984 and applies to any document restore.
+
+**4. …and in `compact` mode that loss is SILENT.** Compact omits fields at their default on
+*both* sides, so the same round trip reports byte-identical output while the values are gone. An
+equality check cannot see a field that neither side serialized. This is why
+`dc_enc984_scene_export`'s round-trip assertion is scoped to the states it builds and explicitly
+does **not** claim general losslessness; `test_known_lossy_round_trips` pins all four cases,
+including the compact-mode false positive.
 
 **Re-check.**
 ```bash
+# 1 — the three document-only sections, and the reconciler that never applies them
 node -e 'const m=await import("./packages/dc-wasm/wasm/dc_engine_host.js");
 const M=await m.default(), h=new M.DcEngineHost();
 h.applyControl(JSON.stringify({cmd:"createPane",id:1,name:"p"}));
@@ -459,28 +482,33 @@ const d=JSON.parse(h.getSceneDocument(false));
 console.log("viewports",JSON.stringify(d.viewports),"textOverlay",JSON.stringify(d.textOverlay),
             "bindings",JSON.stringify(d.bindings));' --input-type=module
 # -> viewports {} textOverlay {"fontSize":12,"color":"#b2b5bc","labels":[]} bindings {}
-#    i.e. present in the schema and empty of content — the textOverlay is the struct
-#    default (12px, #b2b5bc, zero labels), not anything the scene actually declared.
+#    present in the schema, empty of content; the textOverlay is the struct default.
 grep -c 'viewports\|textOverlay\|bindings' core/src/document/SceneReconciler.cpp   # 0
+
+# 2, 3 and 4 — all pinned as executable assertions
+ctest --test-dir build -R dc_enc984_scene_export --output-on-failure
+# -> [enc984] known-lossy cases are pinned, not papered over ... all tests passed
 ```
 
 **Workaround.** Keep the document you applied. A host that got its scene from
-`parseSceneDocument` already holds the `viewports` / `textOverlay` / `bindings` it parsed;
-merge those three sections back into the exported document before saving. A host that built its
-scene from commands never had them and must track them itself.
+`parseSceneDocument` already holds the `viewports` / `textOverlay` / `bindings` it parsed; merge
+those sections back into the exported document before saving. A host that built its scene from
+commands never had them and must track them itself. For case 3, re-issue the clearing command
+after restore. For case 2, use the D45 `dc::serializeScene` if bounds are what you need.
 
 **Ticket.** None for the deep fix (it needs the Scene to own the three declarations, or the host
-to own a document alongside the Scene). Relevant to
-[ENC-949](https://linear.app/encultured/issue/ENC-949) (view-state persistence — this is the
-entry that says why "serialize the scene" is not sufficient for it) and
+to own a document alongside the Scene, plus reconciler changes for case 3). Relevant to
+[ENC-949](https://linear.app/encultured/issue/ENC-949) (view-state persistence — this entry is
+why "serialize the scene" is not sufficient for it) and
 [ENC-986](https://linear.app/encultured/issue/ENC-986) (snapshot/restore).
 
-**See also** the same boundary for *buffer bytes*, which is deliberate rather than a
-limitation: the document carries each buffer's `byteLength` and you read the contents with
-`getBufferBytes(id)`. Structure and bytes are separate calls on purpose.
+**Not a limitation, by design:** buffer **bytes**. The document carries each buffer's
+`byteLength` and you read the contents with `getBufferBytes(id)`. Structure and bytes are
+separate calls on purpose.
 
-**Verified at** `937538a`, 2026-09-14 — both commands above run in the ENC-984 worktree against
-the rebuilt wasm; reconciler grep gives 0 hits.
+**Verified at** `3780752`, 2026-09-14 — the node snippet and the grep run in the ENC-984
+worktree against the rebuilt wasm; cases 2/3/4 reproduced standalone against `libdc.a` and then
+pinned as test assertions.
 
 ---
 
