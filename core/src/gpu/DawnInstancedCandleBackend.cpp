@@ -8,6 +8,7 @@
 // instanced 12-verts-per-candle draw through GpuDevice::drawInstanced.
 #include "dc/gpu/DawnInstancedCandleBackend.hpp"
 
+#include "dc/render/BarSizing.hpp"
 #include "dc/render/CpuBufferStore.hpp"
 #include "dc/scene/Scene.hpp"
 #include "dc/scene/Geometry.hpp"
@@ -54,11 +55,24 @@ constexpr std::uint32_t kCandleStride = 24;
 //       bytes  0..47  c0/c1/c2  — three mat3 columns (each a vec4, xyz used)
 //       bytes 48..63  colorUp   — vec4
 //       bytes 64..79  colorDown — vec4
-//       bytes 80..95  wickHalf  — vec4 (.x = wick half-width in CLIP space)
+//       bytes 80..95  wickHalf  — vec4 (.x = wick half-width in CLIP space,
+//                                       .y = resolved BODY half-width, clip; 0 = off)
 //     The wick half-width is passed through a DEDICATED uniform field (wickHalf.x)
 //     computed host-side as a fixed pixel width in clip space — NOT smuggled into
 //     a mat3 padding lane (which the Mat3 packer would zero). See the name-driven
 //     u_wickHalf case in DawnDevice::createBindGroup.
+//   * ENC-1257 — BODY WIDTH IS RESOLVED HOST-SIDE. wickHalf.y carries the body
+//     half-width the bar-sizing rule chose (dc/render/BarSizing.hpp): the
+//     per-instance `halfWidth` is a data-space number and therefore a
+//     scale-free RATIO, which is why the same 0.4 constant fused the showcase's
+//     candles into slabs at a 4.5px pitch and produced 47px blocks on the live
+//     capture. The host derives the bar pitch from the instance x values,
+//     converts to pixels through the transform + viewport, applies the pixel
+//     floor/ceiling, and hands the result back in clip space. When the rule does
+//     NOT apply (a single bar, no viewport, degenerate transform) wickHalf.y is
+//     0 and the shader falls back to the per-instance halfWidth EXACTLY as
+//     before — which is what keeps every pre-existing single-bar render
+//     byte-identical.
 
 const char* kInstCandleWgsl = R"WGSL(
 struct Uniforms {
@@ -67,7 +81,7 @@ struct Uniforms {
   c2       : vec4<f32>,   // transform column 2 (xyz)
   colorUp  : vec4<f32>,   // bytes 48..63
   colorDown: vec4<f32>,   // bytes 64..79
-  wickHalf : vec4<f32>,   // bytes 80..95 (.x = wick half-width, clip space)
+  wickHalf : vec4<f32>,   // bytes 80..95 (.x = wick half, .y = body half; clip)
 };
 @group(0) @binding(0) var<uniform> u : Uniforms;
 
@@ -119,10 +133,23 @@ fn vs_main(@builtin(vertex_index) vid : u32,
     let hwClip = wickHalfWidthClip();
     clip = vec2<f32>(center.x + mix(-hwClip, hwClip, uv.x), center.y);
   } else {
-    let x0 = cx - hw;
-    let x1 = cx + hw;
-    let p = m * vec3<f32>(mix(x0, x1, uv.x), mix(body0, body1, uv.y), 1.0);
-    clip = p.xy;
+    let bodyHalf = u.wickHalf.y;
+    if (bodyHalf > 0.0) {
+      // ENC-1257: the host resolved the body half-width in CLIP space from the
+      // bar pitch. Transform the candle's centre and offset along clip x, the
+      // same construction the wick above uses. For the affine, shear-free
+      // transforms charts actually carry this is identical to transforming
+      // (cx±hw) directly; it differs only under an x/y shear, which no chart
+      // transform has.
+      let y = mix(body0, body1, uv.y);
+      let center = m * vec3<f32>(cx, y, 1.0);
+      clip = vec2<f32>(center.x + mix(-bodyHalf, bodyHalf, uv.x), center.y);
+    } else {
+      let x0 = cx - hw;
+      let x1 = cx + hw;
+      let p = m * vec3<f32>(mix(x0, x1, uv.x), mix(body0, body1, uv.y), 1.0);
+      clip = p.xy;
+    }
   }
 
   var out : VsOut;
