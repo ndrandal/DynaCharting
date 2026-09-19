@@ -16,6 +16,7 @@
 // the rendered body was `2*hw*sx*W/2` and the gap was whatever remained).
 #include "dc/render/BarSizing.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -278,6 +279,51 @@ int main() {
     check(violations == 0, "sweep 1..4000 bars x 2 widths: no invariant broken");
     check(degradedFrom == dc::maxLegibleBarCount(kShowcaseCanvasPx) + 1,
           "degradation begins exactly one bar past maxLegibleBarCount");
+  }
+
+  // ---------------------------------------------------------------------------
+  // [10] THE WICK IS PART OF THE MARK. `instancedCandle@1` draws the wick at a
+  //      FIXED pixel width (1px half / 2px total, `wickHalfClip = 2/viewW`),
+  //      which the transform does not touch. Sizing the body correctly and
+  //      leaving the wick alone still fuses a dense chart, because at a 2.6px
+  //      pitch the 2px wick has already eaten the gap. `maxMarkHalfPx` is the
+  //      cap the backend applies to the wick as well.
+  // ---------------------------------------------------------------------------
+  {
+    const float kWickHalfPx = 1.0f;  // the engine's fixed wick half-width
+    auto wickAfterCap = [&](int bars, float W) {
+      const dc::BarMetrics m = dc::barMetricsForCount(bars, W);
+      return std::min(kWickHalfPx, m.maxMarkHalfPx);
+    };
+    const dc::BarMetrics m500 = dc::barMetricsForCount(500, kLivePlotPx);
+    check(m500.maxMarkHalfPx < kWickHalfPx,
+          "500 bars/1300px: the 2px wick alone would have eaten the gap");
+    check(near(m500.pitchPx - 2.0f * wickAfterCap(500, kLivePlotPx),
+               cfg.minGapPx, 1e-3f),
+          "500 bars: capping the wick restores exactly the 1px gap");
+    // Above a ~5px pitch the cap never binds — every existing scene is untouched.
+    check(wickAfterCap(10, kLivePlotPx) == kWickHalfPx,
+          "10 bars: the wick cap does not bind");
+    const dc::CandleBodyResolution d146 =
+        dc::resolveCandleBodyClip(0.5f, 0.15f, 1.0f, 128);
+    check(d146.maxMarkHalfClip > 2.0f / 128.0f,
+          "unchanged: d14_6's wick is wider than the cap, so the cap is inert");
+    const dc::CandleBodyResolution aapl = dc::resolveCandleBodyClip(
+        kAaplPitchData, kAaplHalfWidth, kAaplSx,
+        static_cast<int>(kShowcaseCanvasPx));
+    check(aapl.maxMarkHalfClip > 2.0f / kShowcaseCanvasPx,
+          "candles-aapl: 4.53px pitch still affords the full 2px wick");
+    // Whatever the counts, body and wick together never exceed the pitch minus
+    // the gap floor — the property the whole rule exists to guarantee.
+    int bad = 0;
+    for (int n = 1; n <= 650; ++n) {
+      const dc::BarMetrics m = dc::barMetricsForCount(n, kLivePlotPx);
+      const float markHalf = std::max(m.bodyPx * 0.5f,
+                                      std::min(kWickHalfPx, m.maxMarkHalfPx));
+      if (m.pitchPx - 2.0f * markHalf < cfg.minGapPx - 1e-3f) ++bad;
+    }
+    check(bad == 0,
+          "1..650 bars: body AND wick together always leave the 1px gap");
   }
 
   std::printf("=== ENC-1257 bar sizing: %d passed, %d failed ===\n", passed,

@@ -343,8 +343,6 @@ BackendStats DawnInstancedCandleBackend::renderDrawItem(GpuDevice& device,
   // passed through a DEDICATED uniform field (u_wickHalf) — not smuggled into a
   // mat3 padding lane, which the Mat3 packer would zero.
   const float* xform = resolveTransform(di, scene);
-  const float wickHalfClip =
-      viewW > 0 ? 2.0f / static_cast<float>(viewW) : 0.0f;
 
   // ENC-1257 — resolve the body half-width from the bar pitch. xform column 0's
   // x row is the data->clip x scale; the pitch and the nominal half-width were
@@ -354,6 +352,16 @@ BackendStats DawnInstancedCandleBackend::renderDrawItem(GpuDevice& device,
   // 0 means "rule does not apply" — the shader then uses the per-instance
   // halfWidth, i.e. exactly the pre-ENC-1257 geometry.
   const float bodyHalfClip = body.apply ? body.halfWidthClip : 0.0f;
+
+  // ENC-1257 — the wick is capped by the same rule. It is a FIXED pixel width
+  // and therefore does not shrink with the pitch: at 500 bars across 1300px the
+  // 2px wick alone consumes more than the pitch has to spare, so sizing the
+  // body correctly and leaving the wick alone STILL fuses the bars. Above a ~5px
+  // pitch the cap never binds and the wick is bit-for-bit what it was.
+  float wickHalfClip = viewW > 0 ? 2.0f / static_cast<float>(viewW) : 0.0f;
+  if (body.apply && body.maxMarkHalfClip < wickHalfClip) {
+    wickHalfClip = body.maxMarkHalfClip;
+  }
 
   UniformBinding uniforms[5];
   uniforms[0].kind = UniformBinding::Kind::Mat3;
