@@ -22,6 +22,7 @@
 
 import type { SceneManifest } from '../../src/scene/commands';
 import type { GrowthSync } from '../../src/engine/useReplay';
+import type { AxisDomainSpec } from '../../src/views/registry';
 
 // --- structural IDs (shared with instruction.json only via the buffer) ---
 const PANE = 10000;
@@ -89,4 +90,16 @@ export const growth: GrowthSync = {
   pipeline: 'instancedCandle@1',
   transformId: TRANSFORM,
   xField: 0, // byte offset of x (recordIndex) within a candle6 record
+};
+
+/**
+ * AXIS DOMAIN (ENC-1252 / chart-quality-bar SPEC D7). The chrome axes' bounds
+ * are MEASURED from this buffer, not typed into view.json: the candle6 records
+ * carry the record index (x, ± halfWidth) and the OHLC prices (y), which is
+ * exactly the domain the chart draws. One buffer, so the axis group is one
+ * entry — the price axis cannot be widened by anything the price pane does not
+ * contain.
+ */
+export const axisDomain: AxisDomainSpec = {
+  sources: [{ bufferId: CANDLE_BUFFER, format: 'candle6' }],
 };

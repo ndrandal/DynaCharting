@@ -8,6 +8,14 @@ export default defineConfig({
       include: ["packages/engine-host/src/**/*.ts", "packages/chart-controller/src/**/*.ts"],
       exclude: ["**/__tests__/**", "**/*.test.ts"],
     },
-    include: ["packages/**/__tests__/**/*.test.ts", "packages/**/*.test.ts"],
+    // apps/** is included (ENC-1252) so the showcase's pure chrome logic can be
+    // tested against the views' real committed captures. React/DOM code stays
+    // untested here — these are node-env tests over pure functions + bytes.
+    include: [
+      "packages/**/__tests__/**/*.test.ts",
+      "packages/**/*.test.ts",
+      "apps/**/*.test.ts",
+    ],
+    exclude: ["**/node_modules/**", "**/dist/**"],
   },
 });

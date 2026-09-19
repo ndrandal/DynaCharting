@@ -56,7 +56,10 @@ export default function App() {
     if (routeViewId) setLastViewId(routeViewId);
   }, [routeViewId]);
 
-  const { progress, playing, setPlaying, restart, loop, setLoop } = useViewSwitch(webgpu ? host : null, view);
+  const { axisDomain, progress, playing, setPlaying, restart, loop, setLoop } = useViewSwitch(
+    webgpu ? host : null,
+    view,
+  );
 
   // --- canvas slot routing (portal target for the one shared canvas) ---
   const [slot, setSlot] = useState<HTMLElement | null>(null);
@@ -114,9 +117,16 @@ export default function App() {
 
   // The logical-chart chrome overlay (axes/gridlines/legend/colorbar) + FPS HUD,
   // composited over the canvas in whichever slot is active. Driven by the active
-  // view's `chrome` metadata + its baked transform (data→clip→pixel).
+  // view's `chrome` metadata + its baked transform (data→clip→pixel), and — for
+  // the axis DOMAIN — by the live measurement taken off its streamed records
+  // (ENC-1252 / SPEC D7), not by a literal in the view file.
   const chromeOverlay = view ? (
-    <ChromeOverlay view={view} statsHub={statsHub} fpsVisible={fpsVisible} />
+    <ChromeOverlay
+      view={view}
+      statsHub={statsHub}
+      fpsVisible={fpsVisible}
+      observedDomain={axisDomain}
+    />
   ) : null;
 
   if (!webgpu) {

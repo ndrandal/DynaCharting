@@ -66,6 +66,15 @@ export {
   CLIP_RANGE,
 } from "./chart/scale";
 export type { Range, Transform1D, Transform2D, Scale } from "./chart/scale";
+// ENC-1252 (chart-quality-bar D7): streaming per-axis domain over the real
+// dataplane record stream — the client-side mirror of embassy's RangeTracker.
+export { DomainTracker, applyDomainPolicy, RECORD_LAYOUTS } from "./chart/domain";
+export type {
+  RecordLayout,
+  DomainSource,
+  DomainPolicy,
+  ObservedDomain,
+} from "./chart/domain";
 // Client-builder helpers (ENC-700): id allocator over the unified namespace.
 export { createIdAllocator } from "./chart/ids";
 export type { IdAllocator, ResourceKind } from "./chart/ids";
