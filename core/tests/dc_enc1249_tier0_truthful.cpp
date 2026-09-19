@@ -24,10 +24,11 @@
 //   B. SINGLE CANDLE (the per-mark case) with hand-computed extents, authored
 //      through the real CandleRecipe (instancedCandle@1), identity transform, so
 //      data y IS clip y and every expected row is arithmetic:
-//        B1  the WICK column's lit span is exactly low..high;
+//        B1  the mark's full vertical extent at cx is exactly low..high;
 //        B2  the BODY column's lit span is exactly open..close;
-//        B3  the wick strictly overhangs the body at BOTH ends (a body that is
-//            secretly the wick, or vice versa, dies here);
+//        B3  the wick strictly overhangs the body at BOTH ends, and B3b that the
+//            overhang is THIN (a body that is secretly the wick, or vice versa,
+//            dies on B2+B3+B3b);
 //        B4  an UP candle (close >= open) is the up colour and a DOWN candle the
 //            down colour;
 //        B5  the gap between two candles is clear (the marks are marks, not a slab).
@@ -452,11 +453,20 @@ void caseCandle(dc::DawnSceneRenderer& renderer, const Mode& mode) {
                 p.label, cxPx, wick.top, wick.bottom, bodyX, body.top,
                 body.bottom);
 
-    // B1 — the wick column spans low..high.
+    // B1 — the mark's FULL vertical extent at cx is low..high.
+    //
+    // Measured at cx this is the union of the wick and the body, because the body
+    // straddles cx — so B1 alone cannot prove the wick is the thing reaching
+    // low..high (a body drawn with the wick's extents satisfies it, which the
+    // --invert-data control demonstrates). B1 + B2 + B3 + B3b together do pin it:
+    // B1 fixes the total extent, B2 fixes the body, B3 fixes that something
+    // overhangs the body at both ends, and B3b fixes that the overhang is a thin
+    // wick rather than more body.
     const bool wickOk = wick.count > 0 &&
                         std::fabs(wick.top - rowHigh) <= kSpanTolPx &&
                         std::fabs(wick.bottom - rowLow) <= kSpanTolPx;
-    check(wickOk, std::string("B1 [") + p.label + "] wick spans low..high",
+    check(wickOk,
+          std::string("B1 [") + p.label + "] mark's full extent at cx is low..high",
           fmt("got [%d..%d] want [%.1f..%.1f]", wick.top, wick.bottom, rowHigh,
               rowLow));
 
@@ -477,6 +487,16 @@ void caseCandle(dc::DawnSceneRenderer& renderer, const Mode& mode) {
           std::string("B3 [") + p.label + "] wick overhangs the body both ends",
           fmt("above=%d below=%d (need > 30 each)", body.top - wick.top,
               wick.bottom - body.bottom));
+
+    // B3b — the part that overhangs the body is THIN: a wick, not more body.
+    // Probed off-centre (inside the body's x span, clear of the ~1 px wick) at a
+    // row just beyond each end of the body.
+    const int aboveRow = static_cast<int>(std::lround(rowClose)) - 8;
+    const int belowRow = static_cast<int>(std::lround(rowOpen)) + 8;
+    const bool thin = !f.lit(bodyX, aboveRow) && !f.lit(bodyX, belowRow);
+    check(thin, std::string("B3b [") + p.label + "] the overhang is a thin wick",
+          fmt("x=%d rows %d/%d lum %d/%d (want dark)", bodyX, aboveRow, belowRow,
+              f.lum(bodyX, aboveRow), f.lum(bodyX, belowRow)));
 
     // B4 — up/down colour follows close >= open.
     const int midRow = static_cast<int>(std::lround((rowClose + rowOpen) * 0.5));
