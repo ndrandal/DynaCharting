@@ -18,6 +18,15 @@
 //       fused-slab still in §1.1, rendered. Before ENC-1257 this scene produced
 //       runs of fused bodies; the test asserts 156 separate runs.
 //
+// WHICH RASTER. ENC-1249 established that a tier-0 pixel assertion must name the
+// raster it reads, because the raw Dawn readback is vertically mirrored against
+// what the user sees (LIMITATIONS.md DC-L05). This test reads the RAW readback
+// and says so — and it is sound here precisely because the property measured is
+// horizontal: a row flip permutes which row you land on, never the left-to-right
+// run structure within a row. Every candle below spans a symmetric y band, so
+// the scanned row is inside the body either way. Nothing here would change on
+// the presented raster.
+//
 // Dawn-gated, therefore EXCLUDED from the default ctest (LIMITATIONS.md DC-L01).
 // Run it with:
 //   cmake -B build-dawn -G Ninja -DDC_BUILD_TESTS=ON -DDC_FETCH_DAWN=ON
@@ -229,6 +238,33 @@ int main() {
           "candles-aapl: 156 bars are 156 separate runs (the slab is gone)");
     check(minOf(r.gaps) >= 1,
           "candles-aapl: min inter-bar gap >= 1px in the raster");
+  }
+
+  // --- [D] ENC-1249's tier-0 candle scene, at its exact numbers ---------------
+  // core/tests/dc_enc1249_tier0_truthful.cpp `caseCandle`: two candles at
+  // cx -0.45 / +0.45, halfWidth 0.20, identity transform, 256px wide. Its B2/B4
+  // probes read the body at cx+10px and its B5 probe requires x=W/2 clear. The
+  // bar-sizing rule clamps that 51.2px body to the 24px ceiling — a 12px
+  // half-width — so the cx+10 probe still lands on body, with 2px to spare. This
+  // case exists so that margin is measured on THIS branch rather than assumed,
+  // since the two tickets are in flight at the same time.
+  {
+    constexpr std::uint32_t W = 256;
+    // cx = 0 and 1 in data space; sx 0.9 and tx -0.45 put them at clip -0.45/+0.45.
+    const RowRuns r = renderRow(dev, backends, 2, 0.0f, 0.20f, 0.9f, -0.45f, W, H);
+    const dc::CandleBodyResolution res =
+        dc::resolveCandleBodyClip(0.9f, 0.20f, 0.9f, static_cast<int>(W));
+    const int cxPx = static_cast<int>((-0.45f * 0.5f + 0.5f) * W);  // ~70
+    std::printf("  [ENC-1249 scene] authored body %.1fpx -> drawn %.1fpx "
+                "(half %.1fpx); raster: %zu lit runs, min gap %d px\n",
+                2.0f * 0.20f * 0.9f * static_cast<float>(W) * 0.5f,
+                res.metrics.bodyPx, res.metrics.bodyPx * 0.5f, r.lit.size(),
+                minOf(r.gaps));
+    check(res.metrics.bodyPx * 0.5f > 10.0f,
+          "ENC-1249 compat: the drawn body half-width still exceeds its 10px probe");
+    check(static_cast<int>(r.lit.size()) == 2,
+          "ENC-1249 compat: two candles, two runs (B5's gap stays clear)");
+    (void)cxPx;
   }
 
   std::printf("=== ENC-1257 Dawn raster: %d passed, %d failed ===\n", passed,
