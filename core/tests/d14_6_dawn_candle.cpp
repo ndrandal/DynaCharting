@@ -16,8 +16,18 @@
 // vertex shader expands 12 verts/instance (6 body + 6 wick) and negates clip.y
 // (same convention as triSolid / instancedRect) so the WebGPU top-left
 // framebuffer matches the GL bottom-left readback. With the identity transform
-// used here, data y maps directly to clip y, so after the flip the HIGH (large y)
-// lands near framebuffer TOP and the LOW near framebuffer BOTTOM.
+// used here, data y maps directly to clip y, so after the negation the HIGH
+// (large y) lands near framebuffer BOTTOM and the LOW near framebuffer TOP.
+//
+// CORRECTED BY ENC-1249 (LIMITATIONS.md C5). This header used to claim the
+// opposite — high near the TOP — while the inline comment at the probe rows below
+// said the right thing. The raw readback is VERTICALLY MIRRORED relative to what a
+// user sees (LIMITATIONS.md DC-L05); the browser flips rows in
+// EngineHost.blitFramebuffer. Nothing here caught the contradiction because every
+// assertion below is up/down SYMMETRIC — a wick probe above and below the body, in
+// the same colour — so an upside-down frame satisfies all of them. If you need an
+// orientation-sensitive pixel assertion, that is dc_enc1249_tier0_truthful
+// (scripts/tier0.sh), which asserts on the PRESENTED raster.
 //
 // On this headless box the only Vulkan backend may be lavapipe (software). If
 // Dawn can't find an adapter, force the ICD:
