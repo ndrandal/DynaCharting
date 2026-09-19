@@ -126,10 +126,11 @@ static RowRuns renderRow(dc::DawnDevice& dev, dc::BackendRegistry& backends,
       R"({"cmd":"setDrawItemStyle","drawItemId":3,)"
       R"("colorUpR":0,"colorUpG":1,"colorUpB":0,"colorUpA":1,)"
       R"("colorDownR":1,"colorDownG":0,"colorDownB":0,"colorDownA":1})"), "style");
+  requireOk(cp.applyJsonText(R"({"cmd":"createTransform","id":50})"), "xform");
   std::snprintf(buf, sizeof(buf),
-                R"({"cmd":"createTransform","id":50,"sx":%.9g,"sy":1,"tx":%.9g,"ty":0})",
+                R"({"cmd":"setTransform","id":50,"sx":%.9g,"sy":1,"tx":%.9g,"ty":0})",
                 static_cast<double>(sx), static_cast<double>(tx));
-  requireOk(cp.applyJsonText(buf), "xform");
+  requireOk(cp.applyJsonText(buf), "setxform");
   requireOk(cp.applyJsonText(
       R"({"cmd":"attachTransform","drawItemId":3,"transformId":50})"), "attach");
 
@@ -149,7 +150,9 @@ static RowRuns renderRow(dc::DawnDevice& dev, dc::BackendRegistry& backends,
   dev.endRenderPass();
 
   std::vector<std::uint8_t> rgba(static_cast<std::size_t>(W) * H * 4, 0);
-  if (!dev.readFramebufferRGBA(rgba.data(), rgba.size(), W, H)) {
+  std::uint32_t gotW = 0, gotH = 0;
+  if (!dev.readFramebufferRGBA(rgba.data(), rgba.size(), &gotW, &gotH) ||
+      gotW != W || gotH != H) {
     std::fprintf(stderr, "readFramebufferRGBA failed\n");
     std::exit(1);
   }

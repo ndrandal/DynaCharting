@@ -2215,6 +2215,15 @@ if (DC_BUILD_TESTS)
     target_link_libraries(dc_d14_6_dawn_candle PRIVATE dc_gpu)
     add_test(NAME dc_d14_6_dawn_candle COMMAND dc_d14_6_dawn_candle)
 
+    # ENC-1257 — the RASTER proof for the bar-sizing rule: render 10, 500 and
+    # the candles-aapl 156-bar configuration and count lit/clear runs along the
+    # body row. A fused slab is exactly "two bars, one run".
+    add_executable(dc_enc1257_dawn_candle_gap
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_enc1257_dawn_candle_gap.cpp"
+    )
+    target_link_libraries(dc_enc1257_dawn_candle_gap PRIVATE dc_gpu)
+    add_test(NAME dc_enc1257_dawn_candle_gap COMMAND dc_enc1257_dawn_candle_gap)
+
     # ENC-558 — instanced backends re-upload/grow their cached GPU instance
     # buffer when the streaming CpuBufferStore buffer GROWS (candle + rect).
     # Regression for the showcase slice's frozen-first-frame bug: render one
