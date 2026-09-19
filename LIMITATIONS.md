@@ -25,26 +25,26 @@ and corrected them.
 
 ## DC-L01 — A green default `ctest` says nothing about the renderer 🔴
 
-**Claim.** `cmake -B build && ctest --test-dir build` runs **190** tests and builds **no
-renderer at all**. `dc_gpu`, `dc_json_host`, all four headless demo servers and **43 render
+**Claim.** `cmake -B build && ctest --test-dir build` runs **191** tests and builds **no
+renderer at all**. `dc_gpu`, `dc_json_host`, all four headless demo servers and **44 render
 tests** are excluded at *configure* time by `DC_FETCH_DAWN` (default `OFF`,
 `core/CMakeLists.txt:165`). They are not "skipped" — they never enter `CTestTestfile.cmake`,
 so nothing reports them as missing.
 
-**Why it bites.** "190/190 passed" is the most reassuring possible output and it is compatible
+**Why it bites.** "191/191 passed" is the most reassuring possible output and it is compatible
 with the renderer being completely broken. Every pixel-level guarantee in this engine lives in
-the 43 tests that did not run.
+the 44 tests that did not run.
 
 **Re-check.**
 ```bash
-grep -cE '^\s*add_test\(' core/CMakeLists.txt            # 233  — all tests that exist
-grep -c '^add_test('  build/core/CTestTestfile.cmake     # 190  — all tests you just ran
+grep -cE '^\s*add_test\(' core/CMakeLists.txt            # 235  — all tests that exist
+grep -c '^add_test('  build/core/CTestTestfile.cmake     # 191  — all tests you just ran
 grep -n 'DC_FETCH_DAWN:BOOL' build/CMakeCache.txt        # OFF
 ```
-The 43-test gap is the single `if (DC_HAS_DAWN)` block at `core/CMakeLists.txt:1899-2447`.
-Target-level gap: **51** targets (`dc_gpu`, `dc_glfw_system`, `dc_json_host`,
-`dc_dawn_window_demo`, 4 servers, 43 test executables) across five guarded ranges — 274-351,
-361-366, 374-383, 391-409, 1899-2447.
+The 44-test gap is the single `if (DC_HAS_DAWN)` block at `core/CMakeLists.txt:1928-2485`.
+Target-level gap: **52** targets (`dc_gpu`, `dc_glfw_system`, `dc_json_host`,
+`dc_dawn_window_demo`, 4 servers, 44 test executables) across five guarded ranges — 274-351,
+361-366, 374-383, 391-409, 1928-2485.
 
 **Working around it.** Build Dawn once (~55-60 min, then incremental) and keep the build dir:
 ```bash
@@ -60,11 +60,13 @@ already pins to the *unmodified* tree. `-DDC_DAWN_WINDOWED=ON` is a *second*,
 independent gate for `dc_dawn_window_demo` — `-DDC_FETCH_DAWN=ON` alone gets 50 of the 51.
 
 **Ticket.** [ENC-994](https://linear.app/encultured/issue/ENC-994) (Backlog) covers two of the
-43 (`d28_1_dawn_lineaa`, `d29_1_dawn_blend`). The other 41 have no owner.
+44 (`d28_1_dawn_lineaa`, `d29_1_dawn_blend`). The other 42 have no owner.
 
-**The absolute numbers move; the 43-test gap does not.** ENC-984 added one always-built logic
-test, taking the pair from 188/231 to 189/232; ENC-995 added another, taking it to **190/233**.
-The gap is still exactly the `DC_HAS_DAWN` block, both times. Read the *difference*, not the
+**The absolute numbers move; the gap is what matters.** ENC-984 added one always-built logic
+test, taking the pair from 188/231 to 189/232; ENC-995 added another, taking it to 190/233.
+ENC-1257 added one of each — `dc_enc1257_bar_sizing` (always built) and
+`dc_enc1257_dawn_candle_gap` (Dawn-gated) — taking it to **191/235** and widening the gap from
+43 to **44**. The gap is still exactly the `DC_HAS_DAWN` block, every time. Read the *difference*, not the
 left-hand number: a change that grows the registered count tells you nothing about the renderer
 either — which is the whole point, and is why two consecutive tickets moving this number changed
 nothing about what the default build proves.
