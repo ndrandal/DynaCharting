@@ -21,6 +21,9 @@ DC-L08 at `5ac198a`, and DC-L10 at `5ac198a`. Every command below was executed a
 command does not yet hold is a bug in the entry, not a shortcut — ENC-984 shipped five of those
 and corrected them.
 
+ENC-1252 (2026-09-19) re-verified **DC-L06**, whose re-check runs under the `vitest.config.ts`
+`include` it widened, and added **DC-L12**.
+
 ---
 
 ## DC-L01 — A green default `ctest` says nothing about the renderer 🔴
@@ -589,6 +592,8 @@ aspect term or a documented "clip units, pre-scale yourself" contract.
 
 **Verified at** `ENC-995 HEAD`, 2026-09-14 — greps 1-4 run in the ENC-995 worktree; the render
 measurement from a `dc_gpu` harness against `build-dawn` on Vulkan/NVK.
+
+---
 
 ## DC-L12 — The axis domain is now measured; nothing in the engine draws it, and nothing frames the plot to it 🟠
 
