@@ -21,6 +21,7 @@ import { axisDomain as candlesDomain } from '../../views/candles-aapl/manifest';
 import { axisDomain as ohlcDomain } from '../../views/ohlc-bars/manifest';
 import { axisDomain as overlaysDomain } from '../../views/candle-overlays/manifest';
 import { resolveAxes, axisDomainReportJson } from './deriveAxes';
+import type { AxisDomainSpec } from '../views/registry';
 import type { AxisSpec } from './types';
 
 interface Capture {
@@ -37,7 +38,7 @@ function loadFrames(viewId: string): ArrayBuffer[] {
 }
 
 /** Fold a view's capture through the tracker its own manifest declares. */
-function measure(viewId: string, spec: { sources: Parameters<typeof DomainTracker>[0] }, upTo = Infinity) {
+function measure(viewId: string, spec: AxisDomainSpec, upTo = Infinity) {
   const tracker = new DomainTracker(spec.sources);
   const frames = loadFrames(viewId);
   for (const f of frames.slice(0, upTo === Infinity ? frames.length : upTo)) tracker.observe(f);
