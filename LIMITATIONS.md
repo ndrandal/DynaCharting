@@ -25,24 +25,24 @@ and corrected them.
 
 ## DC-L01 — A green default `ctest` says nothing about the renderer 🔴
 
-**Claim.** `cmake -B build && ctest --test-dir build` runs **190** tests and builds **no
-renderer at all**. `dc_gpu`, `dc_json_host`, all four headless demo servers and **46 render
+**Claim.** `cmake -B build && ctest --test-dir build` runs **191** tests and builds **no
+renderer at all**. `dc_gpu`, `dc_json_host`, all four headless demo servers and **47 render
 tests** are excluded at *configure* time by `DC_FETCH_DAWN` (default `OFF`,
 `core/CMakeLists.txt:165`). They are not "skipped" — they never enter `CTestTestfile.cmake`,
 so nothing reports them as missing.
 
 **Why it bites.** "190/190 passed" is the most reassuring possible output and it is compatible
 with the renderer being completely broken. Every pixel-level guarantee in this engine lives in
-the 46 tests that did not run — **including the tier-0 check that the chart depicts its data at
+the 47 tests that did not run — **including the tier-0 check that the chart depicts its data at
 all** (ENC-1249, `scripts/tier0.sh`).
 
 **Re-check.**
 ```bash
-grep -cE '^\s*add_test\(' core/CMakeLists.txt            # 236  — all tests that exist
-grep -c '^add_test('  build/core/CTestTestfile.cmake     # 190  — all tests you just ran
+grep -cE '^\s*add_test\(' core/CMakeLists.txt            # 238  — all tests that exist
+grep -c '^add_test('  build/core/CTestTestfile.cmake     # 191  — all tests you just ran
 grep -n 'DC_FETCH_DAWN:BOOL' build/CMakeCache.txt        # OFF
 ```
-The 46-test gap is the single `if (DC_HAS_DAWN)` block at `core/CMakeLists.txt:1916-2489`.
+The 47-test gap is the single `if (DC_HAS_DAWN)` block at `core/CMakeLists.txt:1916-2489`.
 Target-level gap: **52** targets (`dc_gpu`, `dc_glfw_system`, `dc_json_host`,
 `dc_dawn_window_demo`, 4 servers, 44 test executables) behind the four `if (DC_HAS_DAWN)`
 guards at lines 274, 374, 391 and 1916. Measured directly:
@@ -76,8 +76,9 @@ independent gate for `dc_dawn_window_demo` — `-DDC_FETCH_DAWN=ON` alone gets 5
 
 **The absolute numbers move; the shape of the gap does not.** ENC-984 added one always-built
 logic test, taking the pair from 188/231 to 189/232; ENC-995 added another, taking it to
-190/233; **ENC-1249 added three Dawn-only tests, taking it to 190/236 and the gap from 43 to
-46.** The gap is still exactly the `DC_HAS_DAWN` block, every time. Read the *difference*, not
+190/233; **ENC-1249 added three Dawn-only tests, taking it to 190/236 and the gap from 43 to 46;
+ENC-1257 added one default-build and two Dawn-only tests, taking it to 191/238 and the gap
+to 47** (measured post-merge, not predicted). The gap is still exactly the `DC_HAS_DAWN` block, every time. Read the *difference*, not
 the left-hand number: a change that grows the registered count tells you nothing about the
 renderer either — which is the whole point, and is why three consecutive tickets moving this
 number changed nothing about what the default build proves.
@@ -85,7 +86,7 @@ number changed nothing about what the default build proves.
 **And ENC-1249 is the case that shows why the gap matters rather than merely being untidy.** The
 tier-0 check (`scripts/tier0.sh` -> `dc_enc1249_tier0_truthful`) is the one that asserts a chart
 depicts its data — that a rising series rises. It is a claim about pixels, so it needs the
-renderer, so it is inside the 46. A green default `ctest` therefore proves nothing about tier 0
+renderer, so it is inside the 47. A green default `ctest` therefore proves nothing about tier 0
 either. The check exits **3** (never 0) when no adapter comes up, and `scripts/tier0.sh` turns
 that into exit 2 "CANNOT RUN", precisely so it cannot join the class of things this entry is
 about.
@@ -608,6 +609,50 @@ aspect term or a documented "clip units, pre-scale yourself" contract.
 
 **Verified at** `ENC-995 HEAD`, 2026-09-14 — greps 1-4 run in the ENC-995 worktree; the render
 measurement from a `dc_gpu` harness against `build-dawn` on Vulkan/NVK.
+
+## DC-L12 — A candle6 `halfWidth` is a request, not the rendered width 🟡
+
+**Claim.** Since ENC-1257 `instancedCandle@1` treats the per-instance `halfWidth` (candle6 byte
+offset 20) as the author's *nominal proportion* and resolves the width it actually draws from
+the bar pitch in PIXELS: `dc::resolveBarWidth` (`core/include/dc/render/BarSizing.hpp`) enforces
+a **1px minimum inter-bar gap** and a **24px maximum body**, and caps the fixed-pixel wick by the
+same budget. So `halfWidth` no longer maps one-to-one onto pixels, and two draws of the same
+records at different viewport widths or zoom levels can render different body widths.
+
+**Why it bites.** Authoring code that computes a `halfWidth` to hit an exact pixel width will be
+overruled at the extremes — and only at the extremes. Inside the band (pitch between roughly 5px
+and 30px) the authored value is returned unchanged, which is why every pre-existing scene in this
+repo renders identically; you will meet this only on a very dense or a very sparse chart, i.e.
+exactly where a naive value was wrong anyway. The resolution is host-side and per-draw, so it is
+invisible in the buffer bytes: `getBufferBytes()` and `getSceneDocument()` still report the
+authored `halfWidth`, and so does `SvgExporter` (`core/src/export/SvgExporter.cpp:517`), which
+does **not** apply the rule — an SVG export of a dense candle chart still fuses.
+
+**Re-check.**
+```bash
+cmake -B build && cmake --build build --target dc_enc1257_bar_sizing -j$(nproc)
+./build/core/dc_enc1257_bar_sizing | grep -E 'candles-aapl (pre|post)-fix|live 55px'
+#   candles-aapl pre-fix: pitch 4.5333 body 3.6267 gap 0.9067
+#   candles-aapl post-fix: body 3.5333 gap 1.0000 halfClip 0.004417
+#   live 55px pitch: body 24.000 gap 31.000
+```
+The first line is the authored width; the second is what is drawn.
+
+**Working around it.** Nothing to work around if you want legible bars — that is the point. If
+you need an exact pixel width, widen the config rather than fighting it: `BarSizingConfig` is a
+defaulted parameter on every entry point, and passing `maxBodyPx` / `minGapPx` of your choosing
+restores whatever behaviour you need. The rule never applies at all when the draw has no pitch
+(a single bar), no viewport, or a degenerate transform.
+
+**Ticket.** None for the engine. `SvgExporter` not applying the rule is a real gap and is
+unowned.
+
+**Verified at** `ENC-1257 HEAD`, 2026-09-19 — the command above was run in the ENC-1257
+worktree and produced exactly the three lines shown; the pixel-level counterpart
+(`dc_enc1257_dawn_candle_gap`, Dawn-gated) renders 10, 500 and the 156-bar candles-aapl
+configuration and asserts one lit run per bar.
+
+---
 
 # §C — Corrections
 
