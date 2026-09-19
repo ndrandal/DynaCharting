@@ -5,16 +5,21 @@
  * from the data→pixel mapping (mapping.ts) so they align with the rendered
  * geometry. Labels are formatted per AxisSpec.format. Chrome recedes (dim
  * hairlines, mono tabular numerics) so the data stays the brightest thing.
+ *
+ * It takes RESOLVED axes (ENC-1252): the domain has already been settled by
+ * deriveAxes.ts — measured from the streamed records where the view declares an
+ * `axisDomain`, falling back to a legacy literal otherwise — so nothing here
+ * ever has to decide what an axis's bounds are.
  */
 
 import { useMemo } from 'react';
-import type { AxisSpec } from './types';
+import type { ResolvedAxes, ResolvedAxisSpec } from './deriveAxes';
 import type { EffectiveTransform } from './mapping';
 import { dataXToPx, dataYToPx, tickValues } from './mapping';
 import { formatTick } from './format';
 
 interface AxisOverlayProps {
-  axes: { x?: AxisSpec; y?: AxisSpec };
+  axes: ResolvedAxes;
   transform: EffectiveTransform;
   /** Overlay box size in CSS px (== the engine canvas CSS box). */
   width: number;
@@ -28,7 +33,7 @@ interface Tick {
 
 /** Build the pixel ticks for one axis, clamped to the visible box. */
 function buildTicks(
-  spec: AxisSpec,
+  spec: ResolvedAxisSpec,
   toPx: (v: number) => number,
   extent: number,
 ): Tick[] {
