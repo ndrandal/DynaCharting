@@ -2482,6 +2482,31 @@ if (DC_BUILD_TESTS)
     )
     target_link_libraries(dc_d79_dawn_json_host PRIVATE dc_gpu)
     add_test(NAME dc_d79_dawn_json_host COMMAND dc_d79_dawn_json_host)
+
+    # ENC-1249 — TIER 0 ("Truthful"), specs/2026-09-19-chart-quality-bar/SPEC.md D1.
+    # Renders a KNOWN-ANSWER synthetic series (a monotonic ramp through LineRecipe
+    # + dc::LinearScale, and a single candle with hand-computed extents through
+    # CandleRecipe) and asserts on the PRESENTED raster — the readback plus the
+    # DC-L05 row flip the browser applies — that the chart depicts its data.
+    #
+    # The two NEGATIVE CONTROLS below are the point: a check never seen to fail is
+    # not a check. Each feeds the binary a deliberately wrong input and is marked
+    # WILL_FAIL, so ctest reports it as PASSED only when the check DOES fail.
+    # Registering them here means every run of the suite re-demonstrates the
+    # falsifiability, rather than trusting a screenshot in a PR description.
+    add_executable(dc_enc1249_tier0_truthful
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_enc1249_tier0_truthful.cpp"
+    )
+    target_link_libraries(dc_enc1249_tier0_truthful PRIVATE dc_gpu)
+    add_test(NAME dc_enc1249_tier0_truthful COMMAND dc_enc1249_tier0_truthful)
+
+    add_test(NAME dc_enc1249_tier0_negctl_data
+             COMMAND dc_enc1249_tier0_truthful --invert-data)
+    set_tests_properties(dc_enc1249_tier0_negctl_data PROPERTIES WILL_FAIL TRUE)
+
+    add_test(NAME dc_enc1249_tier0_negctl_render
+             COMMAND dc_enc1249_tier0_truthful --invert-render)
+    set_tests_properties(dc_enc1249_tier0_negctl_render PROPERTIES WILL_FAIL TRUE)
   endif()
 endif()
 
