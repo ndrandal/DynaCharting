@@ -50,8 +50,15 @@ namespace dc {
 
 // Limits for `resolveBarWidth`. Every field is in PIXELS except the fractions.
 struct BarSizingConfig {
-  // The minimum inter-bar gap. One pixel is the floor below which the gap
-  // cannot rasterise at all; this is the number D1's tier-2 check asserts.
+  // The minimum inter-bar gap, and 1.0 is not a round number picked by taste.
+  // The engine rasterises with pixel-CENTRE sampling and no MSAA (the Dawn
+  // offscreen target has none, and the browser path blits with putImageData, so
+  // nothing downstream softens it either). A gap spanning [a, a+w) contains a
+  // sample point k+0.5 for EVERY a exactly when w >= 1: at w = 1 there is always
+  // exactly one clear pixel column between neighbouring bodies, and at w = 0.9
+  // there is one only for some alignments — which is precisely why the showcase
+  // candles fuse in runs rather than uniformly. One pixel is therefore the
+  // smallest gap that is guaranteed to appear at all, not merely likely to.
   float minGapPx{1.0f};
   // A bar must keep at least this much ink or it stops being a mark.
   float minBodyPx{1.0f};
@@ -91,6 +98,16 @@ BarMetrics resolveBarWidth(float pitchPx, float nominalBodyPx,
 BarMetrics barMetricsForCount(int barCount, float plotWidthPx,
                               float nominalBodyFraction = -1.0f,
                               const BarSizingConfig& cfg = BarSizingConfig{});
+
+// The consequence nobody had written down: a minimum-gap guarantee is a CEILING
+// ON BAR COUNT. Below `minBodyPx + minGapPx` of pitch no width assignment is
+// legible, so `floor(plotWidthPx / (minBodyPx + minGapPx))` is the largest bar
+// count this plot can carry — 650 at the live capture's 1300px plot, 400 at the
+// showcase's 800px. Past it `resolveBarWidth` reports `degraded` and the honest
+// fix is aggregation (see dc::CandleAggregator) or a wider plot, not a thinner
+// bar.
+int maxLegibleBarCount(float plotWidthPx,
+                       const BarSizingConfig& cfg = BarSizingConfig{});
 
 // Robust bar pitch, in DATA units, read out of a packed record array (candle6
 // is stride 24, x at offset 0). Returns the MEDIAN strictly-positive delta

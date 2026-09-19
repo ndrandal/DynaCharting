@@ -96,6 +96,12 @@ BarMetrics barMetricsForCount(int barCount, float plotWidthPx,
   return resolveBarWidth(pitchPx, nominalPx, cfg);
 }
 
+int maxLegibleBarCount(float plotWidthPx, const BarSizingConfig& cfg) {
+  const float unit = std::max(0.0f, cfg.minBodyPx) + std::max(0.0f, cfg.minGapPx);
+  if (!std::isfinite(plotWidthPx) || plotWidthPx <= 0.0f || unit <= 0.0f) return 0;
+  return static_cast<int>(std::floor(plotWidthPx / unit));
+}
+
 float barPitchFromRecords(const std::uint8_t* bytes, std::size_t byteLen,
                           std::uint32_t strideBytes, std::uint32_t xOffsetBytes,
                           std::size_t maxSamples) {
