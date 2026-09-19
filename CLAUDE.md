@@ -48,13 +48,14 @@ ctest --test-dir build -R dc_d1_1_smoke              # run a single test by name
 The **default** build (no `-DDC_FETCH_DAWN`) builds `dc` + the pure-logic tests only — no renderer, fast, and needs no graphics API. To get the renderer + render/golden tests, opt into Dawn (see below).
 
 > **A green default `ctest` proves nothing about the renderer (LIMITATIONS.md DC-L01).** The
-> default configure registers **190** of the repo's **233** tests; the other **43** — every
+> default configure registers **191** of the repo's **235** tests; the other **44** — every
 > Dawn render and golden-parity test — plus `dc_gpu`, `dc_json_host` and the four headless
-> servers are excluded at *configure* time, so nothing reports them as missing. "190/190
+> servers are excluded at *configure* time, so nothing reports them as missing. "191/191
 > passed" is compatible with the renderer being completely broken. Verify with
-> `grep -c '^add_test(' build/core/CTestTestfile.cmake` (190) against
-> `grep -cE '^\s*add_test\(' core/CMakeLists.txt` (233). The pair moves as tests are added
-> (188/231 before ENC-984, 189/232 before ENC-995); the **43-test gap** is the number that matters.
+> `grep -c '^add_test(' build/core/CTestTestfile.cmake` (191) against
+> `grep -cE '^\s*add_test\(' core/CMakeLists.txt` (235). The pair moves as tests are added
+> (188/231 before ENC-984, 189/232 before ENC-995, 190/233 before ENC-1257); the **44-test
+> gap** is the number that matters.
 
 CMake options: `DC_BUILD_TESTS` (default ON), `DC_WARNINGS_AS_ERRORS` (default OFF), `DC_FETCH_DAWN` (default OFF — see below).
 

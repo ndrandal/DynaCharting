@@ -25,52 +25,56 @@ and corrected them.
 
 ## DC-L01 — A green default `ctest` says nothing about the renderer 🔴
 
-**Claim.** `cmake -B build && ctest --test-dir build` runs **190** tests and builds **no
-renderer at all**. `dc_gpu`, `dc_json_host`, all four headless demo servers and **43 render
+**Claim.** `cmake -B build && ctest --test-dir build` runs **191** tests and builds **no
+renderer at all**. `dc_gpu`, `dc_json_host`, all four headless demo servers and **44 render
 tests** are excluded at *configure* time by `DC_FETCH_DAWN` (default `OFF`,
 `core/CMakeLists.txt:165`). They are not "skipped" — they never enter `CTestTestfile.cmake`,
 so nothing reports them as missing.
 
-**Why it bites.** "190/190 passed" is the most reassuring possible output and it is compatible
+**Why it bites.** "191/191 passed" is the most reassuring possible output and it is compatible
 with the renderer being completely broken. Every pixel-level guarantee in this engine lives in
-the 43 tests that did not run.
+the 44 tests that did not run.
 
 **Re-check.**
 ```bash
-grep -cE '^\s*add_test\(' core/CMakeLists.txt            # 233  — all tests that exist
-grep -c '^add_test('  build/core/CTestTestfile.cmake     # 190  — all tests you just ran
+grep -cE '^\s*add_test\(' core/CMakeLists.txt            # 235  — all tests that exist
+grep -c '^add_test('  build/core/CTestTestfile.cmake     # 191  — all tests you just ran
 grep -n 'DC_FETCH_DAWN:BOOL' build/CMakeCache.txt        # OFF
 ```
-The 43-test gap is the single `if (DC_HAS_DAWN)` block at `core/CMakeLists.txt:1899-2447`.
-Target-level gap: **51** targets (`dc_gpu`, `dc_glfw_system`, `dc_json_host`,
-`dc_dawn_window_demo`, 4 servers, 43 test executables) across five guarded ranges — 274-351,
-361-366, 374-383, 391-409, 1899-2447.
+The 44-test gap is the single `if (DC_HAS_DAWN)` block at `core/CMakeLists.txt:1928-2485`.
+Target-level gap: **52** targets (`dc_gpu`, `dc_glfw_system`, `dc_json_host`,
+`dc_dawn_window_demo`, 4 servers, 44 test executables) across five guarded ranges — 274-351,
+361-366, 374-383, 391-409, 1928-2485.
 
 **Working around it.** Build Dawn once (~55-60 min, then incremental) and keep the build dir:
 ```bash
 cmake -B build-dawn -G Ninja -DDC_BUILD_TESTS=ON -DDC_FETCH_DAWN=ON
 cmake --build build-dawn -j$(nproc)
-VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json ctest --test-dir build-dawn -j$(nproc)   # 233/233
+VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json ctest --test-dir build-dawn -j$(nproc)   # all 235 registered
 ```
 Three sessions did exactly this on 2026-09-14 (ENC-992, ENC-993, ENC-995), so it is feasible,
 not theoretical. ENC-992/993 got 231/231 on lavapipe; ENC-995 added one always-built test and
 got 233/233 on lavapipe and 231/233 on Vulkan/NVK hardware — the two hardware failures
 being the `dc_enc619_dawn_fft` / `dc_enc619_dawn_marching_squares` pair the correction below
 already pins to the *unmodified* tree. `-DDC_DAWN_WINDOWED=ON` is a *second*,
-independent gate for `dc_dawn_window_demo` — `-DDC_FETCH_DAWN=ON` alone gets 50 of the 51.
+independent gate for `dc_dawn_window_demo` — `-DDC_FETCH_DAWN=ON` alone gets 51 of the 52.
 
 **Ticket.** [ENC-994](https://linear.app/encultured/issue/ENC-994) (Backlog) covers two of the
-43 (`d28_1_dawn_lineaa`, `d29_1_dawn_blend`). The other 41 have no owner.
+44 (`d28_1_dawn_lineaa`, `d29_1_dawn_blend`). The other 42 have no owner.
 
-**The absolute numbers move; the 43-test gap does not.** ENC-984 added one always-built logic
-test, taking the pair from 188/231 to 189/232; ENC-995 added another, taking it to **190/233**.
-The gap is still exactly the `DC_HAS_DAWN` block, both times. Read the *difference*, not the
+**The absolute numbers move; the gap is what matters.** ENC-984 added one always-built logic
+test, taking the pair from 188/231 to 189/232; ENC-995 added another, taking it to 190/233.
+ENC-1257 added one of each — `dc_enc1257_bar_sizing` (always built) and
+`dc_enc1257_dawn_candle_gap` (Dawn-gated) — taking it to **191/235** and widening the gap from
+43 to **44**. The gap is still exactly the `DC_HAS_DAWN` block, every time. Read the *difference*, not the
 left-hand number: a change that grows the registered count tells you nothing about the renderer
 either — which is the whole point, and is why two consecutive tickets moving this number changed
 nothing about what the default build proves.
 
-**Verified at** `ENC-995 HEAD`, 2026-09-14 — counted statically from `core/CMakeLists.txt` and
-empirically from a real default configure in the ENC-995 worktree; both give 190 of 233, gap 43.
+**Verified at** `ENC-1257 HEAD`, 2026-09-19 — re-counted statically from `core/CMakeLists.txt`
+and empirically from a real default configure + `ctest` in the ENC-1257 worktree: 235 exist,
+191 ran (191/191 passed), gap 44. The earlier stamp (`ENC-995 HEAD`, 2026-09-14: 190 of 233,
+gap 43) held at that commit.
 
 ---
 
@@ -586,6 +590,52 @@ aspect term or a documented "clip units, pre-scale yourself" contract.
 
 **Verified at** `ENC-995 HEAD`, 2026-09-14 — greps 1-4 run in the ENC-995 worktree; the render
 measurement from a `dc_gpu` harness against `build-dawn` on Vulkan/NVK.
+
+---
+
+## DC-L12 — A candle6 `halfWidth` is a request, not the rendered width 🟡
+
+**Claim.** Since ENC-1257 `instancedCandle@1` treats the per-instance `halfWidth` (candle6 byte
+offset 20) as the author's *nominal proportion* and resolves the width it actually draws from
+the bar pitch in PIXELS: `dc::resolveBarWidth` (`core/include/dc/render/BarSizing.hpp`) enforces
+a **1px minimum inter-bar gap** and a **24px maximum body**, and caps the fixed-pixel wick by the
+same budget. So `halfWidth` no longer maps one-to-one onto pixels, and two draws of the same
+records at different viewport widths or zoom levels can render different body widths.
+
+**Why it bites.** Authoring code that computes a `halfWidth` to hit an exact pixel width will be
+overruled at the extremes — and only at the extremes. Inside the band (pitch between roughly 5px
+and 30px) the authored value is returned unchanged, which is why every pre-existing scene in this
+repo renders identically; you will meet this only on a very dense or a very sparse chart, i.e.
+exactly where a naive value was wrong anyway. The resolution is host-side and per-draw, so it is
+invisible in the buffer bytes: `getBufferBytes()` and `getSceneDocument()` still report the
+authored `halfWidth`, and so does `SvgExporter` (`core/src/export/SvgExporter.cpp:517`), which
+does **not** apply the rule — an SVG export of a dense candle chart still fuses.
+
+**Re-check.**
+```bash
+cmake -B build && cmake --build build --target dc_enc1257_bar_sizing -j$(nproc)
+./build/core/dc_enc1257_bar_sizing | grep -E 'candles-aapl (pre|post)-fix|live 55px'
+#   candles-aapl pre-fix: pitch 4.5333 body 3.6267 gap 0.9067
+#   candles-aapl post-fix: body 3.5333 gap 1.0000 halfClip 0.004417
+#   live 55px pitch: body 24.000 gap 31.000
+```
+The first line is the authored width; the second is what is drawn.
+
+**Working around it.** Nothing to work around if you want legible bars — that is the point. If
+you need an exact pixel width, widen the config rather than fighting it: `BarSizingConfig` is a
+defaulted parameter on every entry point, and passing `maxBodyPx` / `minGapPx` of your choosing
+restores whatever behaviour you need. The rule never applies at all when the draw has no pitch
+(a single bar), no viewport, or a degenerate transform.
+
+**Ticket.** None for the engine. `SvgExporter` not applying the rule is a real gap and is
+unowned.
+
+**Verified at** `ENC-1257 HEAD`, 2026-09-19 — the command above was run in the ENC-1257
+worktree and produced exactly the three lines shown; the pixel-level counterpart
+(`dc_enc1257_dawn_candle_gap`, Dawn-gated) renders 10, 500 and the 156-bar candles-aapl
+configuration and asserts one lit run per bar.
+
+---
 
 # §C — Corrections
 

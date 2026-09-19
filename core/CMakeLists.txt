@@ -571,6 +571,18 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_enc995_arc_tessellation PRIVATE dc)
   add_test(NAME dc_enc995_arc_tessellation COMMAND dc_enc995_arc_tessellation)
 
+  # ENC-1257 — bar sizing: candle width and gap as a function of bar count. The
+  # tier-2 minimum-inter-bar-gap check at 10 and 500 bars, the fused-slab
+  # regression pin for apps/showcase/stills/candles-aapl.png, and the proof that
+  # no existing in-repo candle scene moves. Lives in the DEFAULT build on
+  # purpose: DC-L01 excludes every Dawn render test, so a rule checked only
+  # inside dc_gpu would have no check anybody runs.
+  add_executable(dc_enc1257_bar_sizing
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_enc1257_bar_sizing.cpp"
+  )
+  target_link_libraries(dc_enc1257_bar_sizing PRIVATE dc)
+  add_test(NAME dc_enc1257_bar_sizing COMMAND dc_enc1257_bar_sizing)
+
   # ENC-605 (P1.14) — Manifest v0 parser (data / scales / coords / marks /
   # encoding): parses a JSON manifest, applies the §6.1 typing checks, and drives
   # the table -> scale -> encode -> mark pipeline to produce DrawItems + geometry.
@@ -2202,6 +2214,15 @@ if (DC_BUILD_TESTS)
     )
     target_link_libraries(dc_d14_6_dawn_candle PRIVATE dc_gpu)
     add_test(NAME dc_d14_6_dawn_candle COMMAND dc_d14_6_dawn_candle)
+
+    # ENC-1257 — the RASTER proof for the bar-sizing rule: render 10, 500 and
+    # the candles-aapl 156-bar configuration and count lit/clear runs along the
+    # body row. A fused slab is exactly "two bars, one run".
+    add_executable(dc_enc1257_dawn_candle_gap
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_enc1257_dawn_candle_gap.cpp"
+    )
+    target_link_libraries(dc_enc1257_dawn_candle_gap PRIVATE dc_gpu)
+    add_test(NAME dc_enc1257_dawn_candle_gap COMMAND dc_enc1257_dawn_candle_gap)
 
     # ENC-558 — instanced backends re-upload/grow their cached GPU instance
     # buffer when the streaming CpuBufferStore buffer GROWS (candle + rect).
