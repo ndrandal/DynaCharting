@@ -32,8 +32,11 @@ function loadFrames(viewId: string): ArrayBuffer[] {
   const path = new URL(`../../views/${viewId}/records.json`, import.meta.url);
   const capture = JSON.parse(readFileSync(path, 'utf8')) as Capture;
   return capture.frames.map((f) => {
-    const bytes = Buffer.from(f.b64, 'base64');
-    return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+    // atob, not Buffer: the same decode the browser replay path uses.
+    const bin = atob(f.b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes.buffer;
   });
 }
 
