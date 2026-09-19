@@ -50,14 +50,14 @@ Target-level gap: **52** targets (`dc_gpu`, `dc_glfw_system`, `dc_json_host`,
 ```bash
 cmake -B build-dawn -G Ninja -DDC_BUILD_TESTS=ON -DDC_FETCH_DAWN=ON
 cmake --build build-dawn -j$(nproc)
-VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json ctest --test-dir build-dawn -j$(nproc)   # 233/233
+VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json ctest --test-dir build-dawn -j$(nproc)   # all 235 registered
 ```
 Three sessions did exactly this on 2026-09-14 (ENC-992, ENC-993, ENC-995), so it is feasible,
 not theoretical. ENC-992/993 got 231/231 on lavapipe; ENC-995 added one always-built test and
 got 233/233 on lavapipe and 231/233 on Vulkan/NVK hardware — the two hardware failures
 being the `dc_enc619_dawn_fft` / `dc_enc619_dawn_marching_squares` pair the correction below
 already pins to the *unmodified* tree. `-DDC_DAWN_WINDOWED=ON` is a *second*,
-independent gate for `dc_dawn_window_demo` — `-DDC_FETCH_DAWN=ON` alone gets 50 of the 51.
+independent gate for `dc_dawn_window_demo` — `-DDC_FETCH_DAWN=ON` alone gets 51 of the 52.
 
 **Ticket.** [ENC-994](https://linear.app/encultured/issue/ENC-994) (Backlog) covers two of the
 44 (`d28_1_dawn_lineaa`, `d29_1_dawn_blend`). The other 42 have no owner.
@@ -71,8 +71,10 @@ left-hand number: a change that grows the registered count tells you nothing abo
 either — which is the whole point, and is why two consecutive tickets moving this number changed
 nothing about what the default build proves.
 
-**Verified at** `ENC-995 HEAD`, 2026-09-14 — counted statically from `core/CMakeLists.txt` and
-empirically from a real default configure in the ENC-995 worktree; both give 190 of 233, gap 43.
+**Verified at** `ENC-1257 HEAD`, 2026-09-19 — re-counted statically from `core/CMakeLists.txt`
+and empirically from a real default configure + `ctest` in the ENC-1257 worktree: 235 exist,
+191 ran (191/191 passed), gap 44. The earlier stamp (`ENC-995 HEAD`, 2026-09-14: 190 of 233,
+gap 43) held at that commit.
 
 ---
 
