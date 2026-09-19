@@ -19,6 +19,7 @@
 
 import type { SceneManifest } from '../../src/scene/commands';
 import type { GrowthSync } from '../../src/engine/useReplay';
+import type { AxisDomainSpec } from '../../src/views/registry';
 
 // --- structural IDs (shared with instruction.json only via the buffer) ---
 const PANE = 10000;
@@ -75,4 +76,14 @@ export const growth: GrowthSync = {
   pipeline: 'instancedCandle@1',
   transformId: TRANSFORM,
   xField: 0, // byte offset of x (recordIndex) within a candle6 record
+};
+
+/**
+ * AXIS DOMAIN (ENC-1252 / chart-quality-bar SPEC D7). Same shape as
+ * candles-aapl: the candle6 buffer carries both the record index (x, ±
+ * halfWidth) and the OHLC prices (y), so the axes state a measurement of the
+ * streamed bars rather than a hand-typed range.
+ */
+export const axisDomain: AxisDomainSpec = {
+  sources: [{ bufferId: CANDLE_BUFFER, format: 'candle6' }],
 };

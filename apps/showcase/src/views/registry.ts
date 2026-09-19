@@ -19,9 +19,29 @@
  *   explainer.md    — front-matter + DATA+TECHNIQUE copy + fact block
  */
 
+import type { DomainPolicy, DomainSource } from '@repo/dc-wasm';
 import type { SceneManifest } from '../scene/commands';
 import type { Records, GrowthSync, GrowthSeries, XAnchorSpec } from '../engine/useReplay';
 import type { ChromeSpec } from '../chrome/types';
+
+/**
+ * Which streamed buffers the chrome axes' domain is MEASURED from (ENC-1252,
+ * SPEC D7). A view's manifest.ts exports this alongside `growth`; the replay
+ * controller folds every dataplane batch through a `DomainTracker` over these
+ * sources and the overlay states the result.
+ *
+ * `sources` is an AXIS GROUP in embassy's sense — the tracker folds only the
+ * buffers named here, so a volume sub-pane cannot widen the price axis. A
+ * buffer that shares X but has its own Y registers with `axes: 'x'`.
+ *
+ * A view with no `axisDomain` falls back to whatever literal its view.json
+ * still carries; that is the backlog, not the pattern.
+ */
+export interface AxisDomainSpec {
+  sources: DomainSource[];
+  /** Optional policy override (collapse floor / padding). Defaults are fine. */
+  policy?: DomainPolicy;
+}
 
 export type { ChromeSpec, AxisSpec, LegendItem, ColorbarSpec, AxisFormat, LegendKind, RGBA } from '../chrome/types';
 
@@ -85,6 +105,8 @@ export interface ShowcaseView {
   explainer: string;
   /** Instanced-geometry growth descriptor, when the view's manifest exports one. */
   growth?: GrowthSync;
+  /** Buffers the axis domain is measured from (ENC-1252), when declared. */
+  axisDomain?: AxisDomainSpec;
   /**
    * Every growing series in the view (candles + volume + SMA …). The replay
    * advances each geometry's vertexCount as its buffer grows (ENC-568 multi-
@@ -103,6 +125,11 @@ export interface ViewManifestModule {
   growth?: GrowthSync;
   /** Every growing series in the view (ENC-568 multi-buffer growth). */
   growthSeries?: GrowthSeries[];
+  /**
+   * The axis group the chrome axes' domain is measured from (ENC-1252 / D7).
+   * Export it and drop the `min`/`max` literals from view.json's chrome axes.
+   */
+  axisDomain?: AxisDomainSpec;
 }
 
 /**
@@ -136,6 +163,7 @@ export function defineView(parts: {
     explainer,
     growth: module.growth,
     growthSeries: module.growthSeries,
+    axisDomain: module.axisDomain,
     xAnchor,
     chrome: meta.chrome,
   };

@@ -145,8 +145,8 @@ Create `apps/showcase/views/<id>/` with these files:
 
 | File | What |
 |---|---|
-| `view.json` | metadata: `{ id, title, tier, referenceTool, blurb, datasetId, transform?, xAnchor? }`. `tier` is `"native" / "composed" / "walled"`; `transform` is the baked data->clip `{sx,sy,tx,ty}` (the showcase-explicit path has no RangeTracker, so framing is baked per view). |
-| `manifest.ts` | exports `manifest: SceneManifest` (the ordered SceneDocument commands) + optional `growth: GrowthSync`. Buffer IDs **must** match the instruction (see `CONTRACT-buffer-id.md`). Static views may carry `uploads`/`textures` instead of replaying. |
+| `view.json` | metadata: `{ id, title, tier, referenceTool, blurb, datasetId, transform?, xAnchor?, chrome? }`. `tier` is `"native" / "composed" / "walled"`; `transform` is the baked data->clip `{sx,sy,tx,ty}` — **framing** is still baked per view (fitting it to the data is ENC-1256). The axis **domain** is not: omit `chrome.axes.*.min/max` and export an `axisDomain` from `manifest.ts` instead. |
+| `manifest.ts` | exports `manifest: SceneManifest` (the ordered SceneDocument commands) + optional `growth: GrowthSync`, `growthSeries`, and `axisDomain: AxisDomainSpec`. Buffer IDs **must** match the instruction (see `CONTRACT-buffer-id.md`). Static views may carry `uploads`/`textures` instead of replaying. |
 | `instruction.json` | the embassy `showcase-explicit-v1` instruction (subscriptions + buffer bindings) the capture harness feeds embassy. Only needed for *captured* (streamed) views. |
 | `records.json` | the captured dataplane frames the replay engine plays: `{ meta:{viewId,durationMs,frameCount,cadenceMs}, frames:[{t,b64}] }`. Produce it with `tools/capture.mjs <id>`. Build-time/static views can ship a tiny placeholder. |
 | `explainer.md` | front-matter (`title`, `referenceTool`, `tier`) + a one-sentence DATA + TECHNIQUE "what's going on" + the buffer/pipeline fact block. |
@@ -154,6 +154,19 @@ Create `apps/showcase/views/<id>/` with these files:
 Then re-capture the still (`tools/snap-stills.mjs`) to refresh the contact
 sheet, and it appears in the gallery, the single-view filmstrip, and the
 frontier map automatically.
+
+> **The axis domain is MEASURED, not typed (ENC-1252 —
+> `specs/2026-09-19-chart-quality-bar/SPEC.md` D7).** "The axis is a measurement
+> or it is not an axis." Export an `axisDomain` naming the buffers that make up
+> the axis group and leave `min`/`max` off your `chrome.axes`; a `DomainTracker`
+> folds the same dataplane bytes the engine ingests and the overlay states the
+> result. The group is a *declaration* on purpose — register a volume sub-pane
+> with `axes: 'x'` so it cannot widen a price axis. `candles-aapl` (one buffer)
+> and `candle-overlays` (candles + SMA on y, volume on x only) are the reference
+> usages. What the chart is stating is readable live at
+> `window.__dcAxisDomain[viewId]` and on the overlay's `data-dc-axis-domain`
+> attribute, each labelled `derived` or `literal`. Eleven views still carry a
+> literal — see **LIMITATIONS.md DC-L12** for what is still missing around this.
 
 > **Build-time / static views** (treemap, ridgeline, renko, sankey, ECG, …)
 > skip capture entirely: `manifest.ts` imports a dataset, tessellates/projects

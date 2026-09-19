@@ -654,6 +654,77 @@ configuration and asserts one lit run per bar.
 
 ---
 
+## DC-L13 — The axis domain is now measured; nothing in the engine draws it, and nothing frames the plot to it 🟠
+
+**Claim.** As of ENC-1252 a chart can *state* a real domain — `DomainTracker`
+(`packages/dc-wasm/src/chart/domain.ts`) folds the live dataplane records and the showcase
+publishes the result on the overlay root (`data-dc-axis-domain`) and `window.__dcAxisDomain`.
+Two halves of "the chart has an axis" are still missing, and they are missing in ways that are
+easy to mistake for the domain being wrong:
+
+1. **The axis MARKS are still a DOM/SVG overlay.** `apps/showcase/src/chrome/AxisOverlay.tsx`
+   emits `<svg><line>/<text>`; no showcase manifest creates axis geometry and no `AxisRecipe`
+   is reachable from the browser path. So any capture taken below the DOM — every
+   `dc_json_host --png`, every engine framebuffer readback — has **no axis at all**, not merely
+   no text. This compounds **DC-L02** rather than being covered by it: DC-L02 is about labels,
+   this is about the spine, ticks and gridlines too.
+
+2. **The measured domain does not drive the framing.** The data→clip `transform` is still a
+   baked literal in each `view.json`, so the domain the axis states and the window the plot
+   shows are independent numbers. Measured on `candles-aapl`: the stated x domain is
+   **3.6 … 270.4** (267 real records) while the x-anchored window spans **150** index units, so
+   ~44% of the stated domain is off-frame. `AxisOverlay` filters ticks outside the box, so the
+   *visible* tick count silently drops — 5 of the requested 7 x ticks at 16 s of replay,
+   observed in the running app (nvidia/ampere adapter, 2026-09-19). Every label shown is true;
+   there are just fewer of them than the view asked for, and the axis does not say so.
+
+3. **Most views still state a literal.** 3 of the 14 showcase views with `chrome.axes` declare
+   an `axisDomain` (`candles-aapl`, `ohlc-bars`, `candle-overlays`); the other 11 keep their
+   hand-typed `min`/`max` and are captions in exactly the sense
+   `specs/2026-09-19-chart-quality-bar/SPEC.md` §1.3 describes. The report labels which is
+   which (`source: "derived" | "literal"`), so this is visible rather than assumed — but it is
+   not yet fixed.
+
+**Why it bites.** A reader who sees the derived domain land and concludes "the axis works now"
+will be wrong twice: the engine still draws nothing, and the numbers do not describe the frame.
+The failure mode of (2) in particular *looks* like a domain bug — sparser ticks after a change
+that was supposed to improve the axis — when it is the absent framing rule.
+
+**Re-check.**
+```bash
+# 1 — the marks are DOM; no manifest draws an axis
+grep -c 'svg' apps/showcase/src/chrome/AxisOverlay.tsx            # -> 2 (open + close tag)
+grep -rl 'AxisRecipe' apps/showcase/ --include=*.ts --include=*.tsx | wc -l   # -> 0
+
+# 2 — the framing is still a literal, per view
+grep -h '"transform"' apps/showcase/views/candles-aapl/view.json
+# -> "transform": { "sx": 0.011333333, "sy": 0.10625, "tx": -0.895333333, "ty": -43.88125 },
+
+# 3 — measured vs. literal, across the catalogue
+grep -l 'axisDomain' apps/showcase/views/*/manifest.ts | wc -l              # -> 3
+grep -l '"min": .*"format"' apps/showcase/views/*/view.json | wc -l         # -> 11
+grep -l '"axes"' apps/showcase/views/*/view.json | wc -l                    # -> 14
+
+# 4 — the domain itself is real and tracks the data (folds the committed captures)
+npx vitest run apps/showcase/src/chrome/deriveAxes.test.ts                  # -> 14 passed
+```
+
+**Working around it.** To read a chart's domain without a screenshot, read
+`window.__dcAxisDomain[viewId]` or the overlay's `data-dc-axis-domain` attribute — both are
+live and both name their provenance. Do not infer the visible window from the stated domain;
+they are not the same number until (2) lands.
+
+**Ticket.** **ENC-1253** (render the marks in the engine) and **ENC-1256** (fit the series to
+the viewport, which is what makes the transform a function of this domain). Converting the
+remaining 11 views is unticketed.
+
+**Verified at** `ENC-1252 HEAD`, 2026-09-19 — greps run in the ENC-1252 worktree; the
+tick-count and domain observations taken from the running showcase over CDP on a headed Chrome
+(`vendor: nvidia, architecture: ampere` — SPEC D8), replaying the committed `candles-aapl` /
+`candle-overlays` captures.
+
+---
+
 # §C — Corrections
 
 Beliefs that were held confidently and were wrong. They are here because each one cost real

@@ -160,6 +160,13 @@ export interface ReplayOptions {
   growthSeries?: GrowthSeries[];
   /** X-anchor framing (omit unless the view sets xAnchor). */
   xAnchor?: XAnchorSpec;
+  /**
+   * Observer called with every binary batch, verbatim, immediately BEFORE it is
+   * handed to the engine (ENC-1252). The axis-domain tracker folds the same
+   * bytes the renderer ingests, so the domain the chart states is measured from
+   * the data it drew — not from a parallel copy. Must not mutate the buffer.
+   */
+  onBatch?: (batch: ArrayBuffer) => void;
 }
 
 const OP_APPEND = 1;
@@ -232,12 +239,14 @@ function firstRecordX(batch: ArrayBuffer, bufferId: number, xField: number): num
  * texturedQuad views can animate.
  */
 export function useReplay(host: EngineHost | null, records: Records | null, opts: ReplayOptions = {}): void {
-  const { playing = true, onProgress, onComplete, growth, growthSeries, xAnchor } = opts;
+  const { playing = true, onProgress, onComplete, growth, growthSeries, xAnchor, onBatch } = opts;
   // Hold the latest callbacks without re-arming the timeline each render.
   const onProgressRef = useRef(onProgress);
   onProgressRef.current = onProgress;
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
+  const onBatchRef = useRef(onBatch);
+  onBatchRef.current = onBatch;
 
   useEffect(() => {
     if (!host || !records) return;
@@ -320,6 +329,7 @@ export function useReplay(host: EngineHost | null, records: Records | null, opts
     const pushFrame = (i: number) => {
       if (cancelled) return;
       const ab = b64ToArrayBuffer(frames[i].b64);
+      onBatchRef.current?.(ab);
       anchorXFor(ab);
       for (const s of series) {
         counts.set(s.bufferId, (counts.get(s.bufferId) ?? 0) + countRecordsForBuffer(ab, s.bufferId, s.stride));

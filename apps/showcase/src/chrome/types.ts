@@ -5,21 +5,29 @@
  * labels), a legend, and (for heatmaps) a colorbar. The showcase renders these
  * as a crisp HTML/SVG OVERLAY positioned over the WebGPU canvas (never in-engine
  * text). The overlay maps data→clip→pixel the SAME way the engine does, driven
- * by the view's BAKED `transform` (sx/sy/tx/ty) plus the static data ranges
- * declared here, so ticks/gridlines align with the rendered geometry.
+ * by the view's BAKED `transform` (sx/sy/tx/ty) plus the axis DOMAIN, so
+ * ticks/gridlines align with the rendered geometry.
  *
- * The showcase-explicit replay path has no RangeTracker, so framing is baked per
- * view → the axis ranges below are static and the static chrome is correct.
+ * WHERE THE DOMAIN COMES FROM (ENC-1252, chart-quality-bar SPEC D7).
+ * An axis's `min`/`max` are OPTIONAL. Omit them and the domain is MEASURED from
+ * the records the view streams, by a `DomainTracker` folding the same dataplane
+ * bytes the engine ingests (see `deriveAxes.ts` and the view manifest's
+ * `axisDomain` export). A view that still hard-codes them renders a caption, not
+ * a measurement — if its geometry drifted, the number would not move (SPEC
+ * §1.3). The views that still hard-code a range are the backlog, not the
+ * pattern.
  *
  * ── Per-view agents: how to add chrome ────────────────────────────────────────
  * Add a `chrome` object to your view.json. Set whichever sub-blocks apply:
  *   • cartesian charts (candles, lines, bars, scatter) → `axes` (+ `legend`)
  *   • heatmaps / textured quads (correlation, density, spectrogram) → `colorbar`
  *   • categorical fills (treemap, sankey) → `legend` only
- * Every sub-block is optional. The axis `min`/`max` are DATA-SPACE values; the
- * overlay maps them through the baked `transform` to land ticks exactly where
- * the engine draws that value. See the candles-aapl (axes + legend) and
- * correlation-heatmap (colorbar) reference views.
+ * Every sub-block is optional. An axis's domain is DATA-SPACE; the overlay maps
+ * it through the baked `transform` to land ticks exactly where the engine draws
+ * that value. Prefer to OMIT `min`/`max` and export an `axisDomain` from your
+ * manifest.ts instead, so the domain is measured from your own streamed records
+ * (D7). See the candles-aapl (derived axes + legend) and correlation-heatmap
+ * (colorbar) reference views.
  */
 
 /** RGBA in 0..1 floats (matches the engine's setDrawItemStyle colors) OR a CSS
@@ -36,19 +44,24 @@ export type AxisFormat =
   | 'percent' /** "+42%" — value*100 with sign */;
 
 /**
- * One axis (x or y). `min`/`max` are DATA-SPACE bounds (e.g. price 405..421, or
- * record-index 4..162). The overlay maps them through the view's baked
- * `transform` to pixels, then lays `ticks` evenly across [min,max]. Gridlines
- * (when `grid`) and tick labels are drawn at those data values, so they align
- * with the rendered geometry.
+ * One axis (x or y). Its DOMAIN is a pair of data-space bounds (e.g. price
+ * 405..421, or record-index 4..162). The overlay maps them through the view's
+ * baked `transform` to pixels, then lays `ticks` evenly across the domain.
+ * Gridlines (when `grid`) and tick labels are drawn at those data values, so
+ * they align with the rendered geometry.
+ *
+ * `min`/`max` are OPTIONAL (ENC-1252 / D7): leave them out and the domain is
+ * measured from the streamed data instead. Setting them pins the axis to a
+ * literal — which is the thing D7 removes — so do it only for a view whose
+ * `axisDomain` cannot yet be declared.
  */
 export interface AxisSpec {
   /** Axis title (e.g. "Price", "Time"). Optional. */
   label?: string;
-  /** Data-space lower bound (maps via the transform to a pixel). */
-  min: number;
-  /** Data-space upper bound. */
-  max: number;
+  /** Data-space lower bound. Omit to measure it from the streamed data. */
+  min?: number;
+  /** Data-space upper bound. Omit to measure it from the streamed data. */
+  max?: number;
   /** Tick-label formatting. */
   format: AxisFormat;
   /** Number of tick intervals (ticks = this+1 labels). Default 5. */
