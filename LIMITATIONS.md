@@ -525,50 +525,6 @@ own PR had to fix in five other entries.
 
 ---
 
-## DC-L12 — A candle6 `halfWidth` is a request, not the rendered width 🟡
-
-**Claim.** Since ENC-1257 `instancedCandle@1` treats the per-instance `halfWidth` (candle6 byte
-offset 20) as the author's *nominal proportion* and resolves the width it actually draws from
-the bar pitch in PIXELS: `dc::resolveBarWidth` (`core/include/dc/render/BarSizing.hpp`) enforces
-a **1px minimum inter-bar gap** and a **24px maximum body**, and caps the fixed-pixel wick by the
-same budget. So `halfWidth` no longer maps one-to-one onto pixels, and two draws of the same
-records at different viewport widths or zoom levels can render different body widths.
-
-**Why it bites.** Authoring code that computes a `halfWidth` to hit an exact pixel width will be
-overruled at the extremes — and only at the extremes. Inside the band (pitch between roughly 5px
-and 30px) the authored value is returned unchanged, which is why every pre-existing scene in this
-repo renders identically; you will meet this only on a very dense or a very sparse chart, i.e.
-exactly where a naive value was wrong anyway. The resolution is host-side and per-draw, so it is
-invisible in the buffer bytes: `getBufferBytes()` and `getSceneDocument()` still report the
-authored `halfWidth`, and so does `SvgExporter` (`core/src/export/SvgExporter.cpp:517`), which
-does **not** apply the rule — an SVG export of a dense candle chart still fuses.
-
-**Re-check.**
-```bash
-cmake -B build && cmake --build build --target dc_enc1257_bar_sizing -j$(nproc)
-./build/core/dc_enc1257_bar_sizing | grep -E 'candles-aapl (pre|post)-fix|live 55px'
-#   candles-aapl pre-fix: pitch 4.5333 body 3.6267 gap 0.9067
-#   candles-aapl post-fix: body 3.5333 gap 1.0000 halfClip 0.004417
-#   live 55px pitch: body 24.000 gap 31.000
-```
-The first line is the authored width; the second is what is drawn.
-
-**Working around it.** Nothing to work around if you want legible bars — that is the point. If
-you need an exact pixel width, widen the config rather than fighting it: `BarSizingConfig` is a
-defaulted parameter on every entry point, and passing `maxBodyPx` / `minGapPx` of your choosing
-restores whatever behaviour you need. The rule never applies at all when the draw has no pitch
-(a single bar), no viewport, or a degenerate transform.
-
-**Ticket.** None for the engine. `SvgExporter` not applying the rule is a real gap and is
-unowned.
-
-**Verified at** `ENC-1257 HEAD`, 2026-09-19 — the command above was run in the ENC-1257
-worktree and produced exactly the three lines shown; the pixel-level counterpart
-(`dc_enc1257_dawn_candle_gap`, Dawn-gated) renders 10, 500 and the 156-bar candles-aapl
-configuration and asserts one lit run per bar.
-
----
-
 ## DC-L11 — A manifest `arc` mark is centred at the clip origin, and is an ellipse 🟠
 
 **Claim.** `ArcOptions` — the polar centre and the chord count for `Mark::Arc` — is a
@@ -634,6 +590,52 @@ aspect term or a documented "clip units, pre-scale yourself" contract.
 
 **Verified at** `ENC-995 HEAD`, 2026-09-14 — greps 1-4 run in the ENC-995 worktree; the render
 measurement from a `dc_gpu` harness against `build-dawn` on Vulkan/NVK.
+
+---
+
+## DC-L12 — A candle6 `halfWidth` is a request, not the rendered width 🟡
+
+**Claim.** Since ENC-1257 `instancedCandle@1` treats the per-instance `halfWidth` (candle6 byte
+offset 20) as the author's *nominal proportion* and resolves the width it actually draws from
+the bar pitch in PIXELS: `dc::resolveBarWidth` (`core/include/dc/render/BarSizing.hpp`) enforces
+a **1px minimum inter-bar gap** and a **24px maximum body**, and caps the fixed-pixel wick by the
+same budget. So `halfWidth` no longer maps one-to-one onto pixels, and two draws of the same
+records at different viewport widths or zoom levels can render different body widths.
+
+**Why it bites.** Authoring code that computes a `halfWidth` to hit an exact pixel width will be
+overruled at the extremes — and only at the extremes. Inside the band (pitch between roughly 5px
+and 30px) the authored value is returned unchanged, which is why every pre-existing scene in this
+repo renders identically; you will meet this only on a very dense or a very sparse chart, i.e.
+exactly where a naive value was wrong anyway. The resolution is host-side and per-draw, so it is
+invisible in the buffer bytes: `getBufferBytes()` and `getSceneDocument()` still report the
+authored `halfWidth`, and so does `SvgExporter` (`core/src/export/SvgExporter.cpp:517`), which
+does **not** apply the rule — an SVG export of a dense candle chart still fuses.
+
+**Re-check.**
+```bash
+cmake -B build && cmake --build build --target dc_enc1257_bar_sizing -j$(nproc)
+./build/core/dc_enc1257_bar_sizing | grep -E 'candles-aapl (pre|post)-fix|live 55px'
+#   candles-aapl pre-fix: pitch 4.5333 body 3.6267 gap 0.9067
+#   candles-aapl post-fix: body 3.5333 gap 1.0000 halfClip 0.004417
+#   live 55px pitch: body 24.000 gap 31.000
+```
+The first line is the authored width; the second is what is drawn.
+
+**Working around it.** Nothing to work around if you want legible bars — that is the point. If
+you need an exact pixel width, widen the config rather than fighting it: `BarSizingConfig` is a
+defaulted parameter on every entry point, and passing `maxBodyPx` / `minGapPx` of your choosing
+restores whatever behaviour you need. The rule never applies at all when the draw has no pitch
+(a single bar), no viewport, or a degenerate transform.
+
+**Ticket.** None for the engine. `SvgExporter` not applying the rule is a real gap and is
+unowned.
+
+**Verified at** `ENC-1257 HEAD`, 2026-09-19 — the command above was run in the ENC-1257
+worktree and produced exactly the three lines shown; the pixel-level counterpart
+(`dc_enc1257_dawn_candle_gap`, Dawn-gated) renders 10, 500 and the 156-bar candles-aapl
+configuration and asserts one lit run per bar.
+
+---
 
 # §C — Corrections
 
