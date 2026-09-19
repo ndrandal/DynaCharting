@@ -26,6 +26,21 @@ export {
 } from "./scale";
 export type { Range, Transform1D, Transform2D, Scale } from "./scale";
 
+// ENC-1252 (chart-quality-bar D7): the visible domain, MEASURED from the streamed
+// dataplane records rather than typed into a view file. The client-side mirror of
+// embassy's RangeTracker.
+export {
+  DomainTracker,
+  applyDomainPolicy,
+  RECORD_LAYOUTS,
+} from "./domain";
+export type {
+  RecordLayout,
+  DomainSource,
+  DomainPolicy,
+  ObservedDomain,
+} from "./domain";
+
 export { createIdAllocator } from "./ids";
 export type { IdAllocator, ResourceKind } from "./ids";
 
