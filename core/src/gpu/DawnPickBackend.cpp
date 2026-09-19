@@ -113,7 +113,7 @@ struct U {
   c0:vec4<f32>, c1:vec4<f32>, c2:vec4<f32>,
   color:vec4<f32>,     // float 12 (the id color)
   _colorDown:vec4<f32>,// float 16 (unused for pick)
-  wickHalf:vec4<f32>,  // float 20 (.x = wick half-width, clip space)
+  wickHalf:vec4<f32>,  // float 20 (.x = wick half, .y = body half; clip)
 };
 @group(0) @binding(0) var<uniform> u : U;
 @vertex
@@ -142,8 +142,17 @@ fn vs_main(@builtin(vertex_index) vid : u32,
     let hwc = u.wickHalf.x;
     clip = vec2<f32>(center.x + mix(-hwc, hwc, uv.x), center.y);
   } else {
-    let p = m * vec3<f32>(mix(cx - hw, cx + hw, uv.x), mix(body0, body1, uv.y), 1.0);
-    clip = p.xy;
+    // ENC-1257: mirror the visible backend — when the host resolved a body
+    // half-width from the bar pitch (wickHalf.y > 0) the pick footprint is that,
+    // not the authored halfWidth.
+    let bodyHalf = u.wickHalf.y;
+    if (bodyHalf > 0.0) {
+      let center = m * vec3<f32>(cx, mix(body0, body1, uv.y), 1.0);
+      clip = vec2<f32>(center.x + mix(-bodyHalf, bodyHalf, uv.x), center.y);
+    } else {
+      let p = m * vec3<f32>(mix(cx - hw, cx + hw, uv.x), mix(body0, body1, uv.y), 1.0);
+      clip = p.xy;
+    }
   }
   return vec4<f32>(clip.x, -clip.y, 0.0, 1.0);
 }
@@ -570,6 +579,12 @@ DawnPickBackend::GeoBuffers& DawnPickBackend::ensureGeoBuffers(
           gb.vertexBuffer =
               device.createBuffer(scratch.size(), scratch.data(), scratch.size());
           gb.instanceCount = count;
+          if (recStride == 24 && di.pipeline == "instancedCandle@1") {
+            gb.pitchData =
+                barPitchFromRecords(scratch.data(), scratch.size(), 24, 0);
+            gb.nominalHalfData =
+                medianRecordField(scratch.data(), scratch.size(), 24, 20);
+          }
         }
       } else if (vtx && vtxBytes >= recStride) {
         // Non-indexed: the record buffer is already tightly packed. texturedQuad
@@ -577,6 +592,12 @@ DawnPickBackend::GeoBuffers& DawnPickBackend::ensureGeoBuffers(
         // upload + 16B instance stride reads the rect correctly.
         gb.vertexBuffer = device.createBuffer(vtxBytes, vtx, vtxBytes);
         gb.instanceCount = geo->vertexCount;
+        if (recStride == 24 && di.pipeline == "instancedCandle@1") {
+          const std::size_t drawnBytes = std::min<std::size_t>(
+              vtxBytes, static_cast<std::size_t>(geo->vertexCount) * 24);
+          gb.pitchData = barPitchFromRecords(vtx, drawnBytes, 24, 0);
+          gb.nominalHalfData = medianRecordField(vtx, drawnBytes, 24, 20);
+        }
       }
     }
   }
@@ -710,9 +731,16 @@ void DawnPickBackend::drawPickItem(GpuDevice& device, const Scene& scene,
 
   if (di.pipeline == "instancedCandle@1") {
     if (!gb.vertexBuffer.valid() || gb.instanceCount == 0) return;
-    const float wickHalfClip =
-        viewW > 0 ? 2.0f / static_cast<float>(viewW) : 0.0f;
-    UniformBinding uniforms[3];
+    // ENC-1257 — identical resolution to the visible backend, so the pick
+    // footprint is the drawn footprint.
+    const CandleBodyResolution body = resolveCandleBodyClip(
+        gb.pitchData, gb.nominalHalfData, xform[0], viewW);
+    const float bodyHalfClip = body.apply ? body.halfWidthClip : 0.0f;
+    float wickHalfClip = viewW > 0 ? 2.0f / static_cast<float>(viewW) : 0.0f;
+    if (body.apply && body.maxMarkHalfClip < wickHalfClip) {
+      wickHalfClip = body.maxMarkHalfClip;
+    }
+    UniformBinding uniforms[4];
     uniforms[0].kind = UniformBinding::Kind::Mat3;
     uniforms[0].name = "u_transform";
     uniforms[0].data = xform;
@@ -722,13 +750,16 @@ void DawnPickBackend::drawPickItem(GpuDevice& device, const Scene& scene,
     uniforms[2].kind = UniformBinding::Kind::Float;
     uniforms[2].name = "u_wickHalf";
     uniforms[2].data = &wickHalfClip;
+    uniforms[3].kind = UniformBinding::Kind::Float;
+    uniforms[3].name = "u_bodyHalf";
+    uniforms[3].data = &bodyHalfClip;
 
     BindGroupDesc bg;
     bg.pipeline = pickInstCandle_;
     bg.vertexBuffers = &gb.vertexBuffer;
     bg.vertexBufferCount = 1;
     bg.uniforms = uniforms;
-    bg.uniformCount = 3;
+    bg.uniformCount = 4;
     BindGroupHandle group = device.createBindGroup(bg);
     if (!group.valid()) return;
     device.bindPipeline(pickInstCandle_);
