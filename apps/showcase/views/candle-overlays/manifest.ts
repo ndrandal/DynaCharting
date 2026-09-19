@@ -40,6 +40,7 @@
 
 import type { SceneManifest } from '../../src/scene/commands';
 import type { GrowthSync, GrowthSeries } from '../../src/engine/useReplay';
+import type { AxisDomainSpec } from '../../src/views/registry';
 
 // --- structural IDs ---
 const PRICE_PANE = 10000;
@@ -173,3 +174,22 @@ export const growthSeries: GrowthSeries[] = [
   { bufferId: SMA_BUFFER, geometryId: SMA_GEOMETRY, stride: 16 }, // rect4 (lineAA segments)
   { bufferId: VOL_BUFFER, geometryId: VOL_GEOMETRY, stride: 16 }, // rect4
 ];
+
+/**
+ * AXIS DOMAIN (ENC-1252 / chart-quality-bar SPEC D7) — and the reason an axis
+ * group is a DECLARATION rather than "every buffer that streamed".
+ *
+ * The chrome's y axis is PRICE. Candles (candle6) and the SMA overlay (rect4
+ * segments) are both price and both ride PRICE_TRANSFORM, so both feed y. The
+ * volume bars ride VOL_TRANSFORM in raw volume units (0..~165k) on their own
+ * pane: folding them into y would state a price axis of 0..165000. They share
+ * the record-index X, so they register for X only — exactly the per-axis-group
+ * registration embassy's RangeTracker does with its `AxisGroup.BufferIDs`.
+ */
+export const axisDomain: AxisDomainSpec = {
+  sources: [
+    { bufferId: CANDLE_BUFFER, format: 'candle6' },
+    { bufferId: SMA_BUFFER, format: 'rect4' },
+    { bufferId: VOL_BUFFER, format: 'rect4', axes: 'x' },
+  ],
+};
