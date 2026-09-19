@@ -369,6 +369,13 @@ BackendStats DawnInstancedCandleBackend::renderDrawItem(GpuDevice& device,
   uniforms[3].kind = UniformBinding::Kind::Float;
   uniforms[3].name = "u_wickHalf";
   uniforms[3].data = &wickHalfClip;
+  // ENC-1257 body half-width (clip space) at uniform float index 21 (byte 84) —
+  // wickHalf.y. Shares the flat tail with lineAA's u_fringeEdge, which can never
+  // coexist in this pipeline's WGSL struct (same argument the existing
+  // wickHalf@20 vs aaWidth@20 overlap rests on).
+  uniforms[4].kind = UniformBinding::Kind::Float;
+  uniforms[4].name = "u_bodyHalf";
+  uniforms[4].data = &bodyHalfClip;
 
   BindGroupDesc bgDesc;
   bgDesc.pipeline = pipeline_;
@@ -376,7 +383,7 @@ BackendStats DawnInstancedCandleBackend::renderDrawItem(GpuDevice& device,
   bgDesc.vertexBufferCount = 1;
   bgDesc.indexBuffer = {};  // instanced draw: no GPU index buffer (gather is CPU)
   bgDesc.uniforms = uniforms;
-  bgDesc.uniformCount = 4;
+  bgDesc.uniformCount = 5;
 
   BindGroupHandle group = device.createBindGroup(bgDesc);
   if (!group.valid()) return stats;
