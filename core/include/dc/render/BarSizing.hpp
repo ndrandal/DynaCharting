@@ -85,6 +85,14 @@ struct BarMetrics {
   bool degraded{false};
   // The rule moved the body away from the caller's nominal width.
   bool clamped{false};
+  // The widest HALF-extent any part of the mark may occupy and still leave the
+  // gap. The body is already inside it; the WICK is not automatically, because
+  // `instancedCandle@1` draws the wick at a FIXED pixel width (1px half / 2px
+  // total) that ignores the transform entirely. At a 2.6px pitch — 500 bars on
+  // the live capture's plot — a 2px wick alone consumes everything a 1px gap
+  // needs, so sizing the body correctly and leaving the wick alone still
+  // produces a fused slab. The wick must be capped by this too.
+  float maxMarkHalfPx{0.0f};
 };
 
 // The rule. `nominalBodyPx <= 0` means "no author preference" and falls back to
@@ -138,6 +146,9 @@ float medianRecordField(const std::uint8_t* bytes, std::size_t byteLen,
 struct CandleBodyResolution {
   bool apply{false};
   float halfWidthClip{0.0f};
+  // The widest the fixed-pixel wick may be drawn, in clip units, before it eats
+  // the inter-bar gap. The caller takes min(its own wick half-width, this).
+  float maxMarkHalfClip{0.0f};
   BarMetrics metrics{};
 };
 

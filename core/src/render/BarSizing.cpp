@@ -38,6 +38,7 @@ BarMetrics resolveBarWidth(float pitchPx, float nominalBodyPx,
   if (!std::isfinite(pitchPx) || pitchPx <= 0.0f) {
     m.bodyPx = std::isfinite(nominalBodyPx) && nominalBodyPx > 0.0f ? nominalBodyPx : 0.0f;
     m.gapPx = 0.0f;
+    m.maxMarkHalfPx = 0.0f;
     m.degraded = true;
     return m;
   }
@@ -53,6 +54,7 @@ BarMetrics resolveBarWidth(float pitchPx, float nominalBodyPx,
     const float share = denom > 0.0f ? minBody / denom : 0.5f;
     m.bodyPx = pitchPx * share;
     m.gapPx = pitchPx - m.bodyPx;
+    m.maxMarkHalfPx = m.bodyPx * 0.5f;
     m.degraded = true;
     m.clamped = true;
     return m;
@@ -78,6 +80,8 @@ BarMetrics resolveBarWidth(float pitchPx, float nominalBodyPx,
   // maxBody >= minBody, and maxBodyPx is floored at minBody, so it cannot.
   m.bodyPx = body;
   m.gapPx = pitchPx - body;
+  // Anything drawn for this bar — body OR the fixed-pixel wick — must fit here.
+  m.maxMarkHalfPx = std::max(0.0f, (pitchPx - minGap) * 0.5f);
   m.clamped = std::fabs(body - nominal) > 1e-4f;
   return m;
 }
@@ -162,6 +166,8 @@ CandleBodyResolution resolveCandleBodyClip(float pitchData, float nominalHalfDat
   out.metrics = resolveBarWidth(pitchPx, nominalBodyPx, cfg);
   // bodyPx pixels span 2*bodyPx/W of clip; the half-extent is bodyPx/W.
   out.halfWidthClip = out.metrics.bodyPx / static_cast<float>(viewportW);
+  out.maxMarkHalfClip =
+      2.0f * out.metrics.maxMarkHalfPx / static_cast<float>(viewportW);
   out.apply = finitePos(out.halfWidthClip);
   return out;
 }
