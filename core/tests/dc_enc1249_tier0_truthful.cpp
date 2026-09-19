@@ -100,9 +100,10 @@ void check(bool ok, const std::string& what, const std::string& detail) {
   }
 }
 
-std::string fmt(const char* f, double a, double b = 0, double c = 0) {
-  char buf[256];
-  std::snprintf(buf, sizeof(buf), f, a, b, c);
+template <typename... Args>
+std::string fmt(const char* f, Args... args) {
+  char buf[512];
+  std::snprintf(buf, sizeof(buf), f, args...);
   return buf;
 }
 
@@ -295,7 +296,7 @@ void caseRamp(dc::DawnSceneRenderer& renderer, const Mode& mode) {
   // ---- A1: something was drawn.
   const int ink = litPixels(f);
   check(ink > 200, "A1 the frame is not blank",
-        fmt("lit=%.0f px (need > 200)", ink));
+        fmt("lit=%d px (need > 200)", ink));
 
   // ---- A2/A5: every sample's column, measured against the scale's prediction.
   double measured[kRampN];
@@ -328,8 +329,7 @@ void caseRamp(dc::DawnSceneRenderer& renderer, const Mode& mode) {
     check(rise > H * 0.5,
           "A3 last sample's lit pixel is ABOVE the first",
           fmt("first row=%.2f, last row=%.2f, rise=%.2f px (need > %.0f)",
-              measured[0], measured[kRampN - 1], rise) +
-              fmt(" %.0f", H * 0.5));
+              measured[0], measured[kRampN - 1], rise, H * 0.5));
   } else {
     check(false, "A3 last sample's lit pixel is ABOVE the first",
           "a sample column was empty");
@@ -457,18 +457,16 @@ void caseCandle(dc::DawnSceneRenderer& renderer, const Mode& mode) {
                         std::fabs(wick.top - rowHigh) <= kSpanTolPx &&
                         std::fabs(wick.bottom - rowLow) <= kSpanTolPx;
     check(wickOk, std::string("B1 [") + p.label + "] wick spans low..high",
-          fmt("got [%.0f..%.0f] want [%.1f..%.1f]", double(wick.top),
-              double(wick.bottom), rowHigh) +
-              fmt("..%.1f", rowLow));
+          fmt("got [%d..%d] want [%.1f..%.1f]", wick.top, wick.bottom, rowHigh,
+              rowLow));
 
     // B2 — the body column spans open..close.
     const bool bodyOk = body.count > 0 &&
                         std::fabs(body.top - rowClose) <= kSpanTolPx &&
                         std::fabs(body.bottom - rowOpen) <= kSpanTolPx;
     check(bodyOk, std::string("B2 [") + p.label + "] body spans open..close",
-          fmt("got [%.0f..%.0f] want [%.1f..%.1f]", double(body.top),
-              double(body.bottom), rowClose) +
-              fmt("..%.1f", rowOpen));
+          fmt("got [%d..%d] want [%.1f..%.1f]", body.top, body.bottom, rowClose,
+              rowOpen));
 
     // B3 — the wick overhangs the body at BOTH ends. A body drawn with the
     // wick's extents (or the reverse) fails here even if a tolerance slipped.
@@ -477,8 +475,8 @@ void caseCandle(dc::DawnSceneRenderer& renderer, const Mode& mode) {
                           (wick.bottom - body.bottom) > 30;
     check(overhang,
           std::string("B3 [") + p.label + "] wick overhangs the body both ends",
-          fmt("above=%.0f below=%.0f (need > 30 each)",
-              double(body.top - wick.top), double(wick.bottom - body.bottom)));
+          fmt("above=%d below=%d (need > 30 each)", body.top - wick.top,
+              wick.bottom - body.bottom));
 
     // B4 — up/down colour follows close >= open.
     const int midRow = static_cast<int>(std::lround((rowClose + rowOpen) * 0.5));
@@ -488,15 +486,14 @@ void caseCandle(dc::DawnSceneRenderer& renderer, const Mode& mode) {
     check(colourOk,
           std::string("B4 [") + p.label + "] body carries the " +
               (p.expectUp ? "UP" : "DOWN") + " colour",
-          fmt("rgb=(%.0f,%.0f,%.0f)", double(c[0]), double(c[1]),
-              double(c[2])));
+          fmt("rgb=(%d,%d,%d)", int(c[0]), int(c[1]), int(c[2])));
   }
 
   // B5 — the gap between the two candles is clear: these are marks, not a slab.
   const int gapX = W / 2;
   const ColumnSpan gap = scanColumn(f, gapX);
   check(gap.count == 0, "B5 the gap between candles is clear",
-        fmt("x=%.0f lit=%.0f px", double(gapX), double(gap.count)));
+        fmt("x=%d lit=%d px", gapX, gap.count));
 }
 
 }  // namespace
