@@ -180,10 +180,100 @@ static RowRuns renderRow(dc::DawnDevice& dev, dc::BackendRegistry& backends,
   return scanRow(rgba, static_cast<int>(W), static_cast<int>(H / 2));
 }
 
+// The SAME candles at their AUTHORED width, rendered so the rule cannot engage:
+// one instance per DrawItem. With a single instance there is no inter-bar
+// relation, `barPitchFromRecords` returns 0, `resolveCandleBodyClip` reports
+// `apply == false`, and the shader falls back to the per-instance halfWidth —
+// i.e. exactly the pre-ENC-1257 geometry, drawn by the post-ENC-1257 binary.
+// This is how the "before" raster in the claims below is a MEASUREMENT and not
+// an extrapolation.
+static RowRuns renderRowLegacy(dc::DawnDevice& dev, dc::BackendRegistry& backends,
+                               int count, float x0, float halfWidth, float sx,
+                               float tx, std::uint32_t W, std::uint32_t H,
+                               unsigned idBase) {
+  dc::Scene scene;
+  dc::ResourceRegistry reg;
+  dc::CommandProcessor cp(scene, reg);
+  dc::CpuBufferStore store;
+
+  requireOk(cp.applyJsonText(R"({"cmd":"createPane","id":1})"), "pane");
+  requireOk(cp.applyJsonText(R"({"cmd":"createLayer","id":2,"paneId":1})"), "layer");
+  requireOk(cp.applyJsonText(R"({"cmd":"createTransform","id":50})"), "xform");
+  char buf[512];
+  std::snprintf(buf, sizeof(buf),
+                R"({"cmd":"setTransform","id":50,"sx":%.9g,"sy":1,"tx":%.9g,"ty":0})",
+                static_cast<double>(sx), static_cast<double>(tx));
+  requireOk(cp.applyJsonText(buf), "setxform");
+
+  for (int i = 0; i < count; ++i) {
+    const unsigned di = idBase + 1u + static_cast<unsigned>(i) * 3u;
+    const unsigned bufId = di + 1u;
+    const unsigned geoId = di + 2u;
+    const float rec[6] = {x0 + static_cast<float>(i), -0.5f, 0.8f,
+                          -0.8f, 0.5f, halfWidth};
+    std::snprintf(buf, sizeof(buf),
+                  R"({"cmd":"createBuffer","id":%u,"byteLength":24})", bufId);
+    requireOk(cp.applyJsonText(buf), "lbuf");
+    store.setCpuData(bufId, rec, sizeof(rec));
+    std::snprintf(buf, sizeof(buf),
+                  R"({"cmd":"createGeometry","id":%u,"vertexBufferId":%u,)"
+                  R"("vertexCount":1,"format":"candle6"})", geoId, bufId);
+    requireOk(cp.applyJsonText(buf), "lgeom");
+    std::snprintf(buf, sizeof(buf),
+                  R"({"cmd":"createDrawItem","id":%u,"layerId":2})", di);
+    requireOk(cp.applyJsonText(buf), "ldi");
+    std::snprintf(buf, sizeof(buf),
+                  R"({"cmd":"bindDrawItem","drawItemId":%u,)"
+                  R"("pipeline":"instancedCandle@1","geometryId":%u})", di, geoId);
+    requireOk(cp.applyJsonText(buf), "lbind");
+    std::snprintf(buf, sizeof(buf),
+                  R"({"cmd":"setDrawItemStyle","drawItemId":%u,)"
+                  R"("colorUpR":0,"colorUpG":1,"colorUpB":0,"colorUpA":1,)"
+                  R"("colorDownR":1,"colorDownG":0,"colorDownB":0,"colorDownA":1})", di);
+    requireOk(cp.applyJsonText(buf), "lstyle");
+    std::snprintf(buf, sizeof(buf),
+                  R"({"cmd":"attachTransform","drawItemId":%u,"transformId":50})", di);
+    requireOk(cp.applyJsonText(buf), "lattach");
+  }
+
+  dc::RenderPassDesc rp;
+  rp.target = {};
+  rp.viewportWidth = W;
+  rp.viewportHeight = H;
+  rp.clear = true;
+  rp.clearColor[0] = rp.clearColor[1] = rp.clearColor[2] = 0.0f;
+  rp.clearColor[3] = 1.0f;
+
+  dev.beginRenderPass(rp);
+  for (int i = 0; i < count; ++i) {
+    const dc::DrawItem* di =
+        scene.getDrawItem(idBase + 1u + static_cast<unsigned>(i) * 3u);
+    dc::IRendererBackend* be = backends.find(dc::DeviceKind::Dawn, di->pipeline);
+    be->renderDrawItem(dev, scene, store, *di, static_cast<int>(W),
+                       static_cast<int>(H));
+  }
+  dev.endRenderPass();
+
+  std::vector<std::uint8_t> rgba(static_cast<std::size_t>(W) * H * 4, 0);
+  std::uint32_t gotW = 0, gotH = 0;
+  if (!dev.readFramebufferRGBA(rgba.data(), rgba.size(), &gotW, &gotH) ||
+      gotW != W || gotH != H) {
+    std::fprintf(stderr, "readFramebufferRGBA failed\n");
+    std::exit(1);
+  }
+  return scanRow(rgba, static_cast<int>(W), static_cast<int>(H / 2));
+}
+
 static int minOf(const std::vector<int>& v) {
   int m = 1 << 30;
   for (int x : v) if (x < m) m = x;
   return v.empty() ? 0 : m;
+}
+
+static int maxOf(const std::vector<int>& v) {
+  int m = 0;
+  for (int x : v) if (x > m) m = x;
+  return m;
 }
 
 int main() {
@@ -250,6 +340,23 @@ int main() {
           "candles-aapl: 156 bars are 156 separate runs (the slab is gone)");
     check(minOf(r.gaps) >= 1,
           "candles-aapl: min inter-bar gap >= 1px in the raster");
+
+    // …and the SAME scene at its authored 0.4 halfWidth, with the rule unable to
+    // engage. This is the shipped still's geometry, measured rather than
+    // inferred: 156 bodies collapse into a handful of slabs.
+    const RowRuns before = renderRowLegacy(dev, backends, 156, 4.0f, 0.4f,
+                                           0.011333333f, -0.8953333f, W, H,
+                                           910000u);
+    std::printf("  [candles-aapl, AUTHORED width (pre-ENC-1257 geometry)] "
+                "raster: %zu lit runs, longest slab %d px\n",
+                before.lit.size(), maxOf(before.lit));
+    check(static_cast<int>(before.lit.size()) < 156,
+          "pre-fix: the authored width does NOT give 156 separate runs");
+    check(maxOf(before.lit) > 3 * maxOf(r.lit),
+          "pre-fix: bodies fuse into slabs far longer than one bar");
+    check(static_cast<int>(r.lit.size()) >
+              static_cast<int>(before.lit.size()) * 2,
+          "ENC-1257 more than doubles the number of resolvable bars");
   }
 
   // --- [D] ENC-1249's tier-0 candle scene, at its exact numbers ---------------
