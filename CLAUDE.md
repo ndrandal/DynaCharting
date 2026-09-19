@@ -48,13 +48,15 @@ ctest --test-dir build -R dc_d1_1_smoke              # run a single test by name
 The **default** build (no `-DDC_FETCH_DAWN`) builds `dc` + the pure-logic tests only — no renderer, fast, and needs no graphics API. To get the renderer + render/golden tests, opt into Dawn (see below).
 
 > **A green default `ctest` proves nothing about the renderer (LIMITATIONS.md DC-L01).** The
-> default configure registers **190** of the repo's **233** tests; the other **43** — every
-> Dawn render and golden-parity test — plus `dc_gpu`, `dc_json_host` and the four headless
-> servers are excluded at *configure* time, so nothing reports them as missing. "190/190
-> passed" is compatible with the renderer being completely broken. Verify with
+> default configure registers **190** of the repo's **236** tests; the other **46** — every
+> Dawn render and golden-parity test, and the tier-0 check below — plus `dc_gpu`,
+> `dc_json_host` and the four headless servers are excluded at *configure* time, so nothing
+> reports them as missing. "190/190 passed" is compatible with the renderer being completely
+> broken. Verify with
 > `grep -c '^add_test(' build/core/CTestTestfile.cmake` (190) against
-> `grep -cE '^\s*add_test\(' core/CMakeLists.txt` (233). The pair moves as tests are added
-> (188/231 before ENC-984, 189/232 before ENC-995); the **43-test gap** is the number that matters.
+> `grep -cE '^\s*add_test\(' core/CMakeLists.txt` (236). The pair moves as tests are added
+> (188/231 before ENC-984, 189/232 before ENC-995, 190/233 before ENC-1249); the **46-test gap**
+> is the number that matters.
 
 CMake options: `DC_BUILD_TESTS` (default ON), `DC_WARNINGS_AS_ERRORS` (default OFF), `DC_FETCH_DAWN` (default OFF — see below).
 
@@ -166,6 +168,35 @@ VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json ctest --test-dir bu
 ```
 
 The Dawn build adds `dc_gpu`, the `dc_json_host` embedding host, the headless render servers (`dc_showcase_server`, `dc_live_server`, `dc_dashboard_server`, `dc_gallery`), the per-pipeline Dawn render tests, and the Dawn-golden parity tests.
+
+#### The tier-0 check — does the chart depict its data? (ENC-1249)
+
+```bash
+bash scripts/tier0.sh                 # one command; runs the check AND its two negative controls
+bash scripts/tier0.sh <build-dir>     # default build dir: build-dawn
+```
+
+`specs/2026-09-19-chart-quality-bar/SPEC.md` **D1** defines tier 0 ("Truthful") as *the mark
+depicts the data*, and its falsifiable check as: render a **known-answer synthetic series** and
+assert on pixels. That check is `core/tests/dc_enc1249_tier0_truthful.cpp` — a monotonic ramp
+through the real `LineRecipe` + `dc::LinearScale`, and a single candle with hand-computed
+extents through the real `CandleRecipe`, both rendered by `DawnSceneRenderer`.
+
+Four things about it are deliberate and easy to get wrong if you extend it:
+
+- **Synthetic data is correct HERE and only here.** SPEC **D2** bans synthetic feeds for the
+  *reference chart* and permits them for tier-0 assertions, because a known answer is the entire
+  point. Do not read this file as licence to shim a feed anywhere else.
+- **It asserts on the PRESENTED raster** — the readback plus the row flip
+  `EngineHost.blitFramebuffer` applies on every browser frame (**DC-L05**). The raw readback is
+  vertically mirrored; asserting on it would enshrine the mirror and "prove" that a rising series
+  falls. See LIMITATIONS.md **C5**.
+- **It ships its own negative controls, and they are registered tests.**
+  `--invert-data` (a descending ramp; candle body/wick extents swapped) and `--invert-render`
+  (skip the DC-L05 flip) are `ctest` cases with `WILL_FAIL TRUE`, so every run of the suite
+  re-demonstrates that the check *can* fail. A check never seen to fail is not a check.
+- **It does not skip gracefully.** No Dawn adapter is exit **3** ("CANNOT RUN"), never 0 —
+  DC-L01's lesson is that a skip which looks like a pass is how a green run came to mean nothing.
 
 > **`dc_json_host --png` captures contain no text (ENC-992).** A chart's
 > `textOverlay` labels are not rasterized by the engine — they are emitted as a

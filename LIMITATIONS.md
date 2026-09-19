@@ -26,31 +26,43 @@ and corrected them.
 ## DC-L01 — A green default `ctest` says nothing about the renderer 🔴
 
 **Claim.** `cmake -B build && ctest --test-dir build` runs **190** tests and builds **no
-renderer at all**. `dc_gpu`, `dc_json_host`, all four headless demo servers and **43 render
+renderer at all**. `dc_gpu`, `dc_json_host`, all four headless demo servers and **46 render
 tests** are excluded at *configure* time by `DC_FETCH_DAWN` (default `OFF`,
 `core/CMakeLists.txt:165`). They are not "skipped" — they never enter `CTestTestfile.cmake`,
 so nothing reports them as missing.
 
 **Why it bites.** "190/190 passed" is the most reassuring possible output and it is compatible
 with the renderer being completely broken. Every pixel-level guarantee in this engine lives in
-the 43 tests that did not run.
+the 46 tests that did not run — **including the tier-0 check that the chart depicts its data at
+all** (ENC-1249, `scripts/tier0.sh`).
 
 **Re-check.**
 ```bash
-grep -cE '^\s*add_test\(' core/CMakeLists.txt            # 233  — all tests that exist
+grep -cE '^\s*add_test\(' core/CMakeLists.txt            # 236  — all tests that exist
 grep -c '^add_test('  build/core/CTestTestfile.cmake     # 190  — all tests you just ran
 grep -n 'DC_FETCH_DAWN:BOOL' build/CMakeCache.txt        # OFF
 ```
-The 43-test gap is the single `if (DC_HAS_DAWN)` block at `core/CMakeLists.txt:1899-2447`.
-Target-level gap: **51** targets (`dc_gpu`, `dc_glfw_system`, `dc_json_host`,
-`dc_dawn_window_demo`, 4 servers, 43 test executables) across five guarded ranges — 274-351,
-361-366, 374-383, 391-409, 1899-2447.
+The 46-test gap is the single `if (DC_HAS_DAWN)` block at `core/CMakeLists.txt:1916-2489`.
+Target-level gap: **52** targets (`dc_gpu`, `dc_glfw_system`, `dc_json_host`,
+`dc_dawn_window_demo`, 4 servers, 44 test executables) behind the four `if (DC_HAS_DAWN)`
+guards at lines 274, 374, 391 and 1916. Measured directly:
+```bash
+find build-dawn/core -maxdepth 1 -type f -executable | wc -l   # 239
+find build/core      -maxdepth 1 -type f -executable | wc -l   # 190  -> 49 executables missing
+```
+(49 executables, not 52 targets: `dc_gpu` is a library, and `dc_glfw_system` /
+`dc_dawn_window_demo` need the *second* gate `-DDC_DAWN_WINDOWED=ON`.)
+
+**ENC-1249 corrected two stale details here**, both dating from before ENC-995's stamp: the
+block was already at 1916, not 1899, and the "five guarded ranges" list named boundaries
+(`361-366`) that no `if (DC_HAS_DAWN)` guard starts at. Re-derive them with
+`grep -n 'if (DC_HAS_DAWN)' core/CMakeLists.txt` rather than trusting a transcribed range.
 
 **Working around it.** Build Dawn once (~55-60 min, then incremental) and keep the build dir:
 ```bash
 cmake -B build-dawn -G Ninja -DDC_BUILD_TESTS=ON -DDC_FETCH_DAWN=ON
 cmake --build build-dawn -j$(nproc)
-VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json ctest --test-dir build-dawn -j$(nproc)   # 233/233
+VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json ctest --test-dir build-dawn -j$(nproc)   # 236/236
 ```
 Three sessions did exactly this on 2026-09-14 (ENC-992, ENC-993, ENC-995), so it is feasible,
 not theoretical. ENC-992/993 got 231/231 on lavapipe; ENC-995 added one always-built test and
@@ -62,15 +74,25 @@ independent gate for `dc_dawn_window_demo` — `-DDC_FETCH_DAWN=ON` alone gets 5
 **Ticket.** [ENC-994](https://linear.app/encultured/issue/ENC-994) (Backlog) covers two of the
 43 (`d28_1_dawn_lineaa`, `d29_1_dawn_blend`). The other 41 have no owner.
 
-**The absolute numbers move; the 43-test gap does not.** ENC-984 added one always-built logic
-test, taking the pair from 188/231 to 189/232; ENC-995 added another, taking it to **190/233**.
-The gap is still exactly the `DC_HAS_DAWN` block, both times. Read the *difference*, not the
-left-hand number: a change that grows the registered count tells you nothing about the renderer
-either — which is the whole point, and is why two consecutive tickets moving this number changed
-nothing about what the default build proves.
+**The absolute numbers move; the shape of the gap does not.** ENC-984 added one always-built
+logic test, taking the pair from 188/231 to 189/232; ENC-995 added another, taking it to
+190/233; **ENC-1249 added three Dawn-only tests, taking it to 190/236 and the gap from 43 to
+46.** The gap is still exactly the `DC_HAS_DAWN` block, every time. Read the *difference*, not
+the left-hand number: a change that grows the registered count tells you nothing about the
+renderer either — which is the whole point, and is why three consecutive tickets moving this
+number changed nothing about what the default build proves.
 
-**Verified at** `ENC-995 HEAD`, 2026-09-14 — counted statically from `core/CMakeLists.txt` and
-empirically from a real default configure in the ENC-995 worktree; both give 190 of 233, gap 43.
+**And ENC-1249 is the case that shows why the gap matters rather than merely being untidy.** The
+tier-0 check (`scripts/tier0.sh` -> `dc_enc1249_tier0_truthful`) is the one that asserts a chart
+depicts its data — that a rising series rises. It is a claim about pixels, so it needs the
+renderer, so it is inside the 46. A green default `ctest` therefore proves nothing about tier 0
+either. The check exits **3** (never 0) when no adapter comes up, and `scripts/tier0.sh` turns
+that into exit 2 "CANNOT RUN", precisely so it cannot join the class of things this entry is
+about.
+
+**Verified at** `ENC-1249 HEAD`, 2026-09-19 — counted statically from `core/CMakeLists.txt`
+(236) and empirically from a real default configure in the ENC-1249 worktree (190), giving a gap
+of **46**; executable counts measured from `build-dawn` (239) against `build` (190).
 
 ---
 
@@ -623,6 +645,30 @@ being triggered. That was wrong on both counts: `pick` *does* call `renderPick`
 (`core/wasm/dc_engine_host.cpp:433`) and `DawnPickBackend` *is* registered
 (`core/src/gpu/DawnSceneRenderer.cpp:160`). The zero came from `ensureRenderer()` failing under
 node, which has no `navigator.gpu`. See DC-L07.
+
+### C5 — "the high lands near the framebuffer top" — a test file asserted the opposite of DC-L05
+
+`core/tests/d14_6_dawn_candle.cpp`'s **file header** said that with an identity transform "the
+HIGH (large y) lands near framebuffer TOP and the LOW near framebuffer BOTTOM". Its own inline
+comment forty lines later said the true thing — low near the top, high near the bottom — and
+**DC-L05 is the general statement of it**: every Dawn backend negates clip y while the readback
+is top-down, so the raw framebuffer is vertically MIRRORED relative to what a user sees.
+
+Nothing caught the contradiction because the test's assertions are up/down **symmetric**: it
+probes for a lit wick pixel above *and* below the body, in the same colour, so an upside-down
+frame satisfies every one of them. That is DC-L05's own warning ("silent on any vertically
+symmetric scene") reproduced inside a test whose subject is exactly that orientation.
+
+Measured under ENC-1249 on lavapipe: an authored clip y of `+0.80` reads back at row **230** of
+256 (the bottom) and lands at row **26** (the top) only after the flip
+`EngineHost.blitFramebuffer` applies. The header was corrected in the same commit. Re-check:
+```bash
+bash scripts/tier0.sh          # B1/B2 spans hold on the presented raster and fail on --invert-render
+```
+
+**The general lesson, and it is the reason ENC-1249 exists:** a pixel assertion has to name
+*which raster* it is about. Asserting on the raw readback would have enshrined the mirror in the
+quality standard and "proved" that a rising series falls.
 
 ### C4 — `CHART_AUTHORING.md` §8/§9 used to promise GPU gradient fills that do not render
 
