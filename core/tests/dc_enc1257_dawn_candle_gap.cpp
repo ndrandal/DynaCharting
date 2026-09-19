@@ -93,9 +93,17 @@ static RowRuns scanRow(const std::vector<std::uint8_t>& rgba, int W, int row) {
 
 // Render `count` all-UP candles at data x = x0, x0+1, … through the real
 // backend with the given transform, and scan the body row.
+// `idBase` must be UNIQUE per call. The backend caches its GPU instance buffer
+// per geometryId and invalidates on the CpuBufferStore's data VERSION — and a
+// fresh store restarts that counter at 1, so a second scene reusing geometry 100
+// is a cache HIT and silently re-renders the first scene's candles under the
+// second scene's transform. That is not a product defect (one process has one
+// store) but it is an excellent way to write a test that measures nothing, and
+// it is exactly what the first run of this file did.
 static RowRuns renderRow(dc::DawnDevice& dev, dc::BackendRegistry& backends,
                          int count, float x0, float halfWidth, float sx,
-                         float tx, std::uint32_t W, std::uint32_t H) {
+                         float tx, std::uint32_t W, std::uint32_t H,
+                         unsigned idBase) {
   dc::Scene scene;
   dc::ResourceRegistry reg;
   dc::CommandProcessor cp(scene, reg);
@@ -118,19 +126,22 @@ static RowRuns renderRow(dc::DawnDevice& dev, dc::BackendRegistry& backends,
     r[4] = 0.5f;   // close (>= open -> UP)
     r[5] = halfWidth;
   }
+  const unsigned bufId = idBase + 10;
+  const unsigned geoId = idBase + 100;
   char buf[512];
   std::snprintf(buf, sizeof(buf),
-                R"({"cmd":"createBuffer","id":10,"byteLength":%zu})",
+                R"({"cmd":"createBuffer","id":%u,"byteLength":%zu})", bufId,
                 recs.size() * sizeof(float));
   requireOk(cp.applyJsonText(buf), "buf");
-  store.setCpuData(10, recs.data(), recs.size() * sizeof(float));
+  store.setCpuData(bufId, recs.data(), recs.size() * sizeof(float));
   std::snprintf(buf, sizeof(buf),
-                R"({"cmd":"createGeometry","id":100,"vertexBufferId":10,)"
-                R"("vertexCount":%d,"format":"candle6"})", count);
+                R"({"cmd":"createGeometry","id":%u,"vertexBufferId":%u,)"
+                R"("vertexCount":%d,"format":"candle6"})", geoId, bufId, count);
   requireOk(cp.applyJsonText(buf), "geom");
-  requireOk(cp.applyJsonText(
-      R"({"cmd":"bindDrawItem","drawItemId":3,"pipeline":"instancedCandle@1","geometryId":100})"),
-      "bind");
+  std::snprintf(buf, sizeof(buf),
+                R"({"cmd":"bindDrawItem","drawItemId":3,)"
+                R"("pipeline":"instancedCandle@1","geometryId":%u})", geoId);
+  requireOk(cp.applyJsonText(buf), "bind");
   requireOk(cp.applyJsonText(
       R"({"cmd":"setDrawItemStyle","drawItemId":3,)"
       R"("colorUpR":0,"colorUpG":1,"colorUpB":0,"colorUpA":1,)"
@@ -208,7 +219,8 @@ int main() {
     // centres the first bar half a pitch in from the left edge.
     const float sx = 2.0f / static_cast<float>(N);
     const float tx = -1.0f + 1.0f / static_cast<float>(N);
-    const RowRuns r = renderRow(dev, backends, N, 0.0f, 0.4f, sx, tx, W, H);
+    const RowRuns r = renderRow(dev, backends, N, 0.0f, 0.4f, sx, tx, W, H,
+                                1000u * static_cast<unsigned>(N));
     const dc::BarMetrics m = dc::barMetricsForCount(N, static_cast<float>(W));
     std::printf("  [%d bars / %upx] pitch %.3fpx -> body %.3f gap %.3f | "
                 "raster: %zu lit runs, min lit %d px, min gap %d px\n",
@@ -230,7 +242,7 @@ int main() {
   {
     constexpr std::uint32_t W = 800;
     const RowRuns r = renderRow(dev, backends, 156, 4.0f, 0.4f, 0.011333333f,
-                                -0.8953333f, W, H);
+                                -0.8953333f, W, H, 900000u);
     std::printf("  [candles-aapl, 156 bars / %upx] raster: %zu lit runs, "
                 "min lit %d px, min gap %d px\n",
                 W, r.lit.size(), minOf(r.lit), minOf(r.gaps));
@@ -251,7 +263,8 @@ int main() {
   {
     constexpr std::uint32_t W = 256;
     // cx = 0 and 1 in data space; sx 0.9 and tx -0.45 put them at clip -0.45/+0.45.
-    const RowRuns r = renderRow(dev, backends, 2, 0.0f, 0.20f, 0.9f, -0.45f, W, H);
+    const RowRuns r = renderRow(dev, backends, 2, 0.0f, 0.20f, 0.9f, -0.45f, W, H,
+                                950000u);
     const dc::CandleBodyResolution res =
         dc::resolveCandleBodyClip(0.9f, 0.20f, 0.9f, static_cast<int>(W));
     const int cxPx = static_cast<int>((-0.45f * 0.5f + 0.5f) * W);  // ~70
