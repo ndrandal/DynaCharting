@@ -8,11 +8,13 @@
 // instanced 12-verts-per-candle draw through GpuDevice::drawInstanced.
 #include "dc/gpu/DawnInstancedCandleBackend.hpp"
 
+#include "dc/render/BarSizing.hpp"
 #include "dc/render/CpuBufferStore.hpp"
 #include "dc/scene/Scene.hpp"
 #include "dc/scene/Geometry.hpp"
 #include "dc/scene/Types.hpp"
 
+#include <algorithm>
 #include <cstring>
 #include <vector>
 
@@ -54,11 +56,24 @@ constexpr std::uint32_t kCandleStride = 24;
 //       bytes  0..47  c0/c1/c2  — three mat3 columns (each a vec4, xyz used)
 //       bytes 48..63  colorUp   — vec4
 //       bytes 64..79  colorDown — vec4
-//       bytes 80..95  wickHalf  — vec4 (.x = wick half-width in CLIP space)
+//       bytes 80..95  wickHalf  — vec4 (.x = wick half-width in CLIP space,
+//                                       .y = resolved BODY half-width, clip; 0 = off)
 //     The wick half-width is passed through a DEDICATED uniform field (wickHalf.x)
 //     computed host-side as a fixed pixel width in clip space — NOT smuggled into
 //     a mat3 padding lane (which the Mat3 packer would zero). See the name-driven
 //     u_wickHalf case in DawnDevice::createBindGroup.
+//   * ENC-1257 — BODY WIDTH IS RESOLVED HOST-SIDE. wickHalf.y carries the body
+//     half-width the bar-sizing rule chose (dc/render/BarSizing.hpp): the
+//     per-instance `halfWidth` is a data-space number and therefore a
+//     scale-free RATIO, which is why the same 0.4 constant fused the showcase's
+//     candles into slabs at a 4.5px pitch and produced 47px blocks on the live
+//     capture. The host derives the bar pitch from the instance x values,
+//     converts to pixels through the transform + viewport, applies the pixel
+//     floor/ceiling, and hands the result back in clip space. When the rule does
+//     NOT apply (a single bar, no viewport, degenerate transform) wickHalf.y is
+//     0 and the shader falls back to the per-instance halfWidth EXACTLY as
+//     before — which is what keeps every pre-existing single-bar render
+//     byte-identical.
 
 const char* kInstCandleWgsl = R"WGSL(
 struct Uniforms {
@@ -67,7 +82,7 @@ struct Uniforms {
   c2       : vec4<f32>,   // transform column 2 (xyz)
   colorUp  : vec4<f32>,   // bytes 48..63
   colorDown: vec4<f32>,   // bytes 64..79
-  wickHalf : vec4<f32>,   // bytes 80..95 (.x = wick half-width, clip space)
+  wickHalf : vec4<f32>,   // bytes 80..95 (.x = wick half, .y = body half; clip)
 };
 @group(0) @binding(0) var<uniform> u : Uniforms;
 
@@ -119,10 +134,23 @@ fn vs_main(@builtin(vertex_index) vid : u32,
     let hwClip = wickHalfWidthClip();
     clip = vec2<f32>(center.x + mix(-hwClip, hwClip, uv.x), center.y);
   } else {
-    let x0 = cx - hw;
-    let x1 = cx + hw;
-    let p = m * vec3<f32>(mix(x0, x1, uv.x), mix(body0, body1, uv.y), 1.0);
-    clip = p.xy;
+    let bodyHalf = u.wickHalf.y;
+    if (bodyHalf > 0.0) {
+      // ENC-1257: the host resolved the body half-width in CLIP space from the
+      // bar pitch. Transform the candle's centre and offset along clip x, the
+      // same construction the wick above uses. For the affine, shear-free
+      // transforms charts actually carry this is identical to transforming
+      // (cx±hw) directly; it differs only under an x/y shear, which no chart
+      // transform has.
+      let y = mix(body0, body1, uv.y);
+      let center = m * vec3<f32>(cx, y, 1.0);
+      clip = vec2<f32>(center.x + mix(-bodyHalf, bodyHalf, uv.x), center.y);
+    } else {
+      let x0 = cx - hw;
+      let x1 = cx + hw;
+      let p = m * vec3<f32>(mix(x0, x1, uv.x), mix(body0, body1, uv.y), 1.0);
+      clip = p.xy;
+    }
   }
 
   var out : VsOut;
@@ -199,6 +227,8 @@ void DawnInstancedCandleBackend::buildGeoBuffers(GpuDevice& device,
   }
   gb.instanceCount = 0;
   gb.bufferCapacity = 0;
+  gb.pitchData = 0.0f;
+  gb.nominalHalfData = 0.0f;
 
   const Geometry* geo = scene.getGeometry(geometryId);
   // Stamp the versions we are building from up front so an empty/invalid build
@@ -234,6 +264,13 @@ void DawnInstancedCandleBackend::buildGeoBuffers(GpuDevice& device,
             scratch.size(), scratch.data(), scratch.size());
         gb.instanceCount = count;
         gb.bufferCapacity = scratch.size();
+        // ENC-1257: measure the pitch over the GATHERED set — with an index
+        // buffer the drawn subset is what the reader sees, and its spacing can
+        // differ from the source buffer's.
+        gb.pitchData = barPitchFromRecords(scratch.data(), scratch.size(),
+                                           kCandleStride, 0);
+        gb.nominalHalfData = medianRecordField(scratch.data(), scratch.size(),
+                                               kCandleStride, 20);
       }
     }
   } else if (vtx && vtxBytes > 0) {
@@ -242,6 +279,15 @@ void DawnInstancedCandleBackend::buildGeoBuffers(GpuDevice& device,
     gb.instanceBuffer = device.createBuffer(vtxBytes, vtx, vtxBytes);
     gb.instanceCount = geo->vertexCount;
     gb.bufferCapacity = vtxBytes;
+    // ENC-1257: sample only the records that are actually drawn. The CPU buffer
+    // routinely runs ahead of vertexCount on the streaming path (the app bumps
+    // the count on its own cadence), and a trailing zero-filled region would
+    // otherwise poison the median.
+    const std::size_t drawnBytes =
+        std::min<std::size_t>(vtxBytes, static_cast<std::size_t>(geo->vertexCount) *
+                                            kCandleStride);
+    gb.pitchData = barPitchFromRecords(vtx, drawnBytes, kCandleStride, 0);
+    gb.nominalHalfData = medianRecordField(vtx, drawnBytes, kCandleStride, 20);
   }
 }
 
@@ -297,10 +343,27 @@ BackendStats DawnInstancedCandleBackend::renderDrawItem(GpuDevice& device,
   // passed through a DEDICATED uniform field (u_wickHalf) — not smuggled into a
   // mat3 padding lane, which the Mat3 packer would zero.
   const float* xform = resolveTransform(di, scene);
-  const float wickHalfClip =
-      viewW > 0 ? 2.0f / static_cast<float>(viewW) : 0.0f;
 
-  UniformBinding uniforms[4];
+  // ENC-1257 — resolve the body half-width from the bar pitch. xform column 0's
+  // x row is the data->clip x scale; the pitch and the nominal half-width were
+  // measured off the instance records when the buffer was last built.
+  const CandleBodyResolution body = resolveCandleBodyClip(
+      gb.pitchData, gb.nominalHalfData, xform[0], viewW);
+  // 0 means "rule does not apply" — the shader then uses the per-instance
+  // halfWidth, i.e. exactly the pre-ENC-1257 geometry.
+  const float bodyHalfClip = body.apply ? body.halfWidthClip : 0.0f;
+
+  // ENC-1257 — the wick is capped by the same rule. It is a FIXED pixel width
+  // and therefore does not shrink with the pitch: at 500 bars across 1300px the
+  // 2px wick alone consumes more than the pitch has to spare, so sizing the
+  // body correctly and leaving the wick alone STILL fuses the bars. Above a ~5px
+  // pitch the cap never binds and the wick is bit-for-bit what it was.
+  float wickHalfClip = viewW > 0 ? 2.0f / static_cast<float>(viewW) : 0.0f;
+  if (body.apply && body.maxMarkHalfClip < wickHalfClip) {
+    wickHalfClip = body.maxMarkHalfClip;
+  }
+
+  UniformBinding uniforms[5];
   uniforms[0].kind = UniformBinding::Kind::Mat3;
   uniforms[0].name = "u_transform";
   uniforms[0].data = xform;
@@ -314,6 +377,13 @@ BackendStats DawnInstancedCandleBackend::renderDrawItem(GpuDevice& device,
   uniforms[3].kind = UniformBinding::Kind::Float;
   uniforms[3].name = "u_wickHalf";
   uniforms[3].data = &wickHalfClip;
+  // ENC-1257 body half-width (clip space) at uniform float index 21 (byte 84) —
+  // wickHalf.y. Shares the flat tail with lineAA's u_fringeEdge, which can never
+  // coexist in this pipeline's WGSL struct (same argument the existing
+  // wickHalf@20 vs aaWidth@20 overlap rests on).
+  uniforms[4].kind = UniformBinding::Kind::Float;
+  uniforms[4].name = "u_bodyHalf";
+  uniforms[4].data = &bodyHalfClip;
 
   BindGroupDesc bgDesc;
   bgDesc.pipeline = pipeline_;
@@ -321,7 +391,7 @@ BackendStats DawnInstancedCandleBackend::renderDrawItem(GpuDevice& device,
   bgDesc.vertexBufferCount = 1;
   bgDesc.indexBuffer = {};  // instanced draw: no GPU index buffer (gather is CPU)
   bgDesc.uniforms = uniforms;
-  bgDesc.uniformCount = 4;
+  bgDesc.uniformCount = 5;
 
   BindGroupHandle group = device.createBindGroup(bgDesc);
   if (!group.valid()) return stats;
