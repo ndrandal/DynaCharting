@@ -15,14 +15,31 @@
  * One engine instance, applyManifest/resetScene between views (DESIGN-showcase-ui
  * §6 "one engine"). This replaces the slice's hardcoded single-manifest path and
  * is the data source for the T5.6 replay controls.
+ *
+ * AXIS DOMAIN (ENC-1252, SPEC D7). When the selected view exports an
+ * `axisDomain`, this controller also owns a `DomainTracker` over that axis
+ * group and folds every replayed batch through it, so the chrome axes state a
+ * domain MEASURED from the records the engine just drew. The tracker is rebuilt
+ * on view change and deliberately NOT reset on a replay loop: a loop replays the
+ * same data onto a fresh buffer, so the measured domain is unchanged, and
+ * clearing it would only make the axis flicker once a second.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { EngineHost } from '@repo/dc-wasm';
+import { DomainTracker, type EngineHost, type ObservedDomain } from '@repo/dc-wasm';
 import { applyManifest, resetScene } from '../scene/sceneController';
 import type { SceneManifest } from '../scene/commands';
 import { useReplay } from '../engine/useReplay';
 import type { ShowcaseView } from './registry';
+
+/** True when two domain reports state the same thing (avoids pointless renders). */
+function sameDomain(a: ObservedDomain | null, b: ObservedDomain | null): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  const sameAxis = (p: { min: number; max: number } | null, q: { min: number; max: number } | null) =>
+    p === q || (!!p && !!q && p.min === q.min && p.max === q.max);
+  return sameAxis(a.x, b.x) && sameAxis(a.y, b.y);
+}
 
 /** Bake the view's transform onto its transform-creating manifest command. */
 function bakeTransform(host: EngineHost, view: ShowcaseView): void {
@@ -42,6 +59,11 @@ function applyView(host: EngineHost, view: ShowcaseView, prev: SceneManifest | n
 }
 
 export interface UseViewSwitch {
+  /**
+   * The x/y domain measured from the current view's streamed records (ENC-1252),
+   * or null when the view declares no `axisDomain` / nothing has streamed yet.
+   */
+  axisDomain: ObservedDomain | null;
   /** [0..1] replay progress of the current view (for the transport scrubber). */
   progress: number;
   /** Whether replay is playing. */
@@ -66,6 +88,39 @@ export function useViewSwitch(host: EngineHost | null, view: ShowcaseView | null
   // Bumping this key re-arms useReplay (a fresh timeline pass) after we reset
   // the scene — used for both the loop and explicit restart.
   const [epoch, setEpoch] = useState(0);
+
+  // --- ENC-1252: the measured axis domain --------------------------------
+  const trackerRef = useRef<DomainTracker | null>(null);
+  const [axisDomain, setAxisDomain] = useState<ObservedDomain | null>(null);
+  const axisDomainRef = useRef<ObservedDomain | null>(null);
+  const flushPendingRef = useRef(false);
+
+  // A fresh tracker per view: an axis group belongs to one view's buffers.
+  useEffect(() => {
+    const spec = view?.axisDomain;
+    trackerRef.current = spec ? new DomainTracker(spec.sources, spec.policy) : null;
+    axisDomainRef.current = null;
+    setAxisDomain(null);
+  }, [view]);
+
+  // Fold every replayed batch. Publishing is coalesced to one animation frame
+  // so a burst of frames costs one render, and only when the domain moved.
+  const onBatch = useCallback((batch: ArrayBuffer) => {
+    const tracker = trackerRef.current;
+    if (!tracker) return;
+    if (tracker.observe(batch) === 0) return;
+    if (flushPendingRef.current) return;
+    flushPendingRef.current = true;
+    requestAnimationFrame(() => {
+      flushPendingRef.current = false;
+      const t = trackerRef.current;
+      if (!t) return;
+      const next = t.domain();
+      if (sameDomain(next, axisDomainRef.current)) return;
+      axisDomainRef.current = next;
+      setAxisDomain(next);
+    });
+  }, []);
 
   // (Re)apply the scene whenever the selected view changes or the host appears.
   useEffect(() => {
@@ -108,9 +163,10 @@ export function useViewSwitch(host: EngineHost | null, view: ShowcaseView | null
     growth: view?.growth,
     growthSeries: view?.growthSeries,
     xAnchor: view?.xAnchor,
+    onBatch,
   });
 
-  return { progress, playing, setPlaying, restart, loop, setLoop };
+  return { axisDomain, progress, playing, setPlaying, restart, loop, setLoop };
 }
 
 /**
