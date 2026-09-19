@@ -143,6 +143,13 @@ class DawnPickBackend {
     std::uint32_t vertexCount{0};
     std::uint32_t indexCount{0};
     std::uint32_t instanceCount{0};
+    // ENC-1257 — the pick footprint must be the DRAWN footprint. The visible
+    // instancedCandle backend resolves the body width from the bar pitch, so
+    // picking has to resolve it the same way or a click beside a candle selects
+    // it (nominal 47px vs a drawn 24px on the live capture). Measured off the
+    // same gathered records, same as DawnInstancedCandleBackend::GeoBuffers.
+    float pitchData{0.0f};
+    float nominalHalfData{0.0f};
   };
   std::vector<std::pair<Id, GeoBuffers>> geoBuffers_;
   GeoBuffers& ensureGeoBuffers(GpuDevice& device, const Scene& scene,

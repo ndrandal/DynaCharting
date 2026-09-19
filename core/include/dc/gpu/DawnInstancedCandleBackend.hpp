@@ -82,6 +82,13 @@ class DawnInstancedCandleBackend final : public IRendererBackend {
     std::uint64_t vtxVersion{0};     // CpuBufferStore version of vertexBufferId
     std::uint64_t idxVersion{0};     // CpuBufferStore version of indexBufferId
     bool built{false};               // false until first successful (re)build
+    // ENC-1257 bar sizing. Both are properties of the DATA, not of the view, so
+    // they are cached alongside the instance buffer and recomputed only when the
+    // source bytes change. The pixel resolution that uses them depends on the
+    // transform and the viewport and therefore happens per frame, in
+    // renderDrawItem.
+    float pitchData{0.0f};        // median positive delta of cx; 0 = no pitch
+    float nominalHalfData{0.0f};  // median per-instance halfWidth; 0 = none
   };
   std::vector<std::pair<std::uint32_t, GeoBuffers>> geoBuffers_;
 

@@ -1192,6 +1192,11 @@ BindGroupHandle DawnDevice::createBindGroup(const BindGroupDesc& desc) {
           // field at byte 80 (float index 20) — survives bind-group packing
           // (not smuggled into a mat3 padding lane).
           uniformData[20] = u.data[0];
+        } else if (nameIs(u.name, "u_bodyHalf")) {
+          // ENC-1257 (instancedCandle): the bar-sizing rule's resolved body
+          // half-width (clip space) at byte 84 (float index 21) — wickHalf.y.
+          // 0 means "rule does not apply, use the per-instance halfWidth".
+          uniformData[21] = u.data[0];
         } else if (nameIs(u.name, "u_cornerRadius")) {
           // u_cornerRadius at byte 72 (float index 18) — instancedRect.
           uniformData[18] = u.data[0];

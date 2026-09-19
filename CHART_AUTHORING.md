@@ -425,7 +425,7 @@ Buffers hold raw `float32` values packed tightly. The format tells the shader ho
 | pos2_alpha | 12 | `[x, y, alpha]` | triAA@1 |
 | pos2_color4 | 24 | `[x, y, r, g, b, a]` | triGradient@1 |
 | rect4 | 16 | `[x0, y0, x1, y1]` | lineAA@1, instancedRect@1 |
-| candle6 | 24 | `[x, open, high, low, close, halfWidth]` | instancedCandle@1 |
+| candle6 | 24 | `[x, open, high, low, close, halfWidth]` | instancedCandle@1 — see the bar-sizing note below |
 | glyph8 | 32 | `[x0, y0, x1, y1, u0, v0, u1, v1]` | textSDF@1 |
 | pos2_uv4 | 16 | `[x, y, u, v]` | texturedQuad@1 |
 
@@ -493,6 +493,19 @@ volumeBar[i] = [
 ```
 
 When close >= open → colorUp (green). When close < open → colorDown (red).
+
+**`halfWidth` is a proportion, not a pixel width (ENC-1257).** `instancedCandle@1` measures the
+bar pitch from your `x` values, converts it to pixels through the DrawItem's transform and the
+viewport, and then resolves the body it actually draws — enforcing a **1px minimum inter-bar
+gap** and a **24px maximum body**, and capping the fixed-pixel wick by the same budget. Between
+roughly a 5px and a 30px pitch your value is used unchanged; outside that band it is clamped,
+because a scale-free ratio evaluated at an arbitrary pixel pitch is what fused the showcase's
+candles into slabs at 4.5px and produced 47px blocks on the live capture. Author the ratio you
+want (0.4 of a 1.0 index step = an 80% body is the house default) and let the engine hold the
+pixel floor. If you need exact pixels, `dc::BarSizingConfig`
+(`core/include/dc/render/BarSizing.hpp`) is a defaulted parameter on every entry point. Full
+contract and the caveats — including that `SvgExporter` does *not* apply the rule —
+in LIMITATIONS.md **DC-L12**.
 
 ---
 
