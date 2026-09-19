@@ -14,6 +14,7 @@
 #include "dc/scene/Geometry.hpp"
 #include "dc/scene/Types.hpp"
 
+#include <algorithm>
 #include <cstring>
 #include <vector>
 
@@ -226,6 +227,8 @@ void DawnInstancedCandleBackend::buildGeoBuffers(GpuDevice& device,
   }
   gb.instanceCount = 0;
   gb.bufferCapacity = 0;
+  gb.pitchData = 0.0f;
+  gb.nominalHalfData = 0.0f;
 
   const Geometry* geo = scene.getGeometry(geometryId);
   // Stamp the versions we are building from up front so an empty/invalid build
@@ -261,6 +264,13 @@ void DawnInstancedCandleBackend::buildGeoBuffers(GpuDevice& device,
             scratch.size(), scratch.data(), scratch.size());
         gb.instanceCount = count;
         gb.bufferCapacity = scratch.size();
+        // ENC-1257: measure the pitch over the GATHERED set — with an index
+        // buffer the drawn subset is what the reader sees, and its spacing can
+        // differ from the source buffer's.
+        gb.pitchData = barPitchFromRecords(scratch.data(), scratch.size(),
+                                           kCandleStride, 0);
+        gb.nominalHalfData = medianRecordField(scratch.data(), scratch.size(),
+                                               kCandleStride, 20);
       }
     }
   } else if (vtx && vtxBytes > 0) {
@@ -269,6 +279,15 @@ void DawnInstancedCandleBackend::buildGeoBuffers(GpuDevice& device,
     gb.instanceBuffer = device.createBuffer(vtxBytes, vtx, vtxBytes);
     gb.instanceCount = geo->vertexCount;
     gb.bufferCapacity = vtxBytes;
+    // ENC-1257: sample only the records that are actually drawn. The CPU buffer
+    // routinely runs ahead of vertexCount on the streaming path (the app bumps
+    // the count on its own cadence), and a trailing zero-filled region would
+    // otherwise poison the median.
+    const std::size_t drawnBytes =
+        std::min<std::size_t>(vtxBytes, static_cast<std::size_t>(geo->vertexCount) *
+                                            kCandleStride);
+    gb.pitchData = barPitchFromRecords(vtx, drawnBytes, kCandleStride, 0);
+    gb.nominalHalfData = medianRecordField(vtx, drawnBytes, kCandleStride, 20);
   }
 }
 
@@ -327,7 +346,16 @@ BackendStats DawnInstancedCandleBackend::renderDrawItem(GpuDevice& device,
   const float wickHalfClip =
       viewW > 0 ? 2.0f / static_cast<float>(viewW) : 0.0f;
 
-  UniformBinding uniforms[4];
+  // ENC-1257 — resolve the body half-width from the bar pitch. xform column 0's
+  // x row is the data->clip x scale; the pitch and the nominal half-width were
+  // measured off the instance records when the buffer was last built.
+  const CandleBodyResolution body = resolveCandleBodyClip(
+      gb.pitchData, gb.nominalHalfData, xform[0], viewW);
+  // 0 means "rule does not apply" — the shader then uses the per-instance
+  // halfWidth, i.e. exactly the pre-ENC-1257 geometry.
+  const float bodyHalfClip = body.apply ? body.halfWidthClip : 0.0f;
+
+  UniformBinding uniforms[5];
   uniforms[0].kind = UniformBinding::Kind::Mat3;
   uniforms[0].name = "u_transform";
   uniforms[0].data = xform;
