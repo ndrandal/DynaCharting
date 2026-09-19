@@ -347,16 +347,25 @@ int main() {
     const RowRuns before = renderRowLegacy(dev, backends, 156, 4.0f, 0.4f,
                                            0.011333333f, -0.8953333f, W, H,
                                            910000u);
+    // A fusion is a gap that failed to appear: 156 bars can show at most 156
+    // runs, and every pair that fused costs one.
+    const int fusedBefore = 156 - static_cast<int>(before.lit.size());
+    const int fusedAfter = 156 - static_cast<int>(r.lit.size());
     std::printf("  [candles-aapl, AUTHORED width (pre-ENC-1257 geometry)] "
-                "raster: %zu lit runs, longest slab %d px\n",
-                before.lit.size(), maxOf(before.lit));
-    check(static_cast<int>(before.lit.size()) < 156,
-          "pre-fix: the authored width does NOT give 156 separate runs");
-    check(maxOf(before.lit) > 3 * maxOf(r.lit),
-          "pre-fix: bodies fuse into slabs far longer than one bar");
-    check(static_cast<int>(r.lit.size()) >
-              static_cast<int>(before.lit.size()) * 2,
-          "ENC-1257 more than doubles the number of resolvable bars");
+                "raster: %zu lit runs, longest slab %d px, %d fused pairs\n",
+                before.lit.size(), maxOf(before.lit), fusedBefore);
+    std::printf("  [candles-aapl, post-fix] longest run %d px, %d fused pairs\n",
+                maxOf(r.lit), fusedAfter);
+    // The failure is PARTIAL and that is the whole mechanism: a 0.907px gap
+    // contains a pixel centre for most alignments and not for some, so the
+    // shipped still fuses in RUNS rather than uniformly — which is exactly what
+    // SPEC §1.1 describes and why it survived review. 10 of 155 gaps vanish.
+    check(fusedBefore > 0,
+          "pre-fix: the authored 0.907px gap fails to rasterise for some bars");
+    check(fusedAfter == 0,
+          "post-fix: every one of the 155 gaps rasterises");
+    check(maxOf(before.lit) > maxOf(r.lit),
+          "pre-fix: the longest unbroken slab is longer than any post-fix bar");
   }
 
   // --- [D] ENC-1249's tier-0 candle scene, at its exact numbers ---------------
