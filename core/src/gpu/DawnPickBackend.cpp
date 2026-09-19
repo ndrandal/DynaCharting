@@ -6,12 +6,14 @@
 // the rendered pick buffer is a map of pixel -> DrawItem id (the GL D29.3 design).
 #include "dc/gpu/DawnPickBackend.hpp"
 
+#include "dc/render/BarSizing.hpp"
 #include "dc/render/CpuBufferStore.hpp"
 #include "dc/render/LineAAQuad.hpp"
 #include "dc/scene/Scene.hpp"
 #include "dc/scene/Geometry.hpp"
 #include "dc/scene/Types.hpp"
 
+#include <algorithm>
 #include <cstring>
 #include <vector>
 
