@@ -56,7 +56,7 @@ function countRecordsForBuffer(batch: ArrayBuffer, bufferId: number, stride: num
 }
 
 import { useEffect } from 'react';
-import { transmittedBasisFromSceneInit } from '@repo/dc-wasm';
+import { isSceneInitFrame, transmittedBasisFromSceneInit } from '@repo/dc-wasm';
 import type { EngineHost, TimeBasis } from '@repo/dc-wasm';
 
 const AGENT_URL = import.meta.env.VITE_SHOWCASE_AGENT_URL as string | undefined;
@@ -312,19 +312,13 @@ export function useAgentStream(
           // that declares no basis" are different answers and only the second
           // one is this callback's business.
           if (!onTimeBasis) return;
-          let frame: unknown;
-          try {
-            frame = JSON.parse(ev.data);
-          } catch {
-            return;
-          }
-          if ((frame as { type?: unknown } | null)?.type !== 'scene-init') return;
+          if (!isSceneInitFrame(ev.data)) return;
           // Matched by buffer id, never by position — embassy emits
           // createBuffer commands in sorted-id order, not in the order the
           // manifest declares them. With no buffer to match, publish nothing
           // rather than borrowing whichever buffer happens to carry a clock.
           if (basisBufferId === undefined) return;
-          onTimeBasis(transmittedBasisFromSceneInit(frame, basisBufferId));
+          onTimeBasis(transmittedBasisFromSceneInit(ev.data, basisBufferId));
           return;
         }
         if (ev.data instanceof ArrayBuffer) {

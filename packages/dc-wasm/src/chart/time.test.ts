@@ -24,6 +24,7 @@ import {
   timeDomainFor,
   timeBasisFromWire,
   transmittedBasisFromSceneInit,
+  isSceneInitFrame,
   type TimeBasis,
 } from "./time";
 
@@ -578,5 +579,36 @@ describe("transmittedBasisFromSceneInit — lifting the clock out of the envelop
       commands: [{ cmd: "createBuffer", id: 10100, timeBasis: { baseMs: 0, periodMs: 0, epochKnown: true } }],
     };
     expect(transmittedBasisFromSceneInit(bad, 10100)).toBeNull();
+  });
+});
+
+
+describe("isSceneInitFrame — the gate that stops a good basis being retracted", () => {
+  // "not a scene-init" and "a scene-init that declares no basis" are different
+  // answers, and `transmittedBasisFromSceneInit` returns null for both. embassy
+  // sends two other kinds of text frame on the same socket, so a consumer that
+  // conflates them drops the axis at connect and then four times a second.
+  it("accepts the envelope, as an object or as its raw text", () => {
+    expect(isSceneInitFrame({ type: "scene-init", commands: [] })).toBe(true);
+    expect(isSceneInitFrame('{"type":"scene-init","commands":[]}')).toBe(true);
+  });
+
+  it("rejects the OTHER text frames embassy actually sends on this socket", () => {
+    // sticky growth counts, replayed after the envelope on every subscribe
+    expect(isSceneInitFrame('{"cmd":"setGeometryVertexCount","id":10200,"vertexCount":211}')).toBe(
+      false,
+    );
+    // the range tracker's live re-frame, ~250 ms cadence
+    expect(isSceneInitFrame('{"cmd":"setTransform","id":10050,"sx":0.08,"tx":-1}')).toBe(false);
+  });
+
+  it("rejects a bare command array — unwrapping the envelope IS the decision", () => {
+    expect(isSceneInitFrame([{ cmd: "createBuffer", id: 10100, timeBasis: WIRE }])).toBe(false);
+  });
+
+  it("rejects malformed JSON and every non-envelope", () => {
+    for (const v of ["", "{", "not json", null, undefined, 7, [], { type: "other" }, {}]) {
+      expect(isSceneInitFrame(v)).toBe(false);
+    }
   });
 });

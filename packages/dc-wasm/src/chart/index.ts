@@ -63,6 +63,7 @@ export {
   IndexTimeTracker,
   timeBasisFromWire,
   transmittedBasisFromSceneInit,
+  isSceneInitFrame,
 } from "./time";
 export type {
   TimeUnit,
