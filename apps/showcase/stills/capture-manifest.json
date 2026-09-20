@@ -3,12 +3,12 @@
   "spec": "specs/2026-09-19-chart-quality-bar/SPEC.md D8, D10; LIMITATIONS.md DC-L15",
   "tool": "apps/showcase/tools/recapture-stills.mjs",
   "capturer": "specs/2026-09-19-chart-quality-bar/harness/shoot-live.mjs",
-  "capturedAt": "2026-09-20T16:18:07.223Z",
+  "capturedAt": "2026-09-20T16:20:25.502Z",
   "dynachartingHead": "2c03358d88907789b6b9ba4e1302b5856a6deadd",
   "url": "http://localhost:5650/?svgAxis=0#/",
   "captureMode": "canvas",
   "source": "canvas.engine-canvas -> canvas.toDataURL('image/png')",
-  "readiness": "one full replay pass: scrubber aria-valuenow seen <=5% then >=92%",
+  "readiness": "per still, in `readinessRule`: 'full-pass' = the scrubber was seen at <=5% and then >=92%; 'time-fallback' = the transport never advanced (a texture-only view), so the frame was taken after 60000ms with content on the canvas; null = neither fired and shoot-live timed out (see shootLiveExit).",
   "chromeArgs": [
     "--headless=new",
     "--enable-unsafe-webgpu",
@@ -243,16 +243,16 @@
     {
       "id": "correlation-heatmap",
       "still": "correlation-heatmap.png",
-      "shootLiveExit": 3,
-      "capturedAt": "2026-09-20T16:06:08.302Z",
+      "shootLiveExit": 0,
+      "capturedAt": "2026-09-20T16:20:25.166Z",
       "dynachartingHead": "2c03358d88907789b6b9ba4e1302b5856a6deadd",
       "captureMode": "canvas",
       "tier1Scorable": true,
       "source": "canvas.toDataURL('image/png')",
       "selector": "canvas.engine-canvas",
       "backingStore": "900x497",
-      "sha256": "61efb443ea617f1fc9c4efe1a355c9cbfef1c65b0de09fc6d2a90e18aff4aeb7",
-      "bytes": 17531,
+      "sha256": "2ebff239b7024762e79d95d943f64fe6316710bfe1e2b75e2171b3dec9d6cc3c",
+      "bytes": 17514,
       "adapter": {
         "webgpu": true,
         "adapterIsFallbackAdapter": "undefined",
@@ -271,7 +271,8 @@
           "featureCount": 21
         }
       },
-      "replayProgressPct": 82,
+      "replayProgressPct": 18,
+      "readinessRule": "time-fallback",
       "boundaryErrors": 0,
       "chromeOverlayNodes": 23,
       "verdict": "full"

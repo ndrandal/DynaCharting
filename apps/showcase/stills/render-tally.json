@@ -1,5 +1,5 @@
 {
-  "capturedAt": "2026-09-20T16:18:07.226Z",
+  "capturedAt": "2026-09-20T16:20:25.503Z",
   "tool": "apps/showcase/tools/recapture-stills.mjs",
   "total": 22,
   "tally": {
@@ -73,8 +73,8 @@
       "referenceTool": "correlation matrix",
       "verdict": "full",
       "coverage": 0.7234408813692701,
-      "chroma": 0.520460358056266,
-      "distinctColors": 285
+      "chroma": 0.34305528231359433,
+      "distinctColors": 295
     },
     {
       "id": "depth-ladder",
