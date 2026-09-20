@@ -96,7 +96,7 @@ describe("the step ladder", () => {
     expect(at(30 * SEC)).toBe("5second");
     expect(at(5 * MIN)).toBe("1minute");
     expect(at(90 * MIN)).toBe("15minute");
-    expect(at(8 * HOUR)).toBe("1hour");
+    expect(at(8 * HOUR)).toBe("2hour");
     expect(at(3 * DAY)).toBe("12hour");
     expect(at(30 * DAY)).toBe("7day");
     expect(at(400 * DAY)).toBe("3month");

@@ -41,6 +41,39 @@ export type {
   ObservedDomain,
 } from "./domain";
 
+// ENC-1254 (chart-quality-bar D1 tier 1): TIME RENDERS AS TIME. The step
+// ladder, the label grammar, D1's `parsesAsTimestamp` predicate, the D12-derived
+// decimal rule, and the measured recordIndex→instant basis. Pure and DOM-free,
+// so the engine-side axis (ENC-1253) reuses the same formatting the DOM overlay
+// uses today rather than reimplementing it.
+export {
+  TIME_STEPS,
+  chooseTimeStep,
+  timeTicks,
+  timeLabelStyle,
+  formatTimeTick,
+  parsesAsTimestamp,
+  decimalsForStep,
+  decimalsForTicks,
+  MAX_DERIVED_DECIMALS,
+  indexToTime,
+  timeToIndex,
+  timeDomainFor,
+  IndexTimeTracker,
+} from "./time";
+export type {
+  TimeUnit,
+  TimeStep,
+  TimeZoneMode,
+  TimeTick,
+  TimeTickSet,
+  TimeTicksOptions,
+  TimeLabelStyle,
+  TimeBasis,
+  TimeBasisSource,
+  IndexTimeSource,
+} from "./time";
+
 export { createIdAllocator } from "./ids";
 export type { IdAllocator, ResourceKind } from "./ids";
 
