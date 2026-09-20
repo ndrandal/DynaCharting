@@ -1500,9 +1500,20 @@ capture replayed, and the measurement is decisive because the two hypotheses dif
 `view.json`'s `sy = 0.121428571` over `H = 600` predicts **-36.43 px/$** upright and
 **+36.43 px/$** mirrored, and the fill boundary fits **+36.40 px/$** at `r = +0.9895`.
 
-Re-check:
+Re-check — **as of ENC-1288 the gallery has been recaptured**, so the live still is upright and
+the historical claim is checked against the archived file (this is the ENC-1310/ENC-1311 rule:
+a correction's re-check must assert the correction, not the defect):
+
 ```bash
-python3 apps/showcase/tools/still-orientation.py price-line-area   # -> VERDICT : MIRRORED
+# the 2026-06-11 still the SPEC actually read — still MIRRORED, which is the correction's premise
+d=$(mktemp -d); git show 537c995:apps/showcase/stills/price-line-area.png > "$d/old.png"
+python3 apps/showcase/tools/still-orientation.py price-line-area --still "$d/old.png"
+# -> VERDICT : MIRRORED  (exit 1; +36.40 px/$, r = +0.9895)
+
+# the live still, recaptured at 2c03358 — the fill was never on the wrong side
+python3 apps/showcase/tools/still-orientation.py price-line-area
+# -> VERDICT : UPRIGHT   (exit 0; -29.24 px/$, r = -1.0000)
+
 bash scripts/tier0.sh                                             # -> case C: the ENGINE fills correctly
 ```
 
@@ -1851,6 +1862,12 @@ follows verbatim; §H's argument is that a falsification is worth more than a cl
 ---
 
 ### The original entry, as it stood at `2c03358`
+
+> *Verbatim, including its **Ticket.** line, which names ENC-1276 for the recapture. That
+> was true when it was written and stopped being true when ENC-1276 was split: the SPEC
+> correction shipped as ENC-1276 (workspace), the recapture as ENC-1288 (DynaCharting),
+> because a ticket may not span two repos. The live entry above carries the correct
+> pointer; this text is kept unedited.*
 
 **Claim.** The 23 PNGs in `apps/showcase/stills/` were all captured in one commit — `537c995`,
 **2026-06-11** — and the Y-orientation fix they needed landed in `d6b5acd`, **2026-06-21**, ten
