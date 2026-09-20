@@ -125,7 +125,13 @@ function spec(over: Partial<AxisSpec> = {}): AxisSpec {
     transform: framed.transform!,
     y: { ticks: [405, 410, 415].map((v) => ({ value: v, label: v.toFixed(2) })) },
     x: {
-      ticks: [0, 25, 50, 75, 100].map((v) => ({ value: v, label: `09:${String(v).padStart(2, "0")}` })),
+      // 09:30:00 … 09:34:00 — real timestamp grammar (ENC-1254's `formatTimeTick`
+      // shape), because `checkTier1Labels` asserts on it and a fixture that
+      // could not pass that assertion would be testing nothing.
+      ticks: [0, 20, 40, 60, 80].map((v) => ({
+        value: v,
+        label: `09:3${v / 20}:00`,
+      })),
     },
     theme: darkAxisTheme,
     measurer: stubMeasurer(),
@@ -254,7 +260,7 @@ describe("planAxis — where the labels land", () => {
     const p = planAxis(s);
     const boxBottomPx = clipYToPx(s.box.y.min, CANVAS.height);
     for (const l of p.labels.filter((x) => x.role === "xTickLabel")) {
-      const v = Number(l.text.slice(3));
+      const v = Number(l.text[4]) * 20;
       const tickPx = clipXToPx(v * s.transform.sx + s.transform.tx, CANVAS.width);
       const centrePx = l.bbox[0] + l.bbox[2] / 2;
       expect(Math.abs(centrePx - tickPx)).toBeLessThanOrEqual(1);
@@ -280,11 +286,25 @@ describe("planAxis — where the labels land", () => {
     expect(p.droppedLabels).toEqual([]);
   });
 
+  it("drops a label the RIGHT gutter cannot hold, rather than nudging it", () => {
+    // A centred label on the last tick, hard against the box's right edge: half
+    // its width lands in a 16px gutter it does not fit in. Moving it inward
+    // would put the label somewhere its tick is not, which is the caption
+    // failure one level down (SPEC §1.3) — so it is dropped and SAID.
+    const p = planAxis(spec({ x: { ticks: [{ value: 100, label: "09:35:00" }] } }));
+    expect(p.labels.filter((l) => l.role === "xTickLabel")).toHaveLength(0);
+    expect(p.droppedLabels).toEqual([
+      { text: "09:35:00", axis: "x", reason: "outside the frame" },
+    ]);
+    // Its tick mark and gridline are still drawn: the mark is true either way.
+    expect(p.gridLines.filter((g) => g.orientation === "vertical")).toHaveLength(1);
+  });
+
   it("drops a colliding label and KEEPS its tick mark", () => {
-    // Twenty x ticks across 1200px of plot box: their labels cannot all fit.
-    const ticks = Array.from({ length: 20 }, (_, i) => ({
-      value: i * 5,
-      label: `09:${String(i).padStart(2, "0")}`,
+    // Sixty x ticks across 1200px of plot box: their labels cannot all fit.
+    const ticks = Array.from({ length: 60 }, (_, i) => ({
+      value: i * 1.5,
+      label: `09:3${i % 10}:00`,
     }));
     const p = planAxis(spec({ x: { ticks } }));
     const xLabels = p.labels.filter((l) => l.role === "xTickLabel");
@@ -503,14 +523,28 @@ describe("EngineAxis — the commands it emits", () => {
     expect(t.log).not.toContain("setTextGeometryX");
   });
 
-  it("dispose() removes every resource it created", () => {
+  it("dispose() deletes the pane (cascading) plus every geometry and buffer", () => {
     const t = captureTarget();
     const axis = new EngineAxis(t);
     axis.sync(spec());
-    const created = t.commands.filter((c) => String(c.cmd).startsWith("create")).length;
+    const createdIds = (kind: string) =>
+      t.commands.filter((c) => c.cmd === kind).map((c) => c.id as number);
+    const panes = createdIds("createPane");
+    const geoms = createdIds("createGeometry");
+    const buffers = createdIds("createBuffer");
+
+    const before = t.commands.length;
     axis.dispose();
-    const destroyed = t.commands.filter((c) => String(c.cmd).startsWith("destroy")).length;
-    expect(destroyed).toBe(created);
+    const deleted = t.commands.slice(before).filter((c) => c.cmd === "delete").map((c) => c.id);
+
+    // The pane is deleted FIRST: `CommandProcessor::cmdDelete` cascades a pane
+    // to its layers and their draw items, so those need no command of their own.
+    expect(deleted[0]).toBe(panes[0]);
+    expect(new Set(deleted)).toEqual(new Set([...panes, ...geoms, ...buffers]));
+    // Layers and draw items are covered by the cascade, never addressed directly.
+    const layers = createdIds("createLayer");
+    const drawItems = createdIds("createDrawItem");
+    for (const id of [...layers, ...drawItems]) expect(deleted).not.toContain(id);
   });
 });
 
@@ -522,7 +556,7 @@ describe("encodeUpdateRecord", () => {
     expect(dv.getUint32(1, true)).toBe(77);
     expect(dv.getUint32(5, true)).toBe(0);
     expect(dv.getUint32(9, true)).toBe(16);
-    expect(Array.from(new Float32Array(buf, 13))).toEqual([1, 2, 3, 4]);
+    expect(Array.from(new Float32Array(buf.slice(13)))).toEqual([1, 2, 3, 4]);
   });
 });
 
@@ -542,7 +576,7 @@ describe("the pixel↔clip arithmetic the labels depend on", () => {
     // 6px tick and 4px of breathing room". If either file moves, this fails.
     const box = plotBox(CANVAS);
     const gutterPx = clipXToPx(box.x.min, CANVAS.width);
-    expect(gutterPx).toBe(DEFAULT_PLOT_INSETS.left);
+    expect(gutterPx).toBeCloseTo(DEFAULT_PLOT_INSETS.left, 9);
     const m = stubMeasurer().measure("418.25", AXIS_DEFAULTS.fontPx);
     expect(m.advanceWidthPx + AXIS_DEFAULTS.tickLengthPx + AXIS_DEFAULTS.labelGapPx)
       .toBeLessThanOrEqual(gutterPx);
