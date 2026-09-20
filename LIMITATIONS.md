@@ -720,10 +720,21 @@ remaining 11 views is unticketed.
 
 **Still true after ENC-1254**, which changed what the labels *say* and nothing about who draws
 them. The three market views now carry a measured time axis instead of `INDEX`, so (2)'s
-consequence is visible in a new place: those views ask for 6 x ticks and the tape's 20-second
-span yields 4 (`00:00:00 … 00:00:15`), because the stated domain runs past the x-anchored
-window AND ends 20 ms shy of `00:00:20`. Both are correct; neither is fixed until ENC-1256
-frames the plot. Do not read a sparse time axis as a formatting bug.
+consequence has a sharper reading. Measured in the running showcase (`vite preview`, headless
+Chrome, `vendor: nvidia, architecture: ampere`, `info.isFallbackAdapter: false` — SPEC D8),
+~15 s into the loop, on all three views:
+
+```
+requested 6 x ticks  ->  3 drawn:  00:00:00  00:00:05  00:00:10
+stated x domain      ->  3.6 .. 204.4 record indices  (candles-aapl, 202 records)
+x-anchored window    ->  150 index units  ~= 11.2 s at the measured 75.0 ms/record
+```
+
+Two independent subtractions, both of them (2): the window shows ~11 s of a ~15 s domain, and
+the tape's right edge lands 20 ms shy of `00:00:20` so there is no fifth tick to draw even
+unframed. Every label drawn is true. Do not read a sparse time axis as a formatting bug, and do
+not widen the window or synthesise ticks to "fix" it — that would put a mark where the engine
+draws nothing.
 
 **Verified at** `2423de6`, 2026-09-19 — all four re-checks re-run under ENC-1254 (2 / 0 /
 3 / 11 / 14 / 14 passed, unchanged). The original stamp was `ENC-1252 HEAD`; the tick-count and
@@ -810,8 +821,11 @@ ENC-1254 landed the client half. DynaCharting's own `dc::TimeScale`
 live path never produces — it is unreachable for the same reason.
 
 **Verified at** `2423de6`, 2026-09-19 — every command above run by hand in the ENC-1254
-worktree and against the sibling repos at their checked-out state. The float32-mantissa figure
-is arithmetic, not a measurement.
+worktree and against the sibling repos at their checked-out state. The `epochKnown: false` /
+`msPerIndex: 74.9998` figures were read off the running showcase over CDP (headless Chrome,
+`vendor: nvidia, architecture: ampere`, `info.isFallbackAdapter: false`, `subgroupMinSize: 32`,
+`maxBufferSize: 2 GiB` — SPEC D8), not inferred from the tests. The float32-mantissa figure is
+arithmetic, not a measurement.
 
 ---
 
