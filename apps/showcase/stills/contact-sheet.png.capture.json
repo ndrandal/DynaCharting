@@ -3,7 +3,7 @@
   "tier1Scorable": false,
   "spec": "specs/2026-09-19-chart-quality-bar/SPEC.md D10, D8",
   "url": "file:///home/ndrandal/encultured-workspace/trees/chart-quality-bar-one-reference-chart/ENC-1288-dynacharting/apps/showcase/stills/contact-sheet.html",
-  "capturedAt": "2026-09-20T16:20:36.374Z",
+  "capturedAt": "2026-09-20T16:39:15.695Z",
   "canvasReady": true,
   "dwellMs": 4000,
   "adapter": {
@@ -16,6 +16,6 @@
   "warnings": [
     "PAGE SCREENSHOT: composites the app DOM/SVG over the canvas. D10 forbids scoring this raster at tier 1 -- a DOM overlay in it would pass on the engine's behalf."
   ],
-  "bytes": 738954,
-  "sha256": "c6cc5b0ba063494a18ebba7430a1fefab81b0cbd82cc0c1dc987b37589c8aea1"
+  "bytes": 739498,
+  "sha256": "f4d3f2b01b4d6999dbcbadb012b5656e0c2d683e4a51b923f565a4f1cdb6ab3b"
 }
