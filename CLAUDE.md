@@ -12,6 +12,23 @@ DynaCharting is a high-performance real-time charting engine intended as an embe
 > and the commit it was last verified at. It also records what *stopped* being true (§R) and
 > which confidently-held beliefs were wrong (§C). **Keeping it true is part of the definition
 > of done** — see [Workflow](#workflow).
+>
+> **Adding an entry? Its id is `DC-L-<your ENC ticket number>` — `DC-L-1277`, with the hyphen
+> — never the next free `DC-Lnn` (ENC-1277).** The sequential space is **closed at `DC-L18`**.
+> Author-picked numbers are racy by construction and the window is the whole life of a branch,
+> not the moment you check: they collided three times in two days (`DC-L12`, `DC-L14` three
+> ways, `DC-L17`) and **every one of those authors checked first**, one of them across every
+> `enc-12*` remote branch. Twice there was **no merge conflict at all** — git auto-merged the
+> two entries into different parts of the file, leaving two identical headings with no marker
+> and no error. Linear allocates the ticket number, so there is nothing left to race for. The
+> existing eighteen were deliberately **not** renumbered: they are citation targets (234
+> citations, 35 files, two repos, plus merged commit messages and Linear comments that cannot
+> be rewritten), and nine of them arrived in one commit with no ticket of their own, so
+> renumbering them by ticket would itself collide nine ways. Merged entries cannot collide;
+> only future ones can. The hyphen is load-bearing — without it `grep DC-L12` matches
+> `DC-L1277`. Enforced by `bash scripts/check-limitation-ids.sh`, which `pnpm test` runs; it
+> also fails when an id that existed on `origin/main` has vanished, the `--ours` conflict
+> resolution that silently ate a whole entry once. Full reasoning: `LIMITATIONS.md` §H device 7.
 
 **Current milestone:** WebGPU/Dawn is the C++ renderer (`dc_gpu`). The original OpenGL backend has been removed (ENC-501); the full pipeline set renders headless through Dawn with offscreen readback. The TypeScript/WebGL2 prototype (`engine-host`/`chart-controller`/`hello-engine`) has been retired (ENC-508) — `@repo/dc-wasm` is the browser path. Windowed/on-screen presentation is next (ENC-497).
 
@@ -420,7 +437,9 @@ Pipeline types (owned by the C++ core's `PipelineCatalog`; the retired TS protot
   2. **Did you find one?** Add an entry: a `Re-check` command you have actually run, a
      `Verified at <sha>, <date>` stamp, a severity, a workaround, and a ticket (or an explicit
      "None"). If you cannot write the one-line re-check, you have an impression, not a
-     limitation.
+     limitation. **Its id is `DC-L-<your ENC ticket number>`, not the next free `DC-Lnn`**
+     (ENC-1277 — that space is closed at `DC-L18`); `pnpm test` fails if two entries share an
+     id, if one vanishes, or if an id is malformed.
   3. **Did you touch a file some entry's `Re-check` names?** Run that re-check and either
      restamp the entry or retire it. This is the whole maintenance burden, and it is scoped to
      files you already have open.

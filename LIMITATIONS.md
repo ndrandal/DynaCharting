@@ -9,6 +9,12 @@ bug for behaviour that is listed here as deliberate.
   time once, so they are recorded rather than quietly dropped.
 - **Retired** (§R) are entries that stopped being true, kept with the commit that killed them.
 
+**Adding an entry? Its id is `DC-L-<your ENC ticket number>`** — `DC-L-1277`, with the hyphen —
+**not the next free `DC-Lnn`**. That space closed at `DC-L18`: author-picked sequential ids
+collided three times in two days under parallel work, and twice git auto-merged the two entries
+with no conflict and no marker. `bash scripts/check-limitation-ids.sh` enforces it, and
+`pnpm test` runs that. Full reasoning: §H device 7.
+
 Every active entry carries a `Verified at` commit and a **`Re-check`** command you can paste.
 If a re-check disagrees with the entry, the entry is wrong — fix it in the same PR as whatever
 you were doing. See [§H — How this file stays true](#h--how-this-file-stays-true); it exists
