@@ -65,19 +65,21 @@ ctest --test-dir build -R dc_d1_1_smoke              # run a single test by name
 The **default** build (no `-DDC_FETCH_DAWN`) builds `dc` + the pure-logic tests only — no renderer, fast, and needs no graphics API. To get the renderer + render/golden tests, opt into Dawn (see below).
 
 > **A green default `ctest` proves nothing about the renderer (LIMITATIONS.md DC-L01).** The
-> default configure registers **192** of the repo's **239** tests; the other **47** — every
+> default configure registers **193** of the repo's **240** tests; the other **47** — every
 > Dawn render and golden-parity test, and the tier-0 check below — plus `dc_gpu`,
 > `dc_json_host` and the four headless servers are excluded at *configure* time, so nothing
-> reports them as missing. "192/192 passed" is compatible with the renderer being completely
+> reports them as missing. "193/193 passed" is compatible with the renderer being completely
 > broken. Verify with
-> `grep -c '^add_test(' build/core/CTestTestfile.cmake` (192) against
-> `grep -cE '^\s*add_test\(' core/CMakeLists.txt` (239). The pair moves as tests are added
-> (188/231 before ENC-984, 189/232 before ENC-995, 190/233 before ENC-1249, 190/236 before ENC-1257,
-> 191/238 before ENC-1251); the **47-test gap**
-> is the number that matters.
-
+> `grep -c '^add_test(' build/core/CTestTestfile.cmake` (193) against
+> `grep -cE '^\s*add_test\(' core/CMakeLists.txt` (240). The pair moves as tests are added
 > (188/231 before ENC-984, 189/232 before ENC-995, 190/233 before ENC-1249, 190/236 before
-> ENC-1257, 191/238 before ENC-1253); the **47-test gap** is the number that matters.
+> ENC-1257, 191/238 before ENC-1251 and before ENC-1253, 193/240 measured at `f907f93` under
+> ENC-1277); the **47-test gap** is the number that matters.
+>
+> *(ENC-1251 and ENC-1253 each amended the parenthetical above on their own branch; git
+> auto-merged the two versions into a duplicated, orphaned copy of this blockquote with no
+> conflict and no marker. ENC-1277 folded them back together — it is the same silent
+> auto-merge that put two `DC-L14` headings in `LIMITATIONS.md`, one file over.)*
 
 CMake options: `DC_BUILD_TESTS` (default ON), `DC_WARNINGS_AS_ERRORS` (default OFF), `DC_FETCH_DAWN` (default OFF — see below).
 
