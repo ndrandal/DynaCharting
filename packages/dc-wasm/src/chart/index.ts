@@ -156,7 +156,6 @@ export type {
   AxisSide,
   AxisSideSpec,
   AxisSpec,
-  AxisGridTarget,
   AxisLabel,
   AxisGridLine,
   AxisPlan,

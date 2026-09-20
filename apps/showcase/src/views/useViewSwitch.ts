@@ -59,7 +59,6 @@ import {
   frameSeries,
   paneRegionFor,
   tryPlotBox,
-  type AxisGridTarget,
   type CanvasSize,
   type EngineHost,
   type FramedSeries,
@@ -73,19 +72,6 @@ import { useReplay } from '../engine/useReplay';
 import { effectiveTransform } from '../chrome/mapping';
 import { framingFor, type FramingResolution } from './framing';
 import type { ShowcaseView } from './registry';
-
-/**
- * The layer the axis GRIDLINES are drawn on, inside the framed view's own pane
- * (ENC-1316, `AxisSpec.gridTarget`).
- *
- * Panes AND layers render in id order (`Scene::paneIds()`/`layerIds()` sort
- * ascending), so this number is the whole mechanism: it has to be below every
- * layer any view's manifest creates, and the lowest one in the catalog is 101.
- * `framing.test.ts` asserts that across every committed manifest rather than
- * leaving it to a comment — a view added with a layer id of 5 would put its
- * marks UNDER the grid, and would look exactly like a theme problem.
- */
-export const SHOWCASE_GRID_LAYER_ID = 9;
 
 /**
  * The transform attached to draw items that have none of their own, so the
@@ -275,16 +261,6 @@ export interface UseViewSwitch {
    * refusal is observable rather than a silent no-op — see `framing.ts`.
    */
   framingResolution: FramingResolution | null;
-  /**
-   * Where the axis GRIDLINES belong for this view (ENC-1316), or null when it
-   * is not framed and they stay in the furniture pane.
-   *
-   * A framed view's pane region IS the plot box, so a gridline issued into it
-   * spans exactly the box and is drawn BEFORE the data — which is the whole
-   * point: a gridline over the marks is a mark, and D11 band 3 measures it as
-   * one (6.25 : 1 on `audio-waveform` against a 2.0 : 1 ceiling).
-   */
-  gridTarget: AxisGridTarget | null;
 }
 
 /**
@@ -481,14 +457,6 @@ export function useViewSwitch(
     if (loop) resetAndReplay();
   }, [loop, resetAndReplay]);
 
-  // Where the gridlines go. Derived from the same resolution the fit came from,
-  // so "framed" and "grid behind the data" cannot drift apart.
-  const gridTarget = useMemo<AxisGridTarget | null>(() => {
-    if (!framing) return null;
-    const paneId = framing.kind === 'series' ? framing.framing.paneId : framing.paneFraming.paneId;
-    return { paneId, layerId: SHOWCASE_GRID_LAYER_ID };
-  }, [framing]);
-
   // `epoch` in the records identity forces useReplay to re-arm on reset/restart.
   // We pass the same records object; the effect re-runs because `playing`/the
   // remount via key isn't available here, so we gate via a wrapper records ref.
@@ -523,7 +491,6 @@ export function useViewSwitch(
     sceneEpoch: epoch,
     framed,
     framingResolution,
-    gridTarget,
   };
 }
 

@@ -43,7 +43,7 @@ import { effectiveTransform } from '../chrome/mapping';
 import { firstRecordX } from '../chrome/firstRecordX';
 import { VIEWS, defineView } from './registry';
 import { framingFor, paneIds, paneOfLayer, resolveFraming } from './framing';
-import { SHOWCASE_FIT_TRANSFORM_ID, SHOWCASE_GRID_LAYER_ID } from './useViewSwitch';
+import { SHOWCASE_FIT_TRANSFORM_ID } from './useViewSwitch';
 import type { Records } from '../engine/useReplay';
 import type { ViewMeta } from './registry';
 
@@ -277,22 +277,13 @@ describe('ENC-1316 — every view that draws an axis is framed, and nothing else
     });
   });
 
-  it('the grid layer id is below EVERY layer any manifest creates', () => {
-    // This number is the whole "gridlines behind the data" mechanism (layers
-    // render in id order). A view added with a layer id below it would draw its
-    // marks UNDER the grid and look like a theme bug.
-    const layerIds = VIEWS.flatMap((v) =>
-      v.manifest.commands
-        .filter((c) => c.cmd === 'createLayer' && typeof c.id === 'number')
-        .map((c) => c.id as number),
-    );
-    expect(layerIds.length).toBeGreaterThan(20);
-    expect(Math.min(...layerIds)).toBeGreaterThan(SHOWCASE_GRID_LAYER_ID);
-    // …and the synthesised fit transform is above every manifest id and below
-    // the engine axis's allocator base, so a stray id is attributable.
+  it('the synthesised fit transform can collide with nothing in the catalog', () => {
+    // Above every hand-picked manifest id and below the engine axis's allocator
+    // base (900000), so a stray id in a scene dump is attributable at a glance.
     const ids = VIEWS.flatMap((v) =>
       v.manifest.commands.filter((c) => typeof c.id === 'number').map((c) => c.id as number),
     );
+    expect(ids.length).toBeGreaterThan(100);
     expect(Math.max(...ids)).toBeLessThan(SHOWCASE_FIT_TRANSFORM_ID);
     expect(SHOWCASE_FIT_TRANSFORM_ID).toBeLessThan(900000);
   });

@@ -70,7 +70,6 @@ import {
   DEFAULT_PLOT_INSETS,
   darkAxisTheme,
   tryPlotBox,
-  type AxisGridTarget,
   type AxisSpec,
   type AxisTextMeasurer,
   type AxisTheme,
@@ -149,7 +148,6 @@ export function engineAxisSpec(
   measurer: AxisTextMeasurer | null,
   theme: AxisTheme = SHOWCASE_AXIS_THEME,
   box: PlotBox | null = null,
-  gridTarget: AxisGridTarget | null = null, // eslint-disable-line
 ): EngineAxisResolution {
   const decline = (reason: EngineAxisRefusalReason, detail: string): EngineAxisResolution => ({
     spec: null,
@@ -206,12 +204,6 @@ export function engineAxisSpec(
         : undefined,
       theme,
       measurer: measurer ?? undefined,
-      // THE GRIDLINES GO BEHIND THE DATA when the caller has framed it
-      // (ENC-1316). Only a framed view supplies one: its pane region IS the
-      // box, so a line spanning the box is not touched by the scissor, and the
-      // pane's clear quad is painted before its layers. An unframed view keeps
-      // its grid in the furniture pane, on top, where it was.
-      gridTarget: (void gridTarget, undefined),
     },
     refusal: null,
   };
