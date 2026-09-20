@@ -770,14 +770,39 @@ Parts **(2)** and **(3)** are unchanged and still true: every view still bakes a
 can see in the raster is that the data is not fitted to the plot box the furniture is laid out
 against, so the leftmost bars run under the price labels.
 
-**Ticket.** Part (1): **ENC-1253**, done. Part (2)'s primitive is **ENC-1256** (done); adopting
-it on the showcase and customer-layer render paths is **DC-L14** / **ENC-1273**. Converting the
-remaining 11 views is unticketed.
+**Update, 2026-09-20 (ENC-1273) — PART (2) IS NO LONGER TRUE for the two single-pane views that
+declare an `axisDomain`.** `useViewSwitch` calls `frameSeries(measuredDomain, canvas)` and
+applies both halves it returns, and the chrome overlay maps its ticks through that same fitted
+transform, so on `candles-aapl` and `ohlc-bars` the data and the furniture are now laid out
+against ONE box. **DC-L14 is retired** (§R) and what remains of (2) is **DC-L-1273**: a stacked
+multi-pane view (`candle-overlays`, which is what `/` renders) is refused rather than framed,
+and `customer-layer` has adopted none of it.
 
-**Verified at** `ENC-1253 HEAD`, 2026-09-20 — (3)'s greps re-run in the ENC-1253 worktree and
-unchanged. (1) is retired by the measurement above. (2)'s tick-count and domain observations are
-carried forward from the ENC-1252 measurement over CDP and remain true because nothing on the
-framing path changed.
+Two corrections to the paragraph above, both measured on a canvas-only capture of
+`#/view/candles-aapl` (hardware adapter `vendor: nvidia, architecture: ampere`,
+`info.isFallbackAdapter: false`):
+
+- **"~44% of the stated domain is off-frame" was right, and it was the RIGHT-hand failure**, not
+  a left-hand one: the literal's X window is 150 record-indices against a 270-index tape, so the
+  tail projected to clip x ≈ 2.17 — off the render target — and the pane scissor cut it at
+  ±0.95 (raster column 877 of 900, which is exactly `(0.95+1)/2·900`). Fitted, the ink ends on
+  the box edge.
+- **"the leftmost bars run under the price labels" is canvas-width dependent**, which is why it
+  is easy to see once and not reproduce. The literal puts the first bar at clip −0.8545 while
+  the label gutter's inner edge is at `−1 + 128/width`; they cross at **width ≈ 880 px**.
+  Measured: at 760×280 the candle ink starts at raster column **55**, inside the 64 px label
+  band; at 900×497 it starts at column **65**, just outside it. After the fit it starts at
+  column 67 and 68 respectively — inside the box at both sizes, because the fit is a function
+  of the canvas rather than a constant.
+
+**Ticket.** Part (1): **ENC-1253**, done. Part (2)'s primitive is **ENC-1256** (done); adopting
+it on the showcase render path is **ENC-1273** (done, DC-L14 retired), and what is still
+unadopted is **DC-L-1273**. Converting the remaining 11 views is unticketed.
+
+**Verified at** `ENC-1273 HEAD`, 2026-09-20 — (3)'s greps re-run in the ENC-1273 worktree and
+unchanged. (1) is retired by the ENC-1253 measurement above; (2) is retired for the single-pane
+views by the ENC-1273 measurement above, and its remainder moved to DC-L-1273. (2)'s tick-count
+and domain observations are carried forward from the ENC-1252 measurement over CDP.
 
 ---
 
