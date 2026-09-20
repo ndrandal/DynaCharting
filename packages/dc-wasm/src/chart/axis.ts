@@ -834,7 +834,25 @@ export class EngineAxis {
       rgba(theme.tickColor),
       theme.tickLineWidth,
     );
-    this.syncLabels(plan.labels, rgba(theme.labelColor));
+    const drawn = this.syncLabels(plan.labels, rgba(theme.labelColor));
+
+    // A label the core REFUSED to lay out is not in the raster, so it must not
+    // be in the plan either — the plan is what the scene dump and the tier-1
+    // check are built from, and a declared-but-undrawn label is precisely the
+    // caption failure this ticket exists to remove. `EngineHost` returns -1
+    // from `setTextGeometry` while a render is in flight; the refused slot keeps
+    // whatever it last held, so the honest report is "fewer labels", and the
+    // caller retries.
+    if (drawn < plan.labels.length) {
+      plan.droppedLabels.push(
+        ...plan.labels.slice(drawn).map((l) => ({
+          text: l.text,
+          axis: l.axis,
+          reason: "the core refused the layout (busy or no font)",
+        })),
+      );
+      plan.labels = plan.labels.slice(0, drawn);
+    }
 
     this.lastPlan = plan;
     return plan;
@@ -986,15 +1004,25 @@ export class EngineAxis {
     return slot;
   }
 
-  /** Lay the pooled label slots out, emptying the ones this plan does not use. */
-  private syncLabels(labels: readonly AxisLabel[], color: Rgba): void {
+  /**
+   * Lay the pooled label slots out, emptying the ones this plan does not use.
+   * Returns how many were actually laid out — a prefix count, because the run
+   * stops at the first refusal rather than leaving a hole in the middle.
+   */
+  private syncLabels(labels: readonly AxisLabel[], color: Rgba): number {
     const n = Math.min(labels.length, this.maxLabels);
+    let drawn = 0;
     for (let i = 0; i < n; i++) {
       const slot = this.labelSlot(i);
       const l = labels[i];
       const glyphs = this.layout(slot, l.text, l.clipX, l.clipY, l.fontSizeClip, l.xScale);
+      // -1 means the core refused (busy, or no font). Stop: continuing would
+      // leave slot i showing its PREVIOUS label — a stale number beside a fresh
+      // gridline, which is worse than a missing one.
+      if (glyphs < 0) break;
+      drawn++;
       slot.text = l.text;
-      slot.count = Math.max(0, glyphs);
+      slot.count = glyphs;
       if (!slot.bound && glyphs > 0) {
         this.ctrl({
           cmd: "bindDrawItem",
@@ -1017,14 +1045,17 @@ export class EngineAxis {
     }
     // Empty every slot this plan does not use: an empty string lays out zero
     // glyphs, so the slot survives with nothing in it rather than being
-    // destroyed and re-created on the next tick that needs it.
-    for (let i = n; i < this.labelSlots.length; i++) {
+    // destroyed and re-created on the next tick that needs it. A refusal here
+    // leaves the slot's old glyphs on screen, so it is reported as a shortfall
+    // too — `drawn` is a PREFIX count and the caller retries the whole sync.
+    for (let i = drawn; i < this.labelSlots.length; i++) {
       const slot = this.labelSlots[i];
       if (slot.text === "") continue;
-      this.layout(slot, "", 0, 0, 0.01, 1);
+      if (this.layout(slot, "", 0, 0, 0.01, 1) < 0) return Math.min(drawn, i);
       slot.text = "";
       slot.count = 0;
     }
+    return drawn;
   }
 
   private labelSlot(i: number): LabelSlot {
