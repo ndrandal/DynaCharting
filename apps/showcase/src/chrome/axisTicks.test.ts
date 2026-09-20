@@ -160,7 +160,14 @@ describe('what the measurement actually says about candles-aapl', () => {
   it('picks a 5-second step for a 20-second tape, and labels whole seconds', () => {
     const { domain, basis } = replay('candles-aapl', candlesDomain, candlesGrowth);
     const labels = xLabels(candlesView.chrome as ChromeSpec, domain, basis);
-    expect(labels).toEqual(['00:00:00', '00:00:05', '00:00:10', '00:00:15', '00:00:20']);
+    // Four ticks, not five, and that is the axis being HONEST: the tape's last
+    // frame is at t = 19 950 ms and the domain's right edge lands at ≈19 980 ms,
+    // so there is no 00:00:20 on it. An evenly-divided axis would have printed a
+    // sixth label at the frame edge regardless of whether any record was there —
+    // which is the whole failure mode this ticket exists to remove.
+    expect(labels).toEqual(['00:00:00', '00:00:05', '00:00:10', '00:00:15']);
+    const last = domain.x!.max;
+    expect(basis!.originMs + last * basis!.msPerIndex).toBeLessThan(20_000);
   });
 
   it('promotes the step as the tape grows — the axis is a function of the data', () => {
