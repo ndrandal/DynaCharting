@@ -25,7 +25,7 @@ and corrected them.
 
 ## DC-L01 — A green default `ctest` says nothing about the renderer 🔴
 
-**Claim.** `cmake -B build && ctest --test-dir build` runs **191** tests and builds **no
+**Claim.** `cmake -B build && ctest --test-dir build` runs **192** tests and builds **no
 renderer at all**. `dc_gpu`, `dc_json_host`, all four headless demo servers and **47 render
 tests** are excluded at *configure* time by `DC_FETCH_DAWN` (default `OFF`,
 `core/CMakeLists.txt:165`). They are not "skipped" — they never enter `CTestTestfile.cmake`,
@@ -38,8 +38,8 @@ all** (ENC-1249, `scripts/tier0.sh`).
 
 **Re-check.**
 ```bash
-grep -cE '^\s*add_test\(' core/CMakeLists.txt            # 238  — all tests that exist
-grep -c '^add_test('  build/core/CTestTestfile.cmake     # 191  — all tests you just ran
+grep -cE '^\s*add_test\(' core/CMakeLists.txt            # 239  — all tests that exist
+grep -c '^add_test('  build/core/CTestTestfile.cmake     # 192  — all tests you just ran
 grep -n 'DC_FETCH_DAWN:BOOL' build/CMakeCache.txt        # OFF
 ```
 The 47-test gap is the single `if (DC_HAS_DAWN)` block at `core/CMakeLists.txt:1916-2489`.
@@ -47,10 +47,10 @@ Target-level gap: **52** targets (`dc_gpu`, `dc_glfw_system`, `dc_json_host`,
 `dc_dawn_window_demo`, 4 servers, 44 test executables) behind the four `if (DC_HAS_DAWN)`
 guards at lines 274, 374, 391 and 1916. Measured directly:
 ```bash
-find build-dawn/core -maxdepth 1 -type f -executable | wc -l   # 239
-find build/core      -maxdepth 1 -type f -executable | wc -l   # 190  -> 49 executables missing
+find build-dawn/core -maxdepth 1 -type f -executable | wc -l   # 242
+find build/core      -maxdepth 1 -type f -executable | wc -l   # 192  -> 50 executables missing
 ```
-(49 executables, not 52 targets: `dc_gpu` is a library, and `dc_glfw_system` /
+(50 executables, not 52 targets: `dc_gpu` is a library, and `dc_glfw_system` /
 `dc_dawn_window_demo` need the *second* gate `-DDC_DAWN_WINDOWED=ON`.)
 
 **ENC-1249 corrected two stale details here**, both dating from before ENC-995's stamp: the
@@ -78,7 +78,8 @@ independent gate for `dc_dawn_window_demo` — `-DDC_FETCH_DAWN=ON` alone gets 5
 logic test, taking the pair from 188/231 to 189/232; ENC-995 added another, taking it to
 190/233; **ENC-1249 added three Dawn-only tests, taking it to 190/236 and the gap from 43 to 46;
 ENC-1257 added one default-build and two Dawn-only tests, taking it to 191/238 and the gap
-to 47** (measured post-merge, not predicted). The gap is still exactly the `DC_HAS_DAWN` block, every time. Read the *difference*, not
+to 47; ENC-1251 added one default-build test, taking it to 192/239 with the gap unchanged at
+47** (measured, not predicted). The gap is still exactly the `DC_HAS_DAWN` block, every time. Read the *difference*, not
 the left-hand number: a change that grows the registered count tells you nothing about the
 renderer either — which is the whole point, and is why three consecutive tickets moving this
 number changed nothing about what the default build proves.
@@ -91,9 +92,12 @@ either. The check exits **3** (never 0) when no adapter comes up, and `scripts/t
 that into exit 2 "CANNOT RUN", precisely so it cannot join the class of things this entry is
 about.
 
-**Verified at** `ENC-1249 HEAD`, 2026-09-19 — counted statically from `core/CMakeLists.txt`
-(236) and empirically from a real default configure in the ENC-1249 worktree (190), giving a gap
-of **46**; executable counts measured from `build-dawn` (239) against `build` (190).
+**Verified at** `ENC-1251 HEAD`, 2026-09-19 — counted statically from `core/CMakeLists.txt`
+(239) and empirically from a real default configure in the ENC-1251 worktree (192), giving a gap
+of **47**; executable counts measured from `build-dawn` (242) against `build-default` (192).
+The `236/236` in the *Working around it* block above is ENC-1249's lavapipe figure and is left
+as that session recorded it; this session measured **237 of 239 on hardware**, the two failures
+being the `dc_enc619_dawn_*` pair the correction below pins to the unmodified tree.
 
 ---
 
@@ -956,6 +960,72 @@ worktree and against the sibling repos at their checked-out state. The `epochKno
 `vendor: nvidia, architecture: ampere`, `info.isFallbackAdapter: false`, `subgroupMinSize: 32`,
 `maxBufferSize: 2 GiB` — SPEC D8), not inferred from the tests. The float32-mantissa figure is
 arithmetic, not a measurement.
+
+## DC-L17 — A candle body has a 2 px floor, so a doji is not zero-height on screen 🟡
+
+**Claim.** Since ENC-1251 `instancedCandle@1` floors the height it draws a candle body at:
+`dc::kMinBodyHeightPx` = **2 device pixels** (`core/include/dc/render/CandleBodyFloor.hpp`),
+applied in CLIP space per draw. So the drawn body is no longer a pure function of the record's
+`open`/`close` — a bar whose body is thinner than 2 px is drawn at 2 px, centred on the
+open/close level and slid back inside `low..high` when the wick has the room. This is the
+vertical counterpart of **DC-L12** (ENC-1257's horizontal rule) and the same caveat applies:
+the resolution is host/shader-side and per-draw, so it is invisible in the bytes —
+`getBufferBytes()` and `getSceneDocument()` still report the authored `open`/`close`.
+
+**Why it exists.** Before it, `open == close` made both body triangles degenerate — zero area,
+zero fragments — so an ordinary **doji drew no body at all** and the bar read as a bare wick
+with its open/close level missing. That is not rare: ENC-1251 wiretapped the live dataplane for
+100 s (customer-layer → embassy `candles-v1` → GMA_V3 → feed-simulator; NEXO/`lastPrice`, 3 s
+tumbling windows) and decoded the candle6 records that drew the chart — **17 of 146 (11.6%)**
+carried `open == close` exactly. It is the answer to
+`specs/2026-09-19-chart-quality-bar/SPEC.md` §1.0's open question, and it was a tier-0 failure:
+the record carried an open and a close and the mark depicted neither.
+
+**Why it bites.** Two ways.
+
+1. **You cannot read a body's exact height off a dense or a flat chart.** Under ~2 px the
+   drawn height is the floor, not the data. Measure body height from the records, never from
+   the raster — the same rule DC-L12 states for width.
+2. **`SvgExporter` has its OWN floor and it is a different one.** `core/src/export/SvgExporter.cpp:548`
+   (`if (bodyH < 1.0) bodyH = 1.0;`) clamps to **1** unit in the exporter's own scaled space,
+   not to 2 device pixels, and it predates ENC-1251 — it is why the exporter always drew dojis
+   the renderer did not. The two paths now agree that a doji is visible and still disagree on
+   how tall it is. (`SvgExporter` also still does not apply DC-L12's bar-sizing rule.)
+
+**Re-check.**
+```bash
+cmake -B build-dawn -G Ninja -DDC_BUILD_TESTS=ON -DDC_FETCH_DAWN=ON
+cmake --build build-dawn -j$(nproc) --target dc_enc1249_tier0_truthful
+./build-dawn/core/dc_enc1249_tier0_truthful | grep 'doji-on-high'
+#   doji-on-high    cx=102 wick[153..225]  bodyX=108 body[153..154]  rows high=152.9 open=152.9 close=152.9 low=226.3
+#   PASS  D1 [doji-on-high] full extent at cx is low..high      got [153..225] want [152.9..226.3]
+#   PASS  D2 [doji-on-high] the body is drawn at all            x=108 lit=2 px  (open == close: a DOJI)
+#   PASS  D3 [doji-on-high] the body sits at the open/close level   mid=153.5 want=152.9 (+-3 px)
+#   PASS  D4b [doji-on-high] the floored doji body stays thin   span=2 px (need 1..4)
+
+# one floor, two shaders — the pick footprint cannot drift from the drawn one
+grep -n 'constexpr float kMinBodyHeightPx' core/include/dc/render/CandleBodyFloor.hpp
+#   -> 54:constexpr float kMinBodyHeightPx = 2.0f;
+grep -c 'dcCandleBodyFloor' core/src/gpu/DawnInstancedCandleBackend.cpp core/src/gpu/DawnPickBackend.cpp
+#   -> 1 and 1
+```
+`body[153..154]` is the whole entry: two rows where the record's open and close are the same
+number. Before ENC-1251 that column read `body[-1..-1]` — nothing lit.
+
+**Working around it.** Nothing to work around if you want a readable doji — that is the point.
+For an exact pixel height, read the records. `kMinBodyHeightPx` is a single constant in
+`CandleBodyFloor.hpp` if a caller genuinely needs a different convention; unlike ENC-1257's
+`BarSizingConfig` it is **not** yet a per-draw parameter, because nothing has asked for one.
+The rule is off entirely when the draw has no viewport (`viewH <= 0`).
+
+**Ticket.** ENC-1251. `SvgExporter`'s divergent floor is real and unowned.
+
+**Verified at** `ENC-1251 HEAD`, 2026-09-19 — every command above was run in the ENC-1251
+worktree and produced exactly the output shown, on a hardware adapter
+(`backend=Vulkan name="NVIDIA GeForce RTX 3070 Ti (NVK GA104)"` — SPEC D8). The wire figures
+come from the decoded dataplane capture the tier-0 D case quotes verbatim.
+
+---
 
 ---
 

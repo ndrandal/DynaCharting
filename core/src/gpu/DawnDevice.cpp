@@ -1197,6 +1197,13 @@ BindGroupHandle DawnDevice::createBindGroup(const BindGroupDesc& desc) {
           // half-width (clip space) at byte 84 (float index 21) — wickHalf.y.
           // 0 means "rule does not apply, use the per-instance halfWidth".
           uniformData[21] = u.data[0];
+        } else if (nameIs(u.name, "u_bodyMinH")) {
+          // ENC-1251 (instancedCandle): the minimum body HEIGHT (clip space) at
+          // byte 88 (float index 22) — wickHalf.z. 0 means "rule off". Shares
+          // the flat tail with lineAA's u_dashLen, which can never coexist in
+          // this pipeline's WGSL struct (the same argument wickHalf@20 vs
+          // aaWidth@20 already rests on).
+          uniformData[22] = u.data[0];
         } else if (nameIs(u.name, "u_cornerRadius")) {
           // u_cornerRadius at byte 72 (float index 18) — instancedRect.
           uniformData[18] = u.data[0];

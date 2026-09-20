@@ -9,6 +9,7 @@
 #include "dc/gpu/DawnInstancedCandleBackend.hpp"
 
 #include "dc/render/BarSizing.hpp"
+#include "dc/render/CandleBodyFloor.hpp"
 #include "dc/render/CpuBufferStore.hpp"
 #include "dc/scene/Scene.hpp"
 #include "dc/scene/Geometry.hpp"
@@ -16,6 +17,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <string>
 #include <vector>
 
 namespace dc {
@@ -82,7 +84,8 @@ struct Uniforms {
   c2       : vec4<f32>,   // transform column 2 (xyz)
   colorUp  : vec4<f32>,   // bytes 48..63
   colorDown: vec4<f32>,   // bytes 64..79
-  wickHalf : vec4<f32>,   // bytes 80..95 (.x = wick half, .y = body half; clip)
+  wickHalf : vec4<f32>,   // bytes 80..95 (.x = wick half, .y = body half,
+                          //              .z = MINIMUM body height; all clip)
 };
 @group(0) @binding(0) var<uniform> u : Uniforms;
 
@@ -134,6 +137,16 @@ fn vs_main(@builtin(vertex_index) vid : u32,
     let hwClip = wickHalfWidthClip();
     clip = vec2<f32>(center.x + mix(-hwClip, hwClip, uv.x), center.y);
   } else {
+    // ENC-1251 — the doji floor. A body with open == close is a zero-area
+    // quad and rasterises nothing, so an ordinary doji drew no open/close
+    // level at all (11.6% of the records in a live wiretap; SPEC section 1.0).
+    // The rule, and the reasoning, live in dc/render/CandleBodyFloor.hpp — and
+    // the WGSL below is the SAME function the pick backend calls, so the pick
+    // footprint cannot drift from the drawn one.
+    let bodyEnds = dcCandleBodyFloor(m, cx, body0, body1, low, high,
+                                     u.wickHalf.z);
+    let by = mix(bodyEnds.x, bodyEnds.y, uv.y);
+
     let bodyHalf = u.wickHalf.y;
     if (bodyHalf > 0.0) {
       // ENC-1257: the host resolved the body half-width in CLIP space from the
@@ -142,14 +155,13 @@ fn vs_main(@builtin(vertex_index) vid : u32,
       // transforms charts actually carry this is identical to transforming
       // (cx±hw) directly; it differs only under an x/y shear, which no chart
       // transform has.
-      let y = mix(body0, body1, uv.y);
-      let center = m * vec3<f32>(cx, y, 1.0);
-      clip = vec2<f32>(center.x + mix(-bodyHalf, bodyHalf, uv.x), center.y);
+      let bodyCentre = m * vec3<f32>(cx, body0, 1.0);
+      clip = vec2<f32>(bodyCentre.x + mix(-bodyHalf, bodyHalf, uv.x), by);
     } else {
       let x0 = cx - hw;
       let x1 = cx + hw;
       let p = m * vec3<f32>(mix(x0, x1, uv.x), mix(body0, body1, uv.y), 1.0);
-      clip = p.xy;
+      clip = vec2<f32>(p.x, by);
     }
   }
 
@@ -194,7 +206,11 @@ bool DawnInstancedCandleBackend::init(GpuDevice& device) {
 
   PipelineDesc desc;
   desc.debugName = "instancedCandle@1";
-  desc.vertexSource = kInstCandleWgsl;
+  // The shared doji-floor function is prepended verbatim (see
+  // dc/render/CandleBodyFloor.hpp); the pick backend prepends the same one.
+  static const std::string kInstCandleSource =
+      std::string(kCandleBodyFloorWgsl) + kInstCandleWgsl;
+  desc.vertexSource = kInstCandleSource.c_str();
   desc.fragmentSource = nullptr;
   desc.vertexBuffers = &layout;
   desc.vertexBufferCount = 1;
@@ -322,7 +338,6 @@ BackendStats DawnInstancedCandleBackend::renderDrawItem(GpuDevice& device,
                                                         CpuBufferStore& gpu,
                                                         const DrawItem& di,
                                                         int viewW, int viewH) {
-  (void)viewH;  // wick width is a fixed pixel count along x only (viewW).
   BackendStats stats{};
   if (!pipeline_.valid()) return stats;
 
@@ -363,7 +378,14 @@ BackendStats DawnInstancedCandleBackend::renderDrawItem(GpuDevice& device,
     wickHalfClip = body.maxMarkHalfClip;
   }
 
-  UniformBinding uniforms[5];
+  // ENC-1251 — the minimum body HEIGHT, in clip units. Two device pixels, the
+  // same count and the same justification as the wick width above: the target
+  // has no MSAA and pixel centres are sampled, so a one-pixel-tall span that
+  // happens to straddle a row boundary can rasterise into neither row. Below a
+  // valid viewport the rule is off (0) and the geometry is exactly what it was.
+  const float bodyMinHeightClip = candleBodyMinHeightClip(viewH);
+
+  UniformBinding uniforms[6];
   uniforms[0].kind = UniformBinding::Kind::Mat3;
   uniforms[0].name = "u_transform";
   uniforms[0].data = xform;
@@ -384,6 +406,11 @@ BackendStats DawnInstancedCandleBackend::renderDrawItem(GpuDevice& device,
   uniforms[4].kind = UniformBinding::Kind::Float;
   uniforms[4].name = "u_bodyHalf";
   uniforms[4].data = &bodyHalfClip;
+  // ENC-1251 minimum body height (clip space) at uniform float index 22
+  // (byte 88) — wickHalf.z.
+  uniforms[5].kind = UniformBinding::Kind::Float;
+  uniforms[5].name = "u_bodyMinH";
+  uniforms[5].data = &bodyMinHeightClip;
 
   BindGroupDesc bgDesc;
   bgDesc.pipeline = pipeline_;
@@ -391,7 +418,7 @@ BackendStats DawnInstancedCandleBackend::renderDrawItem(GpuDevice& device,
   bgDesc.vertexBufferCount = 1;
   bgDesc.indexBuffer = {};  // instanced draw: no GPU index buffer (gather is CPU)
   bgDesc.uniforms = uniforms;
-  bgDesc.uniformCount = 5;
+  bgDesc.uniformCount = 6;
 
   BindGroupHandle group = device.createBindGroup(bgDesc);
   if (!group.valid()) return stats;
