@@ -548,15 +548,40 @@ export function decimalsForTicks(values: readonly number[]): number {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * How a `TimeBasis` was arrived at.
+ * How a `TimeBasis` was arrived at \u2014 three epistemic classes, deliberately
+ * not two (ENC-1282; timestamps-on-the-wire SPEC D6).
  *
- * 'observed' — fitted from (recordIndex, observation-time) pairs taken off the
- *              real record stream. The D7 path.
- * 'declared' — supplied by a caller that knows the cadence out of band. Kept so
- *              a producer that DOES carry a bar interval can state it; it is a
- *              caption in the D7 sense and is labelled as one.
+ * 'observed'    \u2014 fitted by least squares from (x, observation-time) pairs
+ *                 taken off the real record stream. A measurement OF THIS
+ *                 CLIENT: it measures when the records arrived here, not when
+ *                 the bars were cut upstream. ENC-1254's path, and the one
+ *                 LIMITATIONS.md DC-L16 was written to name.
+ * 'transmitted' \u2014 read off the wire, from `createBuffer.timeBasis` (treaty
+ *                 `dataplane.v1.DcTimeBasis`). A measurement OF THE PRODUCER:
+ *                 `baseMs` is the aligned bucket boundary GMA_V3 stamped where
+ *                 the bar was cut and `periodMs` is the bar width forum
+ *                 authored, so `t = baseMs + x\u00b7periodMs` is exact rather
+ *                 than fitted, and `epochKnown` is the producer's statement
+ *                 rather than the client's guess.
+ * 'declared'    \u2014 asserted by a caller that claims to know the cadence out
+ *                 of band. NOT the wire path, and not a measurement: nothing
+ *                 verifies it, which makes it a caption in the D7 sense and it
+ *                 is labelled as one. It has no producer anywhere in this
+ *                 workspace and must not acquire one \u2014 a basis that came
+ *                 off the wire is 'transmitted'.
+ *
+ * WHY THREE AND NOT TWO. SPEC D6 left one seam here ('declared') and called it
+ * a caption. A transmitted basis is the opposite of a caption: it is the only
+ * basis on this path that was measured where the bar was defined. Shipping it
+ * under the 'declared' label would re-create precisely the confusion DC-L16
+ * exists to name \u2014 an axis whose stated provenance reads as an
+ * unverifiable assertion when it is in fact the producer's own clock \u2014 and
+ * would leave a reader unable to tell the two apart, since one label would then
+ * cover both. Rewriting 'declared''s comment instead would have had the same
+ * effect for the opposite reason: it would have deleted the name for an
+ * unverifiable assertion while a consumer can still hand one in.
  */
-export type TimeBasisSource = "observed" | "declared";
+export type TimeBasisSource = "observed" | "transmitted" | "declared";
 
 /**
  * A linear map from a record index to an instant: `t = originMs + index·msPerIndex`.
