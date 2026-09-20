@@ -34,19 +34,36 @@
  * on view change and deliberately NOT reset on a replay loop: a loop replays the
  * same data onto a fresh buffer, so the measured domain is unchanged, and
  * clearing it would only make the axis flicker once a second.
+ *
+ * FRAMING (ENC-1273, SPEC D1 tier 2 / §1.0) — THE LITERAL IS GONE. That measured
+ * domain is now what the data is FITTED to. For a view `framing.ts` accepts,
+ * `frameSeries(domain, canvas)` returns the plot box, the pane region and the
+ * data→clip transform, and this controller applies BOTH halves — `setPaneRegion`
+ * AND `setTransform` — so the scissor and the projection describe one rectangle
+ * (plotbox.ts contract note 7). `bakeTransform`'s `view.meta.transform` literal
+ * survives only as the seed for the frames before the first record lands, and
+ * `useReplay`'s `xAnchor` (which wrote its own `setTransform` once per replay
+ * pass, from a hand-typed 150-index window) is NOT armed for a framed view: it
+ * would overwrite the fit every loop. That closes LIMITATIONS.md DC-L14 on this
+ * render path — the furniture and the data are now laid out against ONE box, so
+ * the leftmost bars no longer run under the price labels.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   DomainTracker,
   IndexTimeTracker,
+  frameSeries,
+  type CanvasSize,
   type EngineHost,
+  type FramedSeries,
   type ObservedDomain,
   type TimeBasis,
 } from '@repo/dc-wasm';
 import { applyManifest, resetScene } from '../scene/sceneController';
 import type { SceneManifest } from '../scene/commands';
 import { useReplay } from '../engine/useReplay';
+import { framingFor, type FramingResolution, type ViewFraming } from './framing';
 import type { ShowcaseView } from './registry';
 
 /** True when two domain reports state the same thing (avoids pointless renders). */
@@ -85,11 +102,45 @@ function bakeTransform(host: EngineHost, view: ShowcaseView): void {
   host.markDirty();
 }
 
-/** Apply a view's scene (reset prior → apply manifest → bake transform). */
-function applyView(host: EngineHost, view: ShowcaseView, prev: SceneManifest | null): SceneManifest {
+/**
+ * Write a fitted frame into the engine: the pane's scissor rectangle AND the
+ * transform that projects into it, from the SAME `PlotBox` (plotbox.ts note 7).
+ *
+ * Both, always, in that order. Issuing only the transform leaves the pane on
+ * the manifest's hand-written `±0.95` and the two disagree by a few percent of
+ * the canvas; issuing only the region leaves the data on whatever was there and
+ * the scissor silently crops it. `paneRegionFor` is what makes them one
+ * rectangle, and this is the only place either is written for a framed view.
+ */
+function applyFraming(host: EngineHost, framing: ViewFraming, framed: FramedSeries): void {
+  host.applyControl({ cmd: 'setPaneRegion', id: framing.paneId, ...framed.paneRegion });
+  if (framed.transform) {
+    host.applyControl({ cmd: 'setTransform', id: framing.transformId, ...framed.transform });
+  }
+  host.markDirty();
+}
+
+/**
+ * Apply a view's scene (reset prior → apply manifest → frame it).
+ *
+ * The manifest re-issues its own `setPaneRegion` and re-creates its transform,
+ * so a framed view has to be re-framed SYNCHRONOUSLY here rather than in a
+ * follow-up effect — otherwise every replay loop renders one frame on the
+ * manifest's `±0.95` region and the baked literal before snapping back.
+ * `framed` is null until the first record lands, and only then is the view.json
+ * literal used, as a seed for a chart that has not measured anything yet.
+ */
+function applyView(
+  host: EngineHost,
+  view: ShowcaseView,
+  prev: SceneManifest | null,
+  framing: ViewFraming | null,
+  framed: FramedSeries | null,
+): SceneManifest {
   resetScene(host, prev);
   const applied = applyManifest(host, view.manifest);
-  bakeTransform(host, view);
+  if (framing && framed) applyFraming(host, framing, framed);
+  else bakeTransform(host, view);
   return applied;
 }
 
@@ -128,13 +179,32 @@ export interface UseViewSwitch {
    * so the furniture is last again.
    */
   sceneEpoch: number;
+  /**
+   * The fitted frame this view's data is drawn in (ENC-1273), or null when the
+   * view is not framed by the plot box or nothing has streamed yet.
+   *
+   * The chrome overlay MUST map its ticks through `framed.transform` rather
+   * than re-deriving one, or the furniture and the geometry state different
+   * frames — which is the disagreement DC-L14 describes, one layer up.
+   */
+  framed: FramedSeries | null;
+  /**
+   * Why this view is (or is not) framed by the plot box. Published so the
+   * refusal is observable rather than a silent no-op — see `framing.ts`.
+   */
+  framingResolution: FramingResolution | null;
 }
 
 /**
  * Switch to `view` on `host`, apply its scene, and loop-replay its records.
  * `loop` (default true) drives ambient motion. Returns replay transport state.
  */
-export function useViewSwitch(host: EngineHost | null, view: ShowcaseView | null, initialLoop = true): UseViewSwitch {
+export function useViewSwitch(
+  host: EngineHost | null,
+  view: ShowcaseView | null,
+  canvas: CanvasSize = { width: 0, height: 0 },
+  initialLoop = true,
+): UseViewSwitch {
   const appliedRef = useRef<SceneManifest | null>(null);
   const [progress, setProgress] = useState(0);
   const [playing, setPlaying] = useState(true);
