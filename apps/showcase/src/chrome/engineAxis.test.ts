@@ -32,7 +32,11 @@ import type { EffectiveTransform } from './mapping';
 
 const TRANSFORM: EffectiveTransform = { sx: 1, tx: 0, sy: 1, ty: 0 };
 
-/** A view that states its domain synchronously — the shape of all eleven. */
+/**
+ * A view that states its domain synchronously — the shape of all eleven: a
+ * literal `min`/`max` with no `TimeBasis` to fit first, so `deriveAxes` resolves
+ * it on the FIRST commit, while the canvas is still 1x1.
+ */
 const LITERAL_AXES: ResolvedAxes = {
   x: { label: 'Index', min: 0, max: 100, format: 'index', ticks: 6 },
   y: { label: 'Price', min: 406, max: 418, format: 'price', ticks: 6 },
@@ -119,7 +123,7 @@ describe('engineAxisSpec — the other ways there is nothing to draw', () => {
   it('names the eight views that state no domain at all', () => {
     // `deriveAxes`: "a chart that cannot state a domain states no axis". That is
     // the NORMAL state for contour, treemap, sankey &c — a refusal, not a fault.
-    const r = engineAxisSpec({ x: null, y: null }, TRANSFORM, { width: 1280, height: 800 }, null);
+    const r = engineAxisSpec({}, TRANSFORM, { width: 1280, height: 800 }, null);
     expect(r.spec).toBeNull();
     expect(r.refusal!.reason).toBe('no-axes-resolved');
   });
