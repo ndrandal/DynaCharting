@@ -181,16 +181,28 @@ TextureHandle DawnTextSdfBackend::uploadAtlasIfDirty(GpuDevice& device) {
   return atlasTex_;
 }
 
-DawnTextSdfBackend::GeoBuffers&
-DawnTextSdfBackend::ensureGeoBuffers(GpuDevice& device, const Scene& scene,
-                                     CpuBufferStore& gpu,
-                                     std::uint32_t geometryId) {
-  for (auto& kv : geoBuffers_) {
-    if (kv.first == geometryId) return kv.second;
+// ENC-1253: (re)gather + (re)upload gb's instance buffer from the geometry's
+// CURRENT CpuBufferStore bytes — the textSDF half of ENC-558's fix, which this
+// backend never got. The previous device buffer is destroyed and replaced: a
+// re-laid-out label changes both the glyph content and the glyph COUNT, so a
+// fresh upload is the simplest correct path. The source versions are stamped up
+// front so an empty or invalid build is still a cache hit until the source
+// moves, rather than rebuilding every frame.
+void DawnTextSdfBackend::buildGeoBuffers(GpuDevice& device, const Scene& scene,
+                                         CpuBufferStore& gpu,
+                                         std::uint32_t geometryId,
+                                         GeoBuffers& gb) {
+  if (gb.instanceBuffer.valid()) {
+    device.destroyBuffer(gb.instanceBuffer);
+    gb.instanceBuffer = {};
   }
+  gb.instanceCount = 0;
+  gb.bufferCapacity = 0;
 
-  GeoBuffers gb;
   const Geometry* geo = scene.getGeometry(geometryId);
+  gb.vtxVersion = geo ? gpu.getCpuDataVersion(geo->vertexBufferId) : 0;
+  gb.idxVersion = geo ? gpu.getCpuDataVersion(geo->indexBufferId) : 0;
+  gb.built = true;
   if (geo) {
     const std::uint8_t* vtx = gpu.getCpuData(geo->vertexBufferId);
     const std::uint32_t vtxBytes = gpu.getCpuDataSize(geo->vertexBufferId);
@@ -216,17 +228,42 @@ DawnTextSdfBackend::ensureGeoBuffers(GpuDevice& device, const Scene& scene,
           gb.instanceBuffer = device.createBuffer(
               scratch.size(), scratch.data(), scratch.size());
           gb.instanceCount = count;
+          gb.bufferCapacity = scratch.size();
         }
       }
     } else if (vtx && vtxBytes > 0) {
       // Non-indexed: upload the Glyph8 records directly; one instance/glyph.
       gb.instanceBuffer = device.createBuffer(vtxBytes, vtx, vtxBytes);
       gb.instanceCount = geo->vertexCount;
+      gb.bufferCapacity = vtxBytes;
     }
   }
+}
 
-  geoBuffers_.emplace_back(geometryId, gb);
-  return geoBuffers_.back().second;
+DawnTextSdfBackend::GeoBuffers&
+DawnTextSdfBackend::ensureGeoBuffers(GpuDevice& device, const Scene& scene,
+                                     CpuBufferStore& gpu,
+                                     std::uint32_t geometryId) {
+  GeoBuffers* gb = nullptr;
+  for (auto& kv : geoBuffers_) {
+    if (kv.first == geometryId) { gb = &kv.second; break; }
+  }
+  if (!gb) {
+    geoBuffers_.emplace_back(geometryId, GeoBuffers{});
+    gb = &geoBuffers_.back().second;
+  }
+
+  // Rebuild on first use OR when the glyph bytes changed since the last build
+  // (a re-layout). Otherwise a pure cache hit — static text costs no per-frame
+  // upload, which is the property the original cache was protecting and which
+  // the version check preserves.
+  const Geometry* geo = scene.getGeometry(geometryId);
+  const std::uint64_t vtxVer = geo ? gpu.getCpuDataVersion(geo->vertexBufferId) : 0;
+  const std::uint64_t idxVer = geo ? gpu.getCpuDataVersion(geo->indexBufferId) : 0;
+  if (!gb->built || vtxVer != gb->vtxVersion || idxVer != gb->idxVersion) {
+    buildGeoBuffers(device, scene, gpu, geometryId, *gb);
+  }
+  return *gb;
 }
 
 BackendStats DawnTextSdfBackend::renderDrawItem(GpuDevice& device,

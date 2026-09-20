@@ -80,6 +80,8 @@ logic test, taking the pair from 188/231 to 189/232; ENC-995 added another, taki
 ENC-1257 added one default-build and two Dawn-only tests, taking it to 191/238 and the gap
 to 47; ENC-1251 added one default-build test, taking it to 192/239 with the gap unchanged at
 47** (measured, not predicted). The gap is still exactly the `DC_HAS_DAWN` block, every time. Read the *difference*, not
+to 47; ENC-1253 added one default-build test, taking it to 192/239 with the gap UNCHANGED at
+47** (measured post-merge, not predicted). The gap is still exactly the `DC_HAS_DAWN` block, every time. Read the *difference*, not
 the left-hand number: a change that grows the registered count tells you nothing about the
 renderer either — which is the whole point, and is why three consecutive tickets moving this
 number changed nothing about what the default build proves.
@@ -98,6 +100,12 @@ of **47**; executable counts measured from `build-dawn` (242) against `build-def
 The `236/236` in the *Working around it* block above is ENC-1249's lavapipe figure and is left
 as that session recorded it; this session measured **237 of 239 on hardware**, the two failures
 being the `dc_enc619_dawn_*` pair the correction below pins to the unmodified tree.
+**Verified at** `ENC-1253 HEAD`, 2026-09-20 — counted statically from `core/CMakeLists.txt`
+(239) and empirically from a real default configure in the ENC-1253 worktree (192, all passing),
+giving a gap of **47**. Executable counts are carried forward from the ENC-1249 measurement
+(`build-dawn` 239 against `build` 190); no Dawn build was made in this worktree, which is itself
+this entry's point — ENC-1253's renderer change (`DawnTextSdfBackend`, §C0) is inside the 47 and
+was verified by a browser capture rather than by `ctest`.
 
 ---
 
@@ -696,9 +704,12 @@ that was supposed to improve the axis — when it is the absent framing rule.
 
 **Re-check.**
 ```bash
-# 1 — the marks are DOM; no manifest draws an axis
-grep -c 'svg' apps/showcase/src/chrome/AxisOverlay.tsx            # -> 2 (open + close tag)
-grep -rl 'AxisRecipe' apps/showcase/ --include=*.ts --include=*.tsx | wc -l   # -> 0
+# 1 — RETIRED by ENC-1253: the engine draws the marks. The SVG overlay still
+#     exists and is still on by default, but it is now a duplicate — these two
+#     commands say the axis is engine-drawn:
+grep -c 'EngineAxis' apps/showcase/src/chrome/useEngineAxis.ts    # -> >= 1
+grep -rl 'AxisRecipe' apps/showcase/ --include=*.ts --include=*.tsx | wc -l   # -> 0 (still: the
+#     browser path authors textSDF@1/lineAA@1 directly; the C++ AxisRecipe is unbound, ENC-990)
 
 # 2 — the framing is still a literal, per view
 grep -h '"transform"' apps/showcase/views/candles-aapl/view.json
@@ -727,15 +738,40 @@ measured domain does not drive the framing" is no longer a *missing capability*.
 are unchanged on the app path, and the new module has zero callers on any render path. That
 half is **DC-L14**, which is where the re-check for it now lives.
 
-**Ticket.** **ENC-1253** (render the marks in the engine). Part (2)'s primitive is **ENC-1256**
-(done); adopting it on the showcase and customer-layer render paths is **DC-L14**. Converting
-the remaining 11 views is unticketed.
+**Update, 2026-09-20 (ENC-1253) — PART (1) IS NO LONGER TRUE. The engine draws the marks.**
+`packages/dc-wasm/src/chart/axis.ts` emits the gridlines, tick marks and spine as `lineAA@1`
+clip-space geometry and the tick labels and axis titles as `textSDF@1` glyph runs, into the same
+scene and the same canvas as the data. The showcase drives it from the SAME resolved axes and
+the SAME ticks the SVG overlay uses (`useEngineAxis` / `engineAxis.ts`), so the overlay is now a
+duplicate rather than the source — `?svgAxis=0` removes it and the axis stays.
 
-**Verified at** `ENC-1256 HEAD`, 2026-09-19 — (1) and (3)'s greps re-run in the ENC-1256
-worktree and unchanged; (2)'s tick-count and domain observations are carried forward from the
-ENC-1252 measurement over CDP on a headed Chrome (`vendor: nvidia, architecture: ampere` —
-SPEC D8), replaying the committed `candles-aapl` / `candle-overlays` captures, and remain true
-because nothing on the app path changed.
+Measured on a canvas-only capture (SPEC D10, `harness/shoot-live.mjs --mode canvas`, hardware
+adapter `vendor: nvidia, architecture: ampere`, `info.isFallbackAdapter: false`,
+`subgroupMinSize: 32`), scored with `harness/score.py --diagnose`, same view and same replay
+with the engine axis off and on:
+
+| tier-1 check | `?engineAxis=0` | engine axis on |
+|---|---|---|
+| T1.1 the engine draws an axis | **FAIL** — "declares no engine-drawn tick label, gridline or spine" | **PASS** — 3 x labels, 5 y labels, 8 gridlines, 2 spines |
+| T1.3 text in the same raster | *did not run* (no text to check) | **PASS** — all 10 runs carry ink |
+| T1.4 labels disjoint + in frame | *did not run* | **PASS** |
+| T1.5 x renders time as time | *did not run* | **PASS** |
+| T1.7 text contrast ≥ 4.5:1 | *did not run* | **PASS** |
+| T1.8 gridline ceiling + visibility | *did not run* | **PASS** |
+
+Parts **(2)** and **(3)** are unchanged and still true: every view still bakes a literal
+`transform` (**DC-L14**), and 11 of 14 views still state a literal domain. The consequence you
+can see in the raster is that the data is not fitted to the plot box the furniture is laid out
+against, so the leftmost bars run under the price labels.
+
+**Ticket.** Part (1): **ENC-1253**, done. Part (2)'s primitive is **ENC-1256** (done); adopting
+it on the showcase and customer-layer render paths is **DC-L14** / **ENC-1273**. Converting the
+remaining 11 views is unticketed.
+
+**Verified at** `ENC-1253 HEAD`, 2026-09-20 — (3)'s greps re-run in the ENC-1253 worktree and
+unchanged. (1) is retired by the measurement above. (2)'s tick-count and domain observations are
+carried forward from the ENC-1252 measurement over CDP and remain true because nothing on the
+framing path changed.
 
 ---
 
@@ -777,8 +813,11 @@ grep -c 'export function frameSeries' packages/dc-wasm/src/chart/plotbox.ts     
 grep -c 'from "./chart/plotbox"' packages/dc-wasm/src/index.ts                     # -> 2
 npx vitest run packages/dc-wasm/src/chart/plotbox.test.ts                          # -> 32 passed
 
-# 2 — and no app references it at all
-grep -rl 'frameSeries\|fitToPlotBox\|plotBox' apps/ --include=*.ts --include=*.tsx | wc -l   # -> 0
+# 2 — one app file references it now, and it is the AXIS, not the framing
+grep -rl 'frameSeries\|fitToPlotBox\|plotBox' apps/ --include=*.ts --include=*.tsx
+# -> apps/showcase/src/chrome/engineAxis.ts   (ENC-1253: the furniture is laid
+#    out against plotBox(canvas); the DATA is still on the view's baked literal,
+#    which is what this entry is about and is unchanged)
 
 # 3 — its only package-side consumer is SceneBuilder ...
 grep -rl 'frameSeries\|fitToPlotBox\|paneRegionFor' packages/ --include=*.ts \
@@ -810,8 +849,17 @@ the chrome overlay's tick mapping, which must map through the SAME transform or 
 the geometry will disagree). customer-layer adoption is separate and unticketed. **ENC-1253**
 (engine-drawn axis marks) is the first intended consumer of `gutters()`.
 
-**Verified at** `ENC-1256 HEAD`, 2026-09-19 — all five commands run in the ENC-1256 worktree
-after the module landed.
+**Update, 2026-09-20 (ENC-1253).** `plotBox()` now has its first app caller —
+`apps/showcase/src/chrome/engineAxis.ts` lays the axis furniture out against it. That does NOT
+retire this entry, and the distinction is the whole point: the furniture knows where the frame
+is, the DATA still does not go there. Every `view.json` still bakes its `transform`, no render
+path calls `frameSeries`, and `grep -rl 'new SceneBuilder' apps/ packages/ --include=*.ts
+--include=*.tsx | grep -v '\.test\.'` is still empty. The visible consequence, in the
+ENC-1253 capture: the leftmost bars are drawn to the left of the plot box's left edge, under the
+price labels. Adoption for the data is still **ENC-1273**.
+
+**Verified at** `ENC-1253 HEAD`, 2026-09-20 — commands 1, 3, 4 and 5 re-run unchanged in the
+ENC-1253 worktree; command 2's expected output is restamped above.
 
 ---
 
@@ -1029,10 +1077,93 @@ come from the decoded dataplane capture the tier-0 D case quotes verbatim.
 
 ---
 
+## DC-L18 — A pane's clear colour paints over every pane created before it 🟠
+
+**Claim.** WebGPU has no scissored mid-pass clear, so `DawnSceneRenderer` implements a pane's
+clear colour as a **full-pane quad drawn inside the render pass**, bounded by the pane scissor
+(`core/src/gpu/DawnSceneRenderer.cpp` → `clearPane`, ENC-511). Panes are walked in **scene
+order**. Therefore a pane created LATER does not merely render on top of earlier panes' draw
+items — its clear quad **erases them**, everywhere its region overlaps theirs.
+
+There is no warning, no rejection and nothing in the error list. Every command succeeds; the
+pixels are simply gone.
+
+**How it bit (ENC-1253).** The engine axis lives in its own pane at `FULL_CLIP_REGION`, because
+the data pane's region is the plot box and furniture drawn there is scissored away (plotbox.ts
+contract note 7). The showcase creates the axis once and **re-applies the view's manifest on
+every replay loop** (`useViewSwitch` → `resetScene` + `applyManifest`, roughly every 20s), which
+makes the view's pane newer than the axis pane. Its clear — `±0.95`, i.e. most of the canvas —
+then covered the lot. Measured: 8 gridlines, 8 tick marks, 2 spines and 10 labels all issued,
+`applyControl` rejections **zero**, the published plan reporting `tier1.pass`, and the canvas
+containing nothing but candles.
+
+Note the shape: this is the *same* failure mode as the pane-scissor trap one level down — the
+correct commands, accepted, producing no pixels — and the two have opposite fixes (be inside the
+region / be after the pane).
+
+**Re-check.**
+```bash
+# 1 — the clear is a drawn quad inside the pass, walked in scene order
+grep -n 'clearPane(\*pane' core/src/gpu/DawnSceneRenderer.cpp
+# -> 342:      clearPane(*pane, pane->clearColor);
+grep -n 'in scene order' core/src/gpu/DawnSceneRenderer.cpp
+# -> 325:  // Walk all draw items: pane (scissor) -> layer -> drawItem, in scene order.
+
+# 2 — and the showcase really does re-create its pane on every loop
+sed -n '/^function applyView/,/^}/p' apps/showcase/src/views/useViewSwitch.ts
+# -> resetScene(host, prev); applyManifest(host, view.manifest); bakeTransform(...)
+grep -n 'resetAndReplay()' apps/showcase/src/views/useViewSwitch.ts   # -> the loop calls it
+```
+
+**Working around it.** Create your overlay pane AFTER every pane it must sit on top of, and
+**re-create it whenever those panes are re-created**. `useEngineAxis` watches
+`useViewSwitch`'s `sceneEpoch` and does exactly that: `dispose()`, `IdAllocator.reset()` (so the
+ids are reused rather than walked), then re-sync. Do not reach for z-order — there is none; the
+only ordering the renderer has is creation order.
+
+**Ticket.** None. The workaround is cheap and correct, and the alternative — an explicit pane
+z-order, or a clear that does not overwrite — is a renderer design change nobody has asked for.
+Raise one if a second consumer hits it.
+
+**Verified at** `ENC-1253 HEAD`, 2026-09-20 — both greps run in the ENC-1253 worktree; the
+symptom was observed and then removed on a canvas-only capture of the showcase, hardware adapter
+(`vendor: nvidia, architecture: ampere`, `info.isFallbackAdapter: false` — SPEC D8).
+
+---
+
 # §C — Corrections
 
 Beliefs that were held confidently and were wrong. They are here because each one cost real
 time, and because a reader who half-remembers the wrong version needs to find the correction.
+
+### C0 — ENC-558 fixed the stale-GPU-buffer cache in every Dawn backend except `textSDF@1`
+
+ENC-558 (and ENC-569 for `line2d@1`) taught the Dawn backends to remember the `CpuBufferStore`
+**version** each cached GPU instance buffer was built from, and to re-gather when it moves —
+which is what lets a streaming series keep animating past the first frame. Six backends carry
+the comment; `DawnTextSdfBackend` did not. Its `ensureGeoBuffers` was keyed on `geometryId`
+alone and returned the first upload forever, glyph **count** included.
+
+Nothing noticed for four months because **nothing had ever re-laid out text**. The browser's
+only text caller was a one-shot demo; the C++ recipes that build axis labels are unbound in the
+WASM module (`strings dc_engine_host.wasm | grep -ci recipe` → `0`). A cache that is only ever
+written once cannot be observed to be stale.
+
+ENC-1253 was the first caller to re-lay out a label — an axis whose numbers track a measured
+domain — and the symptom was a chart whose gridlines moved while its numbers did not: the plan
+said `$410 … $418` with three time labels, and the canvas showed `$414 … $418` with two, from
+several seconds earlier. The fix is the ENC-558 pattern, ported verbatim
+(`core/src/gpu/DawnTextSdfBackend.cpp` `buildGeoBuffers` + the version check in
+`ensureGeoBuffers`), and it is in the committed wasm.
+
+Re-check: `grep -c 'vtxVersion' core/include/dc/gpu/DawnTextSdfBackend.hpp` → `1` (it was `0`),
+and `grep -l 'vtxVersion' core/include/dc/gpu/Dawn*.hpp | wc -l` → `9`, i.e. every geometry
+backend now carries it.
+
+The general lesson is the one this file keeps relearning: **a capability with one caller is a
+capability with no coverage.** DC-L08 and §1.2 of the chart-quality SPEC are the same shape, and
+in-engine text was in it — "unused, not unbuilt" (ENC-1260) turned out to also mean "unused, and
+broken in a way only use could reveal".
 
 ### C1 — `AxisRecipe::enableAALines` does not antialias anything
 

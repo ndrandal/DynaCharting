@@ -38,6 +38,7 @@
 #include <emscripten/bind.h>
 #include <emscripten/val.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -248,6 +249,19 @@ public:
   // -1 if no font has been loaded.
   int setTextGeometry(double bufferId, double geometryId, const std::string& text,
                       double clipX, double clipY, double fontSize) {
+    return setTextGeometryX(bufferId, geometryId, text, clipX, clipY, fontSize, 1.0);
+  }
+
+  // As setTextGeometry, with an explicit horizontal scale — ENC-1253.
+  //
+  // Clip space is not square: one clip unit is `w/2` pixels across and `h/2`
+  // down, so laying glyphs out with a single isotropic scale (which is all
+  // setTextGeometry could express) renders every string stretched by the
+  // canvas's aspect ratio. Pass `xScale = height/width` for glyphs with the
+  // font's own proportions. `setTextGeometry` is this with `xScale = 1`, so no
+  // existing caller's output moves.
+  int setTextGeometryX(double bufferId, double geometryId, const std::string& text,
+                       double clipX, double clipY, double fontSize, double xScale) {
     if (!fontLoaded_) return -1;
 
     // Rasterize/pack any not-yet-present glyphs (marks the atlas dirty so the
@@ -262,7 +276,7 @@ public:
     dc::TextLayoutResult layout = dc::layoutText(
         atlas_, text.c_str(), static_cast<float>(clipX),
         static_cast<float>(clipY), static_cast<float>(fontSize),
-        static_cast<float>(atlas_.glyphPx()));
+        static_cast<float>(atlas_.glyphPx()), static_cast<float>(xScale));
 
     // Write the instance bytes into the render store (the bytes the
     // DawnTextSdfBackend gathers per-glyph). Mirrors the d3_3 test's
@@ -287,6 +301,79 @@ public:
         R"(,"vertexCount":)" + std::to_string(layout.glyphCount) + "}");
 
     return layout.glyphCount;
+  }
+
+  // Measure `text` at `fontSize` WITHOUT drawing it — ENC-1253.
+  //
+  // WHY THIS EXISTS. `setTextGeometry` lays a string out from a baseline ORIGIN
+  // and returns only a glyph COUNT, and the glyph quads it writes go into the
+  // render store (`store_.setCpuData`), which `getBufferBytes` — an ingest-store
+  // reader — cannot see. So before this binding the browser could draw text and
+  // had no way to learn how wide it was. Every alignment an axis needs is a
+  // measurement: a price label RIGHT-aligned against the plot box's left edge, a
+  // time label CENTRED on its tick, and D1's tier-1 assertion that label
+  // bounding boxes are disjoint and inside the frame. Estimating the width from
+  // the glyph count is how you get a chart whose labels overlap at some strings
+  // and not others.
+  //
+  // It is the same loop `dc::layoutText` runs (TextLayout.hpp) at startX = 0,
+  // baselineY = 0 — deliberately not an approximation of it — so
+  // `measureText(s, f).advanceWidth` is exactly the cursor advance
+  // `setTextGeometry(_, _, s, x, y, f)` would apply, and `inkMinX..inkMaxY` are
+  // exactly the union of the glyph quads it would emit, relative to (x, y).
+  //
+  // UNITS. `fontSize` is the text's ascent-to-descent height in CLIP units
+  // (the atlas rasterizes at `glyphPx`, so the em box is exactly `glyphPx`
+  // atlas pixels and every metric is scaled by `fontSize / glyphPx`); on an
+  // `h`-tall target, `fontSize = 2 * wantedPx / h`. `xScale` matches
+  // `setTextGeometryX` — pass `h / w` for glyphs with the font's own
+  // proportions, 1 for the historical isotropic behaviour. `glyphPx` is
+  // returned so a caller can check that arithmetic rather than assume it.
+  //
+  // Returns an object; `glyphCount` is -1 with no font loaded (mirroring
+  // setTextGeometry) and every other field is then 0.
+  emscripten::val measureText(const std::string& text, double fontSize,
+                              double xScale) {
+    emscripten::val out = emscripten::val::object();
+    out.set("glyphPx", static_cast<double>(atlas_.glyphPx()));
+    if (!fontLoaded_) {
+      out.set("glyphCount", -1);
+      out.set("advanceWidth", 0.0);
+      out.set("inkMinX", 0.0);
+      out.set("inkMaxX", 0.0);
+      out.set("inkMinY", 0.0);
+      out.set("inkMaxY", 0.0);
+      return out;
+    }
+
+    std::vector<std::uint32_t> cps;
+    cps.reserve(text.size());
+    for (unsigned char ch : text) cps.push_back(static_cast<std::uint32_t>(ch));
+    if (!cps.empty()) atlas_.ensureGlyphs(cps.data(),
+                                          static_cast<std::uint32_t>(cps.size()));
+
+    dc::TextLayoutResult layout = dc::layoutText(
+        atlas_, text.c_str(), 0.0f, 0.0f, static_cast<float>(fontSize),
+        static_cast<float>(atlas_.glyphPx()), static_cast<float>(xScale));
+
+    float minX = 0.0f, maxX = 0.0f, minY = 0.0f, maxY = 0.0f;
+    // glyphInstances is 8 floats per glyph: x0,y0,x1,y1,u0,v0,u1,v1.
+    for (std::uint32_t i = 0; i < layout.glyphCount; ++i) {
+      const float* g = layout.glyphInstances.data() + static_cast<std::size_t>(i) * 8;
+      if (i == 0) { minX = g[0]; maxX = g[2]; minY = g[1]; maxY = g[3]; continue; }
+      minX = std::min(minX, g[0]);
+      minY = std::min(minY, g[1]);
+      maxX = std::max(maxX, g[2]);
+      maxY = std::max(maxY, g[3]);
+    }
+
+    out.set("glyphCount", static_cast<int>(layout.glyphCount));
+    out.set("advanceWidth", static_cast<double>(layout.advanceWidth));
+    out.set("inkMinX", static_cast<double>(minX));
+    out.set("inkMaxX", static_cast<double>(maxX));
+    out.set("inkMinY", static_cast<double>(minY));
+    out.set("inkMaxY", static_cast<double>(maxY));
+    return out;
   }
 
   // ---- render: render(w,h) -> framebuffer readback ----------------------
@@ -603,6 +690,8 @@ EMSCRIPTEN_BINDINGS(dc_engine_host) {
       .function("setTexturePixels", &DcEngineHost::setTexturePixels)
       .function("loadFont", &DcEngineHost::loadFont)
       .function("setTextGeometry", &DcEngineHost::setTextGeometry)
+      .function("setTextGeometryX", &DcEngineHost::setTextGeometryX)
+      .function("measureText", &DcEngineHost::measureText)
       .function("render", &DcEngineHost::render)
       .function("selfTestCompute", &DcEngineHost::selfTestCompute)
       .function("pick", &DcEngineHost::pick)

@@ -204,6 +204,64 @@ export type {
   TextTarget,
 } from "./chart/text";
 
+// ENC-1253 (chart-quality-bar D7, D1 tier 1, §1.3): THE ENGINE DRAWS ITS OWN
+// AXIS. Gridlines, tick marks and the spine as `lineAA@1` clip-space geometry,
+// tick labels as `textSDF@1` glyph runs, all in the SAME raster as the data —
+// not an HTML/SVG overlay. `planAxis` is pure; `EngineAxis` drives a live host;
+// `checkTier1Labels` is D1's tier-1 label row without a raster; and
+// `axisSceneFragment` dumps what was drawn in the tier scorer's vocabulary.
+export {
+  AXIS_DEFAULTS,
+  EngineAxis,
+  axisSceneFragment,
+  boxesOverlap,
+  checkTier1Labels,
+  createHostMeasurer,
+  encodeUpdateRecord,
+  fontSizeForPx,
+  labelBoxPx,
+  planAxis,
+  textXScale,
+} from "./chart/axis";
+export type {
+  AxisTick,
+  AxisSide,
+  AxisSideSpec,
+  AxisSpec,
+  AxisLabel,
+  AxisGridLine,
+  AxisPlan,
+  AxisTarget,
+  AxisTextMeasurer,
+  AxisInkRole,
+  AxisSceneFragment,
+  TextMetrics,
+  Tier1LabelVerdict,
+} from "./chart/axis";
+
+// ENC-1253 (SPEC D1 tier 3, D4): the axis furniture's colours, TRANSCRIBED from
+// `dc::Theme` rather than invented — `theme.test.ts` parses the C++ and fails if
+// the two drift. Also D11's contrast bands, as a function instead of as prose.
+export {
+  AXIS_THEMES,
+  CANVAS_CLEAR_BLACK,
+  D11_BANDS,
+  axisThemeByName,
+  bloombergAxisTheme,
+  checkD11AxisBands,
+  contrastRatio,
+  darkAxisTheme,
+  defaultAxisTheme,
+  gridRgba,
+  lightAxisTheme,
+  midnightAxisTheme,
+  neonAxisTheme,
+  pastelAxisTheme,
+  relativeLuminance,
+  rgba,
+} from "./chart/theme";
+export type { AxisTheme, Rgba4, D11Verdict } from "./chart/theme";
+
 // ENC-703 (G2): client-side scene/chart builder over applyControl. Encapsulates
 // the per-element create→bind→attach→style→data command sequence + id mgmt.
 export { SceneBuilder, encodeAppendRecord } from "./chart/SceneBuilder";
