@@ -1625,6 +1625,13 @@ harness/score.py T1.5                -> PASS "all 4 x tick labels parse as times
 `samples: 0` is the point: nothing was fitted. `epochKnown: true` is the first time it has been
 true anywhere in this repo.
 
+**The T1.5 above is PROVISIONAL and is quoted as such.** That verdict's own result is
+`attained: -1, stoppedAt: 0` — tier 0 is UNPROVEN because the scene can cite no
+`scripts/tier0.sh` run (it needs a `DC_FETCH_DAWN=ON` build — **DC-L01**), which is true of every
+verdict committed in that harness. T1.5 therefore ran under `--diagnose`. The primary evidence
+for this retirement is the in-page run of D1's own exported `parsesAsTimestamp` over the engine's
+labels; score.py's independent regex set corroborates it. Neither is a tier claim.
+
 **And the negative control, same stack, one field removed.** With the bucketing stage dropped
 from the fixture — a stream with no uniform bar period, which declares no basis rather than
 `periodMs: 0` (SPEC D7 corollary) — 1 553 records streamed and the axis was **dropped**, not
