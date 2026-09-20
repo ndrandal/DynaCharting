@@ -168,6 +168,30 @@ frontier map automatically.
 > attribute, each labelled `derived` or `literal`. Eleven views still carry a
 > literal — see **LIMITATIONS.md DC-L12** for what is still missing around this.
 
+> **LIVE MODE, and the only place the axis shows real market time (ENC-1282 —
+> `specs/2026-09-20-timestamps-on-the-wire/SPEC.md` D6/D7).** Set
+> `VITE_SHOWCASE_AGENT_URL` to an embassy data plane (`ws://host:port/data`) and
+> the showcase drives the selected view's manifest from that socket instead of
+> its captured tape; `VITE_SHOWCASE_AGENT_SESSION` names the session to
+> subscribe to (default `showcase`). Neither is set in any committed config, so
+> the default build is replay-only and unchanged.
+>
+> The difference that matters is the **clock**. A replayed tape can only be
+> timed by when this client observed each frame, so its basis is *fitted* and
+> reports `epochKnown: false`. A live socket carries the producer's own
+> declaration — `createBuffer.timeBasis {baseMs, periodMs, epochKnown}`, once per
+> buffer — and the record's `x` lane is a **bar ordinal on the producer's grid**,
+> so `t = baseMs + x·periodMs` is exact. `window.__dcAxisDomain[viewId].x.time`
+> then reads `source`-free but unmistakable: `samples: 0` (nothing was fitted)
+> and `epochKnown: true`.
+>
+> Two consequences worth knowing before you read a live chart. **Gaps in `x` are
+> real** — a quiet bar emits nothing by design — and they render as gaps rather
+> than dragging later bars earlier. And a stream with **no uniform bar period
+> declares no basis at all** (never `periodMs: 0`), in which case the time axis
+> is **dropped**, not captioned: `x` publishes as `null` and the engine draws no
+> x tick labels while the price axis carries on.
+
 > **Build-time / static views** (treemap, ridgeline, renko, sankey, ECG, …)
 > skip capture entirely: `manifest.ts` imports a dataset, tessellates/projects
 > the geometry in deterministic TypeScript, and emits it as static `uploads`
