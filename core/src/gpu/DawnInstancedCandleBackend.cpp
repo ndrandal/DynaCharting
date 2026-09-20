@@ -34,6 +34,17 @@ const float* resolveTransform(const DrawItem& di, const Scene& scene) {
 // (strideOf(Candle6)). Two attributes a_c0/a_c1 carve out this single record.
 constexpr std::uint32_t kCandleStride = 24;
 
+// ENC-1251 — the doji floor: the smallest height, in DEVICE PIXELS, a candle
+// body may be drawn at. A body whose open == close is a zero-area quad and
+// rasterises nothing, so an ordinary doji rendered as a bare wick with its
+// open/close level missing entirely (SPEC section 1.0; 11.6% of the records in
+// a live wiretap). Two pixels, matching the wick width and for the same
+// reason: no MSAA, pixel-centre sampling, so one pixel can fall between rows.
+// The SVG exporter has always had this floor (SvgExporter.cpp, `if (bodyH <
+// 1.0) bodyH = 1.0;`); the GPU path did not, so the two disagreed on the same
+// record.
+constexpr float kMinBodyHeightPx = 2.0f;
+
 // WGSL port of the GL instancedCandle shader (kInstCandleVert/kInstCandleFrag in
 // Renderer.cpp). One module, two entry points.
 //
