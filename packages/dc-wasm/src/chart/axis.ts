@@ -157,45 +157,6 @@ export interface AxisSpec {
   spine?: boolean;
   /** Measures labels. Omit to plan geometry only and emit no labels. */
   measurer?: AxisTextMeasurer;
-  /**
-   * Where the GRIDLINES are drawn, when they must go BEHIND the data (ENC-1316).
-   *
-   * By default every piece of furniture lives in this axis's own pane, which is
-   * created after the chart's and therefore renders ON TOP of it — panes render
-   * in id order (`Scene::paneIds()` sorts ascending) and so do layers. For the
-   * spine, the ticks and the labels that is exactly right: they live in the
-   * gutters, outside the data pane's scissor, and nothing may cover them.
-   *
-   * For a gridline it is exactly wrong. A gridline's whole job is to recede
-   * behind the marks, which is also what D11's band-3 CEILING measures — and
-   * `score.py`'s `line_sample` says so in as many words: *"A gridline runs
-   * behind the marks, so wherever a candle covers it both samples are the same
-   * candle pixel"*. Drawn on top instead, a 1px `(51,51,64)` line across a cyan
-   * waveform is not a gridline at all, it is a mark cutting the data: measured
-   * at 6.25 : 1 against a 2.0 : 1 ceiling (ENC-1262, `audio-waveform`).
-   *
-   * So a caller that has framed its data — and therefore knows the pane whose
-   * region IS the plot box — passes that pane here together with a layer id
-   * BELOW every layer the chart's own manifest creates. The gridlines are then
-   * issued into the data pane, after its clear quad and before its data, and
-   * the scissor that would eat a tick in the gutter is harmless to a line that
-   * spans exactly the box.
-   *
-   * Omit it and the grid stays in the furniture pane, unchanged.
-   */
-  gridTarget?: AxisGridTarget;
-}
-
-/**
- * The pane and layer a caller wants the GRIDLINES drawn into — see
- * `AxisSpec.gridTarget`. Both ids belong to the caller: `EngineAxis` creates the
- * layer (and deletes it on `dispose`), and never touches the pane.
- */
-export interface AxisGridTarget {
-  /** The data pane — the one whose `PaneRegion` is the plot box. */
-  paneId: number;
-  /** A layer id LOWER than every layer the chart's manifest creates. */
-  layerId: number;
 }
 
 // ── Outputs ─────────────────────────────────────────────────────────────────
@@ -837,8 +798,6 @@ export class EngineAxis {
   private readonly maxLabels: number;
   private paneId = 0;
   private gridLayerId = 0;
-  /** Set when the grid layer lives in a CALLER's pane (`AxisSpec.gridTarget`). */
-  private foreignGridPaneId = 0;
   private furnitureLayerId = 0;
   private labelLayerId = 0;
   private scaffolded = false;
@@ -882,7 +841,7 @@ export class EngineAxis {
   sync(spec: AxisSpec): AxisPlan {
     const theme = spec.theme ?? defaultAxisTheme;
     const plan = planAxis(spec);
-    this.ensureScaffold(theme, spec.gridTarget);
+    this.ensureScaffold(theme);
 
     this.grid = this.syncLines(
       this.grid,
@@ -942,13 +901,6 @@ export class EngineAxis {
    */
   dispose(): void {
     if (this.paneId) this.ctrl({ cmd: "delete", id: this.paneId });
-    // A grid layer in the CALLER's pane is not reached by that cascade, and the
-    // caller's pane is torn down and rebuilt on every manifest re-apply — so the
-    // layer has to be dropped by name. Deleting an id the scene no longer has is
-    // a rejection, not a fault (DC-L06): the pane may already have taken it.
-    if (this.foreignGridPaneId && this.gridLayerId) {
-      this.ctrl({ cmd: "delete", id: this.gridLayerId });
-    }
     const dropData = (slot: FurnitureSlot | null) => {
       if (!slot) return;
       this.ctrl({ cmd: "delete", id: slot.geometryId });
@@ -961,7 +913,6 @@ export class EngineAxis {
     this.grid = this.ticks = this.spine = null;
     this.labelSlots = [];
     this.paneId = this.gridLayerId = this.furnitureLayerId = this.labelLayerId = 0;
-    this.foreignGridPaneId = 0;
     this.scaffolded = false;
     this.lastPlan = null;
   }
@@ -978,7 +929,7 @@ export class EngineAxis {
    * layers so the paint order is grid (under the data's siblings), then the
    * spine and ticks, then the labels on top.
    */
-  private ensureScaffold(theme: AxisTheme, gridTarget?: AxisGridTarget): void {
+  private ensureScaffold(theme: AxisTheme): void {
     if (this.scaffolded) return;
     void theme;
     this.paneId = this.ids.nextFor("pane");
@@ -991,25 +942,8 @@ export class EngineAxis {
       clipYMin: FULL_CLIP_REGION.clipYMin,
       clipYMax: FULL_CLIP_REGION.clipYMax,
     });
-    // THE GRID GOES BEHIND THE DATA WHEN THE CALLER SAYS WHERE (ENC-1316). Its
-    // layer is created in the caller's data pane with the caller's id, which is
-    // below every layer that pane already holds, so it is drawn after the pane's
-    // clear quad and before the marks. Read ONCE, here: a change of target means
-    // a different pane, which means the whole scaffold has to be rebuilt —
-    // `dispose()` then `sync()`.
-    if (gridTarget) {
-      this.foreignGridPaneId = gridTarget.paneId;
-      this.gridLayerId = gridTarget.layerId;
-      this.ctrl({
-        cmd: "createLayer",
-        id: this.gridLayerId,
-        paneId: gridTarget.paneId,
-        name: "axis-grid",
-      });
-    } else {
-      this.gridLayerId = this.ids.nextFor("layer");
-      this.ctrl({ cmd: "createLayer", id: this.gridLayerId, paneId: this.paneId, name: "axis-grid" });
-    }
+    this.gridLayerId = this.ids.nextFor("layer");
+    this.ctrl({ cmd: "createLayer", id: this.gridLayerId, paneId: this.paneId, name: "axis-grid" });
     this.furnitureLayerId = this.ids.nextFor("layer");
     this.ctrl({
       cmd: "createLayer",
