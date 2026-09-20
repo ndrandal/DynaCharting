@@ -165,12 +165,142 @@ export const AXIS_THEMES: Readonly<Record<string, Readonly<AxisTheme>>> = {
 };
 
 /**
- * The default for a dark surface. `Midnight` rather than `Dark` because SPEC
- * §1.2 singles it out — "grid at 0.12, 0.14, 0.20 @ α0.6 — muted, professional"
- * — and because `darkTheme()`'s grid at α1.0 sits above D11's gridline contrast
- * CEILING on a dark background, i.e. it fails to recede.
+ * The default for a dark surface — `darkTheme()`, and the choice is MEASURED
+ * rather than tasteful.
+ *
+ * SPEC §1.2 praises `midnightTheme()`'s grid ("0.12, 0.14, 0.20 @ α0.6 — muted,
+ * professional") and it does clear D11's gridline ceiling. But D11 has three
+ * bands, and `midnightTheme()` fails the second one on its own surface: its
+ * `tickColor` (0.25, 0.30, 0.40) reaches only **2.46 : 1** against the black the
+ * render target clears to (`DawnSceneRenderer::render` clears 0,0,0,1 outside
+ * every pane), under D11's **3 : 1** floor for meaningful non-text. Ticks and
+ * the spine are exactly that.
+ *
+ * `darkTheme()` clears all three, measured with `contrastRatio` below against
+ * black (the gutters) and against the showcase panes' 0.05/0.05/0.08 (the plot
+ * area) — the numbers are asserted in `theme.test.ts`, not asserted here:
+ *
+ * | band | colour | ratio | D11 |
+ * |---|---|---|---|
+ * | text floor ≥ 4.5 | `labelColor` 0.70/0.70/0.75 | **10.07 : 1** vs black | ✓ |
+ * | non-text floor ≥ 3 | `tickColor` 0.40/0.40/0.45 | **3.71 : 1** vs black | ✓ |
+ * | grid ceiling ≤ 2.0 | `gridColor` 0.20/0.20/0.25 | **1.56 : 1** vs pane | ✓ |
+ * | grid visibility ≥ 10/255 | `gridColor` | **38 / 255** vs pane | ✓ |
+ *
+ * So this is the preset the axis can be drawn in without failing the standard it
+ * is being drawn to satisfy. Picking `midnightTheme()` for its reputation and
+ * shipping a 2.46 : 1 tick would be §1.0's tier-3 mistake exactly: grading the
+ * question you remembered instead of the one written down.
  */
-export const defaultAxisTheme = midnightAxisTheme;
+export const defaultAxisTheme = darkAxisTheme;
+
+// ── D11, measurable ─────────────────────────────────────────────────────────
+
+/**
+ * WCAG 2.x relative luminance of an sRGB component in [0,1].
+ *
+ * The `Theme` floats ARE sRGB (they go to the GPU as the colour, and the
+ * framebuffer is RGBA8 sRGB-encoded), so no linearisation beyond this one is
+ * owed. This is the same transfer function `harness/contrast.py` applies to the
+ * delivered raster, so a prediction here and a measurement there are comparable.
+ */
+function srgbToLinear(c: number): number {
+  return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+}
+
+/** WCAG 2.x relative luminance of an RGB triple in [0,1]. */
+export function relativeLuminance(c: Rgba4 | readonly [number, number, number]): number {
+  return (
+    0.2126 * srgbToLinear(c[0]) + 0.7152 * srgbToLinear(c[1]) + 0.0722 * srgbToLinear(c[2])
+  );
+}
+
+/** WCAG 2.x contrast ratio between two colours. Order-independent, 1..21. */
+export function contrastRatio(
+  a: Rgba4 | readonly [number, number, number],
+  b: Rgba4 | readonly [number, number, number],
+): number {
+  const la = relativeLuminance(a);
+  const lb = relativeLuminance(b);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+
+/** D11's numbers, as constants rather than as prose. */
+export const D11_BANDS = {
+  textFloor: 4.5,
+  largeTextFloor: 3.0,
+  nonTextFloor: 3.0,
+  gridCeiling: 2.0,
+  /** Max per-channel sRGB distance, in 0..255 units. NOT a ratio. */
+  gridDeltaFloor: 10,
+} as const;
+
+/** What a theme's axis colours do against one background. */
+export interface D11Verdict {
+  pass: boolean;
+  failures: string[];
+  ratios: { label: number; tick: number; grid: number; gridDelta255: number };
+}
+
+/**
+ * Score an `AxisTheme`'s three ink classes against `background`, in D11's bands.
+ *
+ * The gridline is composited over the background at its own alpha before being
+ * measured, because that is what the raster will contain — measuring the
+ * unblended `gridColor` of a theme like `midnightTheme()` (α 0.6) overstates
+ * its contrast by a wide margin and would let a gridline that is invisible on
+ * screen pass the visibility floor.
+ */
+export function checkD11AxisBands(theme: AxisTheme, background: Rgba4): D11Verdict {
+  const bg: Rgba4 = background;
+  const g = gridRgba(theme);
+  const a = g.a ?? 1;
+  const composited: Rgba4 = [
+    g.r * a + bg[0] * (1 - a),
+    g.g * a + bg[1] * (1 - a),
+    g.b * a + bg[2] * (1 - a),
+    1,
+  ];
+  const label = contrastRatio(theme.labelColor, bg);
+  const tick = contrastRatio(theme.tickColor, bg);
+  const grid = contrastRatio(composited, bg);
+  const gridDelta255 = Math.max(
+    Math.abs(composited[0] - bg[0]),
+    Math.abs(composited[1] - bg[1]),
+    Math.abs(composited[2] - bg[2]),
+  ) * 255;
+
+  const failures: string[] = [];
+  if (!(label >= D11_BANDS.textFloor)) {
+    failures.push(`labelColor ${label.toFixed(2)}:1 < ${D11_BANDS.textFloor}:1 (text floor)`);
+  }
+  if (!(tick >= D11_BANDS.nonTextFloor)) {
+    failures.push(`tickColor ${tick.toFixed(2)}:1 < ${D11_BANDS.nonTextFloor}:1 (non-text floor)`);
+  }
+  if (!(grid <= D11_BANDS.gridCeiling)) {
+    failures.push(`gridColor ${grid.toFixed(2)}:1 > ${D11_BANDS.gridCeiling}:1 (grid ceiling)`);
+  }
+  if (!(gridDelta255 >= D11_BANDS.gridDeltaFloor)) {
+    failures.push(
+      `gridColor delta ${gridDelta255.toFixed(1)}/255 < ${D11_BANDS.gridDeltaFloor}/255 (grid visibility)`,
+    );
+  }
+  if (!(grid < tick)) {
+    failures.push(`ordering: grid ${grid.toFixed(2)}:1 is not below tick ${tick.toFixed(2)}:1`);
+  }
+  return { pass: failures.length === 0, failures, ratios: { label, tick, grid, gridDelta255 } };
+}
+
+/**
+ * The colour the canvas shows where no pane paints: `DawnSceneRenderer::render`
+ * clears the render target to opaque black before walking the panes, and a pane
+ * only paints a clear-quad when it `hasClearColor`. So the axis gutters — which
+ * are outside every data pane — are black, and that is the background every
+ * tick, spine and label in them is measured against. Verified in the delivered
+ * raster, not assumed: the reference chart's captured canvas reports
+ * `background: [0, 0, 0]` (`harness/verdicts/live-nexo-candles.verdict.json`).
+ */
+export const CANVAS_CLEAR_BLACK: Rgba4 = [0, 0, 0, 1];
 
 /** Look a mirrored preset up by name. Case-insensitive; null when unknown. */
 export function axisThemeByName(name: string): Readonly<AxisTheme> | null {
