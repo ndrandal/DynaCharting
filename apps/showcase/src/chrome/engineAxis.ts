@@ -149,7 +149,7 @@ export function engineAxisSpec(
   measurer: AxisTextMeasurer | null,
   theme: AxisTheme = SHOWCASE_AXIS_THEME,
   box: PlotBox | null = null,
-  gridTarget: AxisGridTarget | null = null,
+  gridTarget: AxisGridTarget | null = null, // eslint-disable-line
 ): EngineAxisResolution {
   const decline = (reason: EngineAxisRefusalReason, detail: string): EngineAxisResolution => ({
     spec: null,
@@ -211,7 +211,7 @@ export function engineAxisSpec(
       // box, so a line spanning the box is not touched by the scissor, and the
       // pane's clear quad is painted before its layers. An unframed view keeps
       // its grid in the furniture pane, on top, where it was.
-      gridTarget: undefined, void_gt: gridTarget,
+      gridTarget: (void gridTarget, undefined),
     },
     refusal: null,
   };
