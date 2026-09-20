@@ -99,12 +99,47 @@ function ticksFor(spec: Parameters<typeof axisTicks>[0] | undefined): AxisTick[]
 }
 
 /**
- * Build the engine-axis spec for a view, or null when there is nothing to draw.
+ * Why no axis spec was built. Every path that declines names itself (ENC-1313).
+ *
+ * Only `plot-box-refused` and `canvas-not-sized` are transients of mounting;
+ * `no-axes-resolved` is the steady state of the eight views that declare no
+ * `chrome.axes`, and `no-ticks` of a domain too degenerate to tick. None of them
+ * is an error — but all of them have to be *sayable*, because "drew no axis" and
+ * "was asked for no axis" looked identical before this and one of them was a
+ * crash.
+ */
+export type EngineAxisRefusalReason =
+  /** Neither axis resolved — `deriveAxes` stated no domain (the normal case). */
+  | 'no-axes-resolved'
+  /** The canvas is not laid out yet, or is too small to carry the gutters. */
+  | 'canvas-not-sized'
+  /** Axes resolved but produced no ticks (a degenerate domain, no time basis). */
+  | 'no-ticks'
+  /** `tryPlotBox` refused this canvas: the gutters do not fit in it. */
+  | 'plot-box-refused';
+
+/** A named decline, with the measurement that produced it. */
+export interface EngineAxisRefusal {
+  reason: EngineAxisRefusalReason;
+  /** Human-readable, and carries the numbers — e.g. `…no plot box in 1px`. */
+  detail: string;
+}
+
+/** `engineAxisSpec`'s answer: the spec, or the named reason there is none. */
+export type EngineAxisResolution =
+  | { spec: AxisSpec; refusal: null }
+  | { spec: null; refusal: EngineAxisRefusal };
+
+/**
+ * Build the engine-axis spec for a view, or say why there is nothing to draw.
+ *
+ * NEVER THROWS. See the module header: this runs inside a React passive effect
+ * against a canvas that is 1x1 for one commit at mount, and a throw from here
+ * unmounts the application.
  *
  * `measurer` may be null while the font is still loading — in that case the
  * geometry (gridlines, ticks, spine) is still planned and the labels are not,
- * because an unmeasured label is a label that might overlap. Returns null only
- * when NEITHER axis resolved.
+ * because an unmeasured label is a label that might overlap.
  */
 export function engineAxisSpec(
   axes: ResolvedAxes,
@@ -113,27 +148,63 @@ export function engineAxisSpec(
   measurer: AxisTextMeasurer | null,
   theme: AxisTheme = SHOWCASE_AXIS_THEME,
   box: PlotBox | null = null,
-): AxisSpec | null {
-  if (!axes.x && !axes.y) return null;
-  if (!(canvas.width > 0 && canvas.height > 0)) return null;
+): EngineAxisResolution {
+  const decline = (reason: EngineAxisRefusalReason, detail: string): EngineAxisResolution => ({
+    spec: null,
+    refusal: { reason, detail },
+  });
+
+  if (!axes.x && !axes.y) {
+    return decline(
+      'no-axes-resolved',
+      'neither axis resolved a domain — a chart that cannot state a domain states no axis',
+    );
+  }
+  if (!(canvas.width > 0 && canvas.height > 0)) {
+    return decline(
+      'canvas-not-sized',
+      `the canvas is ${canvas.width}x${canvas.height}: not laid out yet`,
+    );
+  }
+
+  // THE GUARD. `tryPlotBox` is asked about the CANVAS even when a fitted `box`
+  // was supplied, because the furniture is measured in this canvas's pixels
+  // (`planAxis` sizes every label off `canvas`), so a canvas that cannot carry
+  // the gutters cannot carry the labels either — whatever rectangle it is
+  // handed. Checking only when `box` is absent would leave the framed views
+  // (ENC-1273) on the old path for exactly one commit, which is the window the
+  // whole bug lived in.
+  const resolved = tryPlotBox(canvas, DEFAULT_PLOT_INSETS);
+  if (!resolved.fits) {
+    return decline(
+      resolved.reason === 'canvas-not-positive' ? 'canvas-not-sized' : 'plot-box-refused',
+      resolved.detail,
+    );
+  }
 
   const xTicks = ticksFor(axes.x);
   const yTicks = ticksFor(axes.y);
-  if (xTicks.length === 0 && yTicks.length === 0) return null;
+  if (xTicks.length === 0 && yTicks.length === 0) {
+    return decline('no-ticks', 'both axes resolved but neither produced a tick');
+  }
 
   return {
-    // The box the DATA was fitted into when there is one (ENC-1273); otherwise
-    // the default frame for this canvas — the same call, one layer later.
-    box: box ?? plotBox(canvas, DEFAULT_PLOT_INSETS),
-    canvas,
-    transform,
-    x: axes.x
-      ? { ticks: xTicks, grid: axes.x.grid ?? true, title: axes.x.label }
-      : undefined,
-    y: axes.y
-      ? { ticks: yTicks, grid: axes.y.grid ?? true, title: axes.y.label }
-      : undefined,
-    theme,
-    measurer: measurer ?? undefined,
+    spec: {
+      // The box the DATA was fitted into when there is one (ENC-1273);
+      // otherwise the default frame for this canvas — the same call, one layer
+      // later, which `tryPlotBox` above has already established fits.
+      box: box ?? resolved.box,
+      canvas,
+      transform,
+      x: axes.x
+        ? { ticks: xTicks, grid: axes.x.grid ?? true, title: axes.x.label }
+        : undefined,
+      y: axes.y
+        ? { ticks: yTicks, grid: axes.y.grid ?? true, title: axes.y.label }
+        : undefined,
+      theme,
+      measurer: measurer ?? undefined,
+    },
+    refusal: null,
   };
 }

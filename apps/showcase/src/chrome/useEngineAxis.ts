@@ -49,7 +49,7 @@ import {
   type PlotBox,
   type Tier1LabelVerdict,
 } from '@repo/dc-wasm';
-import { engineAxisSpec, SHOWCASE_AXIS_THEME } from './engineAxis';
+import { engineAxisSpec, SHOWCASE_AXIS_THEME, type EngineAxisRefusal } from './engineAxis';
 import type { ResolvedAxes } from './deriveAxes';
 import type { EffectiveTransform } from './mapping';
 
@@ -99,6 +99,19 @@ export interface EngineAxisReport {
   tier1: Tier1LabelVerdict | null;
   /** The scene-JSON fragment `harness/score.py` reads. */
   scene: AxisSceneFragment | null;
+  /**
+   * Why no axis was drawn, when `plan` is null (ENC-1313). Null while an axis
+   * IS drawn.
+   *
+   * This exists so "declined" and "never asked" are different observable
+   * states. Before it, `engineAxisSpec` returned a bare null down four
+   * different paths — one of which was a `PlotBoxError` it did not survive to
+   * report, because the throw unmounted the app first. A published refusal is
+   * the difference between a chart that can be ASKED what it is doing and one
+   * whose silence has to be guessed at (the same discipline as
+   * `window.__dcAxisDomain`, ENC-1252).
+   */
+  refusal: EngineAxisRefusal | null;
   /** Whether the font loaded — labels are not drawn without it. */
   fontLoaded: boolean;
   /**
