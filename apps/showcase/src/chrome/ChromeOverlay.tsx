@@ -78,6 +78,12 @@ interface ChromeOverlayProps {
    * overlay is sized to.
    */
   canvasSize?: { width: number; height: number };
+  /**
+   * Bumped every time the view's manifest is re-applied (`useViewSwitch`). The
+   * engine axis rebuilds on it so its pane stays LAST in scene order — see the
+   * field's own doc comment for why that is load-bearing rather than tidy.
+   */
+  sceneEpoch?: number;
 }
 
 /**
@@ -108,6 +114,7 @@ export function ChromeOverlay({
   timeBasis = null,
   host = null,
   canvasSize = { width: 0, height: 0 },
+  sceneEpoch = 0,
 }: ChromeOverlayProps) {
   const switches = useMemo(axisSwitches, []);
   const boxRef = useRef<HTMLDivElement | null>(null);
@@ -155,6 +162,7 @@ export function ChromeOverlay({
     transform,
     canvasSize,
     switches.engine,
+    sceneEpoch,
   );
 
   const hasAxes = !!resolvedAxes.x || !!resolvedAxes.y;

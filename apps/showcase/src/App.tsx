@@ -56,7 +56,7 @@ export default function App() {
     if (routeViewId) setLastViewId(routeViewId);
   }, [routeViewId]);
 
-  const { axisDomain, timeBasis, progress, playing, setPlaying, restart, loop, setLoop } = useViewSwitch(
+  const { axisDomain, timeBasis, progress, playing, setPlaying, restart, loop, setLoop, sceneEpoch } = useViewSwitch(
     webgpu ? host : null,
     view,
   );
@@ -129,6 +129,7 @@ export default function App() {
       timeBasis={timeBasis}
       host={host}
       canvasSize={canvasSize}
+      sceneEpoch={sceneEpoch}
     />
   ) : null;
 
