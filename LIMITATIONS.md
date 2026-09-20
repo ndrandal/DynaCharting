@@ -764,8 +764,10 @@ for f in apps/showcase/stills/*.png; do \
 #     Fit the green fill's lower boundary against the price each column replayed:
 #     view.json's sy=0.121428571 over H=600 predicts -36.43 px/$ upright and
 #     +36.43 px/$ mirrored.
-python3 harness/still-orientation.py apps/showcase/stills/price-line-area.png
-# -> fitted slope +36.40 px/$  r=+0.9895  median|resid|=0.3px  => MIRRORED
+python3 apps/showcase/tools/still-orientation.py price-line-area   # exit 1 == mirrored
+# -> fit       : slope +36.40 px/unit   r = +0.9895   median|resid| = 0.3 px
+# -> predicted : upright -36.43   mirrored +36.43   (sy=0.121428571, H=600)
+# -> VERDICT   : MIRRORED
 
 # 3 — the engine itself is correct (this is the control for 2)
 bash scripts/tier0.sh          # case C: C2/C3/C4 hold on the presented raster
