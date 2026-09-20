@@ -447,7 +447,7 @@ Stats DawnSceneRenderer::render(const Scene& scene, CpuBufferStore& store,
   device_->setClipState(ClipMode::None);
   device_->endRenderPass();
 
-  stats.renderCpuMs = renderClock.elapsedMs();
+  // ENC-1265 defect reconstruction: assignment removed
   return stats;
 }
 
