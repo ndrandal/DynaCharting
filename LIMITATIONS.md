@@ -1642,6 +1642,8 @@ price labels. Adoption for the data is still **ENC-1273**.
 **Verified at** `ENC-1253 HEAD`, 2026-09-20 — commands 1, 3, 4 and 5 re-run unchanged in the
 ENC-1253 worktree; command 2's expected output is restamped above.
 
+---
+
 ## DC-L16 — Nothing on the market-data path carries a timestamp, so a time axis is the client's *observation* time ✅ *(RETIRED — fixed by ENC-1282)*
 
 **Retired 2026-09-20** by the *Timestamps on the wire* project — ENC-1279 (treaty `DcTimeBasis`),
@@ -1770,8 +1772,6 @@ worktree and against the sibling repos at their checked-out state. The `epochKno
 `vendor: nvidia, architecture: ampere`, `info.isFallbackAdapter: false`, `subgroupMinSize: 32`,
 `maxBufferSize: 2 GiB` — SPEC D8), not inferred from the tests. The float32-mantissa figure is
 arithmetic, not a measurement.
-
----
 
 ---
 
