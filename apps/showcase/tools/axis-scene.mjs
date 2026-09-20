@@ -116,6 +116,14 @@ const s = report.scene;
 const CANDLE_PALETTE = [
   { rgb: [51, 191, 115], role: 'dataMark', what: 'up candle — manifest.ts literal' },
   { rgb: [217, 76, 76], role: 'dataMark', what: 'down candle — manifest.ts literal' },
+  // The render target's own clear, which every showcase view leaves exposed in
+  // the gutters: `DawnSceneRenderer::render` clears 0,0,0,1 and a pane only
+  // paints where it hasClearColor, so the canvas has TWO backgrounds — the
+  // pane's inside ±0.95, black outside it. The scorer takes the modal colour as
+  // THE background, which here is the pane's, and would otherwise classify the
+  // black gutters as a data mark 81,739 pixels wide. Declaring it is a
+  // statement about what it is, not a way of excusing it.
+  { rgb: [0, 0, 0], role: 'canvasClear', what: "DawnSceneRenderer's target clear, outside every pane" },
 ];
 
 const scene = {
