@@ -31,6 +31,7 @@ import { fitTransform, type Range, type Transform2D } from "./scale";
 import {
   DEFAULT_PLOT_INSETS,
   fitToPlotBox,
+  plotBox,
   paneRegionFor,
   type CanvasSize,
   type FitPolicy,
