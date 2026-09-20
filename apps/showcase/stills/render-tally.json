@@ -1,230 +1,230 @@
 {
-  "capturedAt": "2026-06-12T01:19:41.369Z",
+  "capturedAt": "2026-09-20T16:18:07.226Z",
+  "tool": "apps/showcase/tools/recapture-stills.mjs",
   "total": 22,
   "tally": {
-    "full": 21,
-    "partial": 1
+    "full": 22
   },
   "views": [
     {
       "id": "candle-overlays",
       "title": "Candles + Volume — AAPL",
       "tier": "native",
+      "referenceTool": "TradingView",
       "verdict": "full",
-      "autoVerdict": "full",
-      "coverage": 0.0892132823062997,
-      "chroma": 0.08891536998418773,
-      "distinctColors": 25
+      "coverage": 0.1479933110367893,
+      "chroma": 0.11688471375172142,
+      "distinctColors": 86
     },
     {
       "id": "candles-aapl",
       "title": "Candlestick — AAPL",
       "tier": "native",
+      "referenceTool": "TradingView",
       "verdict": "full",
-      "autoVerdict": "full",
-      "coverage": 0.05717624951302794,
-      "chroma": 0.05717624951302794,
-      "distinctColors": 4
+      "coverage": 0.14388648435963014,
+      "chroma": 0.10338382844776707,
+      "distinctColors": 60
     },
     {
       "id": "ohlc-bars",
       "title": "OHLC Bars — AAPL",
       "tier": "native",
+      "referenceTool": "Bloomberg / most platforms",
       "verdict": "full",
-      "autoVerdict": "full",
-      "coverage": 0.029974562870958132,
-      "chroma": 0.029974562870958132,
-      "distinctColors": 4
+      "coverage": 0.14061577808380876,
+      "chroma": 0.1008754672437537,
+      "distinctColors": 61
     },
     {
       "id": "price-line-area",
       "title": "Price Area — AAPL",
       "tier": "native",
+      "referenceTool": "TradingView baseline/area",
       "verdict": "full",
-      "autoVerdict": "full",
-      "coverage": 0.37454453789215575,
-      "chroma": 0.37454453789215575,
-      "distinctColors": 4
+      "coverage": 0.42981506984064527,
+      "chroma": 0.40175585284280935,
+      "distinctColors": 61
     },
     {
       "id": "scatter",
       "title": "Scatter — Price × Volume",
       "tier": "native",
-      "verdict": "partial",
-      "autoVerdict": "partial",
-      "coverage": 0.005843664779888627,
-      "chroma": 0.005843664779888627,
-      "distinctColors": 3
+      "referenceTool": "data-viz / sports analytics",
+      "verdict": "full",
+      "coverage": 0.04539641943734015,
+      "chroma": 0.01064823922880189,
+      "distinctColors": 46
     },
     {
       "id": "audio-waveform",
       "title": "Audio waveform — mirrored amplitude",
       "tier": "composed",
+      "referenceTool": "audio editor waveform",
       "verdict": "full",
-      "autoVerdict": "full",
-      "coverage": 0.2328757705616793,
-      "chroma": 0.2328757705616793,
-      "distinctColors": 303
+      "coverage": 0.45654633090694474,
+      "chroma": 0.43055282313594334,
+      "distinctColors": 482
     },
     {
       "id": "correlation-heatmap",
       "title": "Correlation Heatmap — texture escape hatch",
       "tier": "composed",
+      "referenceTool": "correlation matrix",
       "verdict": "full",
-      "autoVerdict": "full",
-      "coverage": 0.7224832137864656,
-      "chroma": 0.605747416183514,
-      "distinctColors": 228
+      "coverage": 0.7234408813692701,
+      "chroma": 0.520460358056266,
+      "distinctColors": 285
     },
     {
       "id": "depth-ladder",
       "title": "Depth Ladder — order book",
       "tier": "composed",
+      "referenceTool": "Bookmap / DOM",
       "verdict": "full",
-      "autoVerdict": "full",
-      "coverage": 0.05415129362696794,
-      "chroma": 0.05415129362696794,
-      "distinctColors": 4
+      "coverage": 0.2577710013771395,
+      "chroma": 0.24326185323627778,
+      "distinctColors": 43
     },
     {
       "id": "ecg",
       "title": "ECG monitor — PQRST trace",
       "tier": "composed",
+      "referenceTool": "medical / ECG monitor",
       "verdict": "full",
-      "autoVerdict": "partial",
-      "coverage": 0.006439489424112565,
-      "chroma": 0.006645736416343928,
-      "distinctColors": 24
+      "coverage": 0.09199783592366713,
+      "chroma": 0.08043970096399763,
+      "distinctColors": 227
     },
     {
       "id": "footprint",
       "title": "Footprint — bid×ask volume",
       "tier": "composed",
+      "referenceTool": "order-flow footprint",
       "verdict": "full",
-      "autoVerdict": "full",
-      "coverage": 0.16238513188349338,
-      "chroma": 0.16238513188349338,
-      "distinctColors": 5
+      "coverage": 0.5154436356482393,
+      "chroma": 0.4763918945504623,
+      "distinctColors": 74
     },
     {
       "id": "sankey",
       "title": "Fund-Flow Sankey — ribbon tessellation",
       "tier": "composed",
+      "referenceTool": "fund-flow Sankey",
       "verdict": "full",
-      "autoVerdict": "full",
-      "coverage": 0.5504503059330385,
-      "chroma": 0.5504503059330385,
+      "coverage": 0.5373057249655715,
+      "chroma": 0.5373057249655715,
       "distinctColors": 16
     },
     {
       "id": "radial-seasonality",
       "title": "Radial Seasonality Clock — polar projection",
       "tier": "composed",
+      "referenceTool": "polar / radial seasonality clock",
       "verdict": "full",
-      "autoVerdict": "full",
-      "coverage": 0.13616884753764008,
-      "chroma": 0.13616884753764008,
-      "distinctColors": 16
+      "coverage": 0.2658371040723982,
+      "chroma": 0.2658371040723982,
+      "distinctColors": 24
     },
     {
       "id": "renko",
       "title": "Renko — fixed-brick (live)",
       "tier": "composed",
+      "referenceTool": "Renko / Point & Figure",
       "verdict": "full",
-      "autoVerdict": "full",
-      "coverage": 0.02298508146756193,
-      "chroma": 0.02298508146756193,
-      "distinctColors": 4
+      "coverage": 0.07119319299626205,
+      "chroma": 0.03150206570922683,
+      "distinctColors": 39
     },
     {
       "id": "ridgeline",
       "title": "Ridgeline — density bands",
       "tier": "composed",
+      "referenceTool": "D3 / Observable ridgeline",
       "verdict": "full",
-      "autoVerdict": "full",
-      "coverage": 0.2782271925201091,
-      "chroma": 0.2761876389302656,
-      "distinctColors": 905
+      "coverage": 0.2003492032264411,
+      "chroma": 0.19474227818217588,
+      "distinctColors": 717
     },
     {
       "id": "sports-shot-chart",
       "title": "Shot chart — made/missed",
       "tier": "composed",
+      "referenceTool": "NBA shot chart",
       "verdict": "full",
-      "autoVerdict": "full",
-      "coverage": 0.030616220180122375,
-      "chroma": 0.030616220180122375,
-      "distinctColors": 12
+      "coverage": 0.041904387172929373,
+      "chroma": 0.041904387172929373,
+      "distinctColors": 11
     },
     {
       "id": "streamgraph",
       "title": "Streamgraph — bands flow over time",
       "tier": "composed",
+      "referenceTool": "streamgraph / stacked area",
       "verdict": "full",
-      "autoVerdict": "full",
-      "coverage": 0.627540848362628,
-      "chroma": 0.627540848362628,
-      "distinctColors": 524
+      "coverage": 0.592071611253197,
+      "chroma": 0.5858744835726933,
+      "distinctColors": 525
     },
     {
       "id": "treemap",
       "title": "Treemap — market map",
       "tier": "composed",
+      "referenceTool": "Finviz market map",
       "verdict": "full",
-      "autoVerdict": "full",
-      "coverage": 0.7468432752022366,
-      "chroma": 0.7468432752022366,
-      "distinctColors": 20
+      "coverage": 0.7521640763328743,
+      "chroma": 0.7521640763328743,
+      "distinctColors": 21
     },
     {
       "id": "volume-profile",
       "title": "Volume Profile — volume by price",
       "tier": "composed",
+      "referenceTool": "Sierra Chart / ToS TPO",
       "verdict": "full",
-      "autoVerdict": "full",
-      "coverage": 0.06783234411164837,
-      "chroma": 0.06783234411164837,
-      "distinctColors": 3
+      "coverage": 0.18763525477080464,
+      "chroma": 0.15138697619516034,
+      "distinctColors": 45
     },
     {
       "id": "weather-radar",
       "title": "Weather radar — intensity field",
       "tier": "composed",
+      "referenceTool": "weather radar / NEXRAD",
       "verdict": "full",
-      "autoVerdict": "full",
-      "coverage": 0.6976189930563512,
-      "chroma": 0.70953548594083,
-      "distinctColors": 1057
+      "coverage": 0.7195307889041904,
+      "chroma": 0.7234408813692701,
+      "distinctColors": 921
     },
     {
       "id": "contour",
       "title": "Contour — iso-bands",
       "tier": "walled",
+      "referenceTool": "Topographic isolines",
       "verdict": "full",
-      "autoVerdict": "full",
-      "coverage": 0.9024680890070353,
-      "chroma": 0.7874051836744047,
-      "distinctColors": 775
+      "coverage": 0.903059216997836,
+      "chroma": 0.7867892976588629,
+      "distinctColors": 824
     },
     {
       "id": "density-heatmap",
       "title": "Density Heatmap — KDE glow",
       "tier": "walled",
+      "referenceTool": "Bookmap liquidity heatmap",
       "verdict": "full",
-      "autoVerdict": "full",
-      "coverage": 0.3671883951692371,
-      "chroma": 0.8117423287577056,
-      "distinctColors": 637
+      "coverage": 0.34524395042297856,
+      "chroma": 0.7595907928388747,
+      "distinctColors": 636
     },
     {
       "id": "spectrogram",
       "title": "Spectrogram — frequency × time",
       "tier": "walled",
+      "referenceTool": "Audio spectrogram",
       "verdict": "full",
-      "autoVerdict": "full",
-      "coverage": 0.9024680890070353,
-      "chroma": 0.9023305910122144,
-      "distinctColors": 937
+      "coverage": 0.8422191619122565,
+      "chroma": 0.8348170371827661,
+      "distinctColors": 973
     }
   ]
 }
