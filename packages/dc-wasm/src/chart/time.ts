@@ -697,16 +697,29 @@ export interface WireTimeBasis {
  * behind it, which is the caption failure DC-L16 names, now with the producer's
  * authority borrowed to sell it.
  *
- *  - `periodMs` must be finite and **strictly > 0**. A stream with no uniform
+ *  - `periodMs` must be a safe integer and **strictly > 0**. A stream with no uniform
  *    bar period declares no basis at all and never declares `periodMs: 0`
  *    (SPEC D7 corollary), so a 0 here is a producer bug, not "no cadence", and
  *    silently accepting it would divide the axis by zero.
- *  - `baseMs` must be a finite safe integer. `epochKnown: false` is allowed and
- *    means the grid is tape-relative — a legitimate producer statement, not an
- *    error.
- *  - `epochKnown` must be a real boolean. A missing flag is NOT read as `false`:
- *    D3 makes it part of the contract precisely so the client stops guessing,
- *    and defaulting it would resurrect the guess with a friendlier face.
+ *  - `baseMs` and `periodMs` must be JSON **numbers** and safe integers. The
+ *    canonical protobuf-JSON int64-as-string form `{"baseMs":"1789862400000"}`
+ *    is rejected, not coerced: coercing would let the emitter drift to a second
+ *    representation and keep working, which is the `max_bytes`/`byteLength`/
+ *    `maxBytes` divergence this field is trying not to repeat.
+ *  - `epochKnown: false` is allowed and means the grid is tape-relative — a
+ *    legitimate producer statement, not an error. An ABSENT `epochKnown` reads
+ *    as `false`; a present non-boolean is rejected.
+ *
+ * THE RULES ABOVE ARE NOT INVENTED HERE. They mirror, field for field,
+ * `customer-layer/apps/web/src/wire/dataplane.ts` `adaptHostTimeBasis`
+ * (ENC-1303), the other consumer of this exact wire field. Two readers of one
+ * field that disagree about what is valid is a divergence waiting to be
+ * discovered by a chart that renders in one app and drops its axis in the
+ * other, so the agreement is deliberate and worth preserving on both sides.
+ * That is also why an absent `epochKnown` defaults to `false` rather than being
+ * refused: it is proto3's default for a `bool`, and it is the conservative
+ * direction — the client never UPGRADES a basis to "real wall clock" without
+ * being told, it only ever declines to.
  */
 export function timeBasisFromWire(value: unknown): TimeBasis | null {
   if (typeof value !== "object" || value === null) return null;
@@ -715,15 +728,15 @@ export function timeBasisFromWire(value: unknown): TimeBasis | null {
   const periodMs = v.periodMs;
   const epochKnown = v.epochKnown;
   if (typeof baseMs !== "number" || !Number.isSafeInteger(baseMs)) return null;
-  if (typeof periodMs !== "number" || !Number.isFinite(periodMs) || periodMs <= 0) {
+  if (typeof periodMs !== "number" || !Number.isSafeInteger(periodMs) || periodMs <= 0) {
     return null;
   }
-  if (typeof epochKnown !== "boolean") return null;
+  if (epochKnown !== undefined && typeof epochKnown !== "boolean") return null;
   return {
     originMs: baseMs,
     msPerIndex: periodMs,
     source: "transmitted",
-    epochKnown,
+    epochKnown: epochKnown === true,
     samples: 0,
   };
 }

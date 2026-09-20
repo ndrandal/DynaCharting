@@ -449,17 +449,30 @@ describe("timeBasisFromWire — the producer's clock, not a fit", () => {
     expect(timeBasisFromWire({ ...WIRE, periodMs: Number.POSITIVE_INFINITY })).toBeNull();
   });
 
-  it("REFUSES a missing epochKnown rather than defaulting it to false", () => {
-    // D3 makes it part of the contract so the client stops guessing; a default
-    // would be the guess wearing the contract's clothes.
-    expect(timeBasisFromWire({ baseMs: 1, periodMs: 60000 })).toBeNull();
+  it("reads an ABSENT epochKnown as false, and refuses a present non-boolean", () => {
+    // Field for field with customer-layer's `adaptHostTimeBasis` (ENC-1303),
+    // the other reader of this same wire field: absent is proto3's `false`, and
+    // false is the conservative direction — the client never upgrades a basis
+    // to "real wall clock" without being told.
+    const b = timeBasisFromWire({ baseMs: 0, periodMs: 60000 })!;
+    expect(b.epochKnown).toBe(false);
+    expect(b.source).toBe("transmitted");
     expect(timeBasisFromWire({ ...WIRE, epochKnown: "true" })).toBeNull();
+    expect(timeBasisFromWire({ ...WIRE, epochKnown: 1 })).toBeNull();
+    expect(timeBasisFromWire({ ...WIRE, epochKnown: null })).toBeNull();
   });
 
-  it("REFUSES a baseMs that is not a safe integer, and every non-object", () => {
+  it("REFUSES the protobuf-JSON int64-as-string form rather than coercing it", () => {
+    // The expected drift, and the one `max_bytes`/`byteLength`/`maxBytes`
+    // already cost this project once. Rejecting degrades to no basis.
+    expect(timeBasisFromWire({ ...WIRE, baseMs: "1789862400000" })).toBeNull();
+    expect(timeBasisFromWire({ ...WIRE, periodMs: "60000" })).toBeNull();
+  });
+
+  it("REFUSES a baseMs or periodMs that is not a safe integer, and every non-object", () => {
     expect(timeBasisFromWire({ ...WIRE, baseMs: 1.5 })).toBeNull();
     expect(timeBasisFromWire({ ...WIRE, baseMs: 2 ** 62 })).toBeNull();
-    expect(timeBasisFromWire({ ...WIRE, baseMs: "1789862400000" })).toBeNull();
+    expect(timeBasisFromWire({ ...WIRE, periodMs: 60000.5 })).toBeNull();
     for (const v of [null, undefined, 0, "", [], "not json"]) {
       expect(timeBasisFromWire(v)).toBeNull();
     }
