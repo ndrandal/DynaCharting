@@ -1278,6 +1278,9 @@ chart is a guard sampled on one bit of a two-bit space.
   of the **next** throw: a chrome failure degrades to a chart with no furniture, and anything
   above it renders a named panel instead of a blank page. They record to
   `window.__dcBoundaryErrors`, so "it survived" and "nothing went wrong" are distinguishable.
+  **Drillable from a URL** — `?chromeFault=effect` throws from a passive effect, the exact shape
+  of this bug — because a boundary that has never been *seen* to catch anything is a hope rather
+  than a guarantee, the same objection `plotbox.test.ts` raises about a never-failing check.
 * **`frameSeries()` still throws**, and its one caller (`useViewSwitch`) still catches it with a
   `try`/`catch` + `console.warn` rather than a typed refusal. That asymmetry is deliberate for
   now — it works, and it predates this ticket — but it is the seam to convert next if a third
@@ -1302,9 +1305,14 @@ node specs/2026-09-19-chart-quality-bar/harness/deeplink-crash.mjs \
   --port <cdp> --vite-port <vite> --reps 3 --views "$(ls apps/showcase/views | tr '\n' ' ')"
 # -> "0 of 22 deep-linked views take the app down", exit 0
 
-# 4 — it SURVIVED is weaker than NOTHING WENT WRONG. Ask the page:
-#     window.__dcBoundaryErrors            -> undefined / []      (no boundary fired)
-#     window.__dcEngineAxis[v].refusal     -> null once laid out
+# 4 — command 3 is a NEGATIVE test and cannot tell "the guard works" from "the
+#     guard was never reached": a change that merely delayed publishing the 1px
+#     size would pass it with the bug latent. This asks the positive questions —
+#     the 1px canvas IS reached, a 40px canvas is handled while SUSTAINED, the
+#     axis comes back when it widens, and the error boundary is seen to catch a
+#     passive-effect throw while the canvas keeps rendering.
+node apps/showcase/tools/check-chart-chrome-guards.mjs --port <cdp> --vite-port <vite>
+# -> 15 checks, "ALL GUARDS VERIFIED", exit 0 (exit 2 = could not run, never a pass)
 ```
 
 **Working around it.** Calling `plotBox()` from anywhere that does not control the canvas size —
