@@ -1677,6 +1677,13 @@ harness/score.py T1.5                -> PASS "all 4 x tick labels parse as times
 `samples: 0` is the point: nothing was fitted. `epochKnown: true` is the first time it has been
 true anywhere in this repo.
 
+**The T1.5 above is PROVISIONAL and is quoted as such.** That verdict's own result is
+`attained: -1, stoppedAt: 0` — tier 0 is UNPROVEN because the scene can cite no
+`scripts/tier0.sh` run (it needs a `DC_FETCH_DAWN=ON` build — **DC-L01**), which is true of every
+verdict committed in that harness. T1.5 therefore ran under `--diagnose`. The primary evidence
+for this retirement is the in-page run of D1's own exported `parsesAsTimestamp` over the engine's
+labels; score.py's independent regex set corroborates it. Neither is a tier claim.
+
 **And the negative control, same stack, one field removed.** With the bucketing stage dropped
 from the fixture — a stream with no uniform bar period, which declares no basis rather than
 `periodMs: 0` (SPEC D7 corollary) — 1 553 records streamed and the axis was **dropped**, not
@@ -1687,6 +1694,17 @@ the price axis kept rendering, so the emptiness is the time axis's and not the c
 still reports `epochKnown: false` — the tape does not carry the producer's declaration (SPEC §4
 non-goal). The paragraphs below describe that path accurately and are the reason
 `TimeBasis.source` distinguishes `'observed'` from `'transmitted'` rather than collapsing them.
+
+**And one live case still reports `epochKnown: false`, by upstream design.** embassy learns
+`baseMs` from the producer's FIRST bucket stamp, so a client that subscribes before that stamp
+arrives gets `{"baseMs":0,"epochKnown":false,…}`. The corrected envelope embassy re-renders is
+given only to FUTURE subscribers and is deliberately not broadcast, because a scene-init is not
+idempotent at the client and pushing it would zero exactly the records the basis was learned from
+(ENC-1101; `embassy/internal/dataplane/server.go` `UpdateSceneSnapshot`). Measured: a client that
+subscribed **76 ms** into a fresh stream saw `epochKnown: false` and no further envelope in 14 s;
+one that subscribed seconds later saw `baseMs: 1789922150000, epochKnown: true`. A browser that
+opens inside the first bar therefore shows a tape-relative axis **until it reconnects** — which
+is correct behaviour on both sides and is not the failure this entry described.
 
 The original entry is kept verbatim below.
 
