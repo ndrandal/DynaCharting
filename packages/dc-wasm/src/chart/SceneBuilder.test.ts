@@ -14,6 +14,12 @@
 
 import { describe, it, expect } from "vitest";
 import { SceneBuilder, encodeAppendRecord, type SceneTarget } from "./SceneBuilder";
+import {
+  DEFAULT_PLOT_INSETS,
+  checkTier2Framing,
+  framingMetrics,
+  plotBox,
+} from "./plotbox";
 
 type Captured = {
   controls: Array<Record<string, unknown>>;
@@ -391,5 +397,86 @@ describe("SceneBuilder — id allocator injection", () => {
     // import indirectly to keep the test self-contained
     const b = new SceneBuilder(t);
     expect(b.peekId()).toBeGreaterThanOrEqual(1);
+  });
+});
+
+// ---- ENC-1256: the plot-box paths ------------------------------------------
+describe("SceneBuilder — plot box (ENC-1256)", () => {
+  const CANVAS = { width: 1280, height: 800 };
+
+  it("pane({ plotBox }) emits the box as setPaneRegion", () => {
+    const t = mockTarget();
+    const b = new SceneBuilder(t);
+    const box = plotBox(CANVAS, DEFAULT_PLOT_INSETS);
+    b.pane({ plotBox: box });
+    const region = t.controls.find((c) => c.cmd === "setPaneRegion")!;
+    expect(region).toMatchObject({
+      clipXMin: box.x.min,
+      clipXMax: box.x.max,
+      clipYMin: box.y.min,
+      clipYMax: box.y.max,
+    });
+  });
+
+  it("an explicit region still wins over plotBox", () => {
+    const t = mockTarget();
+    const b = new SceneBuilder(t);
+    b.pane({
+      plotBox: plotBox(CANVAS),
+      region: { clipXMin: -1, clipXMax: 1, clipYMin: -1, clipYMax: 1 },
+    });
+    expect(t.controls.find((c) => c.cmd === "setPaneRegion")).toMatchObject({ clipXMin: -1, clipXMax: 1 });
+  });
+
+  it("transform({ domain, canvas }) fits the measured domain into the plot box", () => {
+    const t = mockTarget();
+    const b = new SceneBuilder(t);
+    const domain = { x: { min: 0, max: 269 }, y: { min: 404.2, max: 419.8 } };
+    b.transform({ domain, canvas: CANVAS });
+    const set = t.controls.find((c) => c.cmd === "setTransform") as unknown as {
+      sx: number;
+      tx: number;
+      sy: number;
+      ty: number;
+    };
+    const box = plotBox(CANVAS, DEFAULT_PLOT_INSETS);
+    expect(domain.x.min * set.sx + set.tx).toBeCloseTo(box.x.min, 9);
+    expect(domain.y.max * set.sy + set.ty).toBeCloseTo(box.y.max, 9);
+  });
+
+  it("the framing it emits scores tier-2 green", () => {
+    const t = mockTarget();
+    const b = new SceneBuilder(t);
+    const domain = { x: { min: 0, max: 9 }, y: { min: 404.2, max: 419.8 } };
+    b.transform({ domain, canvas: CANVAS });
+    const set = t.controls.find((c) => c.cmd === "setTransform") as unknown as {
+      sx: number;
+      tx: number;
+      sy: number;
+      ty: number;
+    };
+    const box = plotBox(CANVAS, DEFAULT_PLOT_INSETS);
+    const verdict = checkTier2Framing(framingMetrics(domain, set, box, CANVAS));
+    expect(verdict.failures).toEqual([]);
+  });
+
+  it("the OLD path — a clipRange of the full clip space — does NOT", () => {
+    // The distinction the new overload exists to make: `{dataRange}` reserves
+    // nothing, so the ink lands on the clip boundary and tier 2 fails.
+    const t = mockTarget();
+    const b = new SceneBuilder(t);
+    const domain = { x: { min: 0, max: 9 }, y: { min: 404.2, max: 419.8 } };
+    b.transform({ dataRange: domain });
+    const set = t.controls.find((c) => c.cmd === "setTransform") as unknown as {
+      sx: number;
+      tx: number;
+      sy: number;
+      ty: number;
+    };
+    const verdict = checkTier2Framing(
+      framingMetrics(domain, set, plotBox(CANVAS, DEFAULT_PLOT_INSETS), CANVAS),
+    );
+    expect(verdict.pass).toBe(false);
+    expect(verdict.failures.join(" ")).toMatch(/edge clearance 0\.0px/);
   });
 });

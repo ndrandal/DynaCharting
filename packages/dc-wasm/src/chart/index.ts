@@ -61,3 +61,35 @@ export type {
   Candle,
   Rect,
 } from "./SceneBuilder";
+
+// ENC-1256 (chart-quality-bar D1 tier 2): THE PLOT BOX — the clip-space
+// rectangle the measured domain is fitted into, and the gutters reserved for
+// the axis furniture ENC-1253 draws. The output side of ENC-1252's domain.
+export {
+  DEFAULT_PLOT_INSETS,
+  FULL_CLIP_REGION,
+  TIER2_FRAMING_BOUNDS,
+  PlotBoxError,
+  plotBox,
+  gutters,
+  paneRegionFor,
+  pxSpanToClipX,
+  pxSpanToClipY,
+  clipSpanToPxX,
+  clipSpanToPxY,
+  fitToPlotBox,
+  framingMetrics,
+  checkTier2Framing,
+  frameSeries,
+} from "./plotbox";
+export type {
+  CanvasSize,
+  PlotInsets,
+  PlotBox,
+  PlotGutters,
+  PaneRegion,
+  FitPolicy,
+  FramingMetrics,
+  Tier2Verdict,
+  FramedSeries,
+} from "./plotbox";
