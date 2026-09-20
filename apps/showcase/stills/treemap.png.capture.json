@@ -3,7 +3,7 @@
   "tier1Scorable": true,
   "spec": "specs/2026-09-19-chart-quality-bar/SPEC.md D10, D8",
   "url": "http://localhost:5650/?svgAxis=0#/",
-  "capturedAt": "2026-09-20T16:14:05.398Z",
+  "capturedAt": "2026-09-20T16:35:04.605Z",
   "canvasReady": true,
   "dwellMs": 0,
   "adapter": {
@@ -32,5 +32,5 @@
   "cssSize": "900x497",
   "source": "canvas.toDataURL('image/png')",
   "bytes": 12052,
-  "sha256": "50cd2af117387e3dab13f078d4694249f59029faf44d6ad51b63c29ecbd78231"
+  "sha256": "d7c131d1ae0280b141289d1c3d8f3b68873ea9a6f4477c188328c1b0eea79b49"
 }
