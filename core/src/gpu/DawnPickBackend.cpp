@@ -7,8 +7,8 @@
 #include "dc/gpu/DawnPickBackend.hpp"
 
 #include "dc/render/BarSizing.hpp"
-#include "dc/render/CpuBufferStore.hpp"
 #include "dc/render/CandleBodyFloor.hpp"
+#include "dc/render/CpuBufferStore.hpp"
 #include "dc/render/LineAAQuad.hpp"
 #include "dc/scene/Scene.hpp"
 #include "dc/scene/Geometry.hpp"
