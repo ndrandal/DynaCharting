@@ -8,6 +8,7 @@
 
 #include "dc/render/BarSizing.hpp"
 #include "dc/render/CpuBufferStore.hpp"
+#include "dc/render/CandleBodyFloor.hpp"
 #include "dc/render/LineAAQuad.hpp"
 #include "dc/scene/Scene.hpp"
 #include "dc/scene/Geometry.hpp"
@@ -15,6 +16,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <string>
 #include <vector>
 
 namespace dc {
@@ -115,7 +117,8 @@ struct U {
   c0:vec4<f32>, c1:vec4<f32>, c2:vec4<f32>,
   color:vec4<f32>,     // float 12 (the id color)
   _colorDown:vec4<f32>,// float 16 (unused for pick)
-  wickHalf:vec4<f32>,  // float 20 (.x = wick half, .y = body half; clip)
+  wickHalf:vec4<f32>,  // float 20 (.x = wick half, .y = body half,
+                       //            .z = min body height; all clip)
 };
 @group(0) @binding(0) var<uniform> u : U;
 @vertex
@@ -147,13 +150,19 @@ fn vs_main(@builtin(vertex_index) vid : u32,
     // ENC-1257: mirror the visible backend — when the host resolved a body
     // half-width from the bar pitch (wickHalf.y > 0) the pick footprint is that,
     // not the authored halfWidth.
+    // ENC-1251: mirror it again for the doji floor — same shared WGSL
+    // function (dc/render/CandleBodyFloor.hpp), so a doji's body is pickable
+    // exactly where it is now drawn instead of only on the wick's column.
+    let bodyEnds = dcCandleBodyFloor(m, cx, body0, body1, low, high,
+                                     u.wickHalf.z);
+    let by = mix(bodyEnds.x, bodyEnds.y, uv.y);
     let bodyHalf = u.wickHalf.y;
     if (bodyHalf > 0.0) {
-      let center = m * vec3<f32>(cx, mix(body0, body1, uv.y), 1.0);
-      clip = vec2<f32>(center.x + mix(-bodyHalf, bodyHalf, uv.x), center.y);
+      let center = m * vec3<f32>(cx, body0, 1.0);
+      clip = vec2<f32>(center.x + mix(-bodyHalf, bodyHalf, uv.x), by);
     } else {
       let p = m * vec3<f32>(mix(cx - hw, cx + hw, uv.x), mix(body0, body1, uv.y), 1.0);
-      clip = p.xy;
+      clip = vec2<f32>(p.x, by);
     }
   }
   return vec4<f32>(clip.x, -clip.y, 0.0, 1.0);
@@ -422,7 +431,9 @@ bool DawnPickBackend::init(GpuDevice& device) {
     layout.attributeCount = 2;
     PipelineDesc desc;
     desc.debugName = "pickInstCandle";
-    desc.vertexSource = kPickInstCandleWgsl;
+    static const std::string kPickInstCandleSource =
+        std::string(kCandleBodyFloorWgsl) + kPickInstCandleWgsl;
+    desc.vertexSource = kPickInstCandleSource.c_str();
     desc.vertexBuffers = &layout;
     desc.vertexBufferCount = 1;
     desc.topology = PrimitiveTopology::Triangles;
@@ -742,7 +753,8 @@ void DawnPickBackend::drawPickItem(GpuDevice& device, const Scene& scene,
     if (body.apply && body.maxMarkHalfClip < wickHalfClip) {
       wickHalfClip = body.maxMarkHalfClip;
     }
-    UniformBinding uniforms[4];
+    const float bodyMinHeightClip = candleBodyMinHeightClip(viewH);
+    UniformBinding uniforms[5];
     uniforms[0].kind = UniformBinding::Kind::Mat3;
     uniforms[0].name = "u_transform";
     uniforms[0].data = xform;
@@ -755,13 +767,16 @@ void DawnPickBackend::drawPickItem(GpuDevice& device, const Scene& scene,
     uniforms[3].kind = UniformBinding::Kind::Float;
     uniforms[3].name = "u_bodyHalf";
     uniforms[3].data = &bodyHalfClip;
+    uniforms[4].kind = UniformBinding::Kind::Float;
+    uniforms[4].name = "u_bodyMinH";
+    uniforms[4].data = &bodyMinHeightClip;
 
     BindGroupDesc bg;
     bg.pipeline = pickInstCandle_;
     bg.vertexBuffers = &gb.vertexBuffer;
     bg.vertexBufferCount = 1;
     bg.uniforms = uniforms;
-    bg.uniformCount = 4;
+    bg.uniformCount = 5;
     BindGroupHandle group = device.createBindGroup(bg);
     if (!group.valid()) return;
     device.bindPipeline(pickInstCandle_);

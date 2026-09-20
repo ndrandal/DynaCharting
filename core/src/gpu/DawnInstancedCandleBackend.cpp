@@ -9,6 +9,7 @@
 #include "dc/gpu/DawnInstancedCandleBackend.hpp"
 
 #include "dc/render/BarSizing.hpp"
+#include "dc/render/CandleBodyFloor.hpp"
 #include "dc/render/CpuBufferStore.hpp"
 #include "dc/scene/Scene.hpp"
 #include "dc/scene/Geometry.hpp"
@@ -16,6 +17,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <string>
 #include <vector>
 
 namespace dc {
@@ -33,17 +35,6 @@ const float* resolveTransform(const DrawItem& di, const Scene& scene) {
 // candle6 vertex stride: vec4(cx,open,high,low) + vec2(close,hw) = 24 bytes
 // (strideOf(Candle6)). Two attributes a_c0/a_c1 carve out this single record.
 constexpr std::uint32_t kCandleStride = 24;
-
-// ENC-1251 — the doji floor: the smallest height, in DEVICE PIXELS, a candle
-// body may be drawn at. A body whose open == close is a zero-area quad and
-// rasterises nothing, so an ordinary doji rendered as a bare wick with its
-// open/close level missing entirely (SPEC section 1.0; 11.6% of the records in
-// a live wiretap). Two pixels, matching the wick width and for the same
-// reason: no MSAA, pixel-centre sampling, so one pixel can fall between rows.
-// The SVG exporter has always had this floor (SvgExporter.cpp, `if (bodyH <
-// 1.0) bodyH = 1.0;`); the GPU path did not, so the two disagreed on the same
-// record.
-constexpr float kMinBodyHeightPx = 2.0f;
 
 // WGSL port of the GL instancedCandle shader (kInstCandleVert/kInstCandleFrag in
 // Renderer.cpp). One module, two entry points.
@@ -146,56 +137,15 @@ fn vs_main(@builtin(vertex_index) vid : u32,
     let hwClip = wickHalfWidthClip();
     clip = vec2<f32>(center.x + mix(-hwClip, hwClip, uv.x), center.y);
   } else {
-    // ENC-1251 — MINIMUM BODY HEIGHT (the doji floor).
-    //
-    // body0 == body1 whenever open == close, and then both body triangles are
-    // DEGENERATE: zero area, zero fragments, no ink at the open/close level at
-    // all. That is not a corner case. In a 100 s wiretap of the live dataplane
-    // (candles-v1, NEXO/lastPrice, 3 s tumbling windows) 17 of 146 records —
-    // 11.6% — had open == close EXACTLY, and every one of them rendered as a
-    // bare wick. That is the "several wicks carry no visible body" of SPEC
-    // section 1.0, and it is a tier-0 failure: the record carries an open and a
-    // close and the mark depicted neither.
-    //
-    // So the body's CLIP height is floored, exactly as ENC-1257 floors the
-    // inter-bar gap and for the same reason — the reader's eye works in pixels,
-    // and the rasteriser samples pixel CENTRES with no MSAA. The floor is a
-    // floor: a body that already clears it is untouched, bit for bit.
-    //
-    // The end values are transformed first and the floor applied in CLIP space,
-    // so it is a true pixel quantity under any transform and any zoom, rather
-    // than a data-space epsilon that would mean something different on every
-    // chart.
-    let pb0 = m * vec3<f32>(cx, body0, 1.0);
-    let pb1 = m * vec3<f32>(cx, body1, 1.0);
-    var by0 = pb0.y;
-    var by1 = pb1.y;
-    let minH = u.wickHalf.z;              // clip units; 0 disables the rule
-    if (minH > 0.0 && abs(by1 - by0) < minH) {
-      // Grow about the body's midpoint, PRESERVING the quad's orientation (a
-      // transform with a negative y scale hands these back in the other order,
-      // and flipping the winding here would be a gratuitous difference).
-      let mid = (by0 + by1) * 0.5;
-      let halfH = select(-minH, minH, by1 >= by0) * 0.5;
-      by0 = mid - halfH;
-      by1 = mid + halfH;
-      // Keep the mark's TOTAL extent exactly low..high: a doji sitting on its
-      // own high would otherwise overhang the wick by a pixel and claim a
-      // price the bar never traded at. Slide the floored body back inside the
-      // wick whenever the wick has the room; never shrink it.
-      let pw0 = m * vec3<f32>(cx, low, 1.0);
-      let pw1 = m * vec3<f32>(cx, high, 1.0);
-      let wlo = min(pw0.y, pw1.y);
-      let whi = max(pw0.y, pw1.y);
-      if ((whi - wlo) >= minH) {
-        let blo = min(by0, by1);
-        let bhi = max(by0, by1);
-        let shift = max(0.0, wlo - blo) - max(0.0, bhi - whi);
-        by0 = by0 + shift;
-        by1 = by1 + shift;
-      }
-    }
-    let by = mix(by0, by1, uv.y);
+    // ENC-1251 — the doji floor. A body with open == close is a zero-area
+    // quad and rasterises nothing, so an ordinary doji drew no open/close
+    // level at all (11.6% of the records in a live wiretap; SPEC section 1.0).
+    // The rule, and the reasoning, live in dc/render/CandleBodyFloor.hpp — and
+    // the WGSL below is the SAME function the pick backend calls, so the pick
+    // footprint cannot drift from the drawn one.
+    let bodyEnds = dcCandleBodyFloor(m, cx, body0, body1, low, high,
+                                     u.wickHalf.z);
+    let by = mix(bodyEnds.x, bodyEnds.y, uv.y);
 
     let bodyHalf = u.wickHalf.y;
     if (bodyHalf > 0.0) {
@@ -205,7 +155,8 @@ fn vs_main(@builtin(vertex_index) vid : u32,
       // transforms charts actually carry this is identical to transforming
       // (cx±hw) directly; it differs only under an x/y shear, which no chart
       // transform has.
-      clip = vec2<f32>(pb0.x + mix(-bodyHalf, bodyHalf, uv.x), by);
+      let bodyCentre = m * vec3<f32>(cx, body0, 1.0);
+      clip = vec2<f32>(bodyCentre.x + mix(-bodyHalf, bodyHalf, uv.x), by);
     } else {
       let x0 = cx - hw;
       let x1 = cx + hw;
@@ -255,7 +206,11 @@ bool DawnInstancedCandleBackend::init(GpuDevice& device) {
 
   PipelineDesc desc;
   desc.debugName = "instancedCandle@1";
-  desc.vertexSource = kInstCandleWgsl;
+  // The shared doji-floor function is prepended verbatim (see
+  // dc/render/CandleBodyFloor.hpp); the pick backend prepends the same one.
+  static const std::string kInstCandleSource =
+      std::string(kCandleBodyFloorWgsl) + kInstCandleWgsl;
+  desc.vertexSource = kInstCandleSource.c_str();
   desc.fragmentSource = nullptr;
   desc.vertexBuffers = &layout;
   desc.vertexBufferCount = 1;
@@ -428,8 +383,7 @@ BackendStats DawnInstancedCandleBackend::renderDrawItem(GpuDevice& device,
   // has no MSAA and pixel centres are sampled, so a one-pixel-tall span that
   // happens to straddle a row boundary can rasterise into neither row. Below a
   // valid viewport the rule is off (0) and the geometry is exactly what it was.
-  const float bodyMinHeightClip =
-      viewH > 0 ? 2.0f * kMinBodyHeightPx / static_cast<float>(viewH) : 0.0f;
+  const float bodyMinHeightClip = candleBodyMinHeightClip(viewH);
 
   UniformBinding uniforms[6];
   uniforms[0].kind = UniformBinding::Kind::Mat3;
