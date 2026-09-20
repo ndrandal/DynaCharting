@@ -33,6 +33,16 @@
 //            down colour;
 //        B5  the gap between two candles is clear (the marks are marks, not a slab).
 //
+//   C. DOJI (ENC-1251) — three candle6 records taken VERBATIM off the live
+//      dataplane, one of them an open == close doji, mapped through the real
+//      dc::LinearScale:
+//        C1  the mark's full extent at cx is still low..high;
+//        C2  the body is DRAWN — a record carrying an open and a close must
+//            put ink at that level, which a degenerate body quad did not;
+//        C3  the body sits AT the open/close level, not merely somewhere;
+//        C4  a bar that already has height keeps exactly the height it had,
+//            and C4b a floored doji body stays thin.
+//
 // WHICH RASTER (this is load-bearing — LIMITATIONS.md DC-L05)
 // -----------------------------------------------------------
 // Every Dawn backend shader negates clip-space y (`vec4(p.x, -p.y, ...)`) while
@@ -516,6 +526,205 @@ void caseCandle(dc::DawnSceneRenderer& renderer, const Mode& mode) {
         fmt("x=%d lit=%d px", gapX, gap.count));
 }
 
+
+// ===========================================================================
+// CASE C — THE DOJI, from records taken off the live wire (ENC-1251)
+// ===========================================================================
+//
+// SPEC section 1.0 recorded "several wicks carry no visible body" on the live
+// NEXO capture and left it UNDETERMINED: real volatility, or a geometry defect?
+// ENC-1251 settled it against the candle6 records actually on the dataplane, and
+// the answer is BOTH, split cleanly:
+//
+//   * The wildly varying body-to-wick proportion is REAL. A `candles-v1` bar is
+//     a 3 s tumbling window over NEXO/lastPrice, and consecutive windows really
+//     do differ by an order of magnitude in range.
+//
+//   * The bodyless candles are a RENDER DEFECT, and they are exactly the bars
+//     where open == close EXACTLY — 17 of 146 records (11.6%) in a 100 s
+//     wiretap of the live dataplane. A 3 s window whose first tick and last tick
+//     agree is an ordinary doji, not an anomaly. Its body quad is degenerate, so
+//     `instancedCandle@1` rasterised ZERO fragments for it and the open/close
+//     level was simply not drawn. Every other body in that capture measured
+//     >= 27 device px, so the distribution is bimodal — 0 px or plainly visible,
+//     never "thin". Nothing about the picture said which of the two it was;
+//     only the records did.
+//
+// The three records below are VERBATIM from that capture (buffer 11100, the
+// candles-v1 compound buffer; float32 values reproduced exactly):
+//
+//   x=101   o=c=h=185.160004  l=184.880005   doji ON its high — body at the very
+//                                            top of the wick (asymmetric, so a
+//                                            vertical mirror is detectable)
+//   x=97    o=c=184.990005  h=185.009995  l=184.839996
+//                                            doji strictly INSIDE its range
+//   x=41    o=185.630005  h=185.669998  l=185.399994  c=185.399994
+//                                            an ordinary bodied bar from the
+//                                            same capture — the control that
+//                                            proves the floor does not inflate
+//                                            a body that already has height
+//
+// The real dc::LinearScale maps them to clip, exactly as case A does for the
+// ramp, so this covers data -> scale -> clip -> geometry -> pixels.
+//
+// C2 is the assertion that FAILED before ENC-1251: a record carrying an open and
+// a close produced no ink for either.
+constexpr int kDojiN = 3;
+
+void caseDoji(dc::DawnSceneRenderer& renderer, const Mode& mode) {
+  constexpr int W = 512;
+  constexpr int H = 256;
+
+  std::printf("\n-- C. DOJI: open == close, from the live wire (ENC-1251) --\n");
+
+  struct Rec {
+    const char* label;
+    double open, high, low, close;
+    bool doji;
+  };
+  Rec recs[kDojiN] = {
+      {"doji-on-high", 185.160004, 185.160004, 184.880005, 185.160004, true},
+      {"doji-interior", 184.990005, 185.009995, 184.839996, 184.990005, true},
+      {"bodied-control", 185.630005, 185.669998, 185.399994, 185.399994, false},
+  };
+
+  // The real scale, over the real values.
+  dc::Domain yDomain;
+  for (const Rec& r : recs) {
+    yDomain.fold(r.low);
+    yDomain.fold(r.high);
+  }
+  dc::LinearScale yScale;
+  yScale.setDomain(yDomain);
+  yScale.setRange(kRampClipLo, kRampClipHi);
+
+  // Three bars evenly spaced across the frame; identity transform, so a candle6
+  // x IS a clip x and the bar-sizing rule sees a real pitch.
+  const float cx[kDojiN] = {-0.6f, 0.0f, 0.6f};
+  const float kHw = 0.12f;
+
+  float candles[kDojiN * 6];
+  for (int i = 0; i < kDojiN; ++i) {
+    Rec r = recs[i];
+    if (mode.invertData) {
+      // Same control as case B: give the body the wick's extents and vice
+      // versa. For a doji this makes the body tall and the wick degenerate —
+      // the exact inverse of the failure this case exists to catch.
+      const Rec w = r;
+      r.open = w.high;
+      r.high = w.open;
+      r.low = w.close;
+      r.close = w.low;
+    }
+    candles[i * 6 + 0] = cx[i];
+    candles[i * 6 + 1] = static_cast<float>(yScale.map(r.open));
+    candles[i * 6 + 2] = static_cast<float>(yScale.map(r.high));
+    candles[i * 6 + 3] = static_cast<float>(yScale.map(r.low));
+    candles[i * 6 + 4] = static_cast<float>(yScale.map(r.close));
+    candles[i * 6 + 5] = kHw;
+  }
+
+  dc::Scene scene;
+  dc::ResourceRegistry reg;
+  dc::CommandProcessor cp(scene, reg);
+  dc::CpuBufferStore store;
+
+  cp.applyJsonText(R"({"cmd":"createPane","id":1,"name":"Price"})");
+  cp.applyJsonText(
+      R"({"cmd":"setPaneClearColor","id":1,"r":0,"g":0,"b":0,"a":1})");
+  cp.applyJsonText(R"({"cmd":"createLayer","id":2,"paneId":1})");
+
+  dc::CandleRecipeConfig cfg;
+  cfg.paneId = 1;
+  cfg.layerId = 2;
+  cfg.name = "OHLC";
+  cfg.createTransform = false;  // identity
+  cfg.colorUp[0] = 0.0f; cfg.colorUp[1] = 1.0f; cfg.colorUp[2] = 0.0f; cfg.colorUp[3] = 1.0f;
+  cfg.colorDown[0] = 1.0f; cfg.colorDown[1] = 0.0f; cfg.colorDown[2] = 0.0f; cfg.colorDown[3] = 1.0f;
+  dc::CandleRecipe rec(300, cfg);
+  for (const auto& c : rec.build().createCommands) cp.applyJsonText(c);
+  cp.applyJsonText(
+      R"({"cmd":"setGeometryVertexCount","geometryId":301,"vertexCount":)" +
+      std::to_string(kDojiN) + "}");
+  store.setCpuData(300, candles, sizeof(candles));
+
+  const Frame f =
+      renderPresented(renderer, scene, store, W, H, !mode.invertRender);
+
+  for (int i = 0; i < kDojiN; ++i) {
+    const Rec& r = recs[i];
+    const int cxPx = static_cast<int>(std::lround(colOfClipX(cx[i], W)));
+    // Probe inside the body, clear of the ~1 px wick at cx. ENC-1257 caps the
+    // drawn body at 24 px (12 px half), so +6 px is inside for any pitch here.
+    const int bodyX = cxPx + 6;
+
+    const double rowHigh = rowOfClipY(yScale.map(r.high), H);
+    const double rowLow = rowOfClipY(yScale.map(r.low), H);
+    const double rowOpen = rowOfClipY(yScale.map(r.open), H);
+    const double rowClose = rowOfClipY(yScale.map(r.close), H);
+
+    const ColumnSpan wick = scanColumn(f, cxPx);
+    const ColumnSpan body = scanColumn(f, bodyX);
+
+    std::printf(
+        "        %-15s cx=%3d wick[%3d..%3d]  bodyX=%3d body[%3d..%3d]  "
+        "rows high=%.1f open=%.1f close=%.1f low=%.1f\n",
+        r.label, cxPx, wick.top, wick.bottom, bodyX, body.top, body.bottom,
+        rowHigh, rowOpen, rowClose, rowLow);
+
+    // C1 — the mark's full extent at cx is still exactly low..high. The
+    // minimum-height floor must not push the mark outside its own range.
+    const double kExtentTolPx = 2.0;
+    const bool extentOk = wick.count > 0 &&
+                          std::fabs(wick.top - rowHigh) <= kExtentTolPx &&
+                          std::fabs(wick.bottom - rowLow) <= kExtentTolPx;
+    check(extentOk,
+          std::string("C1 [") + r.label + "] full extent at cx is low..high",
+          fmt("got [%d..%d] want [%.1f..%.1f]", wick.top, wick.bottom, rowHigh,
+              rowLow));
+
+    // C2 — THE ENC-1251 ASSERTION. The body is DRAWN. A record that carries an
+    // open and a close must put ink at that level; before ENC-1251 a doji's
+    // body quad was degenerate and rasterised nothing, so this column was black
+    // and the open/close level was unreadable.
+    check(body.count > 0,
+          std::string("C2 [") + r.label + "] the body is drawn at all",
+          fmt("x=%d lit=%d px%s", bodyX, body.count,
+              r.doji ? "  (open == close: a DOJI)" : ""));
+
+    // C3 — and it is drawn in the RIGHT PLACE: centred on the open/close level.
+    // For the doji-on-high record the body sits at the very top of the wick, so
+    // a vertically mirrored frame lands it at the bottom and fails here.
+    const double wantMid = (rowOpen + rowClose) * 0.5;
+    const double gotMid = body.count > 0 ? (body.top + body.bottom) * 0.5 : -1.0;
+    const double kPlaceTolPx = 3.0;
+    check(body.count > 0 && std::fabs(gotMid - wantMid) <= kPlaceTolPx,
+          std::string("C3 [") + r.label + "] the body sits at the open/close level",
+          fmt("mid=%.1f want=%.1f (+-%.0f px)", gotMid, wantMid, kPlaceTolPx));
+
+    // C4 — the floor is a FLOOR, not a resize: a bar that already has height
+    // keeps exactly the height it had. (Runs on the control record; on a doji
+    // the expected span is zero and the floor is what we just asserted.)
+    if (!r.doji) {
+      const bool spanOk =
+          body.count > 0 &&
+          std::fabs(body.top - std::min(rowOpen, rowClose)) <= kExtentTolPx &&
+          std::fabs(body.bottom - std::max(rowOpen, rowClose)) <= kExtentTolPx;
+      check(spanOk,
+            std::string("C4 [") + r.label + "] a bodied bar still spans open..close",
+            fmt("got [%d..%d] want [%.1f..%.1f]", body.top, body.bottom,
+                std::min(rowOpen, rowClose), std::max(rowOpen, rowClose)));
+    } else {
+      // C4b — a doji body must stay THIN. Flooring it must not turn a
+      // zero-height body into a block that lies about the bar's range.
+      const int spanPx = body.count > 0 ? (body.bottom - body.top + 1) : 0;
+      check(body.count > 0 && spanPx <= 4,
+            std::string("C4b [") + r.label + "] the floored doji body stays thin",
+            fmt("span=%d px (need 1..4)", spanPx));
+    }
+  }
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -562,6 +771,7 @@ int main(int argc, char** argv) {
 
   caseRamp(renderer, mode);
   caseCandle(renderer, mode);
+  caseDoji(renderer, mode);
 
   std::printf("\n=== tier 0: %d passed, %d failed ===\n", g_passed, g_failed);
   if (mode.invertData || mode.invertRender) {
