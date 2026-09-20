@@ -147,30 +147,115 @@ export function paneOfLayer(manifest: SceneManifest, layerId: number): number | 
   return null;
 }
 
-/**
- * Decide whether `view`'s data can be framed by the plot box, and to which ids.
- *
- * Everything here is read out of the view's OWN manifest — the pane comes from
- * the `createLayer` the growth descriptor already names, the transform from the
- * growth descriptor itself. No view file gains a literal, and adding a view
- * needs no edit here, which is the property `registry.ts` exists to preserve.
- */
-export function resolveFraming(view: FramableView): FramingResolution {
-  if (!view.axisDomain) {
-    return {
-      framed: false,
-      reason: 'no-axis-domain',
-      detail:
-        'the view declares no `axisDomain`, so nothing MEASURES its domain — ' +
-        'framing it would mean fitting to the literal this replaces (ENC-1252)',
+/** The clip rectangle a manifest declares for `paneId` — its LAST `setPaneRegion`. */
+export function paneRegionOf(manifest: SceneManifest, paneId: number): PaneRegion {
+  let region: PaneRegion = { ...FULL_CLIP_REGION };
+  for (const c of manifest.commands) {
+    if (c.cmd !== 'setPaneRegion' || c.id !== paneId) continue;
+    region = {
+      clipXMin: numOr(c.clipXMin, region.clipXMin),
+      clipXMax: numOr(c.clipXMax, region.clipXMax),
+      clipYMin: numOr(c.clipYMin, region.clipYMin),
+      clipYMax: numOr(c.clipYMax, region.clipYMax),
     };
   }
-  const growth: GrowthSync | undefined = view.growth;
-  if (!growth || typeof growth.transformId !== 'number') {
+  return region;
+}
+
+function numOr(v: unknown, fallback: number): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+/**
+ * Every transform the manifest creates, paired with the value it will hold once
+ * the manifest has been applied.
+ *
+ * Three sources, in the order the engine sees them: the manifest's own
+ * `setTransform`, else `view.json`'s baked literal (what `bakeTransform` writes
+ * for a view that creates a transform and leaves the values to the app), else
+ * identity. Composing onto the WRONG base is the one way this can be silently
+ * off, so the base is derived rather than assumed.
+ */
+export function authoredTransforms(
+  manifest: SceneManifest,
+  baked?: ViewTransform,
+): { id: number; authored: Transform2D }[] {
+  const IDENTITY: Transform2D = { sx: 1, sy: 1, tx: 0, ty: 0 };
+  const base: Transform2D = baked
+    ? { sx: baked.sx, sy: baked.sy, tx: baked.tx, ty: baked.ty }
+    : IDENTITY;
+  const order: number[] = [];
+  const byId = new Map<number, Transform2D>();
+  for (const c of manifest.commands) {
+    if (typeof c.id !== 'number') continue;
+    if (c.cmd === 'createTransform') {
+      if (!byId.has(c.id)) {
+        order.push(c.id);
+        byId.set(c.id, { ...base });
+      }
+    } else if (c.cmd === 'setTransform' && byId.has(c.id)) {
+      byId.set(c.id, {
+        sx: numOr(c.sx, 1),
+        sy: numOr(c.sy, 1),
+        tx: numOr(c.tx, 0),
+        ty: numOr(c.ty, 0),
+      });
+    }
+  }
+  return order.map((id) => ({ id, authored: byId.get(id)! }));
+}
+
+/**
+ * Draw items the manifest binds to a pipeline and never gives a transform.
+ *
+ * Their geometry is authored directly in CLIP space — `audio-waveform`'s
+ * envelope, `spectrogram`'s quad — which is exactly why they need one to be
+ * re-framed: the clip→clip remap has nowhere else to live. Every Dawn backend
+ * resolves `di.transformId`, so attaching one is uniform across pipelines.
+ */
+export function untransformedDrawItems(manifest: SceneManifest): number[] {
+  const created: number[] = [];
+  const transformed = new Set<number>();
+  for (const c of manifest.commands) {
+    if (c.cmd === 'createDrawItem' && typeof c.id === 'number') created.push(c.id);
+    if (c.cmd === 'attachTransform' && typeof c.drawItemId === 'number') {
+      transformed.add(c.drawItemId);
+    }
+  }
+  return created.filter((id) => !transformed.has(id));
+}
+
+/** Does this command bind a draw item to a pipeline? (unbound items draw nothing) */
+function isBind(c: SceneCommand): boolean {
+  return c.cmd === 'bindDrawItem' && typeof c.drawItemId === 'number';
+}
+
+/**
+ * Decide whether `view`'s data can be framed by the plot box, and how.
+ *
+ * Everything here is read out of the view's OWN manifest — the pane comes from
+ * the `createLayer` the growth descriptor already names (or from the single
+ * `createPane`), the transforms from the manifest's own commands. No view file
+ * gains a literal, and adding a view needs no edit here, which is the property
+ * `registry.ts` exists to preserve.
+ *
+ * The order of the questions is the whole decision:
+ *
+ *   1. no `chrome.axes` at all  -> nothing is laid out against a plot box, so
+ *      introducing one would only buy dead margin. REFUSED.
+ *   2. more than one pane       -> REFUSED, DC-L-1273 (a layout, not a fit).
+ *   3. a measured `axisDomain` AND a growth transform -> the `series` fit.
+ *   4. otherwise                -> the `pane` fit (ENC-1316).
+ */
+export function resolveFraming(view: FramableView): FramingResolution {
+  if (!view.axes?.x && !view.axes?.y) {
     return {
       framed: false,
-      reason: 'no-growth-transform',
-      detail: 'the view declares no primary `growth` series, so there is no transform to fit',
+      reason: 'no-axes',
+      detail:
+        'the view declares no `chrome.axes`, so no furniture is laid out against a ' +
+        'plot box and nothing shares pixels with the data; framing it would reserve ' +
+        'gutters for an axis that is never drawn',
     };
   }
   const panes = paneIds(view.manifest);
@@ -185,19 +270,51 @@ export function resolveFraming(view: FramableView): FramingResolution {
         'pane. Stacked layout is LIMITATIONS.md DC-L-1273.',
     };
   }
-  const paneId = paneOfLayer(view.manifest, growth.layerId);
-  if (paneId === null) {
+  if (panes.length === 0) {
     return {
       framed: false,
       reason: 'no-pane',
-      detail: `no \`createLayer\` with id ${growth.layerId} in the manifest, so its pane is unknown`,
+      detail: 'the manifest creates no pane, so there is no region to frame',
     };
   }
-  return { framed: true, framing: { paneId, transformId: growth.transformId } };
+
+  const growth: GrowthSync | undefined = view.growth;
+  if (view.axisDomain && growth && typeof growth.transformId === 'number') {
+    const paneId = paneOfLayer(view.manifest, growth.layerId);
+    if (paneId === null) {
+      return {
+        framed: false,
+        reason: 'no-pane',
+        detail: `no \`createLayer\` with id ${growth.layerId} in the manifest, so its pane is unknown`,
+      };
+    }
+    return { framed: true, kind: 'series', framing: { paneId, transformId: growth.transformId } };
+  }
+
+  const paneId = panes[0];
+  const bound = new Set(view.manifest.commands.filter(isBind).map((c) => c.drawItemId as number));
+  return {
+    framed: true,
+    kind: 'pane',
+    paneFraming: {
+      paneId,
+      region: paneRegionOf(view.manifest, paneId),
+      transforms: authoredTransforms(view.manifest, view.transform),
+      // Only BOUND draw items are worth a transform: an unbound one draws
+      // nothing, and `attachTransform` on it is a command with no effect.
+      untransformedDrawItems: untransformedDrawItems(view.manifest).filter((id) => bound.has(id)),
+    },
+  };
 }
 
 /** `resolveFraming` for a catalog `ShowcaseView` (the running app's shape). */
 export function framingFor(view: ShowcaseView | null): FramingResolution | null {
   if (!view) return null;
-  return resolveFraming({ manifest: view.manifest, growth: view.growth, axisDomain: view.axisDomain });
+  return resolveFraming({
+    manifest: view.manifest,
+    growth: view.growth,
+    axisDomain: view.axisDomain,
+    axes: view.chrome?.axes,
+    transform: view.meta.transform,
+  });
 }

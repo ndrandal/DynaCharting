@@ -51,20 +51,53 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  DEFAULT_PLOT_INSETS,
   DomainTracker,
   IndexTimeTracker,
+  composeTransform,
+  fitRegionToBox,
   frameSeries,
+  paneRegionFor,
+  tryPlotBox,
+  type AxisGridTarget,
   type CanvasSize,
   type EngineHost,
   type FramedSeries,
   type ObservedDomain,
   type TimeBasis,
+  type Transform2D,
 } from '@repo/dc-wasm';
 import { applyManifest, resetScene } from '../scene/sceneController';
 import type { SceneManifest } from '../scene/commands';
 import { useReplay } from '../engine/useReplay';
-import { framingFor, type FramingResolution, type ViewFraming } from './framing';
+import { effectiveTransform } from '../chrome/mapping';
+import { framingFor, type FramingResolution } from './framing';
 import type { ShowcaseView } from './registry';
+
+/**
+ * The layer the axis GRIDLINES are drawn on, inside the framed view's own pane
+ * (ENC-1316, `AxisSpec.gridTarget`).
+ *
+ * Panes AND layers render in id order (`Scene::paneIds()`/`layerIds()` sort
+ * ascending), so this number is the whole mechanism: it has to be below every
+ * layer any view's manifest creates, and the lowest one in the catalog is 101.
+ * `framing.test.ts` asserts that across every committed manifest rather than
+ * leaving it to a comment — a view added with a layer id of 5 would put its
+ * marks UNDER the grid, and would look exactly like a theme problem.
+ */
+export const SHOWCASE_GRID_LAYER_ID = 9;
+
+/**
+ * The transform attached to draw items that have none of their own, so the
+ * clip→clip re-frame has somewhere to live (ENC-1316).
+ *
+ * Above every hand-picked manifest id (the 10000-10999 band) and below the
+ * engine axis's own allocator base (900000), so a stray id in a scene dump is
+ * attributable at a glance. It is deleted and re-created on every apply because
+ * `resetScene` only knows about ids the MANIFEST created, so this one outlives
+ * the scene it belongs to.
+ */
+export const SHOWCASE_FIT_TRANSFORM_ID = 880000;
 
 /** True when two domain reports state the same thing (avoids pointless renders). */
 function sameDomain(a: ObservedDomain | null, b: ObservedDomain | null): boolean {
