@@ -157,6 +157,45 @@ export interface AxisSpec {
   spine?: boolean;
   /** Measures labels. Omit to plan geometry only and emit no labels. */
   measurer?: AxisTextMeasurer;
+  /**
+   * Where the GRIDLINES are drawn, when they must go BEHIND the data (ENC-1316).
+   *
+   * By default every piece of furniture lives in this axis's own pane, which is
+   * created after the chart's and therefore renders ON TOP of it — panes render
+   * in id order (`Scene::paneIds()` sorts ascending) and so do layers. For the
+   * spine, the ticks and the labels that is exactly right: they live in the
+   * gutters, outside the data pane's scissor, and nothing may cover them.
+   *
+   * For a gridline it is exactly wrong. A gridline's whole job is to recede
+   * behind the marks, which is also what D11's band-3 CEILING measures — and
+   * `score.py`'s `line_sample` says so in as many words: *"A gridline runs
+   * behind the marks, so wherever a candle covers it both samples are the same
+   * candle pixel"*. Drawn on top instead, a 1px `(51,51,64)` line across a cyan
+   * waveform is not a gridline at all, it is a mark cutting the data: measured
+   * at 6.25 : 1 against a 2.0 : 1 ceiling (ENC-1262, `audio-waveform`).
+   *
+   * So a caller that has framed its data — and therefore knows the pane whose
+   * region IS the plot box — passes that pane here together with a layer id
+   * BELOW every layer the chart's own manifest creates. The gridlines are then
+   * issued into the data pane, after its clear quad and before its data, and
+   * the scissor that would eat a tick in the gutter is harmless to a line that
+   * spans exactly the box.
+   *
+   * Omit it and the grid stays in the furniture pane, unchanged.
+   */
+  gridTarget?: AxisGridTarget;
+}
+
+/**
+ * The pane and layer a caller wants the GRIDLINES drawn into — see
+ * `AxisSpec.gridTarget`. Both ids belong to the caller: `EngineAxis` creates the
+ * layer (and deletes it on `dispose`), and never touches the pane.
+ */
+export interface AxisGridTarget {
+  /** The data pane — the one whose `PaneRegion` is the plot box. */
+  paneId: number;
+  /** A layer id LOWER than every layer the chart's manifest creates. */
+  layerId: number;
 }
 
 // ── Outputs ─────────────────────────────────────────────────────────────────
@@ -262,6 +301,34 @@ function within(v: number, r: Range, eps = 1e-9): boolean {
   return Number.isFinite(v) && v >= Math.min(r.min, r.max) - eps && v <= Math.max(r.min, r.max) + eps;
 }
 
+/**
+ * How close to a box edge a gridline may be drawn, in CSS pixels (ENC-1316).
+ *
+ * A gridline AT an edge is the frame drawn a second time, and it measures as
+ * one: on `ohlc-bars` — a FITTED view, so its first x tick lands exactly on the
+ * domain minimum, which is exactly `box.x.min` — the leftmost vertical gridline
+ * is drawn on top of the y spine, the two 1px lines composite to `(102,102,115)`
+ * where each alone is `(51,51,64)`, and D11 band 3 reads **3.58 : 1** against a
+ * 2.0 : 1 ceiling. Nothing is wrong with either line; there are just two of
+ * them in one place.
+ *
+ * The same rule covers the far edges, where the data pane's scissor cuts the
+ * line in half and halves its per-channel delta with it. One pixel of tolerance
+ * is the width of the lines involved (`gridLineWidth` and `tickLineWidth` are
+ * both 1) and absorbs the rounding in `clipXToPx`; it is deliberately NOT wide
+ * enough to drop a tick that merely lands NEAR the spine, which is a different
+ * (and real) legibility problem with a different fix.
+ *
+ * The tick MARK and the LABEL are unaffected — they are drawn in the gutter and
+ * are the axis's statement about the value. Only the redundant line is dropped.
+ */
+export const GRID_EDGE_TOLERANCE_PX = 1;
+
+/** Is `v` within `tol` of either end of `r`? (`r` may be inverted.) */
+function onEdge(v: number, r: Range, tol: number): boolean {
+  return Math.abs(v - r.min) <= tol || Math.abs(v - r.max) <= tol;
+}
+
 /** Do two `[x,y,w,h]` boxes overlap? Abutting does not count (matches score.py). */
 export function boxesOverlap(
   a: readonly [number, number, number, number],
@@ -318,6 +385,9 @@ export function planAxis(spec: AxisSpec): AxisPlan {
   const droppedLabels: AxisPlan["droppedLabels"] = [];
   const placed: AxisLabel[] = [];
   const xScale = textXScale(canvas);
+  // A gridline on the frame is the frame — see GRID_EDGE_TOLERANCE_PX.
+  const edgeTolX = pxSpanToClipX(GRID_EDGE_TOLERANCE_PX, canvas);
+  const edgeTolY = pxSpanToClipY(GRID_EDGE_TOLERANCE_PX, canvas);
 
   // Furniture whose own colour is used by the caller; the theme is carried
   // through `drawAxis`, not baked into the geometry.
@@ -356,7 +426,7 @@ export function planAxis(spec: AxisSpec): AxisPlan {
     for (const t of s.ticks) {
       const clipY = toClipY(t.value, transform);
       if (!within(clipY, box.y)) continue;
-      if (wantGrid) {
+      if (wantGrid && !onEdge(clipY, box.y, edgeTolY)) {
         gridSegments.push(box.x.min, clipY, box.x.max, clipY);
         gridLines.push({
           orientation: "horizontal",
@@ -401,7 +471,7 @@ export function planAxis(spec: AxisSpec): AxisPlan {
     for (const t of s.ticks) {
       const clipX = toClipX(t.value, transform);
       if (!within(clipX, box.x)) continue;
-      if (wantGrid) {
+      if (wantGrid && !onEdge(clipX, box.x, edgeTolX)) {
         gridSegments.push(clipX, box.y.min, clipX, box.y.max);
         gridLines.push({
           orientation: "vertical",
