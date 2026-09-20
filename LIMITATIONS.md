@@ -1644,35 +1644,55 @@ ENC-1253 worktree; command 2's expected output is restamped above.
 
 ---
 
-## DC-L16 — Nothing on the market-data path carries a timestamp, so a time axis is the client's *observation* time ✅ *(RETIRED — fixed by ENC-1282)*
+## DC-L16 — Nothing on the market-data path carries a timestamp, so a time axis is the client's *observation* time ✅ *(RETIRED for the LIVE path by ENC-1282 — replay is unchanged, and so is a default build)*
 
 **Retired 2026-09-20** by the *Timestamps on the wire* project — ENC-1279 (treaty `DcTimeBasis`),
 ENC-1280 (GMA_V3 stamps `bucketStartMs`), ENC-1281 (embassy emits the basis on `createBuffer`),
 ENC-1302 (the record's `x` lane became a bar ordinal), ENC-1303 (customer-layer carries it), and
-**ENC-1282** (`73e0354`), this repo's half: `timeBasisFromWire` /
-`transmittedBasisFromSceneInit` turn the producer's declaration into a `TimeBasis` with
-`source: 'transmitted'`, and the showcase's live path prefers it over the fit. ENC-1326
-(`065e6d8`, embassy) unblocked the fixture path that had made the basis unreachable.
+**ENC-1282**, this repo's half: `timeBasisFromWire` / `transmittedBasisFromSceneInit` turn the
+producer's declaration into a `TimeBasis` with `source: 'transmitted'`, which the overlay now
+publishes beside the numbers, and the showcase's live path prefers it over the fit. ENC-1326
+(`065e6d8`, embassy, **branch open, not merged**) made the forum-less instruction-file DECODE
+carry `pipeline`/`node`/`operations` — without it no fixture could declare a bar period, so no
+basis existed to consume.
 
-**The entry's four claims are now all false, and one is false in a way worth stating**: the lane
-still cannot carry an epoch, and does not have to. The basis rides `createBuffer` once per stream
-and the record's float32 `x` carries a bar ordinal, which is exact to 2²⁴ ≈ 31 years of 1-minute
-bars. `RECORD_HEADER_SIZE` is still **13**.
+**Three of the entry's four claims are now false; the fourth is still true and did not need to
+change.** GMA_V3 emits `bucketStartMs`, `BucketTime`/`TumblingWindow` keep the boundary they
+compute, and embassy declares the basis — but the binary record still has **no time field**, and
+it does not need one. The basis rides `createBuffer` once per stream and the record's float32 `x`
+carries a bar ordinal, exact to 2²⁴ = 16 777 216 bars: ~31 years at 1-minute bars, and **194 days
+at the `periodMs: 1000` measured below**, which is the figure that applies to the run quoted here.
+`RECORD_HEADER_SIZE` is still **13**.
 
-**MEASURED at retirement** — real `tools/smoke-test/feed-inject.js` → real `gma_server`
+**SCOPE, stated because the heading alone would overclaim.** This retires the entry for a **live
+data plane**. A default `pnpm --filter @repo/showcase dev` is replay-only, none of the 22
+committed views is reachable this way, and none of their `instruction.json` files carries a
+pipeline — so in a default build every chart still shows a fitted, tape-relative axis. The live
+fixtures that produce the measurement are committed at
+`apps/showcase/tools/live/` with the four processes written down; the ENC-1326 branch they need
+(embassy) is open and **not merged**.
+
+**MEASURED at retirement** — real `GMA_V3/tools/smoke-test/feed-inject.js` → real `gma_server`
 (`TumblingWindow periodMs 1000` → `VectorReducer first/max/min/last`) → real forum-less
-`embassy` → the showcase in headless Chromium 1228 on `nvidia`/`ampere`
-(`info.isFallbackAdapter: false`), canvas-only capture via
-`specs/2026-09-19-chart-quality-bar/harness/shoot-live.mjs`:
+`embassy` on `apps/showcase/tools/live/candles-live.instruction.json` → the showcase in headless
+Chromium 1228 on `nvidia`/`ampere` (`info.isFallbackAdapter: false`), canvas-only capture via
+`specs/2026-09-19-chart-quality-bar/harness/shoot-live.mjs`. One capture, one set of numbers:
 
 ```
-createBuffer 10100 timeBasis {"baseMs":1789920893000,"epochKnown":true,"periodMs":1000}
+createBuffer 10100 timeBasis {"baseMs":1789922556000,"epochKnown":true,"periodMs":1000}
 window.__dcAxisDomain["candles-aapl"].x.time
-  -> {"msPerIndex":1000,"originMs":1789920893000,"epochKnown":true,"samples":0}
-x tick labels -> ["12:15","12:16","12:17","12:18","12:19"]   (baseMs = 12:14:53 EDT)
-parsesAsTimestamp                    -> [true,true,true,true,true]
-harness/score.py T1.5                -> PASS "all 4 x tick labels parse as times"
+  -> {"msPerIndex":1000,"originMs":1789922556000,"epochKnown":true,"samples":0,
+      "source":"transmitted"}
+records: 74   x domain: -0.4 .. 219.4   (220 BARS, not 74)
+x tick labels -> ["12:43","12:44","12:45","12:46"]
+harness/score.py T1.5 -> PASS "all 4 x tick labels parse as times"
 ```
+
+An earlier capture of the same stack over a dense feed gave
+`["12:15","12:16","12:17","12:18","12:19"]` against `baseMs = 12:14:53 EDT`, and the in-page run
+of D1's own exported `parsesAsTimestamp` over those labels returned `[true,true,true,true,true]`.
+The two captures are quoted separately on purpose: a label count from one and a verdict string
+from the other would not describe any run that happened.
 
 `samples: 0` is the point: nothing was fitted. `epochKnown: true` is the first time it has been
 true anywhere in this repo.
@@ -1684,11 +1704,25 @@ verdict committed in that harness. T1.5 therefore ran under `--diagnose`. The pr
 for this retirement is the in-page run of D1's own exported `parsesAsTimestamp` over the engine's
 labels; score.py's independent regex set corroborates it. Neither is a tier claim.
 
+**The gap renders as TIME, and that is the half worth checking.** The feed above ran at 3 000 ms
+into 1 000 ms buckets, so two of every three buckets were genuinely empty and `TumblingWindow`
+emitted nothing for them (`EmptyBucketDoesNotEmit`, D7 mechanism 1 — not a stalled producer, and
+not a lossy socket). On the wire the ordinals arrive `0, 3, 6, 9, … 33` — **12 records across 34
+bars**. On screen, in the capture above, **74 records span 219.8 ordinals = 219.8 s of axis**, and
+`originMs + x.max·msPerIndex` lands 2.0 s before the wall clock at read time. A delivery-count
+reading of the same lane would have drawn 74 s of axis and placed the newest bar two and a half
+minutes early — cumulatively, 1 `periodMs` per bar nobody sent. That is the defect D7 removes,
+and its absence is visible in the rendered domain rather than inferred from the wire. The
+executed unit proof of the mechanism itself is embassy's
+`internal/pipeline/bar_ordinal_test.go:134,180,214`, which includes a negative control for the
+old lane's drift.
+
 **And the negative control, same stack, one field removed.** With the bucketing stage dropped
-from the fixture — a stream with no uniform bar period, which declares no basis rather than
-`periodMs: 0` (SPEC D7 corollary) — 1 553 records streamed and the axis was **dropped**, not
-captioned: `data-dc-axis-domain` published `"x":null`, the engine drew **0** x tick labels, and
-the price axis kept rendering, so the emptiness is the time axis's and not the chart's.
+from the fixture (`apps/showcase/tools/live/candles-live-nobasis.instruction.json`) — a stream
+with no uniform bar period, which declares no basis rather than `periodMs: 0` (SPEC D7
+corollary) — 1 553 records streamed and the axis was **dropped**, not captioned:
+`data-dc-axis-domain` published `"x":null`, the engine drew **0** x tick labels, and the price
+axis kept rendering, so the emptiness is the time axis's and not the chart's.
 
 **What is NOT retired.** Replaying a captured tape still fits its basis from arrival times and
 still reports `epochKnown: false` — the tape does not carry the producer's declaration (SPEC §4
