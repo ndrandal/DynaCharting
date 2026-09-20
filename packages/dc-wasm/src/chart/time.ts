@@ -584,37 +584,62 @@ export function decimalsForTicks(values: readonly number[]): number {
 export type TimeBasisSource = "observed" | "transmitted" | "declared";
 
 /**
- * A linear map from a record index to an instant: `t = originMs + index·msPerIndex`.
+ * A linear map from a record's x lane to an instant: `t = originMs + x·msPerIndex`.
  *
- * ── READ THIS BEFORE TRUSTING A LABEL ────────────────────────────────────────
- * The dataplane record carries NO timestamp. `x` is embassy's `recordIndex`, a
- * uint32 counter (`embassy/internal/pipeline/compound_route.go`), and the
- * binary record format has no time field at all. So the only time a client can
- * measure is WHEN IT OBSERVED THE RECORD — not when the bar closed upstream.
- * Those coincide on a live feed and do not on a replayed capture, which is
- * emitted at the capture's own cadence.
+ * ── READ THIS BEFORE TRUSTING A LABEL ─────────────────────
+ * There are two ways to arrive at this map and they are not the same evidence.
  *
- * `epochKnown` is how that distinction survives into the chart:
+ *  - A basis the PRODUCER transmitted (`source: 'transmitted'`). Since ENC-1281
+ *    the dataplane declares `timeBasis {baseMs, periodMs, epochKnown}` once per
+ *    buffer on `createBuffer`, and since ENC-1302 the record's x lane is a BAR
+ *    ORDINAL on the producer's grid, not a count of records delivered
+ *    (`embassy/internal/pipeline/compound_route.go`; SPEC D7). So
+ *    `t = baseMs + x·periodMs` is exact. Use `timeBasisFromWire`.
+ *  - A basis this CLIENT fitted (`source: 'observed'`, `IndexTimeTracker`). The
+ *    only time it can see is WHEN IT OBSERVED THE RECORD — not when the bar
+ *    closed upstream. Those coincide on a live feed and do not on a replayed
+ *    capture, which is emitted at the capture's own cadence.
  *
- *  - true  — `originMs` is a real epoch (a live client stamping `Date.now()` on
- *            arrival). Labels are wall-clock instants; format in the local zone.
+ * The x lane is NOT the buffer index and must not be treated as one. Gaps in it
+ * are real — a quiet bar that emitted nothing, a coalesced frame, a silent
+ * mid-pipeline drop — and rendering them as gaps is the point (SPEC D7): the
+ * alternative, counting deliveries, shifts every later bar one period early,
+ * permanently and undetectably. A late joiner's first x is not 0 either.
+ *
+ * `epochKnown` is how the real/relative distinction survives into the chart:
+ *
+ *  - true  — `originMs` is a real epoch: the aligned bucket boundary the
+ *            producer stamped, or (for a fitted basis) a live client stamping
+ *            `Date.now()` on arrival. Labels are wall-clock instants; format in
+ *            the local zone.
  *  - false — `originMs` is relative to some tape's zero (a replay stamping the
- *            capture's own `t`). Labels are offsets along that tape rendered in
- *            clock form; format in UTC, or a local zone offset will shift 0 to
- *            19:00 and invent a claim the tape never made.
+ *            capture's own `t`, or a producer with no wall-clock bar grid).
+ *            Labels are offsets along that tape rendered in clock form; format
+ *            in UTC, or a local zone offset will shift 0 to 19:00 and invent a
+ *            claim the tape never made.
  *
- * Publish it next to the domain, the way ENC-1252 publishes `source:
- * derived|literal`. An axis whose provenance is not stated is a caption again.
+ * A stream with no uniform bar period declares NO BASIS AT ALL — never
+ * `periodMs: 0` (SPEC D7 corollary). A consumer with no basis DROPS the axis; it
+ * does not fall back to index labels under a heading that says "Time".
+ *
+ * Publish `source` and `epochKnown` next to the domain, the way ENC-1252
+ * publishes `source: derived|literal`. An axis whose provenance is not stated is
+ * a caption again.
  */
 export interface TimeBasis {
-  /** Epoch ms at record index 0 (extrapolated; may precede the first record). */
+  /** Epoch ms at x = 0 (extrapolated; may precede the first record). */
   originMs: number;
-  /** Milliseconds per unit of record index. */
+  /** Milliseconds per unit of x — the bar width, for a transmitted basis. */
   msPerIndex: number;
   source: TimeBasisSource;
   /** Whether `originMs` is a real epoch — see the interface docs. */
   epochKnown: boolean;
-  /** Samples the fit was taken over (1 for 'declared'). */
+  /**
+   * Samples the fit was taken over. **0 for a basis that was not fitted**
+   * ('transmitted' and 'declared'): a transmitted basis is two exact scalars,
+   * not a regression, so reporting a sample count for it would imply a
+   * confidence it neither has nor needs.
+   */
   samples: number;
 }
 
