@@ -164,19 +164,45 @@ describe('the framing the showcase SHIPPED — the state DC-L14 describes', () =
       expect(verdict.failures.join(' | ')).toMatch(/fill ratio|dead margin|edge clearance/);
     });
 
-    it(`${id}: its leftmost ink is drawn OUTSIDE the plot box — under the price labels`, () => {
+    it(`${id}: THE SYMPTOM — the tape runs off the right of the canvas entirely`, () => {
       const canvas = { width: 1280, height: 800 };
       const domain = measuredDomain(id, mod);
-      const box = plotBox(canvas, DEFAULT_PLOT_INSETS);
       const m = framingMetrics(
         { x: domain.x!, y: domain.y! },
         shippedTransform(id, mod),
-        box,
+        plotBox(canvas, DEFAULT_PLOT_INSETS),
         canvas,
       );
-      // THE SYMPTOM, as a number: the ink starts left of the box's left edge,
-      // i.e. inside the 64px gutter the y tick labels are drawn in (ENC-1253).
-      expect(m.ink.x.min).toBeLessThan(box.x.min);
+      // The literal's X window is 150 record-indices (view.json's `xAnchor`
+      // default over clip ±0.85); the capture runs to index 270. So the ink
+      // ends at clip ~2.17 — off the render target, not merely off the box —
+      // and what you see is the pane scissor cutting it at ±0.95. DC-L13
+      // part (2)'s "~44% of the stated domain is off-frame", in clip units.
+      expect(m.ink.x.max).toBeGreaterThan(1);
+      expect(m.edgeClearancePx.right).toBeLessThan(0);
+      // Vertically the opposite failure: the price band covers about half the
+      // height, which is the dead margin tier 2 measures.
+      expect(m.ink.y.max - m.ink.y.min).toBeLessThan(1.2);
+    });
+
+    it(`${id}: and on a narrow canvas its leftmost ink IS under the price labels`, () => {
+      // The left symptom ENC-1253 reported is canvas-width dependent, because
+      // the gutter is a fixed 64 CSS px while the literal's left edge is a
+      // fixed clip -0.85. They cross at a canvas width of ~853px: narrower
+      // than that and the first bar is drawn inside the y-tick-label band.
+      const narrow = { width: 700, height: 500 };
+      const wide = { width: 1280, height: 800 };
+      const domain = measuredDomain(id, mod);
+      const t = shippedTransform(id, mod);
+      const inkXMin = domain.x!.min * t.sx + t.tx;
+      expect(inkXMin).toBeLessThan(plotBox(narrow, DEFAULT_PLOT_INSETS).x.min);
+      expect(inkXMin).toBeGreaterThan(plotBox(wide, DEFAULT_PLOT_INSETS).x.min);
+      // Fitted, it is inside the box at BOTH sizes — the width-dependence goes
+      // away because the fit is a function of the canvas, not a constant.
+      for (const canvas of [narrow, wide]) {
+        const framed = frameSeries(domain, canvas);
+        expect(framed.metrics!.ink.x.min).toBeGreaterThanOrEqual(framed.box.x.min - 1e-9);
+      }
     });
   }
 });
