@@ -122,6 +122,35 @@ function axisSwitches(): { svg: boolean; engine: boolean } {
   return { svg: !off('svgAxis'), engine: !off('engineAxis') };
 }
 
+/**
+ * FAULT INJECTION, and it is here for the same reason `?svgAxis=0` is (ENC-1313).
+ *
+ * ENC-1313 put two error boundaries around this component. An error boundary
+ * that has never been SEEN to catch anything is not a guarantee, it is a
+ * hope — the same objection `plotbox.test.ts` raises about a tier-2 check that
+ * has never failed. And the failure it exists for is unreproducible on demand:
+ * the `PlotBoxError` it was written for is now fixed at source, and the next one
+ * has not been written yet.
+ *
+ * So the boundary is drillable from a URL rather than from a code edit:
+ *
+ *   ?chromeFault=render   throw during ChromeOverlay's render
+ *   ?chromeFault=effect   throw from a passive effect — the EXACT shape of the
+ *                         ENC-1313 bug, which is the case that used to unmount
+ *                         the whole app
+ *
+ * Both are inert without the flag, both are named so they cannot be mistaken for
+ * a real fault, and both are caught by `ChartChromeBoundary`: the engine canvas,
+ * the app bar and the router keep running and a badge says what declined.
+ */
+function chromeFault(): 'render' | 'effect' | null {
+  if (typeof window === 'undefined') return null;
+  const v = new URLSearchParams(window.location.search).get('chromeFault');
+  if (v === 'render' || v === '1') return 'render';
+  if (v === 'effect') return 'effect';
+  return null;
+}
+
 /** Window surface the domain report is published on (see the module header). */
 declare global {
   interface Window {
@@ -141,6 +170,20 @@ export function ChromeOverlay({
   framed = null,
 }: ChromeOverlayProps) {
   const switches = useMemo(axisSwitches, []);
+  const fault = useMemo(chromeFault, []);
+
+  // The drill for `ChartChromeBoundary` (see `chromeFault`). A passive-effect
+  // throw is the shape that used to unmount `<App>`; before ENC-1313 this URL
+  // would have emptied `#root`.
+  useEffect(() => {
+    if (fault === 'effect') {
+      throw new Error('chromeFault=effect — deliberate passive-effect throw (ENC-1313 drill)');
+    }
+  }, [fault]);
+  if (fault === 'render') {
+    throw new Error('chromeFault=render — deliberate render throw (ENC-1313 drill)');
+  }
+
   const boxRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
 
