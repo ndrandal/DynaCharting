@@ -91,7 +91,7 @@ import type { EffectiveTransform } from './mapping';
  * target clears to; `theme.test.ts` asserts those ratios rather than asserting
  * them in prose. See `defaultAxisTheme`'s comment in `@repo/dc-wasm`.
  */
-export const SHOWCASE_AXIS_THEME: AxisTheme = darkAxisTheme;
+export const SHOWCASE_AXIS_THEME: AxisTheme = { ...darkAxisTheme, gridOpacity: 0.4 };
 
 /** Ticks for one resolved axis, in the shape `EngineAxis` takes. */
 function ticksFor(spec: Parameters<typeof axisTicks>[0] | undefined): AxisTick[] {
@@ -211,7 +211,7 @@ export function engineAxisSpec(
       // box, so a line spanning the box is not touched by the scissor, and the
       // pane's clear quad is painted before its layers. An unframed view keeps
       // its grid in the furniture pane, on top, where it was.
-      gridTarget: gridTarget ?? undefined,
+      gridTarget: undefined, void_gt: gridTarget,
     },
     refusal: null,
   };
