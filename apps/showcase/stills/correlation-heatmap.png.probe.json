@@ -1,8 +1,8 @@
 {
   "spec": "specs/2026-09-19-chart-quality-bar/SPEC.md D10 (ENC-1262)",
   "url": "http://localhost:5650/?svgAxis=0#/",
-  "capturedAt": "2026-09-20T16:20:25.166Z",
-  "rasterSha256": "2ebff239b7024762e79d95d943f64fe6316710bfe1e2b75e2171b3dec9d6cc3c",
+  "capturedAt": "2026-09-20T16:27:09.745Z",
+  "rasterSha256": "0a84263a0763736130dec7c759acfec74be9a5482aed2720751314b1e5e9eb2b",
   "expression": "(() => {\n  const out = {\n    view: \"correlation-heatmap\",\n    axis: (window.__dcEngineAxis || {})[\"correlation-heatmap\"] || null,\n    domain: (window.__dcAxisDomain || {})[\"correlation-heatmap\"] || null,\n    boundaryErrors: (window.__dcBoundaryErrors || []).length,\n    dom: {\n      overlaySvgs: document.querySelectorAll('.chrome-overlay svg').length,\n      overlaySvgText: document.querySelectorAll('.chrome-overlay svg text').length,\n      overlayNodes: document.querySelectorAll('.chrome-overlay *').length\n    },\n    progress: (() => {\n      const el = document.querySelector('[role=\"slider\"][aria-label=\"Replay position\"]');\n      return el ? Number(el.getAttribute('aria-valuenow')) : null;\n    })(),\n    readinessRule: window.__dcRecapRule || null\n  };\n  const c = document.querySelector('canvas.engine-canvas');\n  if (!c || !c.width || !c.height) { out.pix = { ok: false, reason: 'no canvas' }; return out; }\n  const off = document.createElement('canvas');\n  off.width = c.width; off.height = c.height;\n  const ctx = off.getContext('2d');\n  ctx.drawImage(c, 0, 0);\n  let data;\n  try { data = ctx.getImageData(0, 0, off.width, off.height).data; }\n  catch (e) { out.pix = { ok: false, reason: 'readback blocked: ' + (e && e.message) }; return out; }\n  const colors = new Set();\n  let sampled = 0, nonbg = 0, chroma = 0;\n  const stride = 4 * 11;\n  for (let i = 0; i < data.length; i += stride) {\n    sampled++;\n    const r = data[i], g = data[i + 1], b = data[i + 2];\n    if (sampled % 7 === 0) colors.add(r + ',' + g + ',' + b);\n    const dClear = Math.abs(r - 8) + Math.abs(g - 8) + Math.abs(b - 13);\n    const dApp = Math.abs(r - 13) + Math.abs(g - 13) + Math.abs(b - 20);\n    if (Math.min(dClear, dApp) > 36) nonbg++;\n    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);\n    if (mx - mn > 22 && mx > 30) chroma++;\n  }\n  out.pix = {\n    ok: true, w: c.width, h: c.height,\n    distinctColors: colors.size,\n    coverage: sampled ? nonbg / sampled : 0,\n    chroma: sampled ? chroma / sampled : 0,\n    nonbgPixels: nonbg\n  };\n  return out;\n})()",
   "ok": true,
   "value": {
@@ -16,7 +16,7 @@
         "detail": "neither axis resolved a domain — a chart that cannot state a domain states no axis"
       },
       "fontLoaded": true,
-      "labelAttempts": 1
+      "labelAttempts": 3
     },
     "domain": {
       "x": null,
