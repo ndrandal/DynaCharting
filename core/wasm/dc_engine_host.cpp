@@ -58,6 +58,7 @@
 #include "dc/text/TextLayout.hpp"
 #include "dc/scene/Geometry.hpp"
 #include "dc/debug/Stats.hpp"
+#include "dc/debug/WallClockMs.hpp"
 #include "dc/document/SceneExport.hpp"
 
 namespace {
@@ -117,10 +118,25 @@ struct DcControlResult {
 };
 
 // Per-frame + cumulative stats — mirrors the TS EngineStats fields the dc-wasm
-// EngineHost re-exposes (frameMs, drawCalls, ingestedBytesThisFrame, ...). The
-// TS wrapper fills queued/dropped batch counters (those are a JS-queue concern).
+// EngineHost re-exposes (renderCpuMs, drawCalls, ingestedBytesThisFrame, ...).
+// The TS wrapper fills queued/dropped batch counters (a JS-queue concern).
+//
+// ENC-1265 — the two timings are DIFFERENT, NAMED quantities, and neither is a
+// frame budget:
+//   renderCpuMs  CPU wall-clock inside DawnSceneRenderer::render (scene walk +
+//                draw encode + submit). See dc/debug/Stats.hpp.
+//   readbackMs   CPU wall-clock of readFramebufferRGBA — pulling the whole
+//                offscreen RGBA8 target back to the heap so the TS wrapper can
+//                putImageData it onto the <canvas>.
+// They are split because the browser badge reported a single undecomposed "ms"
+// that was in fact `1000 / fps`, and the register (PERF-CLAIMS C3) named the
+// missing decomposition — GPU vs CPU vs readback — as the reason a re-measure
+// would have confirmed the wrong quantity. Their sum is still NOT the frame
+// time: it excludes GPU execution, the JS-side blit and everything else on the
+// main thread between rAF ticks.
 struct DcEngineStats {
-  double frameMs{0};
+  double renderCpuMs{0};
+  double readbackMs{0};
   int drawCalls{0};
   int culledDrawCalls{0};
   double ingestedBytesThisFrame{0};
@@ -402,7 +418,7 @@ public:
     lastHeight_ = h;
 
     // Capture per-frame stats and reset the per-frame accumulators.
-    stats_.frameMs = s.frameMs;
+    stats_.renderCpuMs = s.renderCpuMs;
     stats_.drawCalls = static_cast<int>(s.drawCalls);
     stats_.culledDrawCalls = static_cast<int>(s.culledDrawCalls);
     stats_.uploadedBytesThisFrame = static_cast<double>(s.uploadedBytesThisFrame);
@@ -412,10 +428,16 @@ public:
     droppedBytesAccum_ = 0;
 
     // Read back the full framebuffer for the canvas blit (same as dc_webgpu_all).
+    // ENC-1265 — timed separately from renderCpuMs. On the browser path this is
+    // a full-target RGBA8 copy per frame and is expected to dominate at large
+    // canvas sizes; folding it into one "ms" number is what made the old badge
+    // undiagnosable.
     framebuffer_.assign(static_cast<std::size_t>(w) * h * 4u, 0);
     std::uint32_t gotW = 0, gotH = 0;
+    const dc::WallClockMs readbackClock;
     bool fbOk = renderer_->device().readFramebufferRGBA(
         framebuffer_.data(), framebuffer_.size(), &gotW, &gotH);
+    stats_.readbackMs = readbackClock.elapsedMs();
     fbW_ = gotW;
     fbH_ = gotH;
     if (!fbOk) {
@@ -676,7 +698,8 @@ EMSCRIPTEN_BINDINGS(dc_engine_host) {
       .field("error", &DcControlResult::error);
 
   em::value_object<DcEngineStats>("DcEngineStats")
-      .field("frameMs", &DcEngineStats::frameMs)
+      .field("renderCpuMs", &DcEngineStats::renderCpuMs)
+      .field("readbackMs", &DcEngineStats::readbackMs)
       .field("drawCalls", &DcEngineStats::drawCalls)
       .field("culledDrawCalls", &DcEngineStats::culledDrawCalls)
       .field("ingestedBytesThisFrame", &DcEngineStats::ingestedBytesThisFrame)
