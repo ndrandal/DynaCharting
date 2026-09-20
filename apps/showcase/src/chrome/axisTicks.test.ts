@@ -216,7 +216,8 @@ describe('the y axis — precision derived from the step, not from an equity (D1
     const ticks = axisTicks({ label: 'Price', format: 'price', ticks: 5, min: 0.00012, max: 0.00013 });
     expect(ticks.length).toBeGreaterThan(0);
     for (const t of ticks) {
-      expect(t.label).toMatch(/^\$0\.00\d{3}$/);
+      // 6 decimals, because the step is 2e-6 — not because anyone said "crypto".
+      expect(t.label).toMatch(/^\$0\.\d{6}$/);
       expect(Number(t.label.slice(1))).toBeCloseTo(t.value, 9);
     }
   });

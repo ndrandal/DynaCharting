@@ -74,7 +74,20 @@ export function axisTicks(spec: ResolvedAxisSpec): AxisTick[] {
     const zone = zoneFor(basis.epochKnown);
     const a = basis.originMs + spec.min * basis.msPerIndex;
     const b = basis.originMs + spec.max * basis.msPerIndex;
-    const domain = a <= b ? { min: a, max: b } : { min: b, max: a };
+    let domain = a <= b ? { min: a, max: b } : { min: b, max: a };
+    if (!basis.epochKnown) {
+      // A TAPE HAS NO NEGATIVE TIME. The basis extrapolates `originMs` back to
+      // record index 0, and a capture whose first record is index 4 therefore
+      // puts index 0 a few hundred ms BEFORE the tape started — and the domain
+      // floor is a bar EDGE, half a bar earlier again. Rendered against the
+      // epoch-0 reference that a tape-relative basis uses, those milliseconds
+      // land on 1969-12-31, which drags the whole axis into `date-time` labels
+      // ("1970-01-01 00:00", six times) for 30 ms of extrapolation. Clamping the
+      // floor is not a fudge: there is no instant on this tape before its start,
+      // so the axis states none. Ticks are unmoved — the first aligned tick is
+      // at or after zero either way.
+      domain = { min: Math.max(0, domain.min), max: Math.max(0, domain.max) };
+    }
     const { ticks } = timeTicks(domain, count, { zone });
     return ticks.map((t) => ({ value: timeToIndex(basis, t.ms), label: t.label }));
   }
