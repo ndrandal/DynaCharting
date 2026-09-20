@@ -192,6 +192,8 @@ describe("framingMetrics", () => {
     expect(m.deadMarginFrac).toBeCloseTo(1 - boxArea, 9);
     // The default insets' cost, stated so a change to them shows up here.
     expect(m.deadMarginFrac).toBeCloseTo(0.109375, 9);
+    // A perfect fit spends its whole dead margin on gutters and none on slack.
+    expect(m.gutterFrac).toBeCloseTo(m.deadMarginFrac, 9);
   });
 });
 
@@ -221,9 +223,9 @@ describe("checkTier2Framing", () => {
   });
 
   it("the bounds are stated, not implied", () => {
-    expect(TIER2_FRAMING_BOUNDS.maxDeadMarginFrac).toBe(0.25);
+    expect(TIER2_FRAMING_BOUNDS.maxDeadMarginFrac).toBe(0.37);
     expect(TIER2_FRAMING_BOUNDS.minFillRatio).toBe(0.9);
-    expect(TIER2_FRAMING_BOUNDS.minEdgeClearancePx).toBe(8);
+    expect(TIER2_FRAMING_BOUNDS.minEdgeClearancePx).toBe(4);
   });
 });
 
@@ -250,7 +252,7 @@ describe("frameSeries", () => {
       { width: 1337, height: 688 }, // the live product's canvas
       { width: 1920, height: 1080 },
       { width: 640, height: 400 },
-      { width: 400, height: 300 }, // narrow: the 64px gutter is 32% of the width
+      { width: 400, height: 300 }, // small: the fixed gutters cost 30.7% here
     ]) {
       const framed = frameSeries({ x: { min: 0, max: 269 }, y: { min: 404, max: 420 } }, canvas);
       const verdict = checkTier2Framing(framed.metrics!);

@@ -336,6 +336,12 @@ export interface FramingMetrics {
   ink: PlotBox;
   /** 1 − (ink bbox area ÷ CANVAS area). D1's "dead-margin %", as a fraction. */
   deadMarginFrac: number;
+  /**
+   * 1 − (plot box area ÷ CANVAS area) — the share of `deadMarginFrac` that is
+   * RESERVED gutter rather than unfilled plot. Reported, not gated: it is a
+   * function of the canvas size and the insets, not of the framing.
+   */
+  gutterFrac: number;
   /** Ink bbox area ÷ PLOT BOX area. "Data fills the frame", as a fraction. */
   fillRatio: number;
   /** Per-side clearance from the ink to the clip boundary, in CSS pixels. */
@@ -384,6 +390,7 @@ export function framingMetrics(
   return {
     ink,
     deadMarginFrac: 1 - (inkW * inkH) / canvasArea,
+    gutterFrac: 1 - boxArea / canvasArea,
     fillRatio: boxArea > 0 ? (inkW * inkH) / boxArea : Number.POSITIVE_INFINITY,
     edgeClearancePx,
     minEdgeClearancePx: Math.min(
