@@ -25,21 +25,21 @@ and corrected them.
 
 ## DC-L01 — A green default `ctest` says nothing about the renderer 🔴
 
-**Claim.** `cmake -B build && ctest --test-dir build` runs **193** tests and builds **no
+**Claim.** `cmake -B build && ctest --test-dir build` runs **196** tests and builds **no
 renderer at all**. `dc_gpu`, `dc_json_host`, all four headless demo servers and **47 render
 tests** are excluded at *configure* time by `DC_FETCH_DAWN` (default `OFF`,
 `core/CMakeLists.txt:165`). They are not "skipped" — they never enter `CTestTestfile.cmake`,
 so nothing reports them as missing.
 
-**Why it bites.** "193/193 passed" is the most reassuring possible output and it is compatible
+**Why it bites.** "196/196 passed" is the most reassuring possible output and it is compatible
 with the renderer being completely broken. Every pixel-level guarantee in this engine lives in
 the 47 tests that did not run — **including the tier-0 check that the chart depicts its data at
 all** (ENC-1249, `scripts/tier0.sh`).
 
 **Re-check.**
 ```bash
-grep -cE '^\s*add_test\(' core/CMakeLists.txt            # 240  — all tests that exist
-grep -c '^add_test('  build/core/CTestTestfile.cmake     # 193  — all tests you just ran
+grep -cE '^\s*add_test\(' core/CMakeLists.txt            # 243  — all tests that exist
+grep -c '^add_test('  build/core/CTestTestfile.cmake     # 196  — all tests you just ran
 grep -n 'DC_FETCH_DAWN:BOOL' build/CMakeCache.txt        # OFF
 ```
 The 47-test gap is the single `if (DC_HAS_DAWN)` block at `core/CMakeLists.txt:1916-2489`.
@@ -59,8 +59,10 @@ block was already at 1916, not 1899, and the "five guarded ranges" list named bo
 `grep -n 'if (DC_HAS_DAWN)' core/CMakeLists.txt` rather than trusting a transcribed range.
 
 **ENC-1277 re-ran the first two Re-check lines on 2026-09-20 at `f907f93`** and restamped the
-pair `192/239` → **`193/240`**; the **47-test gap is unchanged**, which is the point this entry
-makes and the reason the pair is not worth chasing on its own. Only those two lines were
+pair `192/239` → `193/240`; **ENC-1265 restamped it again the same day** to
+**`196/243`** (three default-build tests: `dc_enc1265_render_timing` and its two
+`WILL_FAIL` negative controls). The **47-test gap is unchanged** through both, which is the
+point this entry makes and the reason the pair is not worth chasing on its own. Only those two lines were
 re-measured — the executable counts below (`242`/`192`) need a `-DDC_FETCH_DAWN=ON` build and
 still carry ENC-1249's stamp.
 
