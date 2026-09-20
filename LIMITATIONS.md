@@ -1775,125 +1775,6 @@ arithmetic, not a measurement.
 
 ---
 
-# §H — How this file stays true
-
-The previous limitations log failed in a specific, diagnosable way, and this section is the
-response to that diagnosis rather than a promise to try harder.
-
-**What went wrong.** It lived in `specs/`, in a different repo from the code. Its author could
-not see two fixes that landed fourteen minutes earlier. Nothing in any subsequent PR touched it
-or pointed at it. Its entries recorded conclusions but not *procedures*, so falsifying one meant
-redoing the original investigation — which nobody did, for 85 days, while its 🔴 top-severity
-entry was wrong.
-
-**Seven things this file does differently.**
-
-1. **It is repo-local.** This is the variable that actually predicts survival here, and the
-   evidence is in the same git history: `CHART_AUTHORING.md`, at this repo's root, was amended
-   by **both** of the last two feature PRs (`6a6f3d4`, `6684a00`) *on the day each landed*. The
-   workspace-level limitations file got **one** commit in 85 days. Same authors, same period,
-   same discipline — different directory. A doc a contributor has already checked out is a doc
-   they can fix in the PR that falsified it.
-
-2. **Every entry carries a `Re-check` command.** If falsifying an entry costs an investigation,
-   nobody falsifies it. If it costs one paste, the next person through does it for free. This is
-   also an admission gate: **if you cannot write the one-liner, the entry is not ready** — you
-   have an impression, not a limitation.
-
-3. **Every entry carries a `Verified at <sha> (<date>)`.** A stale SHA is a visible expiry date,
-   which the old file had no equivalent of. The rule: **if your change touches a file an entry's
-   `Re-check` names, run it and either restamp the entry or move it to §R.** That rule is
-   mechanical, scoped to files you already have open, and is the whole maintenance burden.
-
-4. **Nothing is deleted.** Fixed entries move to §R with the commit that killed them; wrong
-   beliefs move to §C. Silently dropping an entry is indistinguishable from forgetting it, and a
-   reader who cannot see the log correcting itself has no reason to believe the entries that
-   remain.
-
-5. **Pointers live where the limitation is hit**, not only here. This PR installed them rather
-   than promising them: `CLAUDE.md` (top, the `ctest` block → DC-L01, the `--png` block →
-   DC-L02/DC-L03) and `CHART_AUTHORING.md` (header, §8 and §9 → DC-L04). Adding the pointer is
-   part of adding an entry. The DC-L02 evidence is the argument for doing it: 76 of 277 trial
-   writeups filed the same by-design behaviour as a bug, because the only record of it was
-   somewhere they were not.
-
-6. **Entry ids are stable and greppable.** `DC-L04` can be cited from a code comment, a Linear
-   ticket or a PR description without ambiguity, and reusing an id for different content is
-   never allowed — retired ids stay retired.
-
-7. **The id is allocated by Linear, not by the author (ENC-1277).** The sequential
-   `DC-Lnn` space **`DC-L01`…`DC-L18` is CLOSED**. Every entry added after ENC-1277 is
-   **`DC-L-<its ENC ticket number>`** — `DC-L-1277`, `DC-L-1301`. You do not pick it, you do
-   not check whether it is free, and there is nothing to race for: Linear already allocated it
-   and it is unique for the same reason the ticket id is.
-
-   *Why the old scheme could not be repaired.* Sequential allocation is racy **by
-   construction**, and the window is the whole life of a branch — not the moment you look. It
-   collided three times in two days, and every one of those authors checked first (one grepped
-   every `enc-12*` remote branch, not just `main`):
-
-   | Colliding tickets | Id |
-   |---|---|
-   | ENC-1252 / ENC-1257 | `DC-L12` |
-   | ENC-1250 / ENC-1254 / ENC-1256 | `DC-L14` (three ways) |
-   | ENC-1251 / ENC-1253 | `DC-L17` |
-
-   **Twice there was no conflict at all.** Git auto-merged the two entries into different parts
-   of the file and left two identical headings coexisting with no marker and no error. And the
-   resolution is its own hazard: taking `--ours` wholesale on this file once silently dropped
-   ENC-1257's entire `DC-L12`, including the only record that `SvgExporter` does not apply the
-   bar-sizing rule. A human reading the diff caught it; nothing else would have.
-
-   *Why the existing eighteen were NOT renumbered.* Device 6 above is the reason — an id is a
-   citation target, and 234 of them exist across 35 files in **two repos** (124 in this one, 110
-   under the workspace's `specs/`), which by the workspace guardrail is two tickets and two PRs
-   with a window where half the citations dangle. Renumbering also cannot reach the citations in
-   merged commit messages, PR bodies and Linear comments at all. And it is not even *defined*:
-   **ten of the eighteen entries say `Ticket. None`**, and `DC-L01`…`DC-L09` all arrived in a
-   single commit (`e95a79d`, ENC-991), so numbering them by their ticket would produce a
-   **nine-way collision** — the exact defect being fixed. Entries that are already merged cannot
-   collide with anything; only future ones can, and those are the ones the new scheme covers.
-
-   *The separator is load-bearing.* `DC-L-1277`, not `DC-L1277`. Without the hyphen, `grep
-   DC-L12` matches `DC-L1277`, and ten of the eighteen legacy ids (`DC-L10`…`DC-L18`) are
-   prefixes of some four-digit ticket. A citation lookup that silently returns an extra entry —
-   or a gate that counts one — is the same class of quiet wrong answer as everything else in
-   this file.
-
-   *And it is checked, not merely written down.* `scripts/check-limitation-ids.sh` fails when
-   two entries share an id, when an id that existed in `origin/main` has vanished (the `--ours`
-   drop), or when a heading's id is malformed. `scripts/limitation-ids.test.ts` runs it inside
-   **`pnpm test`** — the only gate in this repo that needs no Dawn, no GPU and no build, so it
-   is the only one everybody actually runs. `ctest` was the alternative and DC-L01 disqualifies
-   it. Paste it any time:
-
-   ```bash
-   bash scripts/check-limitation-ids.sh   # 0 clean, 1 violation, 2 could-not-run
-   ```
-
-**Adding an entry** — a checklist, not a ceremony:
-
-- [ ] Verify it against current `main` yourself. Someone else's earlier assessment is a lead,
-      not evidence.
-- [ ] Write the `Re-check` command and **run it**. Paste the output you actually got.
-- [ ] Stamp `Verified at <sha>, <date>`.
-- [ ] Give it the id `DC-L-<your ENC ticket number>` (device 7 — do **not** pick the next free
-      `DC-Lnn`; that space is closed), a severity, and a ticket — or say "None", explicitly.
-- [ ] Run `bash scripts/check-limitation-ids.sh`. `pnpm test` runs it too, so a bad id fails
-      the gate whether or not you remember.
-- [ ] Say what the **workaround** is. An entry with no workaround and no ticket is a complaint.
-- [ ] Add a pointer from wherever someone would hit it.
-
-**Retiring an entry:** move the row to §R with the fixing commit and ticket, and if a residual
-survives, open the new entry and link them in both directions (DC-L05 and DC-L06 are the worked
-examples). If the entry was not merely fixed but *wrong*, it belongs in §C as well — that is the
-case the old L4 taught us.
-
-**Severity.** 🔴 will silently produce a wrong result or a false green. 🟠 will cost you an
-afternoon. 🟡 is a sharp edge you should know about before you hit it.
-
----
-
 ## DC-L15 — Every committed showcase still is vertically MIRRORED: all 23 predate the ENC-696 blit fix ✅ *(RETIRED — fixed by ENC-1288)*
 
 **Retired 2026-09-20** by ENC-1288, which recaptured the gallery. Every PNG in
@@ -2048,3 +1929,122 @@ directory stale until then.
 **Ticket.** Recapture + the SPEC correction: **ENC-1276**. **Verified at `2423de6`, 2026-09-19**
 — fit measured on both adapters the tier-0 control run used (llvmpipe, and NVIDIA GeForce
 RTX 3070 Ti / NVK GA104).
+
+---
+
+# §H — How this file stays true
+
+The previous limitations log failed in a specific, diagnosable way, and this section is the
+response to that diagnosis rather than a promise to try harder.
+
+**What went wrong.** It lived in `specs/`, in a different repo from the code. Its author could
+not see two fixes that landed fourteen minutes earlier. Nothing in any subsequent PR touched it
+or pointed at it. Its entries recorded conclusions but not *procedures*, so falsifying one meant
+redoing the original investigation — which nobody did, for 85 days, while its 🔴 top-severity
+entry was wrong.
+
+**Seven things this file does differently.**
+
+1. **It is repo-local.** This is the variable that actually predicts survival here, and the
+   evidence is in the same git history: `CHART_AUTHORING.md`, at this repo's root, was amended
+   by **both** of the last two feature PRs (`6a6f3d4`, `6684a00`) *on the day each landed*. The
+   workspace-level limitations file got **one** commit in 85 days. Same authors, same period,
+   same discipline — different directory. A doc a contributor has already checked out is a doc
+   they can fix in the PR that falsified it.
+
+2. **Every entry carries a `Re-check` command.** If falsifying an entry costs an investigation,
+   nobody falsifies it. If it costs one paste, the next person through does it for free. This is
+   also an admission gate: **if you cannot write the one-liner, the entry is not ready** — you
+   have an impression, not a limitation.
+
+3. **Every entry carries a `Verified at <sha> (<date>)`.** A stale SHA is a visible expiry date,
+   which the old file had no equivalent of. The rule: **if your change touches a file an entry's
+   `Re-check` names, run it and either restamp the entry or move it to §R.** That rule is
+   mechanical, scoped to files you already have open, and is the whole maintenance burden.
+
+4. **Nothing is deleted.** Fixed entries move to §R with the commit that killed them; wrong
+   beliefs move to §C. Silently dropping an entry is indistinguishable from forgetting it, and a
+   reader who cannot see the log correcting itself has no reason to believe the entries that
+   remain.
+
+5. **Pointers live where the limitation is hit**, not only here. This PR installed them rather
+   than promising them: `CLAUDE.md` (top, the `ctest` block → DC-L01, the `--png` block →
+   DC-L02/DC-L03) and `CHART_AUTHORING.md` (header, §8 and §9 → DC-L04). Adding the pointer is
+   part of adding an entry. The DC-L02 evidence is the argument for doing it: 76 of 277 trial
+   writeups filed the same by-design behaviour as a bug, because the only record of it was
+   somewhere they were not.
+
+6. **Entry ids are stable and greppable.** `DC-L04` can be cited from a code comment, a Linear
+   ticket or a PR description without ambiguity, and reusing an id for different content is
+   never allowed — retired ids stay retired.
+
+7. **The id is allocated by Linear, not by the author (ENC-1277).** The sequential
+   `DC-Lnn` space **`DC-L01`…`DC-L18` is CLOSED**. Every entry added after ENC-1277 is
+   **`DC-L-<its ENC ticket number>`** — `DC-L-1277`, `DC-L-1301`. You do not pick it, you do
+   not check whether it is free, and there is nothing to race for: Linear already allocated it
+   and it is unique for the same reason the ticket id is.
+
+   *Why the old scheme could not be repaired.* Sequential allocation is racy **by
+   construction**, and the window is the whole life of a branch — not the moment you look. It
+   collided three times in two days, and every one of those authors checked first (one grepped
+   every `enc-12*` remote branch, not just `main`):
+
+   | Colliding tickets | Id |
+   |---|---|
+   | ENC-1252 / ENC-1257 | `DC-L12` |
+   | ENC-1250 / ENC-1254 / ENC-1256 | `DC-L14` (three ways) |
+   | ENC-1251 / ENC-1253 | `DC-L17` |
+
+   **Twice there was no conflict at all.** Git auto-merged the two entries into different parts
+   of the file and left two identical headings coexisting with no marker and no error. And the
+   resolution is its own hazard: taking `--ours` wholesale on this file once silently dropped
+   ENC-1257's entire `DC-L12`, including the only record that `SvgExporter` does not apply the
+   bar-sizing rule. A human reading the diff caught it; nothing else would have.
+
+   *Why the existing eighteen were NOT renumbered.* Device 6 above is the reason — an id is a
+   citation target, and 234 of them exist across 35 files in **two repos** (124 in this one, 110
+   under the workspace's `specs/`), which by the workspace guardrail is two tickets and two PRs
+   with a window where half the citations dangle. Renumbering also cannot reach the citations in
+   merged commit messages, PR bodies and Linear comments at all. And it is not even *defined*:
+   **ten of the eighteen entries say `Ticket. None`**, and `DC-L01`…`DC-L09` all arrived in a
+   single commit (`e95a79d`, ENC-991), so numbering them by their ticket would produce a
+   **nine-way collision** — the exact defect being fixed. Entries that are already merged cannot
+   collide with anything; only future ones can, and those are the ones the new scheme covers.
+
+   *The separator is load-bearing.* `DC-L-1277`, not `DC-L1277`. Without the hyphen, `grep
+   DC-L12` matches `DC-L1277`, and ten of the eighteen legacy ids (`DC-L10`…`DC-L18`) are
+   prefixes of some four-digit ticket. A citation lookup that silently returns an extra entry —
+   or a gate that counts one — is the same class of quiet wrong answer as everything else in
+   this file.
+
+   *And it is checked, not merely written down.* `scripts/check-limitation-ids.sh` fails when
+   two entries share an id, when an id that existed in `origin/main` has vanished (the `--ours`
+   drop), or when a heading's id is malformed. `scripts/limitation-ids.test.ts` runs it inside
+   **`pnpm test`** — the only gate in this repo that needs no Dawn, no GPU and no build, so it
+   is the only one everybody actually runs. `ctest` was the alternative and DC-L01 disqualifies
+   it. Paste it any time:
+
+   ```bash
+   bash scripts/check-limitation-ids.sh   # 0 clean, 1 violation, 2 could-not-run
+   ```
+
+**Adding an entry** — a checklist, not a ceremony:
+
+- [ ] Verify it against current `main` yourself. Someone else's earlier assessment is a lead,
+      not evidence.
+- [ ] Write the `Re-check` command and **run it**. Paste the output you actually got.
+- [ ] Stamp `Verified at <sha>, <date>`.
+- [ ] Give it the id `DC-L-<your ENC ticket number>` (device 7 — do **not** pick the next free
+      `DC-Lnn`; that space is closed), a severity, and a ticket — or say "None", explicitly.
+- [ ] Run `bash scripts/check-limitation-ids.sh`. `pnpm test` runs it too, so a bad id fails
+      the gate whether or not you remember.
+- [ ] Say what the **workaround** is. An entry with no workaround and no ticket is a complaint.
+- [ ] Add a pointer from wherever someone would hit it.
+
+**Retiring an entry:** move the row to §R with the fixing commit and ticket, and if a residual
+survives, open the new entry and link them in both directions (DC-L05 and DC-L06 are the worked
+examples). If the entry was not merely fixed but *wrong*, it belongs in §C as well — that is the
+case the old L4 taught us.
+
+**Severity.** 🔴 will silently produce a wrong result or a false green. 🟠 will cost you an
+afternoon. 🟡 is a sharp edge you should know about before you hit it.
