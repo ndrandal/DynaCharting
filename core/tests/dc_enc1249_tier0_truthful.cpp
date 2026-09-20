@@ -33,6 +33,18 @@
 //            down colour;
 //        B5  the gap between two candles is clear (the marks are marks, not a slab).
 //
+//   C. BASELINE AREA (ENC-1250, SPEC D1 "Area fills toward its baseline"). The
+//      real apps/showcase/views/price-line-area scene — the same rect4 layout
+//      (x0, y0=baseline, x1, y1=price), the same instancedRect@1 pipeline and the
+//      same baked view.json Y transform — over a synthetic price ramp:
+//        C1  something is drawn at all;
+//        C2  the fill's TOP edge is the price (the datum the reader takes off);
+//        C3  the fill's BOTTOM edge is the baseline, and C3b that edge is FLAT;
+//        C4  NOTHING is filled above the series — the assertion that separates a
+//            correct fill from the inverted one SPEC section 5 Q6 alleged;
+//        C5  the span between price and baseline really is filled;
+//        C6  a higher price gives a taller column (direction, not just placement).
+//
 // WHICH RASTER (this is load-bearing — LIMITATIONS.md DC-L05)
 // -----------------------------------------------------------
 // Every Dawn backend shader negates clip-space y (`vec4(p.x, -p.y, ...)`) while
@@ -55,9 +67,14 @@
 // A check never seen to fail is not a check, so this binary ships its own negative
 // controls and they are registered as ctest cases with WILL_FAIL:
 //
-//   --invert-data     feed a deliberately WRONG series: the ramp descends, and each
+//   --invert-data     feed a deliberately WRONG series: the ramp descends, each
 //                     candle's (open,close) and (high,low) pairs are swapped so the
-//                     body carries the wick's extents and the wick the body's.
+//                     body carries the wick's extents and the wick the body's, and
+//                     the area's baseline moves ABOVE the series so the fill covers
+//                     the complement. (Swapping the area's y0 and y1 would NOT be
+//                     detectable — the shader mixes y0..y1, so the same span is
+//                     drawn either way. Moving the baseline is the perturbation the
+//                     renderer can actually distinguish: ENC-1250.)
 //   --invert-render   present the RAW readback, i.e. skip the DC-L05 flip — the
 //                     exact silent failure DC-L05 warns a third consumer will hit.
 //
@@ -516,6 +533,213 @@ void caseCandle(dc::DawnSceneRenderer& renderer, const Mode& mode) {
         fmt("x=%d lit=%d px", gapX, gap.count));
 }
 
+// ===========================================================================
+// CASE C — the baseline area fills TOWARD ITS BASELINE  (ENC-1250)
+// ===========================================================================
+//
+// SPEC D1 states the tier-0 claim for this mark verbatim: "Area fills toward its
+// baseline." SPEC section 5 Q6 asked what inverted apps/showcase/stills/
+// price-line-area.png, whose green mass sits ABOVE the price line instead of
+// below it. This case is the instrument that answers it, and the answer is that
+// the ENGINE IS CORRECT — see LIMITATIONS.md DC-L15 for the full finding. What
+// the still records is the pre-ENC-696 vertical mirror: every committed still was
+// captured at 537c995 (2026-06-11) and the EngineHost blit flip landed at d6b5acd
+// (2026-06-21), ten days later. The fill was never on the wrong side; the whole
+// frame was upside down.
+//
+// So this case exists to KEEP it correct, and to make the difference between
+// "the fill is inverted" and "the frame is mirrored" a thing the suite can tell
+// apart — which, before it existed, nothing could. Its --invert-data control
+// produces the genuinely inverted fill (the thing Q6 believed it was looking at)
+// and its --invert-render control produces the mirror (the thing it actually
+// was), and the two fail different assertions.
+//
+// The scene is the real apps/showcase/views/price-line-area, reduced to a known
+// answer: the same rect4 record layout (x0, y0=baseline, x1, y1=price) that
+// instruction.json's staticFields build, the same instancedRect@1 pipeline and
+// the same baked Y transform (sy/ty from view.json), over a synthetic price ramp
+// instead of a capture. Expected rows are therefore arithmetic:
+//
+//   clipY(p) = kAreaSy * p + kAreaTy,   row(clipY) = (1 - clipY)/2 * H
+//
+//   baseline 405.0 -> clip -0.850 -> row 236.8   (near the BOTTOM: the flat edge)
+//   price    407.0 -> clip -0.607 -> row 205.7   (the shortest column)
+//   price    417.5 -> clip  0.668 -> row  42.5   (the tallest column)
+//
+// The geometry is deliberately ASYMMETRIC about y=0 (the baseline sits at -0.85
+// while the series runs -0.61..+0.67), which is what makes --invert-render
+// detectable at all — the same design constraint case B records.
+constexpr int kAreaN = 8;
+constexpr double kAreaSy = 0.121428571;   // view.json transform.sy, verbatim
+constexpr double kAreaTy = -50.028571;    // view.json transform.ty, verbatim
+constexpr double kAreaBaseline = 405.0;   // instruction.json staticFields const
+constexpr double kAreaPrice0 = 407.0;
+constexpr double kAreaPriceStep = 1.5;
+// Deliberately wrong baseline for --invert-data: ABOVE the series instead of
+// below it, so the fill covers the complement. This is the failure Q6 alleged.
+constexpr double kAreaBaselineWrong = 420.0;
+
+void caseArea(dc::DawnSceneRenderer& renderer, const Mode& mode) {
+  constexpr int W = 512;
+  constexpr int H = 256;
+
+  std::printf(
+      "\n-- C. BASELINE AREA: the fill spans baseline..price (%d columns) --\n",
+      kAreaN);
+
+  // X: kAreaN unit-wide columns (x0 = i - 0.5, x1 = i + 0.5, exactly as
+  // instruction.json's recordIndexPlusConst +-0.5 builds them) spread across
+  // clip -0.9..0.9.
+  const double xSpan = static_cast<double>(kAreaN);  // -0.5 .. kAreaN-0.5
+  const double sx = 1.8 / xSpan;
+  const double tx = -0.9 + 0.5 * sx;
+
+  // The baseline the DATA carries. Honest: below the series. --invert-data: above
+  // it. The EXPECTED rows below are computed from the honest constants either
+  // way — they are the assertions for a correctly-filled area, and a wrongly
+  // filled one must break them.
+  const double baselineFed = mode.invertData ? kAreaBaselineWrong : kAreaBaseline;
+
+  double price[kAreaN];
+  std::vector<float> rects;
+  rects.reserve(static_cast<std::size_t>(kAreaN) * 4);
+  for (int i = 0; i < kAreaN; ++i) {
+    price[i] = kAreaPrice0 + kAreaPriceStep * i;
+    rects.push_back(static_cast<float>(i - 0.5));      // x0
+    rects.push_back(static_cast<float>(baselineFed));  // y0 — the baseline
+    rects.push_back(static_cast<float>(i + 0.5));      // x1
+    rects.push_back(static_cast<float>(price[i]));     // y1 — the value
+  }
+
+  dc::Scene scene;
+  dc::ResourceRegistry reg;
+  dc::CommandProcessor cp(scene, reg);
+  dc::CpuBufferStore store;
+
+  cp.applyJsonText(R"({"cmd":"createPane","id":1,"name":"Price"})");
+  cp.applyJsonText(
+      R"({"cmd":"setPaneClearColor","id":1,"r":0,"g":0,"b":0,"a":1})");
+  cp.applyJsonText(R"({"cmd":"createLayer","id":2,"paneId":1})");
+  cp.applyJsonText(R"({"cmd":"createBuffer","id":10110,"byteLength":0})");
+  cp.applyJsonText(
+      R"({"cmd":"createGeometry","id":10210,"vertexBufferId":10110,)"
+      R"("format":"rect4","vertexCount":)" +
+      std::to_string(kAreaN) + "}");
+  cp.applyJsonText(R"({"cmd":"createTransform","id":10050})");
+  cp.applyJsonText(fmt(R"({"cmd":"setTransform","id":10050,)"
+                       R"("sx":%.9f,"sy":%.9f,"tx":%.9f,"ty":%.9f})",
+                       sx, kAreaSy, tx, kAreaTy));
+  cp.applyJsonText(R"({"cmd":"createDrawItem","id":10310,"layerId":2})");
+  cp.applyJsonText(
+      R"({"cmd":"bindDrawItem","drawItemId":10310,)"
+      R"("pipeline":"instancedRect@1","geometryId":10210})");
+  // The showcase view's own fill colour, verbatim.
+  cp.applyJsonText(
+      R"({"cmd":"setDrawItemStyle","drawItemId":10310,)"
+      R"("r":0.24,"g":0.86,"b":0.52,"a":0.65})");
+  cp.applyJsonText(
+      R"({"cmd":"attachTransform","drawItemId":10310,"transformId":10050})");
+  store.setCpuData(10110, rects.data(),
+                   static_cast<std::uint32_t>(rects.size() * sizeof(float)));
+
+  const Frame f =
+      renderPresented(renderer, scene, store, W, H, !mode.invertRender);
+
+  // Expected geometry, from the honest constants.
+  const double rowBaseline =
+      rowOfClipY(kAreaSy * kAreaBaseline + kAreaTy, H);
+  double rowPrice[kAreaN];
+  int colOf[kAreaN];
+  for (int i = 0; i < kAreaN; ++i) {
+    rowPrice[i] = rowOfClipY(kAreaSy * price[i] + kAreaTy, H);
+    colOf[i] = static_cast<int>(colOfClipX(i * sx + tx, W));
+  }
+
+  // ---- C1: something was drawn.
+  const int ink = litPixels(f);
+  check(ink > 2000, "C1 the frame is not blank",
+        fmt("lit=%d px (need > 2000)", ink));
+
+  // ---- C2: the fill's TOP edge is the price. This is the value the reader
+  // takes off the chart, so it is the edge that has to land on the datum.
+  bool topOk = true;
+  double worstTop = 0;
+  for (int i = 0; i < kAreaN; ++i) {
+    const ColumnSpan s = scanColumn(f, colOf[i]);
+    const double d =
+        (s.top < 0) ? 1e9 : std::fabs(static_cast<double>(s.top) - rowPrice[i]);
+    if (d > worstTop) worstTop = d;
+    if (d > 3.0) topOk = false;
+  }
+  check(topOk, "C2 the fill's TOP edge is the price",
+        fmt("worst |top - row(price)| = %.1f px (need <= 3)", worstTop));
+
+  // ---- C3: the fill's BOTTOM edge is the baseline, and it is FLAT — the same
+  // row under every column. A fill that ran to the frame edge, or one anchored
+  // per-sample instead of to the baseline, dies here.
+  bool botOk = true;
+  double worstBot = 0;
+  int botMin = H, botMax = -1;
+  for (int i = 0; i < kAreaN; ++i) {
+    const ColumnSpan s = scanColumn(f, colOf[i]);
+    const double d = (s.bottom < 0)
+                         ? 1e9
+                         : std::fabs(static_cast<double>(s.bottom) - rowBaseline);
+    if (d > worstBot) worstBot = d;
+    if (d > 3.0) botOk = false;
+    if (s.bottom >= 0) {
+      if (s.bottom < botMin) botMin = s.bottom;
+      if (s.bottom > botMax) botMax = s.bottom;
+    }
+  }
+  check(botOk, "C3 the fill's BOTTOM edge is the baseline",
+        fmt("worst |bottom - row(baseline=%.1f)| = %.1f px (need <= 3)",
+            kAreaBaseline, worstBot));
+  check(botMax >= 0 && (botMax - botMin) <= 2,
+        "C3b the baseline edge is FLAT across every column",
+        fmt("bottom row spread = %d px (need <= 2)",
+            (botMax >= 0) ? (botMax - botMin) : -1));
+
+  // ---- C4: NOTHING IS FILLED ABOVE THE SERIES. This is the assertion the
+  // stale still fails, and the one that names SPEC section 5 Q6's symptom: in
+  // price-line-area.png the green mass sits above the line, so this probe would
+  // be lit. Tier 0 could not previously tell that apart from a correct render.
+  bool aboveClear = true;
+  int litAbove = 0;
+  for (int i = 0; i < kAreaN; ++i) {
+    const int y = static_cast<int>(rowPrice[i]) - 10;
+    if (y < 0) continue;
+    if (f.lit(colOf[i], y)) { aboveClear = false; ++litAbove; }
+  }
+  check(aboveClear, "C4 nothing is filled ABOVE the series",
+        fmt("%d of %d probes 10px above the price are lit (need 0)", litAbove,
+            kAreaN));
+
+  // ---- C5: the fill really is there BELOW the series, all the way down.
+  bool belowFilled = true;
+  int darkBelow = 0;
+  for (int i = 0; i < kAreaN; ++i) {
+    const int mid =
+        static_cast<int>((rowPrice[i] + rowBaseline) * 0.5);
+    if (!f.lit(colOf[i], mid)) { belowFilled = false; ++darkBelow; }
+  }
+  check(belowFilled, "C5 the span between price and baseline is filled",
+        fmt("%d of %d midpoints are dark (need 0)", darkBelow, kAreaN));
+
+  // ---- C6: a higher price means a TALLER column. "Fills toward its baseline"
+  // is a claim about direction, and direction is only observable as a trend.
+  bool grows = true;
+  int prev = -1;
+  for (int i = 0; i < kAreaN; ++i) {
+    const int n = scanColumn(f, colOf[i]).count;
+    if (i > 0 && n <= prev) grows = false;
+    prev = n;
+  }
+  check(grows, "C6 a higher price gives a taller column",
+        fmt("columns: %d..%d px", scanColumn(f, colOf[0]).count,
+            scanColumn(f, colOf[kAreaN - 1]).count));
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -562,6 +786,7 @@ int main(int argc, char** argv) {
 
   caseRamp(renderer, mode);
   caseCandle(renderer, mode);
+  caseArea(renderer, mode);
 
   std::printf("\n=== tier 0: %d passed, %d failed ===\n", g_passed, g_failed);
   if (mode.invertData || mode.invertRender) {

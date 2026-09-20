@@ -179,8 +179,10 @@ bash scripts/tier0.sh <build-dir>     # default build dir: build-dawn
 `specs/2026-09-19-chart-quality-bar/SPEC.md` **D1** defines tier 0 ("Truthful") as *the mark
 depicts the data*, and its falsifiable check as: render a **known-answer synthetic series** and
 assert on pixels. That check is `core/tests/dc_enc1249_tier0_truthful.cpp` — a monotonic ramp
-through the real `LineRecipe` + `dc::LinearScale`, and a single candle with hand-computed
-extents through the real `CandleRecipe`, both rendered by `DawnSceneRenderer`.
+through the real `LineRecipe` + `dc::LinearScale`, a single candle with hand-computed extents
+through the real `CandleRecipe`, and (ENC-1250) a baseline **area** that must fill from its
+baseline up to the value, on the real `instancedRect@1` rect4 layout and the real
+`price-line-area` transform — all rendered by `DawnSceneRenderer`.
 
 Four things about it are deliberate and easy to get wrong if you extend it:
 
@@ -192,9 +194,12 @@ Four things about it are deliberate and easy to get wrong if you extend it:
   vertically mirrored; asserting on it would enshrine the mirror and "prove" that a rising series
   falls. See LIMITATIONS.md **C5**.
 - **It ships its own negative controls, and they are registered tests.**
-  `--invert-data` (a descending ramp; candle body/wick extents swapped) and `--invert-render`
-  (skip the DC-L05 flip) are `ctest` cases with `WILL_FAIL TRUE`, so every run of the suite
-  re-demonstrates that the check *can* fail. A check never seen to fail is not a check.
+  `--invert-data` (a descending ramp; candle body/wick extents swapped; the area's baseline moved
+  *above* the series) and `--invert-render` (skip the DC-L05 flip) are `ctest` cases with
+  `WILL_FAIL TRUE`, so every run of the suite re-demonstrates that the check *can* fail. A check
+  never seen to fail is not a check. Note the area's control moves the **baseline**, not `y0`/`y1`
+  — the shader mixes `y0..y1`, so swapping them renders identically and would not be a control
+  at all.
 - **It does not skip gracefully.** No Dawn adapter is exit **3** ("CANNOT RUN"), never 0 —
   DC-L01's lesson is that a skip which looks like a pass is how a green run came to mean nothing.
 
@@ -228,6 +233,14 @@ Four things to know before building on it, each stated in full in the module hea
   a literal `transform` per view. A green `plotbox.test.ts` is not the product being framed.
   Adoption is ENC-1273; ENC-1253 (engine-drawn ticks/gridlines/spine) positions against
   `gutters()`.
+
+> **Do not score a committed still — all 23 are upside down (LIMITATIONS.md DC-L15).**
+> `apps/showcase/stills/*.png` were captured at `537c995` (2026-06-11); the `EngineHost` blit
+> flip landed at `d6b5acd` (2026-06-21). A mirrored random walk still looks like a random walk
+> and the axis numbers are a DOM overlay that flips with it, so nothing in the frame contradicts
+> the mirror — which is how `price-line-area` was read as "fills on the wrong side of the line"
+> for three months (**§C6**). Measure instead:
+> `python3 apps/showcase/tools/still-orientation.py <view>` (exit 1 == mirrored).
 
 > **`dc_json_host --png` captures contain no text (ENC-992).** A chart's
 > `textOverlay` labels are not rasterized by the engine — they are emitted as a
