@@ -249,9 +249,26 @@ export function useEngineAxis(
     const attempt = (): void => {
       if (cancelled) return;
       attempts++;
+      // WAIT for the core rather than syncing half the axis. The marks and the
+      // labels have to describe ONE domain: syncing the geometry now and the
+      // labels two frames later leaves a stale number beside a fresh gridline,
+      // which is exactly the disagreement §1.3 is about. So when the font is
+      // loaded but the core is busy, nothing is written at all and the whole
+      // sync retries. (A chart with NO font still draws its marks — there are
+      // no labels to fall out of step with.)
+      if (fontLoaded && !canMeasure()) {
+        if (attempts < LABEL_RETRY_LIMIT) {
+          timer = setTimeout(attempt, LABEL_RETRY_MS);
+        } else {
+          console.warn(
+            `[showcase] the core stayed busy for ${attempts} attempts; axis not synced`,
+          );
+        }
+        return;
+      }
       // The measurer converts clip units to pixels using the canvas it was
       // built with, so it is rebuilt whenever this effect re-runs.
-      const measurer = canMeasure() ? createHostMeasurer(host, canvas) : null;
+      const measurer = fontLoaded ? createHostMeasurer(host, canvas) : null;
       measurerRef.current = measurer;
       const spec = engineAxisSpec(axes, transform, canvas, measurer);
       if (!spec) {
@@ -261,20 +278,18 @@ export function useEngineAxis(
       const plan = axis.sync(spec);
       host.markDirty();
       publish(plan);
-      // Retry while labels are OWED, judged from the PLAN rather than from the
-      // probe. The probe measures one glyph and the plan measures every label,
-      // and the core can go busy in between — so "the measurer was non-null" is
-      // not evidence that a single label was measured. What counts is that
-      // furniture was drawn and not one label came back, placed or dropped.
-      const drewMarks = plan.gridSegments.length > 0 || plan.tickSegments.length > 0;
+      // The probe measures ONE glyph and the sync measures and lays out every
+      // label, so the core can go busy in between: `EngineAxis.sync` reports
+      // any refusal by pruning the plan, and that shortfall is what is retried.
       const owed =
-        fontLoaded && drewMarks && plan.labels.length === 0 && plan.droppedLabels.length === 0;
+        fontLoaded &&
+        plan.droppedLabels.some((d) => d.reason.includes("refused"));
       if (owed && attempts < LABEL_RETRY_LIMIT) {
         timer = setTimeout(attempt, LABEL_RETRY_MS);
       } else if (owed) {
         console.warn(
-          `[showcase] axis labels never laid out after ${attempts} attempts ` +
-            '(the core stayed busy, or no font) — marks drawn without labels',
+          `[showcase] axis labels still refused after ${attempts} attempts — ` +
+            `${plan.labels.length} of ${plan.labels.length + plan.droppedLabels.length} drawn`,
         );
       }
     };
