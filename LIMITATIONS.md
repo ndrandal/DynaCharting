@@ -1820,12 +1820,28 @@ detects a mirror" are different claims and only the pair is worth anything.
   geometry wearing 2026-09 orientation, and silently re-frozen three months of renderer change.
   `apps/showcase/tools/recapture-stills.mjs` drives the running engine.
 
-**The tool had a defect of exactly the shape it exists to catch, and the recapture is what
-exposed it.** `still-orientation.py` read only the **lowest** fill row per column. On a mirrored
-frame that is the value edge; on an upright frame it is the flat baseline, the fitted Y has zero
-variance, and the tool exits 2 — so it could return MIRRORED or CANNOT RUN and **never UPRIGHT**.
-It was never wrong about a still, and it could never have confirmed one was fixed. It now reads
-both edges of the fill run and rules on whichever varies (ENC-1288).
+**The tool had two defects of exactly the shape it exists to catch, and running it over all 22
+stills is what exposed them.** Both are fixed here (ENC-1288).
+
+1. **It could not return UPRIGHT.** It read only the **lowest** fill row per column. On a
+   mirrored frame that is the value edge; on an upright frame it is the flat baseline, the
+   fitted Y has zero variance, and it exits 2 "could not align the still to its records". So it
+   could say MIRRORED or CANNOT RUN and **never UPRIGHT** — it was never wrong about a still and
+   could never have confirmed one was fixed. It now reads **both** edges and rules on whichever
+   varies.
+2. **It returned a confident WRONG verdict on `candle-overlays`** — `UPRIGHT`, `r = -0.97`, on
+   the 2026-06-11 still that everything else says is mirrored. `'rect4' in manifest.ts` is far
+   too weak a gate for "baseline area": candle-overlays' rect4 stream is a **volume** series in
+   a second pane, so a "fill run between two edges" spans two panes and means nothing. Two
+   refusals now sit in front of the verdict, both computed from numbers the fit was already
+   printing and ignoring — the non-value edge must be a flat baseline (±5% of H; it was 441 px
+   of 600), and the slope magnitude must be within a factor of 4 of `sy/2*H` (it was **0.00**).
+
+**Of the 22 views, exactly one satisfies this method's premise.** `price-line-area` is the only
+rect4 baseline area; the other 21 are refused by name (no `transform.sy`, no `rect4`, too few
+records, no flat baseline, or no alignment). That is the honest coverage of this instrument and
+it is not the coverage of the recapture — every still was captured the same way, and one of them
+can be measured this way.
 
 **Re-check** — the old one, inverted, plus the control that keeps it honest.
 ```bash
@@ -1840,10 +1856,15 @@ python3 apps/showcase/tools/still-orientation.py price-line-area   # exit 0 == u
 # -> VERDICT   : UPRIGHT
 
 # 3 — and the instrument can still SEE a mirror (a check never seen to fail is not a check):
-#     the archived pre-recapture still, and the new one flipped, both convict.
+#     the archived pre-recapture still, and the new one vertically flipped, both convict.
 d=$(mktemp -d); git show 537c995:apps/showcase/stills/price-line-area.png > "$d/old.png"
 python3 apps/showcase/tools/still-orientation.py price-line-area --still "$d/old.png"
 # -> VERDICT   : MIRRORED  (exit 1; slope +36.40, r = +0.9895)
+
+# 3b — and it refuses the view it used to get WRONG, rather than ruling on it
+python3 apps/showcase/tools/still-orientation.py candle-overlays; echo "exit $?"
+# -> CANNOT RUN: the bottom edge is not a flat baseline (spans 139 px, tolerance 25 px…)
+# -> exit 2
 
 # 4 — every capture names a hardware adapter
 python3 -c "import json;m=json.load(open('apps/showcase/stills/capture-manifest.json'));\

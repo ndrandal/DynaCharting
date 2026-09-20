@@ -79,6 +79,21 @@ python3 ../tools/still-orientation.py price-line-area --still "$d/old.png"
 # -> VERDICT   : MIRRORED  (exit 1)
 ```
 
+**One view of the twenty-two can be measured this way, and that is a fact about the
+instrument, not about the recapture.** The method fits the fill run's value edge against the
+price each column replayed, so it needs a rect4 **baseline area**: a baked `transform.sy`, a
+`rect4` stream, enough records, and a genuinely flat baseline edge. Only `price-line-area` has
+all four. The other 21 exit 2 and name their reason — `no transform.sy` (8), `no rect4` (6),
+too few usable records (5), `could not align` (1, `footprint`), and `the bottom edge is not a
+flat baseline` (1, `candle-overlays`).
+
+That last refusal is new, and it replaces a wrong answer. Before ENC-1288 the tool ruled the
+known-mirrored 2026-06 `candle-overlays` still **UPRIGHT** at `r = -0.97`, because a `'rect4'`
+declaration in `manifest.ts` is not the same thing as a baseline area — candle-overlays' rect4
+stream is a **volume** series in a second pane, so the "fill run" spanned two panes and fitted
+noise with a slope of `-0.00`. A checker that answers where it should refuse is worse than one
+that refuses where it could answer.
+
 ## Why this directory has a README
 
 Every PNG here used to be upside down, and nothing said so for three months.
