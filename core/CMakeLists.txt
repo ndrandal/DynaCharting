@@ -592,6 +592,33 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_enc1251_body_floor PRIVATE dc)
   add_test(NAME dc_enc1251_body_floor COMMAND dc_enc1251_body_floor)
 
+  # ENC-1265 — the frame-timing instrument, and the gate that keeps it honest.
+  # dc::Stats::frameMs was declared, marshalled, p95'd, displayed and burned into
+  # 22 stills while being assigned by nothing; the HUD quietly showed `1000/fps`
+  # in its place. The real assignment now lives in DawnSceneRenderer::render,
+  # which is inside the 47 tests DC-L01 excludes at configure time — so the gate
+  # that would have CAUGHT it has to live out here, in the default build, and it
+  # does: [5] fails if any `*Ms` stats field is assigned nowhere in core/.
+  add_executable(dc_enc1265_render_timing
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_enc1265_render_timing.cpp"
+  )
+  target_link_libraries(dc_enc1265_render_timing PRIVATE dc)
+  target_compile_definitions(dc_enc1265_render_timing PRIVATE
+    DC_CORE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+  add_test(NAME dc_enc1265_render_timing COMMAND dc_enc1265_render_timing)
+
+  # The two NEGATIVE CONTROLS (the ENC-1249 pattern). Each feeds the binary a
+  # deliberately broken input and is marked WILL_FAIL, so ctest reports PASSED
+  # only when the check DOES fail. Without these, "[1]-[5] PASS" is a claim
+  # nobody has ever seen tested.
+  add_test(NAME dc_enc1265_negctl_frozen_clock
+           COMMAND dc_enc1265_render_timing --negctl-frozen-clock)
+  set_tests_properties(dc_enc1265_negctl_frozen_clock PROPERTIES WILL_FAIL TRUE)
+
+  add_test(NAME dc_enc1265_negctl_unassigned_field
+           COMMAND dc_enc1265_render_timing --negctl-unassigned-field)
+  set_tests_properties(dc_enc1265_negctl_unassigned_field PROPERTIES WILL_FAIL TRUE)
+
   # ENC-605 (P1.14) — Manifest v0 parser (data / scales / coords / marks /
   # encoding): parses a JSON manifest, applies the §6.1 typing checks, and drives
   # the table -> scale -> encode -> mark pipeline to produce DrawItems + geometry.
