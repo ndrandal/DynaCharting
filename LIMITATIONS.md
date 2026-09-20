@@ -692,9 +692,12 @@ that was supposed to improve the axis — when it is the absent framing rule.
 
 **Re-check.**
 ```bash
-# 1 — the marks are DOM; no manifest draws an axis
-grep -c 'svg' apps/showcase/src/chrome/AxisOverlay.tsx            # -> 2 (open + close tag)
-grep -rl 'AxisRecipe' apps/showcase/ --include=*.ts --include=*.tsx | wc -l   # -> 0
+# 1 — RETIRED by ENC-1253: the engine draws the marks. The SVG overlay still
+#     exists and is still on by default, but it is now a duplicate — these two
+#     commands say the axis is engine-drawn:
+grep -c 'EngineAxis' apps/showcase/src/chrome/useEngineAxis.ts    # -> >= 1
+grep -rl 'AxisRecipe' apps/showcase/ --include=*.ts --include=*.tsx | wc -l   # -> 0 (still: the
+#     browser path authors textSDF@1/lineAA@1 directly; the C++ AxisRecipe is unbound, ENC-990)
 
 # 2 — the framing is still a literal, per view
 grep -h '"transform"' apps/showcase/views/candles-aapl/view.json
@@ -723,15 +726,40 @@ measured domain does not drive the framing" is no longer a *missing capability*.
 are unchanged on the app path, and the new module has zero callers on any render path. That
 half is **DC-L14**, which is where the re-check for it now lives.
 
-**Ticket.** **ENC-1253** (render the marks in the engine). Part (2)'s primitive is **ENC-1256**
-(done); adopting it on the showcase and customer-layer render paths is **DC-L14**. Converting
-the remaining 11 views is unticketed.
+**Update, 2026-09-20 (ENC-1253) — PART (1) IS NO LONGER TRUE. The engine draws the marks.**
+`packages/dc-wasm/src/chart/axis.ts` emits the gridlines, tick marks and spine as `lineAA@1`
+clip-space geometry and the tick labels and axis titles as `textSDF@1` glyph runs, into the same
+scene and the same canvas as the data. The showcase drives it from the SAME resolved axes and
+the SAME ticks the SVG overlay uses (`useEngineAxis` / `engineAxis.ts`), so the overlay is now a
+duplicate rather than the source — `?svgAxis=0` removes it and the axis stays.
 
-**Verified at** `ENC-1256 HEAD`, 2026-09-19 — (1) and (3)'s greps re-run in the ENC-1256
-worktree and unchanged; (2)'s tick-count and domain observations are carried forward from the
-ENC-1252 measurement over CDP on a headed Chrome (`vendor: nvidia, architecture: ampere` —
-SPEC D8), replaying the committed `candles-aapl` / `candle-overlays` captures, and remain true
-because nothing on the app path changed.
+Measured on a canvas-only capture (SPEC D10, `harness/shoot-live.mjs --mode canvas`, hardware
+adapter `vendor: nvidia, architecture: ampere`, `info.isFallbackAdapter: false`,
+`subgroupMinSize: 32`), scored with `harness/score.py --diagnose`, same view and same replay
+with the engine axis off and on:
+
+| tier-1 check | `?engineAxis=0` | engine axis on |
+|---|---|---|
+| T1.1 the engine draws an axis | **FAIL** — "declares no engine-drawn tick label, gridline or spine" | **PASS** — 3 x labels, 5 y labels, 8 gridlines, 2 spines |
+| T1.3 text in the same raster | *did not run* (no text to check) | **PASS** — all 10 runs carry ink |
+| T1.4 labels disjoint + in frame | *did not run* | **PASS** |
+| T1.5 x renders time as time | *did not run* | **PASS** |
+| T1.7 text contrast ≥ 4.5:1 | *did not run* | **PASS** |
+| T1.8 gridline ceiling + visibility | *did not run* | **PASS** |
+
+Parts **(2)** and **(3)** are unchanged and still true: every view still bakes a literal
+`transform` (**DC-L14**), and 11 of 14 views still state a literal domain. The consequence you
+can see in the raster is that the data is not fitted to the plot box the furniture is laid out
+against, so the leftmost bars run under the price labels.
+
+**Ticket.** Part (1): **ENC-1253**, done. Part (2)'s primitive is **ENC-1256** (done); adopting
+it on the showcase and customer-layer render paths is **DC-L14** / **ENC-1273**. Converting the
+remaining 11 views is unticketed.
+
+**Verified at** `ENC-1253 HEAD`, 2026-09-20 — (3)'s greps re-run in the ENC-1253 worktree and
+unchanged. (1) is retired by the measurement above. (2)'s tick-count and domain observations are
+carried forward from the ENC-1252 measurement over CDP and remain true because nothing on the
+framing path changed.
 
 ---
 
@@ -773,8 +801,11 @@ grep -c 'export function frameSeries' packages/dc-wasm/src/chart/plotbox.ts     
 grep -c 'from "./chart/plotbox"' packages/dc-wasm/src/index.ts                     # -> 2
 npx vitest run packages/dc-wasm/src/chart/plotbox.test.ts                          # -> 32 passed
 
-# 2 — and no app references it at all
-grep -rl 'frameSeries\|fitToPlotBox\|plotBox' apps/ --include=*.ts --include=*.tsx | wc -l   # -> 0
+# 2 — one app file references it now, and it is the AXIS, not the framing
+grep -rl 'frameSeries\|fitToPlotBox\|plotBox' apps/ --include=*.ts --include=*.tsx
+# -> apps/showcase/src/chrome/engineAxis.ts   (ENC-1253: the furniture is laid
+#    out against plotBox(canvas); the DATA is still on the view's baked literal,
+#    which is what this entry is about and is unchanged)
 
 # 3 — its only package-side consumer is SceneBuilder ...
 grep -rl 'frameSeries\|fitToPlotBox\|paneRegionFor' packages/ --include=*.ts \
@@ -806,8 +837,17 @@ the chrome overlay's tick mapping, which must map through the SAME transform or 
 the geometry will disagree). customer-layer adoption is separate and unticketed. **ENC-1253**
 (engine-drawn axis marks) is the first intended consumer of `gutters()`.
 
-**Verified at** `ENC-1256 HEAD`, 2026-09-19 — all five commands run in the ENC-1256 worktree
-after the module landed.
+**Update, 2026-09-20 (ENC-1253).** `plotBox()` now has its first app caller —
+`apps/showcase/src/chrome/engineAxis.ts` lays the axis furniture out against it. That does NOT
+retire this entry, and the distinction is the whole point: the furniture knows where the frame
+is, the DATA still does not go there. Every `view.json` still bakes its `transform`, no render
+path calls `frameSeries`, and `grep -rl 'new SceneBuilder' apps/ packages/ --include=*.ts
+--include=*.tsx | grep -v '\.test\.'` is still empty. The visible consequence, in the
+ENC-1253 capture: the leftmost bars are drawn to the left of the plot box's left edge, under the
+price labels. Adoption for the data is still **ENC-1273**.
+
+**Verified at** `ENC-1253 HEAD`, 2026-09-20 — commands 1, 3, 4 and 5 re-run unchanged in the
+ENC-1253 worktree; command 2's expected output is restamped above.
 
 ---
 
