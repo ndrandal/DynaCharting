@@ -10,28 +10,47 @@ contradicts a flip. It has to be MEASURED, against the data the capture replayed
 
 The method, for a baseline-area view (rect4 = x0, y0=baseline, x1, y1=value):
 
-  1. Decode the still and, per pixel column, find the lowest row carrying fill
-     colour — the boundary between the fill and the background.
+  1. Decode the still and, per pixel column, find BOTH edges of the fill run —
+     the topmost and the bottommost row carrying fill colour.
   2. Decode records.json (the dataplane bytes the capture replayed) back into
      rect4 records, giving the value each column depicts.
-  3. view.json's baked transform says a value maps to clip y = sy*v + ty, and the
-     presented raster puts larger clip y at a SMALLER row. So the boundary row
+  3. One of those two edges is the BASELINE, which is constant across columns;
+     the other is the VALUE, and it is the one that carries the signal. Which is
+     which is exactly what a vertical flip swaps, so the tool must not assume
+     either — it fits both and rules on whichever actually varies.
+  4. view.json's baked transform says a value maps to clip y = sy*v + ty, and the
+     presented raster puts larger clip y at a SMALLER row. So the value edge
      must move -sy/2*H pixels per unit of value if the frame is upright, and
      +sy/2*H if it is mirrored. The two hypotheses differ only in SIGN, which is
      what makes this decisive rather than approximate.
-  4. Fit row against value by least squares and compare the slope to both.
+
+  ENC-1288 — WHY STEP 1 READS BOTH EDGES, AND WHY IT USED TO READ ONE. As first
+  written this tool read only the LOWEST fill row. On a MIRRORED frame that is
+  the value edge and everything worked; on an UPRIGHT frame it is the flat
+  baseline, the fitted Y has zero variance, and the tool exits 2 "could not align
+  the still to its records". It could therefore return MIRRORED or CANNOT RUN and
+  never UPRIGHT — a checker with only one reachable verdict, measured on the
+  first honest recapture (2026-09-20). Reading both edges is what makes exit 0
+  reachable, and the committed mirrored stills still read MIRRORED through it.
+
+  This is a test of SIGN, not of magnitude. Since ENC-1316 a view's authored
+  transform is COMPOSED with a fit of its pane region onto the plot box, so the
+  slope the raster actually carries is |sy/2*H| times that fit's Y scale — a
+  positive factor, which cannot change the sign. The predicted magnitudes are
+  printed for context and the ratio is reported, but no verdict turns on them.
 
 The capture's X alignment is not knowable a priori (`xAnchor: true` re-derives it
-at replay time, and a still is one frame of an animation), so step 4 searches
+at replay time, and a still is one frame of an animation), so the fit searches
 pixels-per-record and origin column for the alignment that maximises |r|. A wrong
 alignment pairs a column with the wrong record and attenuates the slope toward
 zero — it cannot manufacture a sign.
 
 Exit 0 upright, 1 mirrored, 2 could not run.
 
-Verified 2026-09-19 at 2423de6: price-line-area -> MIRRORED, slope +36.40 px/$,
-r=+0.9895. Every committed still predates the ENC-696 blit fix — LIMITATIONS.md
-DC-L14.
+Verified 2026-09-20 at the ENC-1288 recapture: the pre-ENC-1288 still (537c995)
+-> MIRRORED, slope +36.40 px/$, r=+0.9895 (bottom edge); the recaptured still ->
+UPRIGHT, slope -29.24 px/$, r=-0.99998 (top edge). Why every committed still was
+mirrored until then: LIMITATIONS.md DC-L15.
 """
 
 import base64
@@ -182,36 +201,53 @@ def main():
         c = (px[i], px[i + 1], px[i + 2])
         return c[dom] > 50 and all(c[dom] > c[o] + 20 for o in others)
 
-    bottom = {}
+    # BOTH edges of the fill run, per column. A flip swaps which one is the
+    # baseline and which is the value, so neither may be assumed — see the
+    # ENC-1288 note in the module docstring.
+    edges = {"top": {}, "bottom": {}}
     for x in range(w):
-        last = None
+        first = last = None
         for y in range(h):
             if is_fill(x, y):
+                if first is None:
+                    first = y
                 last = y
-        bottom[x] = last
-    if sum(1 for v in bottom.values() if v is not None) < 50:
+        edges["top"][x] = first
+        edges["bottom"][x] = last
+    if sum(1 for v in edges["bottom"].values() if v is not None) < 50:
         die("found almost no fill-coloured pixels in %s" % still)
 
-    # Search the capture's X alignment; see the module docstring.
+    # Search the capture's X alignment, over both edges; see the module docstring.
     best = None
     for ppr10 in range(20, 200):
         ppr = ppr10 / 10.0
         for x0 in range(0, 240, 2):
-            X, Y = [], []
-            for idx, rec in enumerate(recs):
-                c = int(x0 + idx * ppr)
-                if c < 2 or c >= w - 2 or bottom.get(c) is None:
+            for name in ("top", "bottom"):
+                edge = edges[name]
+                X, Y = [], []
+                for idx, rec in enumerate(recs):
+                    c = int(x0 + idx * ppr)
+                    if c < 2 or c >= w - 2 or edge.get(c) is None:
+                        continue
+                    X.append(rec[3])
+                    Y.append(edge[c])
+                if len(X) < 50:
                     continue
-                X.append(rec[3])
-                Y.append(bottom[c])
-            if len(X) < 50:
-                continue
-            f = fit(X, Y)
-            if f and (best is None or abs(f[1]) > abs(best[0][1])):
-                best = (f, ppr, x0, len(X))
+                f = fit(X, Y)
+                if f and (best is None or abs(f[1]) > abs(best[0][1])):
+                    best = (f, ppr, x0, len(X), name)
     if best is None:
         die("could not align the still to its records")
-    (A, r, mad), ppr, x0, n = best
+    (A, r, mad), ppr, x0, n, which = best
+
+    # The OTHER edge is the baseline, and it should be flat. Reported as a
+    # control: if both edges vary, the view is not a baseline area and the
+    # "value edge" this ruled on is not necessarily one.
+    other = "bottom" if which == "top" else "top"
+    ovals = [edges[other][int(x0 + i * ppr)] for i in range(len(recs))
+             if 2 <= int(x0 + i * ppr) < w - 2
+             and edges[other].get(int(x0 + i * ppr)) is not None]
+    ospread = (max(ovals) - min(ovals)) if len(ovals) >= 2 else None
 
     up = -sy / 2.0 * h
     mir = +sy / 2.0 * h
@@ -220,14 +256,19 @@ def main():
     print("still     : %s  (%dx%d)" % (os.path.relpath(still, REPO), w, h))
     print("records   : %d rect4 records, %d matched to columns" % (len(recs), n))
     print("alignment : %.1f px/record from column %d" % (ppr, x0))
+    print("value edge: %s of the fill run   (baseline edge %s spans %s px)"
+          % (which, other, "?" if ospread is None else ospread))
     print("fit       : slope %+.2f px/unit   r = %+.4f   median|resid| = %.1f px"
           % (A, r, mad))
-    print("predicted : upright %+.2f   mirrored %+.2f   (sy=%.9f, H=%d)"
-          % (up, mir, sy, h))
+    print("predicted : upright %+.2f   mirrored %+.2f   (sy=%.9f, H=%d; "
+          "|measured/predicted| = %.2f)"
+          % (up, mir, sy, h, abs(A) / abs(mir) if mir else float("nan")))
+    print("            SIGN decides; the magnitude carries ENC-1316's composed "
+          "plot-box fit and is not asserted on.")
     print()
     if abs(r) < 0.8:
         die("fit too weak to rule (|r| = %.3f < 0.8)" % abs(r))
-    print("VERDICT   : %s" % ("MIRRORED — see LIMITATIONS.md DC-L14" if mirrored
+    print("VERDICT   : %s" % ("MIRRORED — see LIMITATIONS.md DC-L15" if mirrored
                               else "UPRIGHT"))
     return 1 if mirrored else 0
 
