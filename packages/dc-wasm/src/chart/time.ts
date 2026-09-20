@@ -742,6 +742,35 @@ export function timeBasisFromWire(value: unknown): TimeBasis | null {
 }
 
 /**
+ * True when `frame` is a dataplane **scene-init** envelope.
+ *
+ * Exists because "this is not a scene-init" and "this is a scene-init that
+ * declares no basis" are different answers, and `transmittedBasisFromSceneInit`
+ * returns `null` for both. A consumer that conflates them retracts a good basis
+ * every time any other text frame arrives — and embassy sends two other kinds on
+ * the same socket: sticky `setGeometryVertexCount` frames, replayed after the
+ * envelope on every subscribe, and `setTransform` frames from the range tracker
+ * at roughly 250 ms. The first makes the axis drop deterministically at connect;
+ * the second makes it flicker four times a second.
+ *
+ * Accepts the parsed object or the raw text. A bare command array is NOT a
+ * scene-init: it carries no `type`, so a caller that has already unwrapped the
+ * envelope has also already made this decision.
+ */
+export function isSceneInitFrame(frame: unknown): boolean {
+  let value: unknown = frame;
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return false;
+    }
+  }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  return (value as Record<string, unknown>).type === "scene-init";
+}
+
+/**
  * Pull the transmitted basis out of a dataplane scene-init frame.
  *
  * Accepts either the parsed envelope (`{type: 'scene-init', commands: [...]}`),

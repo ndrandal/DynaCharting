@@ -95,6 +95,7 @@ export {
   IndexTimeTracker,
   timeBasisFromWire,
   transmittedBasisFromSceneInit,
+  isSceneInitFrame,
 } from "./chart/time";
 export type {
   TimeUnit,
