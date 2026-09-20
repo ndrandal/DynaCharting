@@ -230,12 +230,21 @@ export function useEngineAxis(
       const plan = axis.sync(spec);
       host.markDirty();
       publish(plan);
-      // Retry only while labels are OWED: the font is loaded, ticks exist, and
-      // none were placed. A plan that legitimately places no label (no ticks in
-      // frame) is not a failure and must not spin.
-      const owed = fontLoaded && !measurer;
+      // Retry while labels are OWED, judged from the PLAN rather than from the
+      // probe. The probe measures one glyph and the plan measures every label,
+      // and the core can go busy in between — so "the measurer was non-null" is
+      // not evidence that a single label was measured. What counts is that
+      // furniture was drawn and not one label came back, placed or dropped.
+      const drewMarks = plan.gridSegments.length > 0 || plan.tickSegments.length > 0;
+      const owed =
+        fontLoaded && drewMarks && plan.labels.length === 0 && plan.droppedLabels.length === 0;
       if (owed && attempts < LABEL_RETRY_LIMIT) {
         timer = setTimeout(attempt, LABEL_RETRY_MS);
+      } else if (owed) {
+        console.warn(
+          `[showcase] axis labels never laid out after ${attempts} attempts ` +
+            '(the core stayed busy, or no font) — marks drawn without labels',
+        );
       }
     };
 
