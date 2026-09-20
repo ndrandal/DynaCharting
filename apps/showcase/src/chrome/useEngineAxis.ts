@@ -6,12 +6,26 @@
  * can be ASKED what axis it is rendering — the same discipline ENC-1252 applied
  * to the domain (`window.__dcAxisDomain`).
  *
- * WHY THE AXIS SURVIVES A VIEW SWITCH. `resetScene` (sceneController.ts) deletes
- * exactly the ids the previous MANIFEST created. The axis pane is not one of
- * them, so it is untouched by a view change and is simply re-synced with the new
- * view's ticks. That is deliberate: re-creating the furniture per view would
- * churn ids on a shared allocator for no benefit, and `EngineAxis` is built to
- * be re-synced in place.
+ * WHY THE AXIS IS REBUILT ON EVERY SCENE RE-APPLY — and this one cost a render
+ * to find. `resetScene` (sceneController.ts) deletes exactly the ids the
+ * previous MANIFEST created, so the axis pane survives a view change untouched.
+ * That looked like a feature. It is a bug, because **panes render in SCENE
+ * ORDER and a pane paints its clear colour across its whole region**
+ * (`DawnSceneRenderer::render` → `clearPane`, ENC-511). Re-applying the
+ * manifest makes the view's pane NEWER than the axis pane, and the view's clear
+ * quad — `±0.95` on every showcase view — then covers every gridline, tick,
+ * spine and label.
+ *
+ * Measured: the first capture of this work issued all 8 gridlines, 8 tick marks,
+ * 2 spines and 10 labels, reported `tier1.pass` from the plan, had ZERO rejected
+ * commands, and the canvas contained nothing but candles. Nothing in the error
+ * list, the console or the plan said otherwise — the same shape of silence as
+ * the scissor trap `plotbox.ts` note (7) warns about, one layer up.
+ *
+ * So `sceneEpoch` (from `useViewSwitch`, bumped on view change, restart AND
+ * every replay loop) rebuilds the furniture: dispose, reset the allocator to the
+ * same id base, re-sync. The ids are reused rather than advanced, so a session
+ * that loops for an hour does not walk the id space.
  *
  * ID SPACE. The showcase's manifests hand-pick ids in the 10000–10999 band
  * (CONTRACT-buffer-id.md). The axis allocates from 900000 upward so the two
@@ -31,6 +45,7 @@ import {
   type AxisTextMeasurer,
   type CanvasSize,
   type EngineHost,
+  type IdAllocator,
   type Tier1LabelVerdict,
 } from '@repo/dc-wasm';
 import { engineAxisSpec, SHOWCASE_AXIS_THEME } from './engineAxis';
@@ -110,6 +125,8 @@ declare global {
  * @param canvas    the canvas's backing-store size in device pixels
  * @param enabled   false disables engine drawing entirely (the `?engineAxis=0`
  *                  escape hatch, kept so the two renderers can be compared)
+ * @param sceneEpoch bumped whenever the view's manifest is re-applied; forces a
+ *                  rebuild so the furniture pane is last in scene order again
  */
 export function useEngineAxis(
   host: EngineHost | null,
@@ -118,8 +135,11 @@ export function useEngineAxis(
   transform: EffectiveTransform,
   canvas: CanvasSize,
   enabled = true,
+  sceneEpoch = 0,
 ): EngineAxisReport {
   const axisRef = useRef<EngineAxis | null>(null);
+  const idsRef = useRef<IdAllocator | null>(null);
+  const epochRef = useRef<number>(-1);
   const measurerRef = useRef<AxisTextMeasurer | null>(null);
   const [fontLoaded, setFontLoaded] = useState(false);
   const [report, setReport] = useState<EngineAxisReport>({
@@ -185,9 +205,20 @@ export function useEngineAxis(
       setReport({ plan: null, tier1: null, scene: null, fontLoaded, labelAttempts: 0 });
       return;
     }
-    if (!axisRef.current) {
-      axisRef.current = new EngineAxis(host, createIdAllocator(AXIS_ID_BASE));
+    if (!idsRef.current) idsRef.current = createIdAllocator(AXIS_ID_BASE);
+    // Rebuild ONLY when the scene was re-applied, so the furniture pane is
+    // created after the view's and therefore renders after its clear quad.
+    // `reset()` hands back the same ids, which is legal because `dispose()`
+    // released them. Rebuilding on every domain change instead would re-issue
+    // the whole scaffold many times a second for no reason — the ordering is
+    // what is stale after a re-apply, not the geometry.
+    if (axisRef.current && epochRef.current !== sceneEpoch) {
+      axisRef.current.dispose();
+      idsRef.current.reset();
+      axisRef.current = null;
     }
+    epochRef.current = sceneEpoch;
+    if (!axisRef.current) axisRef.current = new EngineAxis(host, idsRef.current);
     const axis = axisRef.current;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -253,7 +284,7 @@ export function useEngineAxis(
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [host, enabled, viewId, axes, transform, canvas.width, canvas.height, fontLoaded]);
+  }, [host, enabled, viewId, sceneEpoch, axes, transform, canvas.width, canvas.height, fontLoaded]);
 
   return report;
 }
