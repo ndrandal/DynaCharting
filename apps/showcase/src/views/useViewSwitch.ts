@@ -145,10 +145,58 @@ function bakeTransform(host: EngineHost, view: ShowcaseView): void {
  * the scissor silently crops it. `paneRegionFor` is what makes them one
  * rectangle, and this is the only place either is written for a framed view.
  */
-function applyFraming(host: EngineHost, framing: ViewFraming, framed: FramedSeries): void {
-  host.applyControl({ cmd: 'setPaneRegion', id: framing.paneId, ...framed.paneRegion });
-  if (framed.transform) {
-    host.applyControl({ cmd: 'setTransform', id: framing.transformId, ...framed.transform });
+function applyFraming(
+  host: EngineHost,
+  resolution: FramingResolution,
+  framed: FramedSeries,
+  remap: Transform2D | null,
+): void {
+  if (!resolution.framed) return;
+  if (resolution.kind === 'series') {
+    host.applyControl({ cmd: 'setPaneRegion', id: resolution.framing.paneId, ...framed.paneRegion });
+    if (framed.transform) {
+      host.applyControl({ cmd: 'setTransform', id: resolution.framing.transformId, ...framed.transform });
+    }
+    host.markDirty();
+    return;
+  }
+
+  // ── THE PANE FIT (ENC-1316) ─────────────────────────────────────────────
+  // The view drew inside its own clip rectangle; `remap` maps that rectangle
+  // onto the plot box. It is COMPOSED onto every transform the manifest
+  // authored — never substituted for one — so the view's own framing survives
+  // and only the frame moves. Draw items with no transform get `remap` itself:
+  // their geometry is already in clip space, so the remap IS their transform.
+  const pf = resolution.paneFraming;
+  if (!remap) return;
+  host.applyControl({ cmd: 'setPaneRegion', id: pf.paneId, ...framed.paneRegion });
+  for (const t of pf.transforms) {
+    const c = composeTransform(remap, t.authored);
+    host.applyControl({ cmd: 'setTransform', id: t.id, sx: c.sx, sy: c.sy, tx: c.tx, ty: c.ty });
+  }
+  if (pf.untransformedDrawItems.length > 0) {
+    // Delete-then-create: `resetScene` tears down only the ids the MANIFEST
+    // created, so this one survives a re-apply and `createTransform` on a live
+    // id is a rejection. Deleting an id that is not there is also a rejection,
+    // and both are harmless (DC-L06) — what is NOT harmless is a stale
+    // transform silently keeping the previous canvas's fit.
+    host.applyControl({ cmd: 'delete', id: SHOWCASE_FIT_TRANSFORM_ID });
+    host.applyControl({ cmd: 'createTransform', id: SHOWCASE_FIT_TRANSFORM_ID });
+    host.applyControl({
+      cmd: 'setTransform',
+      id: SHOWCASE_FIT_TRANSFORM_ID,
+      sx: remap.sx,
+      sy: remap.sy,
+      tx: remap.tx,
+      ty: remap.ty,
+    });
+    for (const drawItemId of pf.untransformedDrawItems) {
+      host.applyControl({
+        cmd: 'attachTransform',
+        drawItemId,
+        transformId: SHOWCASE_FIT_TRANSFORM_ID,
+      });
+    }
   }
   host.markDirty();
 }
@@ -167,12 +215,13 @@ function applyView(
   host: EngineHost,
   view: ShowcaseView,
   prev: SceneManifest | null,
-  framing: ViewFraming | null,
+  resolution: FramingResolution | null,
   framed: FramedSeries | null,
+  remap: Transform2D | null,
 ): SceneManifest {
   resetScene(host, prev);
   const applied = applyManifest(host, view.manifest);
-  if (framing && framed) applyFraming(host, framing, framed);
+  if (resolution?.framed && framed) applyFraming(host, resolution, framed, remap);
   else bakeTransform(host, view);
   return applied;
 }
@@ -310,7 +359,7 @@ export function useViewSwitch(
   // Which pane/transform a fitted frame belongs to, or the stated reason there
   // is none. Derived from the view's own manifest — see `framing.ts`.
   const framingResolution = useMemo(() => framingFor(view), [view]);
-  const framing = framingResolution?.framed ? framingResolution.framing : null;
+  const framing = framingResolution?.framed ? framingResolution : null;
 
   /**
    * The frame itself: the MEASURED domain (ENC-1252) fitted into the plot box
@@ -322,19 +371,51 @@ export function useViewSwitch(
    * one of them the CSS box instead and the gutters differ by the device-pixel
    * ratio, which renders as furniture that is close to, but not on, the frame.
    */
-  const framed = useMemo<FramedSeries | null>(() => {
-    if (!framing || !axisDomain) return null;
+  /**
+   * The frame, and — for the pane fit — the clip→clip remap that produces it.
+   *
+   * `framed.transform` is always the DATA→CLIP transform the chrome must map
+   * its ticks through, whichever fit produced it. For the series fit that is
+   * the fit itself; for the pane fit it is `remap ∘ view.json's literal`, so
+   * `ChromeOverlay` and `useEngineAxis` need to know nothing about which fit
+   * ran. `remap` is the piece only the ENGINE application needs.
+   *
+   * `tryPlotBox` rather than `plotBox` (DC-L-1313): this is a render-time memo
+   * and a mounting canvas is 1x1, where `64 + 16 >= 1` and `plotBox()` throws.
+   */
+  const fit = useMemo<{ framed: FramedSeries; remap: Transform2D | null } | null>(() => {
+    if (!framing) return null;
     if (!(canvas.width > 0 && canvas.height > 0)) return null;
-    try {
-      return frameSeries(axisDomain, canvas, framing.insets);
-    } catch (e) {
-      // `PlotBoxError` — the gutters do not fit the canvas (a 64px price band on
-      // a 40px-wide canvas mid-resize). Keep the seeded framing and say so
-      // rather than throwing out of a render.
-      console.warn('[showcase] plot box refused this canvas; keeping the seeded framing:', e);
-      return null;
+    if (framing.kind === 'series') {
+      if (!axisDomain) return null;
+      const resolved = tryPlotBox(canvas, framing.framing.insets ?? DEFAULT_PLOT_INSETS);
+      if (!resolved.fits) return null;
+      return { framed: frameSeries(axisDomain, canvas, framing.framing.insets), remap: null };
     }
-  }, [framing, axisDomain, canvas.width, canvas.height]);
+    const pf = framing.paneFraming;
+    const resolved = tryPlotBox(canvas, pf.insets ?? DEFAULT_PLOT_INSETS);
+    if (!resolved.fits) return null;
+    const box = resolved.box;
+    const remap = fitRegionToBox(pf.region, box);
+    // The ticks travel through the SAME composition the geometry does. The
+    // xAnchor re-derivation is deliberately NOT applied: a framed view does not
+    // get `xAnchor` armed (see `useReplay` below), so the baked literal is what
+    // the engine holds under the remap, and reproducing an anchor here would be
+    // the two-layers-two-frames disagreement DC-L14 describes.
+    const authored = effectiveTransform(view?.meta.transform, undefined, null);
+    return {
+      framed: {
+        box,
+        paneRegion: paneRegionFor(box),
+        transform: composeTransform(remap, authored),
+        metrics: null,
+      },
+      remap,
+    };
+  }, [framing, axisDomain, canvas.width, canvas.height, view]);
+
+  const framed = fit?.framed ?? null;
+  const remap = fit?.remap ?? null;
 
   // `applyView` runs from a callback (the replay loop) and needs the CURRENT
   // frame at that instant, not the one captured when the callback was made.
