@@ -1,0 +1,842 @@
+{
+  "ticket": "ENC-1288",
+  "spec": "specs/2026-09-19-chart-quality-bar/SPEC.md D8, D10; LIMITATIONS.md DC-L15",
+  "tool": "apps/showcase/tools/recapture-stills.mjs",
+  "capturer": "specs/2026-09-19-chart-quality-bar/harness/shoot-live.mjs",
+  "capturedAt": "2026-09-20T16:39:04.728Z",
+  "dynachartingHead": "2c03358d88907789b6b9ba4e1302b5856a6deadd",
+  "url": "http://localhost:5650/?svgAxis=0#/",
+  "captureMode": "canvas",
+  "source": "canvas.engine-canvas -> canvas.toDataURL('image/png')",
+  "readiness": "per still, in `readinessRule`: 'full-pass' = the scrubber was seen at <=5% and then >=92%; 'time-fallback' = the transport never advanced (a texture-only view), so the frame was taken after 60000ms with content on the canvas; null = neither fired and shoot-live timed out (see shootLiveExit).",
+  "chromeArgs": [
+    "--headless=new",
+    "--enable-unsafe-webgpu",
+    "--enable-features=Vulkan",
+    "--ignore-gpu-blocklist",
+    "--use-angle=vulkan",
+    "--no-sandbox",
+    "--disable-gpu-sandbox"
+  ],
+  "adapters": [
+    "nvidia/ampere"
+  ],
+  "adapterLine": "Every frame was rendered on <b>nvidia/ampere</b>, a hardware adapter — <code>adapter.info.isFallbackAdapter = false</code> on all 22 (SPEC D8).",
+  "allSoftwareFree": true,
+  "stills": [
+    {
+      "id": "candle-overlays",
+      "still": "candle-overlays.png",
+      "shootLiveExit": 0,
+      "capturedAt": "2026-09-20T16:21:55.651Z",
+      "dynachartingHead": "2c03358d88907789b6b9ba4e1302b5856a6deadd",
+      "captureMode": "canvas",
+      "tier1Scorable": true,
+      "source": "canvas.toDataURL('image/png')",
+      "selector": "canvas.engine-canvas",
+      "backingStore": "900x497",
+      "sha256": "275703aad151fdffc205ce6b16e7a8d48fc0a9ad555a568693c3bf90efd92232",
+      "bytes": 44740,
+      "adapter": {
+        "webgpu": true,
+        "adapterIsFallbackAdapter": "undefined",
+        "infoIsFallbackAdapter": "false",
+        "software": false,
+        "adapter": {
+          "vendor": "nvidia",
+          "architecture": "ampere",
+          "device": "",
+          "description": ""
+        },
+        "corroborating": {
+          "subgroupMinSize": 32,
+          "maxBufferSize": 2147483648,
+          "maxTextureDimension2D": 16384,
+          "featureCount": 21
+        }
+      },
+      "replayProgressPct": 93,
+      "readinessRule": "full-pass",
+      "boundaryErrors": 0,
+      "chromeOverlayNodes": 19,
+      "verdict": "full"
+    },
+    {
+      "id": "candles-aapl",
+      "still": "candles-aapl.png",
+      "shootLiveExit": 0,
+      "capturedAt": "2026-09-20T16:22:43.694Z",
+      "dynachartingHead": "2c03358d88907789b6b9ba4e1302b5856a6deadd",
+      "captureMode": "canvas",
+      "tier1Scorable": true,
+      "source": "canvas.toDataURL('image/png')",
+      "selector": "canvas.engine-canvas",
+      "backingStore": "900x497",
+      "sha256": "e68e085be86f64e9f137990c785bd43842e1e2df0096e0fc55f6b87991a743b0",
+      "bytes": 23931,
+      "adapter": {
+        "webgpu": true,
+        "adapterIsFallbackAdapter": "undefined",
+        "infoIsFallbackAdapter": "false",
+        "software": false,
+        "adapter": {
+          "vendor": "nvidia",
+          "architecture": "ampere",
+          "device": "",
+          "description": ""
+        },
+        "corroborating": {
+          "subgroupMinSize": 32,
+          "maxBufferSize": 2147483648,
+          "maxTextureDimension2D": 16384,
+          "featureCount": 21
+        }
+      },
+      "replayProgressPct": 92,
+      "readinessRule": "full-pass",
+      "boundaryErrors": 0,
+      "chromeOverlayNodes": 13,
+      "verdict": "full"
+    },
+    {
+      "id": "ohlc-bars",
+      "still": "ohlc-bars.png",
+      "shootLiveExit": 0,
+      "capturedAt": "2026-09-20T16:23:32.088Z",
+      "dynachartingHead": "2c03358d88907789b6b9ba4e1302b5856a6deadd",
+      "captureMode": "canvas",
+      "tier1Scorable": true,
+      "source": "canvas.toDataURL('image/png')",
+      "selector": "canvas.engine-canvas",
+      "backingStore": "900x497",
+      "sha256": "895c95dd26309fe861896f821754665c71826a57a52c1c860d14c994696cac29",
+      "bytes": 23804,
+      "adapter": {
+        "webgpu": true,
+        "adapterIsFallbackAdapter": "undefined",
+        "infoIsFallbackAdapter": "false",
+        "software": false,
+        "adapter": {
+          "vendor": "nvidia",
+          "architecture": "ampere",
+          "device": "",
+          "description": ""
+        },
+        "corroborating": {
+          "subgroupMinSize": 32,
+          "maxBufferSize": 2147483648,
+          "maxTextureDimension2D": 16384,
+          "featureCount": 21
+        }
+      },
+      "replayProgressPct": 94,
+      "readinessRule": "full-pass",
+      "boundaryErrors": 0,
+      "chromeOverlayNodes": 13,
+      "verdict": "full"
+    },
+    {
+      "id": "price-line-area",
+      "still": "price-line-area.png",
+      "shootLiveExit": 0,
+      "capturedAt": "2026-09-20T16:24:20.553Z",
+      "dynachartingHead": "2c03358d88907789b6b9ba4e1302b5856a6deadd",
+      "captureMode": "canvas",
+      "tier1Scorable": true,
+      "source": "canvas.toDataURL('image/png')",
+      "selector": "canvas.engine-canvas",
+      "backingStore": "900x497",
+      "sha256": "cf31240e880d43b5c19be8fc555e14d63677328638bedbb691cc60525ad21471",
+      "bytes": 23917,
+      "adapter": {
+        "webgpu": true,
+        "adapterIsFallbackAdapter": "undefined",
+        "infoIsFallbackAdapter": "false",
+        "software": false,
+        "adapter": {
+          "vendor": "nvidia",
+          "architecture": "ampere",
+          "device": "",
+          "description": ""
+        },
+        "corroborating": {
+          "subgroupMinSize": 32,
+          "maxBufferSize": 2147483648,
+          "maxTextureDimension2D": 16384,
+          "featureCount": 21
+        }
+      },
+      "replayProgressPct": 93,
+      "readinessRule": "full-pass",
+      "boundaryErrors": 0,
+      "chromeOverlayNodes": 10,
+      "verdict": "full"
+    },
+    {
+      "id": "scatter",
+      "still": "scatter.png",
+      "shootLiveExit": 0,
+      "capturedAt": "2026-09-20T16:25:09.243Z",
+      "dynachartingHead": "2c03358d88907789b6b9ba4e1302b5856a6deadd",
+      "captureMode": "canvas",
+      "tier1Scorable": true,
+      "source": "canvas.toDataURL('image/png')",
+      "selector": "canvas.engine-canvas",
+      "backingStore": "900x497",
+      "sha256": "b4d3556053e3955b25978aa9c1fe4314cde8f55f6ad273b6f32ee39cc711dcd6",
+      "bytes": 23854,
+      "adapter": {
+        "webgpu": true,
+        "adapterIsFallbackAdapter": "undefined",
+        "infoIsFallbackAdapter": "false",
+        "software": false,
+        "adapter": {
+          "vendor": "nvidia",
+          "architecture": "ampere",
+          "device": "",
+          "description": ""
+        },
+        "corroborating": {
+          "subgroupMinSize": 32,
+          "maxBufferSize": 2147483648,
+          "maxTextureDimension2D": 16384,
+          "featureCount": 21
+        }
+      },
+      "replayProgressPct": 93,
+      "readinessRule": "full-pass",
+      "boundaryErrors": 0,
+      "chromeOverlayNodes": 10,
+      "verdict": "full"
+    },
+    {
+      "id": "audio-waveform",
+      "still": "audio-waveform.png",
+      "shootLiveExit": 0,
+      "capturedAt": "2026-09-20T16:25:57.647Z",
+      "dynachartingHead": "2c03358d88907789b6b9ba4e1302b5856a6deadd",
+      "captureMode": "canvas",
+      "tier1Scorable": true,
+      "source": "canvas.toDataURL('image/png')",
+      "selector": "canvas.engine-canvas",
+      "backingStore": "900x497",
+      "sha256": "9b0e99dd660baa86d2766bd7839a544aed8ed392973d11123716384e9ce2f2af",
+      "bytes": 180627,
+      "adapter": {
+        "webgpu": true,
+        "adapterIsFallbackAdapter": "undefined",
+        "infoIsFallbackAdapter": "false",
+        "software": false,
+        "adapter": {
+          "vendor": "nvidia",
+          "architecture": "ampere",
+          "device": "",
+          "description": ""
+        },
+        "corroborating": {
+          "subgroupMinSize": 32,
+          "maxBufferSize": 2147483648,
+          "maxTextureDimension2D": 16384,
+          "featureCount": 21
+        }
+      },
+      "replayProgressPct": 93,
+      "readinessRule": "full-pass",
+      "boundaryErrors": 0,
+      "chromeOverlayNodes": 10,
+      "verdict": "full"
+    },
+    {
+      "id": "correlation-heatmap",
+      "still": "correlation-heatmap.png",
+      "shootLiveExit": 0,
+      "capturedAt": "2026-09-20T16:27:09.745Z",
+      "dynachartingHead": "2c03358d88907789b6b9ba4e1302b5856a6deadd",
+      "captureMode": "canvas",
+      "tier1Scorable": true,
+      "source": "canvas.toDataURL('image/png')",
+      "selector": "canvas.engine-canvas",
+      "backingStore": "900x497",
+      "sha256": "0a84263a0763736130dec7c759acfec74be9a5482aed2720751314b1e5e9eb2b",
+      "bytes": 17514,
+      "adapter": {
+        "webgpu": true,
+        "adapterIsFallbackAdapter": "undefined",
+        "infoIsFallbackAdapter": "false",
+        "software": false,
+        "adapter": {
+          "vendor": "nvidia",
+          "architecture": "ampere",
+          "device": "",
+          "description": ""
+        },
+        "corroborating": {
+          "subgroupMinSize": 32,
+          "maxBufferSize": 2147483648,
+          "maxTextureDimension2D": 16384,
+          "featureCount": 21
+        }
+      },
+      "replayProgressPct": 18,
+      "readinessRule": "time-fallback",
+      "boundaryErrors": 0,
+      "chromeOverlayNodes": 23,
+      "verdict": "full"
+    },
+    {
+      "id": "depth-ladder",
+      "still": "depth-ladder.png",
+      "shootLiveExit": 0,
+      "capturedAt": "2026-09-20T16:27:58.760Z",
+      "dynachartingHead": "2c03358d88907789b6b9ba4e1302b5856a6deadd",
+      "captureMode": "canvas",
+      "tier1Scorable": true,
+      "source": "canvas.toDataURL('image/png')",
+      "selector": "canvas.engine-canvas",
+      "backingStore": "900x497",
+      "sha256": "bc946c64d1acf7b2806577996d077ed88369b73f361379ca2039e8a1bff3654c",
+      "bytes": 18137,
+      "adapter": {
+        "webgpu": true,
+        "adapterIsFallbackAdapter": "undefined",
+        "infoIsFallbackAdapter": "false",
+        "software": false,
+        "adapter": {
+          "vendor": "nvidia",
+          "architecture": "ampere",
+          "device": "",
+          "description": ""
+        },
+        "corroborating": {
+          "subgroupMinSize": 32,
+          "maxBufferSize": 2147483648,
+          "maxTextureDimension2D": 16384,
+          "featureCount": 21
+        }
+      },
+      "replayProgressPct": 93,
+      "readinessRule": "full-pass",
+      "boundaryErrors": 0,
+      "chromeOverlayNodes": 13,
+      "verdict": "full"
+    },
+    {
+      "id": "ecg",
+      "still": "ecg.png",
+      "shootLiveExit": 0,
+      "capturedAt": "2026-09-20T16:28:47.060Z",
+      "dynachartingHead": "2c03358d88907789b6b9ba4e1302b5856a6deadd",
+      "captureMode": "canvas",
+      "tier1Scorable": true,
+      "source": "canvas.toDataURL('image/png')",
+      "selector": "canvas.engine-canvas",
+      "backingStore": "900x497",
+      "sha256": "923c6ca11e2f31025e9c4319d8821266d725091168639931903c53c2124985b6",
+      "bytes": 94663,
+      "adapter": {
+        "webgpu": true,
+        "adapterIsFallbackAdapter": "undefined",
+        "infoIsFallbackAdapter": "false",
+        "software": false,
+        "adapter": {
+          "vendor": "nvidia",
+          "architecture": "ampere",
+          "device": "",
+          "description": ""
+        },
+        "corroborating": {
+          "subgroupMinSize": 32,
+          "maxBufferSize": 2147483648,
+          "maxTextureDimension2D": 16384,
+          "featureCount": 21
+        }
+      },
+      "replayProgressPct": 93,
+      "readinessRule": "full-pass",
+      "boundaryErrors": 0,
+      "chromeOverlayNodes": 10,
+      "verdict": "full"
+    },
+    {
+      "id": "footprint",
+      "still": "footprint.png",
+      "shootLiveExit": 0,
+      "capturedAt": "2026-09-20T16:29:36.121Z",
+      "dynachartingHead": "2c03358d88907789b6b9ba4e1302b5856a6deadd",
+      "captureMode": "canvas",
+      "tier1Scorable": true,
+      "source": "canvas.toDataURL('image/png')",
+      "selector": "canvas.engine-canvas",
+      "backingStore": "900x497",
+      "sha256": "98d42e902fd13abdadc45a7f16892d5d49324d60104512b9ec21ad45d652d2b9",
+      "bytes": 29307,
+      "adapter": {
+        "webgpu": true,
+        "adapterIsFallbackAdapter": "undefined",
+        "infoIsFallbackAdapter": "false",
+        "software": false,
+        "adapter": {
+          "vendor": "nvidia",
+          "architecture": "ampere",
+          "device": "",
+          "description": ""
+        },
+        "corroborating": {
+          "subgroupMinSize": 32,
+          "maxBufferSize": 2147483648,
+          "maxTextureDimension2D": 16384,
+          "featureCount": 21
+        }
+      },
+      "replayProgressPct": 93,
+      "readinessRule": "full-pass",
+      "boundaryErrors": 0,
+      "chromeOverlayNodes": 13,
+      "verdict": "full"
+    },
+    {
+      "id": "sankey",
+      "still": "sankey.png",
+      "shootLiveExit": 0,
+      "capturedAt": "2026-09-20T16:30:23.303Z",
+      "dynachartingHead": "2c03358d88907789b6b9ba4e1302b5856a6deadd",
+      "captureMode": "canvas",
+      "tier1Scorable": true,
+      "source": "canvas.toDataURL('image/png')",
+      "selector": "canvas.engine-canvas",
+      "backingStore": "900x497",
+      "sha256": "3bc4b458a63461db068cc5440c9b272c98c1660450566649f3ccd2c63e7c2135",
+      "bytes": 29231,
+      "adapter": {
+        "webgpu": true,
+        "adapterIsFallbackAdapter": "undefined",
+        "infoIsFallbackAdapter": "false",
+        "software": false,
+        "adapter": {
+          "vendor": "nvidia",
+          "architecture": "ampere",
+          "device": "",
+          "description": ""
+        },
+        "corroborating": {
+          "subgroupMinSize": 32,
+          "maxBufferSize": 2147483648,
+          "maxTextureDimension2D": 16384,
+          "featureCount": 21
+        }
+      },
+      "replayProgressPct": 93,
+      "readinessRule": "full-pass",
+      "boundaryErrors": 0,
+      "chromeOverlayNodes": 22,
+      "verdict": "full"
+    },
+    {
+      "id": "radial-seasonality",
+      "still": "radial-seasonality.png",
+      "shootLiveExit": 0,
+      "capturedAt": "2026-09-20T16:31:11.034Z",
+      "dynachartingHead": "2c03358d88907789b6b9ba4e1302b5856a6deadd",
+      "captureMode": "canvas",
+      "tier1Scorable": true,
+      "source": "canvas.toDataURL('image/png')",
+      "selector": "canvas.engine-canvas",
+      "backingStore": "900x497",
+      "sha256": "36492d99a9536212b3b1d84add7e80eccecc76b4453f94d4e5d805146375d13b",
+      "bytes": 24436,
+      "adapter": {
+        "webgpu": true,
+        "adapterIsFallbackAdapter": "undefined",
+        "infoIsFallbackAdapter": "false",
+        "software": false,
+        "adapter": {
+          "vendor": "nvidia",
+          "architecture": "ampere",
+          "device": "",
+          "description": ""
+        },
+        "corroborating": {
+          "subgroupMinSize": 32,
+          "maxBufferSize": 2147483648,
+          "maxTextureDimension2D": 16384,
+          "featureCount": 21
+        }
+      },
+      "replayProgressPct": 93,
+      "readinessRule": "full-pass",
+      "boundaryErrors": 0,
+      "chromeOverlayNodes": 19,
+      "verdict": "full"
+    },
+    {
+      "id": "renko",
+      "still": "renko.png",
+      "shootLiveExit": 0,
+      "capturedAt": "2026-09-20T16:31:53.706Z",
+      "dynachartingHead": "2c03358d88907789b6b9ba4e1302b5856a6deadd",
+      "captureMode": "canvas",
+      "tier1Scorable": true,
+      "source": "canvas.toDataURL('image/png')",
+      "selector": "canvas.engine-canvas",
+      "backingStore": "900x497",
+      "sha256": "a20100f20860fe777c121d79f6225fe8db713346bd8b61970f63ac0376ca43d7",
+      "bytes": 18934,
+      "adapter": {
+        "webgpu": true,
+        "adapterIsFallbackAdapter": "undefined",
+        "infoIsFallbackAdapter": "false",
+        "software": false,
+        "adapter": {
+          "vendor": "nvidia",
+          "architecture": "ampere",
+          "device": "",
+          "description": ""
+        },
+        "corroborating": {
+          "subgroupMinSize": 32,
+          "maxBufferSize": 2147483648,
+          "maxTextureDimension2D": 16384,
+          "featureCount": 21
+        }
+      },
+      "replayProgressPct": 92,
+      "readinessRule": "full-pass",
+      "boundaryErrors": 0,
+      "chromeOverlayNodes": 13,
+      "verdict": "full"
+    },
+    {
+      "id": "ridgeline",
+      "still": "ridgeline.png",
+      "shootLiveExit": 0,
+      "capturedAt": "2026-09-20T16:32:41.963Z",
+      "dynachartingHead": "2c03358d88907789b6b9ba4e1302b5856a6deadd",
+      "captureMode": "canvas",
+      "tier1Scorable": true,
+      "source": "canvas.toDataURL('image/png')",
+      "selector": "canvas.engine-canvas",
+      "backingStore": "900x497",
+      "sha256": "67c693732e339b8267023c08b765d7245471d333ed1d6a63b92354332278c9f8",
+      "bytes": 97585,
+      "adapter": {
+        "webgpu": true,
+        "adapterIsFallbackAdapter": "undefined",
+        "infoIsFallbackAdapter": "false",
+        "software": false,
+        "adapter": {
+          "vendor": "nvidia",
+          "architecture": "ampere",
+          "device": "",
+          "description": ""
+        },
+        "corroborating": {
+          "subgroupMinSize": 32,
+          "maxBufferSize": 2147483648,
+          "maxTextureDimension2D": 16384,
+          "featureCount": 21
+        }
+      },
+      "replayProgressPct": 93,
+      "readinessRule": "full-pass",
+      "boundaryErrors": 0,
+      "chromeOverlayNodes": 19,
+      "verdict": "full"
+    },
+    {
+      "id": "sports-shot-chart",
+      "still": "sports-shot-chart.png",
+      "shootLiveExit": 0,
+      "capturedAt": "2026-09-20T16:33:29.757Z",
+      "dynachartingHead": "2c03358d88907789b6b9ba4e1302b5856a6deadd",
+      "captureMode": "canvas",
+      "tier1Scorable": true,
+      "source": "canvas.toDataURL('image/png')",
+      "selector": "canvas.engine-canvas",
+      "backingStore": "900x497",
+      "sha256": "56f1a16bfdf60ca3235cd885ec1665013022190ecb0976eea8b039dedac71969",
+      "bytes": 21829,
+      "adapter": {
+        "webgpu": true,
+        "adapterIsFallbackAdapter": "undefined",
+        "infoIsFallbackAdapter": "false",
+        "software": false,
+        "adapter": {
+          "vendor": "nvidia",
+          "architecture": "ampere",
+          "device": "",
+          "description": ""
+        },
+        "corroborating": {
+          "subgroupMinSize": 32,
+          "maxBufferSize": 2147483648,
+          "maxTextureDimension2D": 16384,
+          "featureCount": 21
+        }
+      },
+      "replayProgressPct": 92,
+      "readinessRule": "full-pass",
+      "boundaryErrors": 0,
+      "chromeOverlayNodes": 16,
+      "verdict": "full"
+    },
+    {
+      "id": "streamgraph",
+      "still": "streamgraph.png",
+      "shootLiveExit": 0,
+      "capturedAt": "2026-09-20T16:34:17.438Z",
+      "dynachartingHead": "2c03358d88907789b6b9ba4e1302b5856a6deadd",
+      "captureMode": "canvas",
+      "tier1Scorable": true,
+      "source": "canvas.toDataURL('image/png')",
+      "selector": "canvas.engine-canvas",
+      "backingStore": "900x497",
+      "sha256": "d33802a157857c1dfd5caa53f41c343a5f16b1d22ec15c5dd2072ecb8185d63e",
+      "bytes": 26197,
+      "adapter": {
+        "webgpu": true,
+        "adapterIsFallbackAdapter": "undefined",
+        "infoIsFallbackAdapter": "false",
+        "software": false,
+        "adapter": {
+          "vendor": "nvidia",
+          "architecture": "ampere",
+          "device": "",
+          "description": ""
+        },
+        "corroborating": {
+          "subgroupMinSize": 32,
+          "maxBufferSize": 2147483648,
+          "maxTextureDimension2D": 16384,
+          "featureCount": 21
+        }
+      },
+      "replayProgressPct": 93,
+      "readinessRule": "full-pass",
+      "boundaryErrors": 0,
+      "chromeOverlayNodes": 25,
+      "verdict": "full"
+    },
+    {
+      "id": "treemap",
+      "still": "treemap.png",
+      "shootLiveExit": 0,
+      "capturedAt": "2026-09-20T16:35:04.605Z",
+      "dynachartingHead": "2c03358d88907789b6b9ba4e1302b5856a6deadd",
+      "captureMode": "canvas",
+      "tier1Scorable": true,
+      "source": "canvas.toDataURL('image/png')",
+      "selector": "canvas.engine-canvas",
+      "backingStore": "900x497",
+      "sha256": "d7c131d1ae0280b141289d1c3d8f3b68873ea9a6f4477c188328c1b0eea79b49",
+      "bytes": 12052,
+      "adapter": {
+        "webgpu": true,
+        "adapterIsFallbackAdapter": "undefined",
+        "infoIsFallbackAdapter": "false",
+        "software": false,
+        "adapter": {
+          "vendor": "nvidia",
+          "architecture": "ampere",
+          "device": "",
+          "description": ""
+        },
+        "corroborating": {
+          "subgroupMinSize": 32,
+          "maxBufferSize": 2147483648,
+          "maxTextureDimension2D": 16384,
+          "featureCount": 21
+        }
+      },
+      "replayProgressPct": 93,
+      "readinessRule": "full-pass",
+      "boundaryErrors": 0,
+      "chromeOverlayNodes": 19,
+      "verdict": "full"
+    },
+    {
+      "id": "volume-profile",
+      "still": "volume-profile.png",
+      "shootLiveExit": 0,
+      "capturedAt": "2026-09-20T16:35:52.856Z",
+      "dynachartingHead": "2c03358d88907789b6b9ba4e1302b5856a6deadd",
+      "captureMode": "canvas",
+      "tier1Scorable": true,
+      "source": "canvas.toDataURL('image/png')",
+      "selector": "canvas.engine-canvas",
+      "backingStore": "900x497",
+      "sha256": "8652b6250ec3c9adc1dc3202554b6d4bff31d28ae5f15e6d051747d2bc1c0c9a",
+      "bytes": 21637,
+      "adapter": {
+        "webgpu": true,
+        "adapterIsFallbackAdapter": "undefined",
+        "infoIsFallbackAdapter": "false",
+        "software": false,
+        "adapter": {
+          "vendor": "nvidia",
+          "architecture": "ampere",
+          "device": "",
+          "description": ""
+        },
+        "corroborating": {
+          "subgroupMinSize": 32,
+          "maxBufferSize": 2147483648,
+          "maxTextureDimension2D": 16384,
+          "featureCount": 21
+        }
+      },
+      "replayProgressPct": 94,
+      "readinessRule": "full-pass",
+      "boundaryErrors": 0,
+      "chromeOverlayNodes": 10,
+      "verdict": "full"
+    },
+    {
+      "id": "weather-radar",
+      "still": "weather-radar.png",
+      "shootLiveExit": 0,
+      "capturedAt": "2026-09-20T16:36:40.669Z",
+      "dynachartingHead": "2c03358d88907789b6b9ba4e1302b5856a6deadd",
+      "captureMode": "canvas",
+      "tier1Scorable": true,
+      "source": "canvas.toDataURL('image/png')",
+      "selector": "canvas.engine-canvas",
+      "backingStore": "900x497",
+      "sha256": "631ddb451590db39c74cf64fd313a2178c74f374236bc0c2cce79ad6c48e8400",
+      "bytes": 248857,
+      "adapter": {
+        "webgpu": true,
+        "adapterIsFallbackAdapter": "undefined",
+        "infoIsFallbackAdapter": "false",
+        "software": false,
+        "adapter": {
+          "vendor": "nvidia",
+          "architecture": "ampere",
+          "device": "",
+          "description": ""
+        },
+        "corroborating": {
+          "subgroupMinSize": 32,
+          "maxBufferSize": 2147483648,
+          "maxTextureDimension2D": 16384,
+          "featureCount": 21
+        }
+      },
+      "replayProgressPct": 94,
+      "readinessRule": "full-pass",
+      "boundaryErrors": 0,
+      "chromeOverlayNodes": 14,
+      "verdict": "full"
+    },
+    {
+      "id": "contour",
+      "still": "contour.png",
+      "shootLiveExit": 0,
+      "capturedAt": "2026-09-20T16:37:28.260Z",
+      "dynachartingHead": "2c03358d88907789b6b9ba4e1302b5856a6deadd",
+      "captureMode": "canvas",
+      "tier1Scorable": true,
+      "source": "canvas.toDataURL('image/png')",
+      "selector": "canvas.engine-canvas",
+      "backingStore": "900x497",
+      "sha256": "dfa338f911c68e0a347699def974764fd0783e2678aec739052adaaea4f64b61",
+      "bytes": 204393,
+      "adapter": {
+        "webgpu": true,
+        "adapterIsFallbackAdapter": "undefined",
+        "infoIsFallbackAdapter": "false",
+        "software": false,
+        "adapter": {
+          "vendor": "nvidia",
+          "architecture": "ampere",
+          "device": "",
+          "description": ""
+        },
+        "corroborating": {
+          "subgroupMinSize": 32,
+          "maxBufferSize": 2147483648,
+          "maxTextureDimension2D": 16384,
+          "featureCount": 21
+        }
+      },
+      "replayProgressPct": 92,
+      "readinessRule": "full-pass",
+      "boundaryErrors": 0,
+      "chromeOverlayNodes": 14,
+      "verdict": "full"
+    },
+    {
+      "id": "density-heatmap",
+      "still": "density-heatmap.png",
+      "shootLiveExit": 0,
+      "capturedAt": "2026-09-20T16:38:16.083Z",
+      "dynachartingHead": "2c03358d88907789b6b9ba4e1302b5856a6deadd",
+      "captureMode": "canvas",
+      "tier1Scorable": true,
+      "source": "canvas.toDataURL('image/png')",
+      "selector": "canvas.engine-canvas",
+      "backingStore": "900x497",
+      "sha256": "e2f76b7805655cdf9d8e9a7852b32f57a256b4a026c9b3ba130b6ce20cc34f6a",
+      "bytes": 254221,
+      "adapter": {
+        "webgpu": true,
+        "adapterIsFallbackAdapter": "undefined",
+        "infoIsFallbackAdapter": "false",
+        "software": false,
+        "adapter": {
+          "vendor": "nvidia",
+          "architecture": "ampere",
+          "device": "",
+          "description": ""
+        },
+        "corroborating": {
+          "subgroupMinSize": 32,
+          "maxBufferSize": 2147483648,
+          "maxTextureDimension2D": 16384,
+          "featureCount": 21
+        }
+      },
+      "replayProgressPct": 92,
+      "readinessRule": "full-pass",
+      "boundaryErrors": 0,
+      "chromeOverlayNodes": 14,
+      "verdict": "full"
+    },
+    {
+      "id": "spectrogram",
+      "still": "spectrogram.png",
+      "shootLiveExit": 0,
+      "capturedAt": "2026-09-20T16:39:04.363Z",
+      "dynachartingHead": "2c03358d88907789b6b9ba4e1302b5856a6deadd",
+      "captureMode": "canvas",
+      "tier1Scorable": true,
+      "source": "canvas.toDataURL('image/png')",
+      "selector": "canvas.engine-canvas",
+      "backingStore": "900x497",
+      "sha256": "a0b0c911ac96291138e0d0a341644e648f3d29ce7c1ee9251c18ae1ec8eb16d5",
+      "bytes": 689198,
+      "adapter": {
+        "webgpu": true,
+        "adapterIsFallbackAdapter": "undefined",
+        "infoIsFallbackAdapter": "false",
+        "software": false,
+        "adapter": {
+          "vendor": "nvidia",
+          "architecture": "ampere",
+          "device": "",
+          "description": ""
+        },
+        "corroborating": {
+          "subgroupMinSize": 32,
+          "maxBufferSize": 2147483648,
+          "maxTextureDimension2D": 16384,
+          "featureCount": 21
+        }
+      },
+      "replayProgressPct": 93,
+      "readinessRule": "full-pass",
+      "boundaryErrors": 0,
+      "chromeOverlayNodes": 14,
+      "verdict": "full"
+    }
+  ]
+}

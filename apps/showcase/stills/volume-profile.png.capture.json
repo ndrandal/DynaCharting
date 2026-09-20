@@ -1,0 +1,36 @@
+{
+  "captureMode": "canvas",
+  "tier1Scorable": true,
+  "spec": "specs/2026-09-19-chart-quality-bar/SPEC.md D10, D8",
+  "url": "http://localhost:5650/?svgAxis=0#/",
+  "capturedAt": "2026-09-20T16:35:52.856Z",
+  "canvasReady": true,
+  "dwellMs": 0,
+  "adapter": {
+    "webgpu": true,
+    "adapterIsFallbackAdapter": "undefined",
+    "infoIsFallbackAdapter": "false",
+    "software": false,
+    "adapter": {
+      "vendor": "nvidia",
+      "architecture": "ampere",
+      "device": "",
+      "description": ""
+    },
+    "corroborating": {
+      "subgroupMinSize": 32,
+      "maxBufferSize": 2147483648,
+      "maxTextureDimension2D": 16384,
+      "featureCount": 21
+    }
+  },
+  "selector": "canvas.engine-canvas",
+  "canvasIndex": 0,
+  "canvasesOnPage": 1,
+  "matched": 1,
+  "backingStore": "900x497",
+  "cssSize": "900x497",
+  "source": "canvas.toDataURL('image/png')",
+  "bytes": 21637,
+  "sha256": "8652b6250ec3c9adc1dc3202554b6d4bff31d28ae5f15e6d051747d2bc1c0c9a"
+}
