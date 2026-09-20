@@ -15,6 +15,10 @@ export default defineConfig({
       "packages/**/__tests__/**/*.test.ts",
       "packages/**/*.test.ts",
       "apps/**/*.test.ts",
+      // ENC-1277: the LIMITATIONS.md id guard. `pnpm test` is the only check in
+      // this repo that needs no Dawn, no GPU and no build, so it is where a guard
+      // that must actually run belongs.
+      "scripts/**/*.test.ts",
     ],
     exclude: ["**/node_modules/**", "**/dist/**"],
   },
