@@ -44,7 +44,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { EngineHost, FramedSeries, ObservedDomain, TimeBasis } from '@repo/dc-wasm';
+import type { AxisGridTarget, EngineHost, FramedSeries, ObservedDomain, TimeBasis } from '@repo/dc-wasm';
 import type { ShowcaseView } from '../views/registry';
 import { AxisOverlay } from './AxisOverlay';
 import { resolveAxes, axisDomainReportJson, type AxisDomainReport } from './deriveAxes';
@@ -103,6 +103,12 @@ interface ChromeOverlayProps {
    * transform by construction rather than by two derivations agreeing.
    */
   framed?: FramedSeries | null;
+  /**
+   * Where the GRIDLINES belong (ENC-1316) — the framed view's own pane, and a
+   * layer id below every layer that pane holds, so they are drawn behind the
+   * data instead of across it. Null for an unframed view.
+   */
+  gridTarget?: AxisGridTarget | null;
 }
 
 /**
@@ -168,6 +174,7 @@ export function ChromeOverlay({
   canvasSize = { width: 0, height: 0 },
   sceneEpoch = 0,
   framed = null,
+  gridTarget = null,
 }: ChromeOverlayProps) {
   const switches = useMemo(axisSwitches, []);
   const fault = useMemo(chromeFault, []);
@@ -235,6 +242,7 @@ export function ChromeOverlay({
     switches.engine,
     sceneEpoch,
     framed?.box ?? null,
+    gridTarget,
   );
 
   // ENC-1313: when the engine axis declines, SAY SO IN THE DOM. `plan: null`

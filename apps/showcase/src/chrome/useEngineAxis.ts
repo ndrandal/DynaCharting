@@ -40,6 +40,7 @@ import {
   checkTier1Labels,
   createHostMeasurer,
   createIdAllocator,
+  type AxisGridTarget,
   type AxisPlan,
   type AxisSceneFragment,
   type AxisTextMeasurer,
@@ -145,6 +146,11 @@ declare global {
  *                  furniture and the geometry share one rectangle; null for a
  *                  view that is not framed, in which case the default box for
  *                  this canvas is used
+ * @param gridTarget the framed view's own pane + a layer id below every layer
+ *                  it creates, so the GRIDLINES are drawn behind the data
+ *                  (ENC-1316). Null leaves them in the furniture pane, on top.
+ *                  Read once per scaffold, which is why the effect rebuilds on
+ *                  `sceneEpoch` — a new pane id always comes with a new epoch.
  */
 export function useEngineAxis(
   host: EngineHost | null,
@@ -155,6 +161,7 @@ export function useEngineAxis(
   enabled = true,
   sceneEpoch = 0,
   box: PlotBox | null = null,
+  gridTarget: AxisGridTarget | null = null,
 ): EngineAxisReport {
   const axisRef = useRef<EngineAxis | null>(null);
   const idsRef = useRef<IdAllocator | null>(null);
@@ -346,6 +353,7 @@ export function useEngineAxis(
         measurer,
         SHOWCASE_AXIS_THEME,
         box,
+        gridTarget,
       );
       if (!spec) {
         publishRefusal(refusal);
@@ -376,7 +384,19 @@ export function useEngineAxis(
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [host, enabled, viewId, sceneEpoch, axes, transform, canvas.width, canvas.height, fontLoaded, box]);
+  }, [
+    host,
+    enabled,
+    viewId,
+    sceneEpoch,
+    axes,
+    transform,
+    canvas.width,
+    canvas.height,
+    fontLoaded,
+    box,
+    gridTarget,
+  ]);
 
   return report;
 }

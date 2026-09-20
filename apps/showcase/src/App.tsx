@@ -73,6 +73,7 @@ export default function App() {
     setLoop,
     sceneEpoch,
     framed,
+    gridTarget,
   } = useViewSwitch(webgpu ? host : null, view, canvasSize);
 
   // --- canvas slot routing (portal target for the one shared canvas) ---
@@ -157,6 +158,7 @@ export default function App() {
         canvasSize={canvasSize}
         sceneEpoch={sceneEpoch}
         framed={framed}
+        gridTarget={gridTarget}
       />
     </ChartChromeBoundary>
   ) : null;
