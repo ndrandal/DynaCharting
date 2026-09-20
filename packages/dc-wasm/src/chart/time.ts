@@ -661,6 +661,121 @@ export function timeDomainFor(basis: TimeBasis, indexDomain: Range): Range {
   return a <= b ? { min: a, max: b } : { min: b, max: a };
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 6a. The TRANSMITTED basis — read off the wire, not fitted (ENC-1282, SPEC D6)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The wire form of a transmitted basis: treaty `dataplane.v1.DcTimeBasis`, as it
+ * rides `DcCreateBufferCmd.timeBasis` on the dataplane's scene-init frame.
+ *
+ * `int64` on the wire; the adapter that produces this object has already
+ * narrowed both fields to `number` and refuses anything outside the safe-integer
+ * range, so this type is `number` rather than `bigint` on purpose.
+ */
+export interface WireTimeBasis {
+  /** Epoch ms (UTC) of bar ordinal 0. */
+  baseMs: number;
+  /** Bar width in ms. Always > 0 when the basis is present. */
+  periodMs: number;
+  /** True when `baseMs` is a real wall clock taken where the bar was cut. */
+  epochKnown: boolean;
+}
+
+/**
+ * Build a `TimeBasis` from a transmitted `DcTimeBasis`, or `null` if the value
+ * is not one.
+ *
+ * This is the whole of ENC-1282's input change: the map is `t = baseMs +
+ * x·periodMs` where `x` is the record's bar ordinal, so `originMs = baseMs` and
+ * `msPerIndex = periodMs` exactly — no fit, no samples, no drift.
+ *
+ * IT REFUSES RATHER THAN REPAIRS, and that is deliberate. Every rejection below
+ * returns `null`, and a caller with no basis DROPS the time axis (the ENC-1254
+ * behaviour this keeps). The alternative — coercing a malformed declaration into
+ * some nearby basis — would put a plausible clock on the axis with nothing
+ * behind it, which is the caption failure DC-L16 names, now with the producer's
+ * authority borrowed to sell it.
+ *
+ *  - `periodMs` must be finite and **strictly > 0**. A stream with no uniform
+ *    bar period declares no basis at all and never declares `periodMs: 0`
+ *    (SPEC D7 corollary), so a 0 here is a producer bug, not "no cadence", and
+ *    silently accepting it would divide the axis by zero.
+ *  - `baseMs` must be a finite safe integer. `epochKnown: false` is allowed and
+ *    means the grid is tape-relative — a legitimate producer statement, not an
+ *    error.
+ *  - `epochKnown` must be a real boolean. A missing flag is NOT read as `false`:
+ *    D3 makes it part of the contract precisely so the client stops guessing,
+ *    and defaulting it would resurrect the guess with a friendlier face.
+ */
+export function timeBasisFromWire(value: unknown): TimeBasis | null {
+  if (typeof value !== "object" || value === null) return null;
+  const v = value as Record<string, unknown>;
+  const baseMs = v.baseMs;
+  const periodMs = v.periodMs;
+  const epochKnown = v.epochKnown;
+  if (typeof baseMs !== "number" || !Number.isSafeInteger(baseMs)) return null;
+  if (typeof periodMs !== "number" || !Number.isFinite(periodMs) || periodMs <= 0) {
+    return null;
+  }
+  if (typeof epochKnown !== "boolean") return null;
+  return {
+    originMs: baseMs,
+    msPerIndex: periodMs,
+    source: "transmitted",
+    epochKnown,
+    samples: 0,
+  };
+}
+
+/**
+ * Pull the transmitted basis out of a dataplane scene-init frame.
+ *
+ * Accepts either the parsed envelope (`{type: 'scene-init', commands: [...]}`),
+ * a bare command array, or the raw text frame, and returns the basis declared on
+ * the `createBuffer` for `bufferId` — or, when `bufferId` is omitted, the first
+ * `createBuffer` that carries one.
+ *
+ * Returns `null` for every "there is no basis here" case, which includes the
+ * ordinary one: a buffer whose stream has no uniform bar period carries no
+ * `timeBasis` key at all, and its axis is dropped.
+ *
+ * Buffers are matched by id and never by position: the envelope's `createBuffer`
+ * commands are emitted in sorted-id order, not in the order a view's manifest
+ * declares them.
+ */
+export function transmittedBasisFromSceneInit(
+  frame: unknown,
+  bufferId?: number,
+): TimeBasis | null {
+  let value: unknown = frame;
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return null;
+    }
+  }
+  const commands = Array.isArray(value)
+    ? value
+    : typeof value === "object" && value !== null
+      ? (value as Record<string, unknown>).commands
+      : undefined;
+  if (!Array.isArray(commands)) return null;
+  for (const raw of commands) {
+    if (typeof raw !== "object" || raw === null) continue;
+    const cmd = raw as Record<string, unknown>;
+    if (cmd.cmd !== "createBuffer") continue;
+    if (bufferId !== undefined && cmd.id !== bufferId) continue;
+    const basis = timeBasisFromWire(cmd.timeBasis);
+    if (basis) return basis;
+    // A matched buffer with no (or a malformed) basis is an answer, not a
+    // reason to keep looking at other buffers' clocks.
+    if (bufferId !== undefined) return null;
+  }
+  return null;
+}
+
 const OP_APPEND = 1;
 const OP_UPDATE_RANGE = 2;
 const RECORD_HEADER_SIZE = 13; // [1B op][4B bufferId][4B offset][4B payloadBytes]
