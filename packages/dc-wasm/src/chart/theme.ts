@@ -81,7 +81,13 @@ export interface AxisTheme {
 const DEFAULTS = {
   backgroundColor: [0.1, 0.1, 0.12, 1.0],
   textColor: [0.8, 0.8, 0.85, 1.0],
-  gridColor: [0.2, 0.2, 0.25, 1.0],
+  // ENC-1316: alpha 0.4, mirrored from `Theme.hpp`, where the derivation is
+  // written out. Short form: the grid is drawn OVER the data, so D11 band 3 is
+  // measured against what it crosses; an opaque grid across a bright mark is a
+  // mark (6.25 : 1 on `audio-waveform`). 0.4 is bounded above by the 2.0 : 1
+  // ceiling over the brightest mark and below by the 10/255 visibility floor
+  // over the darkest pane.
+  gridColor: [0.2, 0.2, 0.25, 0.4],
   tickColor: [0.4, 0.4, 0.45, 1.0],
   labelColor: [0.7, 0.7, 0.75, 1.0],
   gridLineWidth: 1.0,
