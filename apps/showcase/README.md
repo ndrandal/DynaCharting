@@ -104,34 +104,44 @@ dataplane WS client, records binary frames for `--duration` ms, writes
 `records.json`, and **tears both processes down by PID** (SIGTERM -> SIGKILL,
 never a broad `pkill`).
 
-### `tools/snap-stills.mjs` — still capture + contact sheet (the visual proof)
+### `tools/recapture-stills.mjs` — the gallery capture (ENC-1288)
 
-Drives the **built** showcase (served by `vite preview`) through a real WebGPU
-Chrome and screenshots every view's live canvas:
+Drives the showcase dev server through a real WebGPU Chrome and writes every
+view's still, **canvas-only and under a named hardware adapter**:
 
 ```bash
-# 1. build + serve
-pnpm --filter @repo/showcase build
-pnpm --filter @repo/showcase preview          # note the port it prints (e.g. 5178)
+# 1. serve
+pnpm --filter @repo/showcase dev --port 5650 --strictPort
 
-# 2. capture all views (Playwright lives in the ~/pw harness; PLAYWRIGHT_DIR overrides)
-DISPLAY=:0 SHOWCASE_URL=http://localhost:5178/ \
-  node apps/showcase/tools/snap-stills.mjs --wait 8500
-
-# 3. stop preview by PID (do NOT broad-pkill)
-kill <preview-pid>
+# 2. capture all views (in another shell)
+node apps/showcase/tools/recapture-stills.mjs --vite-port 5650 --port 9530
 ```
 
-For each view it navigates to `#/view/<id>`, waits `--wait` ms for the
-loop-replay to settle, samples the canvas (coverage + chroma) to classify the
-render full / partial / none, and writes `stills/<view-id>.png`. It then
-assembles `stills/contact-sheet.html` (a tiered, tiled grid with title + tier +
-verdict badges) and `stills/render-tally.json`. A small `VERDICT_OVERRIDE` map
-pins a couple of human-verified verdicts where thin 1px strokes under-report.
+Each view gets its own Chrome, entered through the hero route `#/` (a cold deep
+link to `#/view/<id>` still crashes the app for the views whose axis resolves on
+the first commit — DC-L-1313), and the frame is taken after **one full replay
+pass**, watched on the app's own transport scrubber, rather than after a fixed
+wait into a ~20s loop. It writes `stills/<id>.png` plus a per-shot
+`.capture.json` / `.probe.json`, then `capture-manifest.json`,
+`render-tally.json`, `contact-sheet.html` and `contact-sheet.png`.
 
-Chrome flags (the proven local WebGPU config):
-`--ozone-platform=x11 --enable-unsafe-webgpu --ignore-gpu-blocklist --enable-features=Vulkan,WebGPU --use-vulkan --no-sandbox`,
-`headless:false`, `DISPLAY=:0`.
+The capture itself is the chart-quality harness's
+`specs/2026-09-19-chart-quality-bar/harness/shoot-live.mjs` (found by walking up
+from this repo; `SHOOT_LIVE=` overrides). Reusing it is deliberate: it reads
+`adapter.info.isFallbackAdapter` — the property that actually discriminates on
+Chromium 1228 — refuses to shoot on a software adapter, and stamps the capture
+mode into the PNG as a `tEXt` chunk. See `stills/README.md`.
+
+### `tools/snap-stills.mjs` — the OLD capture; it refuses the stills directory
+
+Kept because a composited canvas-plus-chrome screenshot is a real thing to want,
+but it **will not write into `stills/`** any more (`--outdir` elsewhere). It
+screenshots `.single-canvas-region` — the engine canvas *with* the DOM/SVG
+chrome over it — and records no adapter; those two properties are why the stills
+it produced stayed upside down for three months with nothing in the frame
+contradicting it (LIMITATIONS.md DC-L15, `specs/2026-09-19-chart-quality-bar/SPEC.md`
+D8 and D10). It also needs Playwright from the `~/pw` harness, which does not
+exist on this machine.
 
 ## How to add a view
 
@@ -151,7 +161,7 @@ Create `apps/showcase/views/<id>/` with these files:
 | `records.json` | the captured dataplane frames the replay engine plays: `{ meta:{viewId,durationMs,frameCount,cadenceMs}, frames:[{t,b64}] }`. Produce it with `tools/capture.mjs <id>`. Build-time/static views can ship a tiny placeholder. |
 | `explainer.md` | front-matter (`title`, `referenceTool`, `tier`) + a one-sentence DATA + TECHNIQUE "what's going on" + the buffer/pipeline fact block. |
 
-Then re-capture the still (`tools/snap-stills.mjs`) to refresh the contact
+Then re-capture the still (`tools/recapture-stills.mjs`) to refresh the contact
 sheet, and it appears in the gallery, the single-view filmstrip, and the
 frontier map automatically.
 

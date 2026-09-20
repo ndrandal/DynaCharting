@@ -11,7 +11,9 @@
          font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, sans-serif; }
   header { padding: 28px 32px 12px; border-bottom: 1px solid #20202e; }
   h1 { margin: 0 0 6px; font-size: 22px; font-weight: 650; letter-spacing: -0.01em; }
-  .lede { margin: 0; color: #9a9ab0; max-width: 70ch; }
+  .lede { margin: 0; color: #9a9ab0; max-width: 78ch; }
+  .prov { margin: 10px 0 0; color: #6f6f86; font-size: 12.5px; max-width: 90ch; }
+  .prov code { color: #8a8aff; }
   .tally { margin: 14px 0 0; display: flex; gap: 10px; flex-wrap: wrap; }
   .tally .chip { padding: 4px 12px; border-radius: 999px; font-size: 13px;
                  border: 1px solid var(--c); color: var(--c); }
@@ -21,7 +23,7 @@
           border-radius: 12px; overflow: hidden; }
   .frame { aspect-ratio: 11 / 7; background: #05050a; display: flex;
            align-items: center; justify-content: center; }
-  .frame img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .frame img { width: 100%; height: 100%; object-fit: contain; display: block; }
   .missing { color: #e5534b; font-size: 13px; }
   figcaption { padding: 10px 12px 12px; }
   .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -39,9 +41,10 @@
 <header>
   <h1>DynaCharting · Frontier — Contact Sheet</h1>
   <p class="lede">Every showcase view, captured live from the built app through a faithful data path and a real WebGPU renderer. Tiers: <b style="color:#3ddc84">native</b> (rendered straight from the manifest), <b style="color:#4c9bf5">composed</b> (manifest + upstream precompute), <b style="color:#f5b14c">walled</b> (precomputed output; live-GPU compute is the frontier).</p>
+  <p class="prov"><b>Provenance.</b> Canvas-only — each frame is <code>canvas.engine-canvas</code>'s own pixels via <code>toDataURL('image/png')</code>, so no DOM or SVG chrome is composited into any image here. Every frame was rendered on <b>nvidia/ampere</b>, a hardware adapter — <code>adapter.info.isFallbackAdapter = false</code> on all 22 (SPEC D8). DynaCharting <code>2c03358d88907789b6b9ba4e1302b5856a6deadd</code>. Per-still adapter, sha256 and replay position: <code>capture-manifest.json</code>. Regenerate with <code>apps/showcase/tools/recapture-stills.mjs</code> (ENC-1288).</p>
   <div class="tally">
-    <span class="chip" style="--c:#3ddc84">fully rendered 21/22</span>
-    <span class="chip" style="--c:#f5b14c">partial 1/22</span>
+    <span class="chip" style="--c:#3ddc84">fully rendered 22/22</span>
+    <span class="chip" style="--c:#f5b14c">partial 0/22</span>
     <span class="chip" style="--c:#e5534b">none 0/22</span>
   </div>
 </header>
@@ -57,7 +60,7 @@
           <span class="ref">TradingView</span>
           <span class="badge verdict" style="--c:#3ddc84">full</span>
         </div>
-        <div class="row meta"><code>candle-overlays</code><span>coverage 8.9%</span></div>
+        <div class="row meta"><code>candle-overlays</code><span>coverage 14.8%</span></div>
       </figcaption>
     </figure>
     <figure class="card" data-tier="native" data-verdict="full">
@@ -71,7 +74,7 @@
           <span class="ref">TradingView</span>
           <span class="badge verdict" style="--c:#3ddc84">full</span>
         </div>
-        <div class="row meta"><code>candles-aapl</code><span>coverage 5.7%</span></div>
+        <div class="row meta"><code>candles-aapl</code><span>coverage 14.4%</span></div>
       </figcaption>
     </figure>
     <figure class="card" data-tier="native" data-verdict="full">
@@ -85,7 +88,7 @@
           <span class="ref">Bloomberg / most platforms</span>
           <span class="badge verdict" style="--c:#3ddc84">full</span>
         </div>
-        <div class="row meta"><code>ohlc-bars</code><span>coverage 3.0%</span></div>
+        <div class="row meta"><code>ohlc-bars</code><span>coverage 14.0%</span></div>
       </figcaption>
     </figure>
     <figure class="card" data-tier="native" data-verdict="full">
@@ -99,10 +102,10 @@
           <span class="ref">TradingView baseline/area</span>
           <span class="badge verdict" style="--c:#3ddc84">full</span>
         </div>
-        <div class="row meta"><code>price-line-area</code><span>coverage 37.5%</span></div>
+        <div class="row meta"><code>price-line-area</code><span>coverage 43.0%</span></div>
       </figcaption>
     </figure>
-    <figure class="card" data-tier="native" data-verdict="partial">
+    <figure class="card" data-tier="native" data-verdict="full">
       <div class="frame"><img src="./scatter.png" alt="Scatter — Price × Volume" loading="lazy" /></div>
       <figcaption>
         <div class="row">
@@ -111,9 +114,9 @@
         </div>
         <div class="row sub">
           <span class="ref">data-viz / sports analytics</span>
-          <span class="badge verdict" style="--c:#f5b14c">partial</span>
+          <span class="badge verdict" style="--c:#3ddc84">full</span>
         </div>
-        <div class="row meta"><code>scatter</code><span>coverage 0.6%</span></div>
+        <div class="row meta"><code>scatter</code><span>coverage 4.5%</span></div>
       </figcaption>
     </figure>
     <figure class="card" data-tier="composed" data-verdict="full">
@@ -127,7 +130,7 @@
           <span class="ref">audio editor waveform</span>
           <span class="badge verdict" style="--c:#3ddc84">full</span>
         </div>
-        <div class="row meta"><code>audio-waveform</code><span>coverage 23.3%</span></div>
+        <div class="row meta"><code>audio-waveform</code><span>coverage 45.7%</span></div>
       </figcaption>
     </figure>
     <figure class="card" data-tier="composed" data-verdict="full">
@@ -141,7 +144,7 @@
           <span class="ref">correlation matrix</span>
           <span class="badge verdict" style="--c:#3ddc84">full</span>
         </div>
-        <div class="row meta"><code>correlation-heatmap</code><span>coverage 72.2%</span></div>
+        <div class="row meta"><code>correlation-heatmap</code><span>coverage 72.3%</span></div>
       </figcaption>
     </figure>
     <figure class="card" data-tier="composed" data-verdict="full">
@@ -155,7 +158,7 @@
           <span class="ref">Bookmap / DOM</span>
           <span class="badge verdict" style="--c:#3ddc84">full</span>
         </div>
-        <div class="row meta"><code>depth-ladder</code><span>coverage 5.4%</span></div>
+        <div class="row meta"><code>depth-ladder</code><span>coverage 24.6%</span></div>
       </figcaption>
     </figure>
     <figure class="card" data-tier="composed" data-verdict="full">
@@ -169,7 +172,7 @@
           <span class="ref">medical / ECG monitor</span>
           <span class="badge verdict" style="--c:#3ddc84">full</span>
         </div>
-        <div class="row meta"><code>ecg</code><span>coverage 0.6%</span></div>
+        <div class="row meta"><code>ecg</code><span>coverage 9.2%</span></div>
       </figcaption>
     </figure>
     <figure class="card" data-tier="composed" data-verdict="full">
@@ -183,7 +186,7 @@
           <span class="ref">order-flow footprint</span>
           <span class="badge verdict" style="--c:#3ddc84">full</span>
         </div>
-        <div class="row meta"><code>footprint</code><span>coverage 16.2%</span></div>
+        <div class="row meta"><code>footprint</code><span>coverage 51.8%</span></div>
       </figcaption>
     </figure>
     <figure class="card" data-tier="composed" data-verdict="full">
@@ -197,7 +200,7 @@
           <span class="ref">fund-flow Sankey</span>
           <span class="badge verdict" style="--c:#3ddc84">full</span>
         </div>
-        <div class="row meta"><code>sankey</code><span>coverage 55.0%</span></div>
+        <div class="row meta"><code>sankey</code><span>coverage 53.7%</span></div>
       </figcaption>
     </figure>
     <figure class="card" data-tier="composed" data-verdict="full">
@@ -211,7 +214,7 @@
           <span class="ref">polar / radial seasonality clock</span>
           <span class="badge verdict" style="--c:#3ddc84">full</span>
         </div>
-        <div class="row meta"><code>radial-seasonality</code><span>coverage 13.6%</span></div>
+        <div class="row meta"><code>radial-seasonality</code><span>coverage 26.2%</span></div>
       </figcaption>
     </figure>
     <figure class="card" data-tier="composed" data-verdict="full">
@@ -225,7 +228,7 @@
           <span class="ref">Renko / Point & Figure</span>
           <span class="badge verdict" style="--c:#3ddc84">full</span>
         </div>
-        <div class="row meta"><code>renko</code><span>coverage 2.3%</span></div>
+        <div class="row meta"><code>renko</code><span>coverage 7.1%</span></div>
       </figcaption>
     </figure>
     <figure class="card" data-tier="composed" data-verdict="full">
@@ -239,7 +242,7 @@
           <span class="ref">D3 / Observable ridgeline</span>
           <span class="badge verdict" style="--c:#3ddc84">full</span>
         </div>
-        <div class="row meta"><code>ridgeline</code><span>coverage 27.8%</span></div>
+        <div class="row meta"><code>ridgeline</code><span>coverage 20.0%</span></div>
       </figcaption>
     </figure>
     <figure class="card" data-tier="composed" data-verdict="full">
@@ -253,7 +256,7 @@
           <span class="ref">NBA shot chart</span>
           <span class="badge verdict" style="--c:#3ddc84">full</span>
         </div>
-        <div class="row meta"><code>sports-shot-chart</code><span>coverage 3.1%</span></div>
+        <div class="row meta"><code>sports-shot-chart</code><span>coverage 4.2%</span></div>
       </figcaption>
     </figure>
     <figure class="card" data-tier="composed" data-verdict="full">
@@ -267,7 +270,7 @@
           <span class="ref">streamgraph / stacked area</span>
           <span class="badge verdict" style="--c:#3ddc84">full</span>
         </div>
-        <div class="row meta"><code>streamgraph</code><span>coverage 62.8%</span></div>
+        <div class="row meta"><code>streamgraph</code><span>coverage 59.2%</span></div>
       </figcaption>
     </figure>
     <figure class="card" data-tier="composed" data-verdict="full">
@@ -281,7 +284,7 @@
           <span class="ref">Finviz market map</span>
           <span class="badge verdict" style="--c:#3ddc84">full</span>
         </div>
-        <div class="row meta"><code>treemap</code><span>coverage 74.7%</span></div>
+        <div class="row meta"><code>treemap</code><span>coverage 75.2%</span></div>
       </figcaption>
     </figure>
     <figure class="card" data-tier="composed" data-verdict="full">
@@ -295,7 +298,7 @@
           <span class="ref">Sierra Chart / ToS TPO</span>
           <span class="badge verdict" style="--c:#3ddc84">full</span>
         </div>
-        <div class="row meta"><code>volume-profile</code><span>coverage 6.8%</span></div>
+        <div class="row meta"><code>volume-profile</code><span>coverage 19.3%</span></div>
       </figcaption>
     </figure>
     <figure class="card" data-tier="composed" data-verdict="full">
@@ -309,7 +312,7 @@
           <span class="ref">weather radar / NEXRAD</span>
           <span class="badge verdict" style="--c:#3ddc84">full</span>
         </div>
-        <div class="row meta"><code>weather-radar</code><span>coverage 69.8%</span></div>
+        <div class="row meta"><code>weather-radar</code><span>coverage 72.0%</span></div>
       </figcaption>
     </figure>
     <figure class="card" data-tier="walled" data-verdict="full">
@@ -323,7 +326,7 @@
           <span class="ref">Topographic isolines</span>
           <span class="badge verdict" style="--c:#3ddc84">full</span>
         </div>
-        <div class="row meta"><code>contour</code><span>coverage 90.2%</span></div>
+        <div class="row meta"><code>contour</code><span>coverage 90.3%</span></div>
       </figcaption>
     </figure>
     <figure class="card" data-tier="walled" data-verdict="full">
@@ -337,7 +340,7 @@
           <span class="ref">Bookmap liquidity heatmap</span>
           <span class="badge verdict" style="--c:#3ddc84">full</span>
         </div>
-        <div class="row meta"><code>density-heatmap</code><span>coverage 36.7%</span></div>
+        <div class="row meta"><code>density-heatmap</code><span>coverage 34.5%</span></div>
       </figcaption>
     </figure>
     <figure class="card" data-tier="walled" data-verdict="full">
@@ -351,7 +354,7 @@
           <span class="ref">Audio spectrogram</span>
           <span class="badge verdict" style="--c:#3ddc84">full</span>
         </div>
-        <div class="row meta"><code>spectrogram</code><span>coverage 90.2%</span></div>
+        <div class="row meta"><code>spectrogram</code><span>coverage 84.2%</span></div>
       </figcaption>
     </figure>
 </main>
