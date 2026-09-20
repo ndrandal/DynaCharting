@@ -183,7 +183,7 @@ export function ChromeOverlay({
 
   // ENC-1253: the engine draws the axis. This is the call that makes the
   // canvas-only raster contain gridlines, ticks, a spine and labels.
-  useEngineAxis(
+  const engineAxis = useEngineAxis(
     switches.engine ? host : null,
     view.id,
     resolvedAxes,
@@ -193,6 +193,15 @@ export function ChromeOverlay({
     sceneEpoch,
     framed?.box ?? null,
   );
+
+  // ENC-1313: when the engine axis declines, SAY SO IN THE DOM. `plan: null`
+  // used to be indistinguishable from "this view wants no axis", and the one
+  // refusal that mattered — a 1px canvas — never got as far as being reported,
+  // because the `PlotBoxError` it should have been unmounted the app instead.
+  // Absent on a view that drew its axis, so a harness reads presence, not value.
+  const axisRefusal = engineAxis.refusal
+    ? `${engineAxis.refusal.reason}: ${engineAxis.refusal.detail}`
+    : undefined;
 
   const hasAxes = !!resolvedAxes.x || !!resolvedAxes.y;
   const hasLegend = !!chrome?.legend?.length;
@@ -207,6 +216,7 @@ export function ChromeOverlay({
       aria-hidden={false}
       data-dc-view={view.id}
       data-dc-axis-domain={reportJson}
+      data-dc-engine-axis-refusal={axisRefusal}
     >
       {hasAxes && switches.svg && (
         <AxisOverlay axes={resolvedAxes} transform={transform} width={size.w} height={size.h} />
