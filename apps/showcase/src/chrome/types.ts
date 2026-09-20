@@ -37,10 +37,11 @@ export type ColorInput = RGBA | string;
 
 /** How an axis's tick VALUES are formatted into labels. */
 export type AxisFormat =
-  | 'price' /** "$418.00" — currency, 2dp */
-  | 'time' /** "0:12" — elapsed mm:ss (value = seconds) */
+  | 'timestamp' /** "14:32:05" — an INSTANT, from the measured time basis (ENC-1254) */
+  | 'price' /** "$418.00" — currency; decimals DERIVED from the tick step (D12) */
+  | 'time' /** "0:12" — elapsed mm:ss (value = seconds). A DURATION, not an instant. */
   | 'index' /** "162" — integer record index */
-  | 'number' /** "1.25" — plain number, adaptive precision */
+  | 'number' /** "1.25" — plain number, derived precision */
   | 'percent' /** "+42%" — value*100 with sign */;
 
 /**
@@ -62,7 +63,16 @@ export interface AxisSpec {
   min?: number;
   /** Data-space upper bound. Omit to measure it from the streamed data. */
   max?: number;
-  /** Tick-label formatting. */
+  /**
+   * Tick-label formatting.
+   *
+   * `'timestamp'` (ENC-1254 / D1 tier 1) is the one that is not just a printf:
+   * the axis's domain is in RECORD-INDEX units, and the overlay carries it
+   * through a MEASURED `TimeBasis` (`@repo/dc-wasm` `IndexTimeTracker`) to place
+   * ticks on whole seconds / minutes / hours. A `'timestamp'` axis with no basis
+   * is DROPPED, not captioned — the D7 rule, applied to the label as well as the
+   * bound. See deriveAxes.ts.
+   */
   format: AxisFormat;
   /** Number of tick intervals (ticks = this+1 labels). Default 5. */
   ticks?: number;
