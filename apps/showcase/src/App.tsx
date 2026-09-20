@@ -56,10 +56,23 @@ export default function App() {
     if (routeViewId) setLastViewId(routeViewId);
   }, [routeViewId]);
 
-  const { axisDomain, timeBasis, progress, playing, setPlaying, restart, loop, setLoop, sceneEpoch } = useViewSwitch(
-    webgpu ? host : null,
-    view,
-  );
+  // `canvasSize` is the canvas's BACKING-STORE size in device pixels — the units
+  // the plot box's pixel gutters are reserved in. It goes to useViewSwitch (which
+  // FITS the data into that box, ENC-1273) and to ChromeOverlay (which lays the
+  // axis furniture out in the gutters around it, ENC-1253) so both derive the
+  // same rectangle from the same number.
+  const {
+    axisDomain,
+    timeBasis,
+    progress,
+    playing,
+    setPlaying,
+    restart,
+    loop,
+    setLoop,
+    sceneEpoch,
+    framed,
+  } = useViewSwitch(webgpu ? host : null, view, canvasSize);
 
   // --- canvas slot routing (portal target for the one shared canvas) ---
   const [slot, setSlot] = useState<HTMLElement | null>(null);
@@ -117,9 +130,10 @@ export default function App() {
 
   // The logical-chart chrome overlay (axes/gridlines/legend/colorbar) + FPS HUD,
   // composited over the canvas in whichever slot is active. Driven by the active
-  // view's `chrome` metadata + its baked transform (data→clip→pixel), and — for
-  // the axis DOMAIN — by the live measurement taken off its streamed records
-  // (ENC-1252 / SPEC D7), not by a literal in the view file.
+  // view's `chrome` metadata, the live domain measured off its streamed records
+  // (ENC-1252 / SPEC D7), and — since ENC-1273 — the FITTED transform that same
+  // measurement produced, rather than the view file's baked literal. The ticks
+  // and the geometry have to travel through ONE transform or they disagree.
   const chromeOverlay = view ? (
     <ChromeOverlay
       view={view}
@@ -130,6 +144,7 @@ export default function App() {
       host={host}
       canvasSize={canvasSize}
       sceneEpoch={sceneEpoch}
+      framed={framed}
     />
   ) : null;
 

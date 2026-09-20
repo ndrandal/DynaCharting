@@ -22,6 +22,18 @@
  * ENC-1253 is that doing so changes nothing about the ticks, gridlines, spine
  * or labels. `?engineAxis=0` turns the engine-drawn one off instead.
  *
+ * THE TICKS MAP THROUGH THE FITTED TRANSFORM (ENC-1273, SPEC D1 tier 2). The
+ * overlay used to REPRODUCE the engine's framing — `effectiveTransform` re-derived
+ * the xAnchor's X from the first replayed record and took Y from the view.json
+ * literal. `useViewSwitch` now fits the MEASURED domain into the plot box and
+ * hands the result down as `framed`; when it is present it is used verbatim,
+ * because a reproduction is a second implementation of the framing and the whole
+ * failure this fixes is two layers describing two different frames. `framed.box`
+ * travels with it, so the furniture is laid out against the very rectangle the
+ * data was fitted into rather than against a box recomputed from the canvas.
+ * `effectiveTransform` remains the path for the 19 views that declare no
+ * `axisDomain`.
+ *
  * AXIS DOMAIN (ENC-1252, SPEC D7). The axes' bounds are resolved here from the
  * LIVE domain measured off the view's own streamed records (`observedDomain`),
  * falling back to a legacy view.json literal only for views that have not yet
@@ -32,7 +44,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { EngineHost, ObservedDomain, TimeBasis } from '@repo/dc-wasm';
+import type { EngineHost, FramedSeries, ObservedDomain, TimeBasis } from '@repo/dc-wasm';
 import type { ShowcaseView } from '../views/registry';
 import { AxisOverlay } from './AxisOverlay';
 import { resolveAxes, axisDomainReportJson, type AxisDomainReport } from './deriveAxes';
@@ -84,6 +96,13 @@ interface ChromeOverlayProps {
    * field's own doc comment for why that is load-bearing rather than tidy.
    */
   sceneEpoch?: number;
+  /**
+   * The fitted frame from `useViewSwitch` (ENC-1273) — the plot box the data was
+   * fitted into and the transform that did it. When present it REPLACES the
+   * reproduced `effectiveTransform`: ticks and geometry then travel through one
+   * transform by construction rather than by two derivations agreeing.
+   */
+  framed?: FramedSeries | null;
 }
 
 /**
@@ -119,6 +138,7 @@ export function ChromeOverlay({
   host = null,
   canvasSize = { width: 0, height: 0 },
   sceneEpoch = 0,
+  framed = null,
 }: ChromeOverlayProps) {
   const switches = useMemo(axisSwitches, []);
   const boxRef = useRef<HTMLDivElement | null>(null);
@@ -137,12 +157,16 @@ export function ChromeOverlay({
 
   const chrome = view.chrome;
 
-  // The effective transform reproduces the engine's runtime framing (including
-  // the xAnchor X re-derivation from the first replayed record).
+  // The transform the ticks are placed with. THE fitted one when the view is
+  // framed (ENC-1273) — not a reproduction of it — falling back to reproducing
+  // the engine's runtime framing (the xAnchor X re-derivation from the first
+  // replayed record) for a view that is not.
+  const fittedTransform = framed?.transform ?? null;
   const transform = useMemo(() => {
+    if (fittedTransform) return fittedTransform;
     const fx = view.xAnchor ? firstRecordX(view.records, view.growth) : null;
     return effectiveTransform(view.meta.transform, view.xAnchor, fx);
-  }, [view]);
+  }, [view, fittedTransform]);
 
   // The axis domain: measured where the view declares an axisDomain, literal
   // otherwise, absent when neither — never invented.
@@ -167,6 +191,7 @@ export function ChromeOverlay({
     canvasSize,
     switches.engine,
     sceneEpoch,
+    framed?.box ?? null,
   );
 
   const hasAxes = !!resolvedAxes.x || !!resolvedAxes.y;

@@ -18,15 +18,18 @@
  *
  * ── TWO HONEST LIMITS OF THIS WIRING, both pointing at other tickets ────────
  *
- * 1. THE PLOT BOX IS NOT (YET) WHAT THE DATA IS FITTED TO. The furniture is laid
- *    out against `plotBox(canvas)` — the tested frame with
- *    `DEFAULT_PLOT_INSETS` gutters — but every showcase view still bakes a
- *    literal `transform` and a hand-written `setPaneRegion` (`±0.95`), so the
- *    data is not fitted to that box. LIMITATIONS.md **DC-L14**; adoption is
- *    **ENC-1273**. The consequence you can see: data drawn left of the box's
- *    left edge runs under the price labels. The MARKS are unaffected — a tick
- *    is projected through the same transform as the geometry, so it sits at the
- *    right data value either way — it is the FRAMING that is still wrong.
+ * 1. THE PLOT BOX IS NOW WHAT THE DATA IS FITTED TO — for a view `framing.ts`
+ *    accepts (ENC-1273). `useViewSwitch` fits the MEASURED domain into the box
+ *    and passes the very `PlotBox` it used down as `box`, so the furniture and
+ *    the data are laid out against one rectangle by construction rather than by
+ *    two `plotBox(canvas)` calls happening to agree. `box` is null for a view
+ *    that is not framed (no `axisDomain`, or a stacked multi-pane layout —
+ *    LIMITATIONS.md **DC-L-1273**), and the default below is then the frame the
+ *    furniture is laid out in while the data stays on its baked literal, which
+ *    is the state ENC-1253 shipped and DC-L14 described: data drawn left of the
+ *    box's left edge runs under the price labels. The MARKS were never wrong —
+ *    a tick is projected through the same transform as the geometry — it was
+ *    the FRAMING.
  *
  * 2. AN AXIS IS ONLY DRAWN WHERE ONE IS RESOLVED. A view with no `chrome.axes`,
  *    or a `timestamp` axis with no fitted `TimeBasis`, resolves to nothing and
@@ -44,6 +47,7 @@ import {
   type AxisTheme,
   type AxisTick,
   type CanvasSize,
+  type PlotBox,
 } from '@repo/dc-wasm';
 import { axisTicks } from './axisTicks';
 import type { ResolvedAxes } from './deriveAxes';
@@ -80,6 +84,7 @@ export function engineAxisSpec(
   canvas: CanvasSize,
   measurer: AxisTextMeasurer | null,
   theme: AxisTheme = SHOWCASE_AXIS_THEME,
+  box: PlotBox | null = null,
 ): AxisSpec | null {
   if (!axes.x && !axes.y) return null;
   if (!(canvas.width > 0 && canvas.height > 0)) return null;
@@ -89,7 +94,9 @@ export function engineAxisSpec(
   if (xTicks.length === 0 && yTicks.length === 0) return null;
 
   return {
-    box: plotBox(canvas, DEFAULT_PLOT_INSETS),
+    // The box the DATA was fitted into when there is one (ENC-1273); otherwise
+    // the default frame for this canvas — the same call, one layer later.
+    box: box ?? plotBox(canvas, DEFAULT_PLOT_INSETS),
     canvas,
     transform,
     x: axes.x

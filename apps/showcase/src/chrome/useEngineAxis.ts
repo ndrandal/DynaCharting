@@ -46,6 +46,7 @@ import {
   type CanvasSize,
   type EngineHost,
   type IdAllocator,
+  type PlotBox,
   type Tier1LabelVerdict,
 } from '@repo/dc-wasm';
 import { engineAxisSpec, SHOWCASE_AXIS_THEME } from './engineAxis';
@@ -127,6 +128,10 @@ declare global {
  *                  escape hatch, kept so the two renderers can be compared)
  * @param sceneEpoch bumped whenever the view's manifest is re-applied; forces a
  *                  rebuild so the furniture pane is last in scene order again
+ * @param box       the plot box the DATA was fitted into (ENC-1273), so the
+ *                  furniture and the geometry share one rectangle; null for a
+ *                  view that is not framed, in which case the default box for
+ *                  this canvas is used
  */
 export function useEngineAxis(
   host: EngineHost | null,
@@ -136,6 +141,7 @@ export function useEngineAxis(
   canvas: CanvasSize,
   enabled = true,
   sceneEpoch = 0,
+  box: PlotBox | null = null,
 ): EngineAxisReport {
   const axisRef = useRef<EngineAxis | null>(null);
   const idsRef = useRef<IdAllocator | null>(null);
@@ -270,7 +276,7 @@ export function useEngineAxis(
       // built with, so it is rebuilt whenever this effect re-runs.
       const measurer = fontLoaded ? createHostMeasurer(host, canvas) : null;
       measurerRef.current = measurer;
-      const spec = engineAxisSpec(axes, transform, canvas, measurer);
+      const spec = engineAxisSpec(axes, transform, canvas, measurer, SHOWCASE_AXIS_THEME, box);
       if (!spec) {
         setReport({ plan: null, tier1: null, scene: null, fontLoaded, labelAttempts: attempts });
         return;
@@ -299,7 +305,7 @@ export function useEngineAxis(
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [host, enabled, viewId, sceneEpoch, axes, transform, canvas.width, canvas.height, fontLoaded]);
+  }, [host, enabled, viewId, sceneEpoch, axes, transform, canvas.width, canvas.height, fontLoaded, box]);
 
   return report;
 }
