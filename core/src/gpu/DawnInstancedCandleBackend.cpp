@@ -82,7 +82,8 @@ struct Uniforms {
   c2       : vec4<f32>,   // transform column 2 (xyz)
   colorUp  : vec4<f32>,   // bytes 48..63
   colorDown: vec4<f32>,   // bytes 64..79
-  wickHalf : vec4<f32>,   // bytes 80..95 (.x = wick half, .y = body half; clip)
+  wickHalf : vec4<f32>,   // bytes 80..95 (.x = wick half, .y = body half,
+                          //              .z = MINIMUM body height; all clip)
 };
 @group(0) @binding(0) var<uniform> u : Uniforms;
 
@@ -134,6 +135,57 @@ fn vs_main(@builtin(vertex_index) vid : u32,
     let hwClip = wickHalfWidthClip();
     clip = vec2<f32>(center.x + mix(-hwClip, hwClip, uv.x), center.y);
   } else {
+    // ENC-1251 — MINIMUM BODY HEIGHT (the doji floor).
+    //
+    // body0 == body1 whenever open == close, and then both body triangles are
+    // DEGENERATE: zero area, zero fragments, no ink at the open/close level at
+    // all. That is not a corner case. In a 100 s wiretap of the live dataplane
+    // (candles-v1, NEXO/lastPrice, 3 s tumbling windows) 17 of 146 records —
+    // 11.6% — had open == close EXACTLY, and every one of them rendered as a
+    // bare wick. That is the "several wicks carry no visible body" of SPEC
+    // section 1.0, and it is a tier-0 failure: the record carries an open and a
+    // close and the mark depicted neither.
+    //
+    // So the body's CLIP height is floored, exactly as ENC-1257 floors the
+    // inter-bar gap and for the same reason — the reader's eye works in pixels,
+    // and the rasteriser samples pixel CENTRES with no MSAA. The floor is a
+    // floor: a body that already clears it is untouched, bit for bit.
+    //
+    // The end values are transformed first and the floor applied in CLIP space,
+    // so it is a true pixel quantity under any transform and any zoom, rather
+    // than a data-space epsilon that would mean something different on every
+    // chart.
+    let pb0 = m * vec3<f32>(cx, body0, 1.0);
+    let pb1 = m * vec3<f32>(cx, body1, 1.0);
+    var by0 = pb0.y;
+    var by1 = pb1.y;
+    let minH = u.wickHalf.z;              // clip units; 0 disables the rule
+    if (minH > 0.0 && abs(by1 - by0) < minH) {
+      // Grow about the body's midpoint, PRESERVING the quad's orientation (a
+      // transform with a negative y scale hands these back in the other order,
+      // and flipping the winding here would be a gratuitous difference).
+      let mid = (by0 + by1) * 0.5;
+      let halfH = select(-minH, minH, by1 >= by0) * 0.5;
+      by0 = mid - halfH;
+      by1 = mid + halfH;
+      // Keep the mark's TOTAL extent exactly low..high: a doji sitting on its
+      // own high would otherwise overhang the wick by a pixel and claim a
+      // price the bar never traded at. Slide the floored body back inside the
+      // wick whenever the wick has the room; never shrink it.
+      let pw0 = m * vec3<f32>(cx, low, 1.0);
+      let pw1 = m * vec3<f32>(cx, high, 1.0);
+      let wlo = min(pw0.y, pw1.y);
+      let whi = max(pw0.y, pw1.y);
+      if ((whi - wlo) >= minH) {
+        let blo = min(by0, by1);
+        let bhi = max(by0, by1);
+        let shift = max(0.0, wlo - blo) - max(0.0, bhi - whi);
+        by0 = by0 + shift;
+        by1 = by1 + shift;
+      }
+    }
+    let by = mix(by0, by1, uv.y);
+
     let bodyHalf = u.wickHalf.y;
     if (bodyHalf > 0.0) {
       // ENC-1257: the host resolved the body half-width in CLIP space from the
@@ -142,14 +194,12 @@ fn vs_main(@builtin(vertex_index) vid : u32,
       // transforms charts actually carry this is identical to transforming
       // (cx±hw) directly; it differs only under an x/y shear, which no chart
       // transform has.
-      let y = mix(body0, body1, uv.y);
-      let center = m * vec3<f32>(cx, y, 1.0);
-      clip = vec2<f32>(center.x + mix(-bodyHalf, bodyHalf, uv.x), center.y);
+      clip = vec2<f32>(pb0.x + mix(-bodyHalf, bodyHalf, uv.x), by);
     } else {
       let x0 = cx - hw;
       let x1 = cx + hw;
       let p = m * vec3<f32>(mix(x0, x1, uv.x), mix(body0, body1, uv.y), 1.0);
-      clip = p.xy;
+      clip = vec2<f32>(p.x, by);
     }
   }
 
@@ -322,7 +372,6 @@ BackendStats DawnInstancedCandleBackend::renderDrawItem(GpuDevice& device,
                                                         CpuBufferStore& gpu,
                                                         const DrawItem& di,
                                                         int viewW, int viewH) {
-  (void)viewH;  // wick width is a fixed pixel count along x only (viewW).
   BackendStats stats{};
   if (!pipeline_.valid()) return stats;
 
@@ -363,7 +412,15 @@ BackendStats DawnInstancedCandleBackend::renderDrawItem(GpuDevice& device,
     wickHalfClip = body.maxMarkHalfClip;
   }
 
-  UniformBinding uniforms[5];
+  // ENC-1251 — the minimum body HEIGHT, in clip units. Two device pixels, the
+  // same count and the same justification as the wick width above: the target
+  // has no MSAA and pixel centres are sampled, so a one-pixel-tall span that
+  // happens to straddle a row boundary can rasterise into neither row. Below a
+  // valid viewport the rule is off (0) and the geometry is exactly what it was.
+  const float bodyMinHeightClip =
+      viewH > 0 ? 2.0f * kMinBodyHeightPx / static_cast<float>(viewH) : 0.0f;
+
+  UniformBinding uniforms[6];
   uniforms[0].kind = UniformBinding::Kind::Mat3;
   uniforms[0].name = "u_transform";
   uniforms[0].data = xform;
@@ -384,6 +441,11 @@ BackendStats DawnInstancedCandleBackend::renderDrawItem(GpuDevice& device,
   uniforms[4].kind = UniformBinding::Kind::Float;
   uniforms[4].name = "u_bodyHalf";
   uniforms[4].data = &bodyHalfClip;
+  // ENC-1251 minimum body height (clip space) at uniform float index 22
+  // (byte 88) — wickHalf.z.
+  uniforms[5].kind = UniformBinding::Kind::Float;
+  uniforms[5].name = "u_bodyMinH";
+  uniforms[5].data = &bodyMinHeightClip;
 
   BindGroupDesc bgDesc;
   bgDesc.pipeline = pipeline_;
@@ -391,7 +453,7 @@ BackendStats DawnInstancedCandleBackend::renderDrawItem(GpuDevice& device,
   bgDesc.vertexBufferCount = 1;
   bgDesc.indexBuffer = {};  // instanced draw: no GPU index buffer (gather is CPU)
   bgDesc.uniforms = uniforms;
-  bgDesc.uniformCount = 5;
+  bgDesc.uniformCount = 6;
 
   BindGroupHandle group = device.createBindGroup(bgDesc);
   if (!group.valid()) return stats;
