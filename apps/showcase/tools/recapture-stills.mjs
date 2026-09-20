@@ -549,7 +549,7 @@ async function main() {
   console.log(`[recap] shoot-live ${SHOOT_LIVE}`);
 
   const results = [];
-  const rows = [];
+  let rows = [];
   for (const v of views) {
     const headNow = execFileSync('git', ['-C', REPO, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
     if (headNow !== head) console.log(`[recap] !! HEAD MOVED to ${headNow} since the start of this run`);
@@ -588,6 +588,34 @@ async function main() {
       `fallback=${cap?.adapter?.infoIsFallbackAdapter ?? '?'}`);
   }
 
+  /* A re-run of ONE view must not delete the other twenty-one from the manifest.
+   * Merge by id, keeping each row's own `capturedAt` and `dynachartingHead` — a
+   * gallery assembled across two sweeps is then visible in the file rather than
+   * averaged away by a single top-level timestamp. */
+  function merge(existingPath, key, fresh, idOf) {
+    let prior = [];
+    try { prior = JSON.parse(readFileSync(existingPath, 'utf8'))[key] ?? []; } catch { /* first run */ }
+    const byId = new Map(prior.map((r) => [idOf(r), r]));
+    for (const r of fresh) byId.set(idOf(r), r);
+    const order = new Map(all.map((v, i) => [v.id, i]));
+    return [...byId.values()].sort((a, b) =>
+      (order.get(idOf(a)) ?? 1e9) - (order.get(idOf(b)) ?? 1e9));
+  }
+  const manifestPath = join(OUTDIR, 'capture-manifest.json');
+  const tallyPath = join(OUTDIR, 'render-tally.json');
+  rows = merge(manifestPath, 'stills', rows, (r) => r.id);
+  const tallyRows = merge(tallyPath, 'views', results.map((r) => ({
+    id: r.id, title: r.title, tier: r.tier, referenceTool: r.referenceTool,
+    verdict: r.verdict,
+    coverage: r.pix?.coverage ?? null,
+    chroma: r.pix?.chroma ?? null,
+    distinctColors: r.pix?.distinctColors ?? null,
+  })), (r) => r.id);
+  // The contact sheet is built from the MERGED set, not just this run's views.
+  const byId = new Map(results.map((r) => [r.id, r]));
+  const sheetRows = tallyRows.map((t) => byId.get(t.id)
+    ?? { ...t, pix: { coverage: t.coverage }, still: true });
+
   // ── acceptance, asserted here rather than left to a reader ────────────────
   const bad = rows.filter((r) =>
     !r.still ||
@@ -602,7 +630,7 @@ async function main() {
     ? `Every frame was rendered on <b>${adapters[0]}</b>, a hardware adapter — <code>adapter.info.isFallbackAdapter = false</code> on all ${rows.length} (SPEC D8).`
     : `Adapters used: ${adapters.join(', ')}.`;
 
-  writeFileSync(join(OUTDIR, 'capture-manifest.json'), JSON.stringify({
+  writeFileSync(manifestPath, JSON.stringify({
     ticket: 'ENC-1288',
     spec: 'specs/2026-09-19-chart-quality-bar/SPEC.md D8, D10; LIMITATIONS.md DC-L15',
     tool: 'apps/showcase/tools/recapture-stills.mjs',
@@ -623,26 +651,20 @@ async function main() {
     stills: rows,
   }, null, 2) + '\n');
 
-  writeFileSync(join(OUTDIR, 'render-tally.json'), JSON.stringify({
+  writeFileSync(tallyPath, JSON.stringify({
     capturedAt: new Date().toISOString(),
     tool: 'apps/showcase/tools/recapture-stills.mjs',
-    total: results.length,
-    tally: results.reduce((a, r) => ((a[r.verdict] = (a[r.verdict] || 0) + 1), a), {}),
-    views: results.map((r) => ({
-      id: r.id, title: r.title, tier: r.tier, referenceTool: r.referenceTool,
-      verdict: r.verdict,
-      coverage: r.pix?.coverage ?? null,
-      chroma: r.pix?.chroma ?? null,
-      distinctColors: r.pix?.distinctColors ?? null,
-    })),
+    total: tallyRows.length,
+    tally: tallyRows.reduce((a, r) => ((a[r.verdict] = (a[r.verdict] || 0) + 1), a), {}),
+    views: tallyRows,
   }, null, 2) + '\n');
 
-  writeFileSync(join(OUTDIR, 'contact-sheet.html'), contactSheet(results, head, adapterLine));
-  const sheet = await shootContactSheet(results);
+  writeFileSync(join(OUTDIR, 'contact-sheet.html'), contactSheet(sheetRows, head, adapterLine));
+  const sheet = await shootContactSheet(sheetRows);
   console.log(`[recap] contact-sheet.png exit ${sheet}`);
 
-  const t = results.reduce((a, r) => ((a[r.verdict] = (a[r.verdict] || 0) + 1), a), {});
-  console.log(`\n[recap] DONE — full=${t.full || 0} partial=${t.partial || 0} none=${t.none || 0} of ${results.length}`);
+  const t = tallyRows.reduce((a, r) => ((a[r.verdict] = (a[r.verdict] || 0) + 1), a), {});
+  console.log(`\n[recap] DONE — full=${t.full || 0} partial=${t.partial || 0} none=${t.none || 0} of ${tallyRows.length}`);
   if (bad.length) {
     console.log(`[recap] ${bad.length} still(s) FAILED the capture contract: ` +
       bad.map((b) => b.id).join(', '));
