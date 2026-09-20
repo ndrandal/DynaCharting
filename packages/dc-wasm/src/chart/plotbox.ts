@@ -629,3 +629,37 @@ export function frameSeries(
       : null;
   return { box, paneRegion, transform, metrics };
 }
+
+/**
+ * The clip→clip transform that maps an authored pane rectangle onto `box`
+ * (ENC-1316).
+ *
+ * ── WHY A SECOND KIND OF FIT ────────────────────────────────────────────────
+ *
+ * `fitToPlotBox` fits a DATA domain, which is the right fit and needs a
+ * measured domain and one transform to write it to. Most of this gallery has
+ * neither: eleven views author their geometry directly in CLIP space or bake a
+ * data→clip literal across two or three transforms, and `DomainTracker` is not
+ * watching their buffers. What every one of them DOES declare is the clip
+ * rectangle it draws inside — its pane's `PaneRegion`, the `±0.95` in its own
+ * manifest.
+ *
+ * So the re-frame is expressed as a change of rectangle rather than a change of
+ * domain: whatever the view drew inside `region`, draw inside `box` instead.
+ * It is view-independent by construction — the only input is the view's own
+ * `setPaneRegion` — and it composes onto the authored transform
+ * (`composeTransform`) rather than replacing it, so the view's framing
+ * decisions survive and only the frame moves.
+ *
+ * It is NOT a substitute for a domain fit: it cannot correct a chart whose
+ * data does not fill its own rectangle (that is what the domain fit is for),
+ * and it preserves whatever dead margin the author left. What it guarantees is
+ * the property ENC-1316 is about — after it, the data is inside the plot box
+ * and the gutters belong to the axis furniture alone.
+ */
+export function fitRegionToBox(region: PaneRegion, box: PlotBox): Transform2D {
+  return fitTransform(
+    { x: { min: region.clipXMin, max: region.clipXMax }, y: { min: region.clipYMin, max: region.clipYMax } },
+    { x: box.x, y: box.y },
+  );
+}
