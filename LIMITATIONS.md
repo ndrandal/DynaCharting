@@ -1643,6 +1643,17 @@ still reports `epochKnown: false` — the tape does not carry the producer's dec
 non-goal). The paragraphs below describe that path accurately and are the reason
 `TimeBasis.source` distinguishes `'observed'` from `'transmitted'` rather than collapsing them.
 
+**And one live case still reports `epochKnown: false`, by upstream design.** embassy learns
+`baseMs` from the producer's FIRST bucket stamp, so a client that subscribes before that stamp
+arrives gets `{"baseMs":0,"epochKnown":false,…}`. The corrected envelope embassy re-renders is
+given only to FUTURE subscribers and is deliberately not broadcast, because a scene-init is not
+idempotent at the client and pushing it would zero exactly the records the basis was learned from
+(ENC-1101; `embassy/internal/dataplane/server.go` `UpdateSceneSnapshot`). Measured: a client that
+subscribed **76 ms** into a fresh stream saw `epochKnown: false` and no further envelope in 14 s;
+one that subscribed seconds later saw `baseMs: 1789922150000, epochKnown: true`. A browser that
+opens inside the first bar therefore shows a tape-relative axis **until it reconnects** — which
+is correct behaviour on both sides and is not the failure this entry described.
+
 The original entry is kept verbatim below.
 
 

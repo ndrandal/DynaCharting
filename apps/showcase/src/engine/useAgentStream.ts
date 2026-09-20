@@ -96,11 +96,26 @@ export interface AgentStreamCallbacks {
   onBatch?: (batch: ArrayBuffer, observedAtMs: number) => void;
   /**
    * The basis the producer declared for the growth buffer, or `null` when it
-   * declared none (drop the axis). Fires on every scene-init frame, because
-   * embassy re-publishes the envelope once it learns a buffer's `baseMs`
-   * mid-stream (embassy `republishTimeBasis`): the FIRST envelope a late joiner
-   * sees may legitimately carry `epochKnown: false`, and the correction arrives
-   * as a second frame rather than as a new connection.
+   * declared none (drop the axis). Fires on every scene-init frame.
+   *
+   * IN PRACTICE THERE IS EXACTLY ONE, AND THAT IS A REAL CONSTRAINT. embassy
+   * learns a buffer's `baseMs` from the producer's FIRST bucket stamp, which
+   * can arrive after a client has already connected; the envelope it re-renders
+   * then (`republishTimeBasis`) updates only the snapshot handed to FUTURE
+   * subscribers and is deliberately NOT broadcast, because a scene-init is not
+   * idempotent at the client — its `createBuffer` commands recreate the
+   * buffers, so pushing the corrected envelope would zero exactly the records
+   * the basis was learned from (ENC-1101, and embassy
+   * `internal/dataplane/server.go` `UpdateSceneSnapshot` says so at length).
+   *
+   * MEASURED (2026-09-20): a client that subscribed 76 ms into a fresh stream
+   * received `{"baseMs":0,"epochKnown":false,"periodMs":1000}` and no further
+   * envelope in 14 s, while a client subscribing a few seconds later received
+   * `{"baseMs":1789922150000,"epochKnown":true,"periodMs":1000}`. So a browser
+   * that opens within the first bar of a stream shows a tape-relative axis
+   * until it reconnects. Handling a second frame costs nothing and is correct
+   * if embassy ever gains a non-destructive push, but do not design as though
+   * the correction will arrive.
    */
   onTimeBasis?: (basis: TimeBasis | null) => void;
 }
