@@ -75,6 +75,36 @@ export type {
   DomainPolicy,
   ObservedDomain,
 } from "./chart/domain";
+// ENC-1254 (chart-quality-bar D1 tier 1): time-domain tick formatting — the step
+// ladder, the label grammar, D1's tier-1 `parsesAsTimestamp` predicate, the
+// D12-derived decimal rule, and the measured recordIndex→instant basis.
+export {
+  TIME_STEPS,
+  chooseTimeStep,
+  timeTicks,
+  timeLabelStyle,
+  formatTimeTick,
+  parsesAsTimestamp,
+  decimalsForStep,
+  decimalsForTicks,
+  MAX_DERIVED_DECIMALS,
+  indexToTime,
+  timeToIndex,
+  timeDomainFor,
+  IndexTimeTracker,
+} from "./chart/time";
+export type {
+  TimeUnit,
+  TimeStep,
+  TimeZoneMode,
+  TimeTick,
+  TimeTickSet,
+  TimeTicksOptions,
+  TimeLabelStyle,
+  TimeBasis,
+  TimeBasisSource,
+  IndexTimeSource,
+} from "./chart/time";
 // Client-builder helpers (ENC-700): id allocator over the unified namespace.
 export { createIdAllocator } from "./chart/ids";
 export type { IdAllocator, ResourceKind } from "./chart/ids";

@@ -10,13 +10,19 @@
  * deriveAxes.ts — measured from the streamed records where the view declares an
  * `axisDomain`, falling back to a legacy literal otherwise — so nothing here
  * ever has to decide what an axis's bounds are.
+ *
+ * And since ENC-1254 it does not decide what an axis SAYS either: `axisTicks`
+ * owns the step and the label (a time ladder for a `timestamp` axis, round marks
+ * + step-derived precision for everything else), in data space and DOM-free.
+ * This component is now only the projection and the SVG — which is the shape
+ * ENC-1253 needs, because it replaces exactly this file and nothing above it.
  */
 
 import { useMemo } from 'react';
 import type { ResolvedAxes, ResolvedAxisSpec } from './deriveAxes';
 import type { EffectiveTransform } from './mapping';
-import { dataXToPx, dataYToPx, tickValues } from './mapping';
-import { formatTick } from './format';
+import { dataXToPx, dataYToPx } from './mapping';
+import { axisTicks } from './axisTicks';
 
 interface AxisOverlayProps {
   axes: ResolvedAxes;
@@ -31,17 +37,25 @@ interface Tick {
   label: string;
 }
 
-/** Build the pixel ticks for one axis, clamped to the visible box. */
+/**
+ * Project one axis's ticks into the plot box.
+ *
+ * The filter drops ticks the frame does not contain, which is why a view can
+ * request 6 and show 4: the stated domain is wider than the x-anchored window
+ * (LIMITATIONS.md **DC-L13** §2, and fitting the two together is ENC-1256).
+ * Every label shown is true; there are simply fewer of them. Do NOT "fix" that
+ * here by widening the window or synthesising ticks — that would put a mark
+ * where the engine draws nothing, which is the tier-0 defect one level up.
+ */
 function buildTicks(
   spec: ResolvedAxisSpec,
   toPx: (v: number) => number,
   extent: number,
 ): Tick[] {
-  const count = spec.ticks ?? 5;
-  return tickValues(spec.min, spec.max, count)
-    .map((v) => ({ px: toPx(v), label: formatTick(v, spec.format) }))
+  return axisTicks(spec)
+    .map((t) => ({ px: toPx(t.value), label: t.label }))
     // Keep ticks that fall within (a hair beyond) the plot box.
-    .filter((t) => t.px >= -1 && t.px <= extent + 1);
+    .filter((t) => Number.isFinite(t.px) && t.px >= -1 && t.px <= extent + 1);
 }
 
 export function AxisOverlay({ axes, transform, width, height }: AxisOverlayProps) {

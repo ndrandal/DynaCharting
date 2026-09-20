@@ -10,7 +10,7 @@
   "chrome": {
     "axes": {
       "y": { "label": "Price", "format": "price", "ticks": 5, "grid": true },
-      "x": { "label": "Index", "format": "index", "ticks": 6, "grid": true }
+      "x": { "label": "Time", "format": "timestamp", "ticks": 6, "grid": true }
     },
     "legend": [
       { "label": "Up candle", "color": [0.2, 0.75, 0.45, 1], "kind": "candle" },

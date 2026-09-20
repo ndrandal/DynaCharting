@@ -20,19 +20,35 @@
  * part that gets asserted in tests (`deriveAxes.test.ts`, which folds the real
  * committed `records.json` captures). The React seam is ChromeOverlay.
  *
+ * TIME (ENC-1254 / D1 tier 1). The same three-way resolution now covers the
+ * *units* an axis is labelled in, not just its bounds. An axis declared
+ * `format: 'timestamp'` needs a measured `TimeBasis` to carry its record-index
+ * domain into instants; without one it is DROPPED, exactly as a domain with no
+ * measurement and no literal is dropped. That is the whole reason a view no
+ * longer says `INDEX`: the honest alternatives are a real time axis or no x axis
+ * — never a caption naming the wrong quantity.
+ *
  * NOT IN SCOPE (deliberately, so the tickets don't collide): drawing the ticks,
  * gridlines and spine in the engine is ENC-1253; fitting the series to the
  * viewport — i.e. making the baked `transform` a function of this domain — is
  * ENC-1256. This module only produces a number the chart can state.
  */
 
-import type { ObservedDomain } from '@repo/dc-wasm';
+import type { ObservedDomain, TimeBasis } from '@repo/dc-wasm';
 import type { AxisSpec } from './types';
 
 /** An axis whose domain is settled: `min`/`max` are present and finite. */
 export interface ResolvedAxisSpec extends AxisSpec {
   min: number;
   max: number;
+  /**
+   * The recordIndex → instant map for a `format: 'timestamp'` axis (ENC-1254).
+   * `min`/`max` stay in DATA space (record indices) so the overlay keeps mapping
+   * them through the engine's transform unchanged; the basis converts to and
+   * from instants only for choosing and labelling ticks. Absent on every other
+   * format, and a `timestamp` axis is never resolved without one.
+   */
+  timeBasis?: TimeBasis;
 }
 
 /** How one axis got its domain. */
@@ -43,6 +59,13 @@ export interface AxisDomainFact {
   min: number;
   max: number;
   source: DomainSourceKind;
+  /**
+   * Present only on a `format: 'timestamp'` axis (ENC-1254): the fitted
+   * milliseconds-per-record and whether its origin is a real epoch. Published so
+   * a reader can tell a live wall clock from a replayed tape's own timeline
+   * WITHOUT reading the labels — the same reason `source` is published.
+   */
+  time?: { msPerIndex: number; originMs: number; epochKnown: boolean; samples: number };
 }
 
 /** What the chart can STATE about its own axes. Published for observation. */
@@ -72,20 +95,38 @@ function isFinitePair(spec: AxisSpec | undefined): spec is AxisSpec & { min: num
 function resolveAxis(
   spec: AxisSpec | undefined,
   measured: { min: number; max: number } | null | undefined,
+  basis: TimeBasis | null | undefined,
 ): { axis: ResolvedAxisSpec; fact: AxisDomainFact } | null {
   if (!spec) return null;
+  // A `timestamp` axis without a fitted basis cannot be labelled in the units it
+  // claims, so it is dropped. Falling back to the index labels here would
+  // reintroduce `INDEX 4→160` under an axis titled "Time", which is worse than
+  // no axis: it is a caption that also names the wrong quantity (SPEC §1.3).
+  if (spec.format === 'timestamp' && !basis) return null;
+  const time =
+    spec.format === 'timestamp' && basis
+      ? {
+          msPerIndex: basis.msPerIndex,
+          originMs: basis.originMs,
+          epochKnown: basis.epochKnown,
+          samples: basis.samples,
+        }
+      : undefined;
+  const withBasis = (axis: ResolvedAxisSpec): ResolvedAxisSpec =>
+    time && basis ? { ...axis, timeBasis: basis } : axis;
+
   // A measurement outranks a literal: a view that declares an axisDomain AND
   // leaves a stale min/max behind should show the measurement, not the caption.
   if (measured && Number.isFinite(measured.min) && Number.isFinite(measured.max)) {
     return {
-      axis: { ...spec, min: measured.min, max: measured.max },
-      fact: { min: measured.min, max: measured.max, source: 'derived' },
+      axis: withBasis({ ...spec, min: measured.min, max: measured.max }),
+      fact: { min: measured.min, max: measured.max, source: 'derived', ...(time ? { time } : {}) },
     };
   }
   if (isFinitePair(spec)) {
     return {
-      axis: { ...spec, min: spec.min, max: spec.max },
-      fact: { min: spec.min, max: spec.max, source: 'literal' },
+      axis: withBasis({ ...spec, min: spec.min, max: spec.max }),
+      fact: { min: spec.min, max: spec.max, source: 'literal', ...(time ? { time } : {}) },
     };
   }
   return null;
@@ -98,13 +139,17 @@ function resolveAxis(
  *                 possibly legacy literal bounds)
  * @param observed the live `DomainTracker` report, or null when the view
  *                 declares no `axisDomain` / nothing has streamed yet
+ * @param timeBasis the live `IndexTimeTracker` fit, or null until two records at
+ *                 distinct indices have landed. Only the X axis takes one — a
+ *                 time-indexed Y axis is not a shape this gallery has.
  */
 export function resolveAxes(
   axes: { x?: AxisSpec; y?: AxisSpec } | undefined,
   observed: ObservedDomain | null,
+  timeBasis: TimeBasis | null = null,
 ): { axes: ResolvedAxes; report: AxisDomainReport } {
-  const x = resolveAxis(axes?.x, observed?.x);
-  const y = resolveAxis(axes?.y, observed?.y);
+  const x = resolveAxis(axes?.x, observed?.x, timeBasis);
+  const y = resolveAxis(axes?.y, observed?.y, null);
   return {
     axes: {
       ...(x ? { x: x.axis } : {}),
@@ -121,6 +166,22 @@ export function resolveAxes(
 /** Compact, stable JSON for the `data-dc-axis-domain` attribute / harness read. */
 export function axisDomainReportJson(report: AxisDomainReport): string {
   const round = (f: AxisDomainFact | null) =>
-    f === null ? null : { min: +f.min.toFixed(6), max: +f.max.toFixed(6), source: f.source };
+    f === null
+      ? null
+      : {
+          min: +f.min.toFixed(6),
+          max: +f.max.toFixed(6),
+          source: f.source,
+          ...(f.time
+            ? {
+                time: {
+                  msPerIndex: +f.time.msPerIndex.toFixed(6),
+                  originMs: +f.time.originMs.toFixed(6),
+                  epochKnown: f.time.epochKnown,
+                  samples: f.time.samples,
+                },
+              }
+            : {}),
+        };
   return JSON.stringify({ x: round(report.x), y: round(report.y), records: report.records });
 }

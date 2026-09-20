@@ -56,7 +56,7 @@ export default function App() {
     if (routeViewId) setLastViewId(routeViewId);
   }, [routeViewId]);
 
-  const { axisDomain, progress, playing, setPlaying, restart, loop, setLoop } = useViewSwitch(
+  const { axisDomain, timeBasis, progress, playing, setPlaying, restart, loop, setLoop } = useViewSwitch(
     webgpu ? host : null,
     view,
   );
@@ -126,6 +126,7 @@ export default function App() {
       statsHub={statsHub}
       fpsVisible={fpsVisible}
       observedDomain={axisDomain}
+      timeBasis={timeBasis}
     />
   ) : null;
 

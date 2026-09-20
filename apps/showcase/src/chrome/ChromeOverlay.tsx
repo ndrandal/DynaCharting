@@ -8,6 +8,11 @@
  * interaction. Driven entirely by the active view's `chrome` metadata + baked
  * transform — adding chrome to a view is data-only (no edit here).
  *
+ * TIME (ENC-1254, SPEC D1 tier 1). The x axis of a market view is labelled from
+ * the `TimeBasis` measured off the same stream, and the basis travels into the
+ * published report so a reader can tell a live wall clock from a replayed tape's
+ * own timeline without squinting at the labels.
+ *
  * AXIS DOMAIN (ENC-1252, SPEC D7). The axes' bounds are resolved here from the
  * LIVE domain measured off the view's own streamed records (`observedDomain`),
  * falling back to a legacy view.json literal only for views that have not yet
@@ -18,7 +23,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { ObservedDomain } from '@repo/dc-wasm';
+import type { ObservedDomain, TimeBasis } from '@repo/dc-wasm';
 import type { ShowcaseView } from '../views/registry';
 import { AxisOverlay } from './AxisOverlay';
 import { resolveAxes, axisDomainReportJson, type AxisDomainReport } from './deriveAxes';
@@ -43,6 +48,13 @@ interface ChromeOverlayProps {
    * carries, and state so in the report.
    */
   observedDomain?: ObservedDomain | null;
+  /**
+   * The recordIndex → instant map fitted from this view's stream (ENC-1254).
+   * Null until two records at distinct indices have landed — and a
+   * `format: 'timestamp'` axis is DROPPED while it is null, rather than falling
+   * back to the record-index labels it replaced.
+   */
+  timeBasis?: TimeBasis | null;
 }
 
 /** Window surface the domain report is published on (see the module header). */
@@ -52,7 +64,13 @@ declare global {
   }
 }
 
-export function ChromeOverlay({ view, statsHub, fpsVisible, observedDomain = null }: ChromeOverlayProps) {
+export function ChromeOverlay({
+  view,
+  statsHub,
+  fpsVisible,
+  observedDomain = null,
+  timeBasis = null,
+}: ChromeOverlayProps) {
   const boxRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
 
@@ -79,8 +97,8 @@ export function ChromeOverlay({ view, statsHub, fpsVisible, observedDomain = nul
   // The axis domain: measured where the view declares an axisDomain, literal
   // otherwise, absent when neither — never invented.
   const { axes: resolvedAxes, report } = useMemo(
-    () => resolveAxes(chrome?.axes, observedDomain),
-    [chrome?.axes, observedDomain],
+    () => resolveAxes(chrome?.axes, observedDomain, timeBasis),
+    [chrome?.axes, observedDomain, timeBasis],
   );
   const reportJson = useMemo(() => axisDomainReportJson(report), [report]);
 
