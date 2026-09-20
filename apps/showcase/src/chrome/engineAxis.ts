@@ -91,7 +91,7 @@ import type { EffectiveTransform } from './mapping';
  * target clears to; `theme.test.ts` asserts those ratios rather than asserting
  * them in prose. See `defaultAxisTheme`'s comment in `@repo/dc-wasm`.
  */
-export const SHOWCASE_AXIS_THEME: AxisTheme = { ...darkAxisTheme, gridOpacity: 0.4 };
+export const SHOWCASE_AXIS_THEME: AxisTheme = darkAxisTheme;
 
 /** Ticks for one resolved axis, in the shape `EngineAxis` takes. */
 function ticksFor(spec: Parameters<typeof axisTicks>[0] | undefined): AxisTick[] {
