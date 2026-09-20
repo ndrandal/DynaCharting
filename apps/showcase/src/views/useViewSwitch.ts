@@ -16,6 +16,17 @@
  * §6 "one engine"). This replaces the slice's hardcoded single-manifest path and
  * is the data source for the T5.6 replay controls.
  *
+ * TIME BASIS (ENC-1254, SPEC D1 tier 1). Alongside the domain tracker it owns an
+ * `IndexTimeTracker` over the view's PRIMARY growth buffer, fitting
+ * `t = origin + recordIndex·msPerIndex` from the capture's own frame timestamps.
+ * That fit is what turns a record-index domain into a time domain the axis can
+ * label — and it is a measurement, not a constant: the record stream carries no
+ * timestamp at all (see the `TimeBasis` docs in @repo/dc-wasm). The basis is
+ * built from `view.growth`, which every candle/OHLC view already declares, so no
+ * view file gains a new literal. It reports `epochKnown: false` because the
+ * showcase replays a captured TAPE: its zero is the start of the capture, not a
+ * wall clock.
+ *
  * AXIS DOMAIN (ENC-1252, SPEC D7). When the selected view exports an
  * `axisDomain`, this controller also owns a `DomainTracker` over that axis
  * group and folds every replayed batch through it, so the chrome axes state a
@@ -26,7 +37,13 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { DomainTracker, type EngineHost, type ObservedDomain } from '@repo/dc-wasm';
+import {
+  DomainTracker,
+  IndexTimeTracker,
+  type EngineHost,
+  type ObservedDomain,
+  type TimeBasis,
+} from '@repo/dc-wasm';
 import { applyManifest, resetScene } from '../scene/sceneController';
 import type { SceneManifest } from '../scene/commands';
 import { useReplay } from '../engine/useReplay';
@@ -39,6 +56,24 @@ function sameDomain(a: ObservedDomain | null, b: ObservedDomain | null): boolean
   const sameAxis = (p: { min: number; max: number } | null, q: { min: number; max: number } | null) =>
     p === q || (!!p && !!q && p.min === q.min && p.max === q.max);
   return sameAxis(a.x, b.x) && sameAxis(a.y, b.y);
+}
+
+/**
+ * True when two fitted bases state the same map (avoids pointless renders).
+ *
+ * The fit MOVES as records land — every new sample refines the least-squares
+ * slope — so this compares to a tolerance rather than for equality. 1e-6 ms per
+ * record over a 300-record tape is 0.3 µs of drift across the whole axis, i.e.
+ * below any label's resolution; anything coarser would re-render on noise.
+ */
+function sameBasis(a: TimeBasis | null, b: TimeBasis | null): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return (
+    Math.abs(a.msPerIndex - b.msPerIndex) < 1e-6 &&
+    Math.abs(a.originMs - b.originMs) < 1e-6 &&
+    a.epochKnown === b.epochKnown
+  );
 }
 
 /** Bake the view's transform onto its transform-creating manifest command. */
@@ -64,6 +99,12 @@ export interface UseViewSwitch {
    * or null when the view declares no `axisDomain` / nothing has streamed yet.
    */
   axisDomain: ObservedDomain | null;
+  /**
+   * The recordIndex → instant map fitted from the current view's stream
+   * (ENC-1254), or null until two records at distinct indices have landed. A
+   * `timestamp` axis with no basis is dropped rather than captioned.
+   */
+  timeBasis: TimeBasis | null;
   /** [0..1] replay progress of the current view (for the transport scrubber). */
   progress: number;
   /** Whether replay is playing. */
@@ -95,24 +136,51 @@ export function useViewSwitch(host: EngineHost | null, view: ShowcaseView | null
   const axisDomainRef = useRef<ObservedDomain | null>(null);
   const flushPendingRef = useRef(false);
 
+  // --- ENC-1254: the measured time basis -----------------------------------
+  const timeRef = useRef<IndexTimeTracker | null>(null);
+  const [timeBasis, setTimeBasis] = useState<TimeBasis | null>(null);
+  const timeBasisRef = useRef<TimeBasis | null>(null);
+
   // A fresh tracker per view: an axis group belongs to one view's buffers.
   useEffect(() => {
     const spec = view?.axisDomain;
     trackerRef.current = spec ? new DomainTracker(spec.sources, spec.policy) : null;
     axisDomainRef.current = null;
     setAxisDomain(null);
+
+    // The time basis is fitted over the view's PRIMARY growth buffer — the one
+    // whose records the x axis is indexed by. `epochKnown: false`: a replayed
+    // capture's timeline starts at the tape's zero, not at an epoch.
+    const g = view?.growth;
+    timeRef.current = g
+      ? new IndexTimeTracker([{ bufferId: g.bufferId, stride: g.stride, indexOffset: g.xField }], false)
+      : null;
+    timeBasisRef.current = null;
+    setTimeBasis(null);
   }, [view]);
 
   // Fold every replayed batch. Publishing is coalesced to one animation frame
   // so a burst of frames costs one render, and only when the domain moved.
-  const onBatch = useCallback((batch: ArrayBuffer) => {
+  const onBatch = useCallback((batch: ArrayBuffer, observedAtMs: number) => {
     const tracker = trackerRef.current;
-    if (!tracker) return;
-    if (tracker.observe(batch) === 0) return;
+    const timeTracker = timeRef.current;
+    // The SAME bytes, at the SAME instant, folded by both: the domain the chart
+    // states and the clock it states it on come from one observation.
+    const foldedTime = timeTracker ? timeTracker.observe(batch, observedAtMs) : 0;
+    const foldedDomain = tracker ? tracker.observe(batch) : 0;
+    if (foldedDomain === 0 && foldedTime === 0) return;
     if (flushPendingRef.current) return;
     flushPendingRef.current = true;
     requestAnimationFrame(() => {
       flushPendingRef.current = false;
+      const tt = timeRef.current;
+      if (tt) {
+        const nextBasis = tt.basis();
+        if (!sameBasis(nextBasis, timeBasisRef.current)) {
+          timeBasisRef.current = nextBasis;
+          setTimeBasis(nextBasis);
+        }
+      }
       const t = trackerRef.current;
       if (!t) return;
       const next = t.domain();
@@ -166,7 +234,7 @@ export function useViewSwitch(host: EngineHost | null, view: ShowcaseView | null
     onBatch,
   });
 
-  return { axisDomain, progress, playing, setPlaying, restart, loop, setLoop };
+  return { axisDomain, timeBasis, progress, playing, setPlaying, restart, loop, setLoop };
 }
 
 /**
