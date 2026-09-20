@@ -723,6 +723,72 @@ tick-count and domain observations taken from the running showcase over CDP on a
 (`vendor: nvidia, architecture: ampere` — SPEC D8), replaying the committed `candles-aapl` /
 `candle-overlays` captures.
 
+## DC-L14 — A candle body has a 2 px floor, so a doji is not zero-height on screen 🟡
+
+**Claim.** Since ENC-1251 `instancedCandle@1` floors the height it draws a candle body at:
+`dc::kMinBodyHeightPx` = **2 device pixels** (`core/include/dc/render/CandleBodyFloor.hpp`),
+applied in CLIP space per draw. So the drawn body is no longer a pure function of the record's
+`open`/`close` — a bar whose body is thinner than 2 px is drawn at 2 px, centred on the
+open/close level and slid back inside `low..high` when the wick has the room. This is the
+vertical counterpart of **DC-L12** (ENC-1257's horizontal rule) and the same caveat applies:
+the resolution is host/shader-side and per-draw, so it is invisible in the bytes —
+`getBufferBytes()` and `getSceneDocument()` still report the authored `open`/`close`.
+
+**Why it exists.** Before it, `open == close` made both body triangles degenerate — zero area,
+zero fragments — so an ordinary **doji drew no body at all** and the bar read as a bare wick
+with its open/close level missing. That is not rare: ENC-1251 wiretapped the live dataplane for
+100 s (customer-layer → embassy `candles-v1` → GMA_V3 → feed-simulator; NEXO/`lastPrice`, 3 s
+tumbling windows) and decoded the candle6 records that drew the chart — **17 of 146 (11.6%)**
+carried `open == close` exactly. It is the answer to
+`specs/2026-09-19-chart-quality-bar/SPEC.md` §1.0's open question, and it was a tier-0 failure:
+the record carried an open and a close and the mark depicted neither.
+
+**Why it bites.** Two ways.
+
+1. **You cannot read a body's exact height off a dense or a flat chart.** Under ~2 px the
+   drawn height is the floor, not the data. Measure body height from the records, never from
+   the raster — the same rule DC-L12 states for width.
+2. **`SvgExporter` has its OWN floor and it is a different one.** `core/src/export/SvgExporter.cpp:548`
+   (`if (bodyH < 1.0) bodyH = 1.0;`) clamps to **1** unit in the exporter's own scaled space,
+   not to 2 device pixels, and it predates ENC-1251 — it is why the exporter always drew dojis
+   the renderer did not. The two paths now agree that a doji is visible and still disagree on
+   how tall it is. (`SvgExporter` also still does not apply DC-L12's bar-sizing rule.)
+
+**Re-check.**
+```bash
+cmake -B build-dawn -G Ninja -DDC_BUILD_TESTS=ON -DDC_FETCH_DAWN=ON
+cmake --build build-dawn -j$(nproc) --target dc_enc1249_tier0_truthful
+./build-dawn/core/dc_enc1249_tier0_truthful | grep 'doji-on-high'
+#   doji-on-high    cx=102 wick[153..225]  bodyX=108 body[153..154]  rows high=152.9 open=152.9 close=152.9 low=226.3
+#   PASS  C1 [doji-on-high] full extent at cx is low..high      got [153..225] want [152.9..226.3]
+#   PASS  C2 [doji-on-high] the body is drawn at all            x=108 lit=2 px  (open == close: a DOJI)
+#   PASS  C3 [doji-on-high] the body sits at the open/close level   mid=153.5 want=152.9 (+-3 px)
+#   PASS  C4b [doji-on-high] the floored doji body stays thin   span=2 px (need 1..4)
+
+# one floor, two shaders — the pick footprint cannot drift from the drawn one
+grep -n 'constexpr float kMinBodyHeightPx' core/include/dc/render/CandleBodyFloor.hpp
+#   -> 54:constexpr float kMinBodyHeightPx = 2.0f;
+grep -c 'dcCandleBodyFloor' core/src/gpu/DawnInstancedCandleBackend.cpp core/src/gpu/DawnPickBackend.cpp
+#   -> 1 and 1
+```
+`body[153..154]` is the whole entry: two rows where the record's open and close are the same
+number. Before ENC-1251 that column read `body[-1..-1]` — nothing lit.
+
+**Working around it.** Nothing to work around if you want a readable doji — that is the point.
+For an exact pixel height, read the records. `kMinBodyHeightPx` is a single constant in
+`CandleBodyFloor.hpp` if a caller genuinely needs a different convention; unlike ENC-1257's
+`BarSizingConfig` it is **not** yet a per-draw parameter, because nothing has asked for one.
+The rule is off entirely when the draw has no viewport (`viewH <= 0`).
+
+**Ticket.** ENC-1251. `SvgExporter`'s divergent floor is real and unowned.
+
+**Verified at** `ENC-1251 HEAD`, 2026-09-19 — every command above was run in the ENC-1251
+worktree and produced exactly the output shown, on a hardware adapter
+(`backend=Vulkan name="NVIDIA GeForce RTX 3070 Ti (NVK GA104)"` — SPEC D8). The wire figures
+come from the decoded dataplane capture the tier-0 C case quotes verbatim.
+
+---
+
 ---
 
 # §C — Corrections
