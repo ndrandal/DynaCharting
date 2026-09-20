@@ -1109,13 +1109,15 @@ path calling it and reasonably conclude the product is framed.
 ```bash
 # 1 — a render path calls it (this is what DC-L14 asserted was false)
 grep -rl 'frameSeries' apps/ --include=*.ts --include=*.tsx | grep -v '\.test\.'
-# -> apps/showcase/src/views/useViewSwitch.ts
+# -> apps/showcase/src/views/framing.ts        (the decision: which views, and why not)
+# -> apps/showcase/src/views/useViewSwitch.ts  (the CALL, on the render path)
 
 # 2 — ... for exactly the two single-pane views that declare an axisDomain
-grep -c 'createPane' apps/showcase/views/candles-aapl/manifest.ts \
-                     apps/showcase/views/ohlc-bars/manifest.ts \
-                     apps/showcase/views/candle-overlays/manifest.ts
-# -> 1, 1, 2   (the 2 is the refusal)
+grep -c 'createPane' apps/showcase/views/*/manifest.ts \
+  | grep -E 'candles-aapl|ohlc-bars|candle-overlays' | sort
+# -> apps/showcase/views/candle-overlays/manifest.ts:2   (the 2 is the refusal)
+# -> apps/showcase/views/candles-aapl/manifest.ts:1
+# -> apps/showcase/views/ohlc-bars/manifest.ts:1
 
 # 3 — and the flagship, which is what `/` renders, is the refused one
 node -e "const t=['Candles + Volume — AAPL','Candlestick — AAPL','OHLC Bars — AAPL']; \
@@ -1127,8 +1129,10 @@ node -e "const t=['Candles + Volume — AAPL','Candlestick — AAPL','OHLC Bars 
 grep -rl 'axisDomain' apps/showcase/views/ | wc -l        # -> 3
 ls apps/showcase/views | wc -l                            # -> 22
 
-# 5 — customer-layer is untouched (run from the workspace root)
-grep -rl 'frameSeries\|fitToPlotBox\|plotBox' ../customer-layer --include=*.ts --include=*.tsx | wc -l
+# 5 — customer-layer is untouched. `<workspace>` is the directory holding the six
+#     repos: from a worktree that is ../../../customer-layer, from this checkout ../customer-layer
+grep -rl 'frameSeries\|fitToPlotBox\|plotBox' <workspace>/customer-layer \
+  --include=*.ts --include=*.tsx | wc -l
 # -> 0
 ```
 
