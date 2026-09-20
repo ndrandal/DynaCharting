@@ -240,3 +240,29 @@ export function padRange(range: Range, fraction: number): Range {
   const pad = (range.max - range.min) * fraction;
   return { min: range.min - pad, max: range.max + pad };
 }
+
+/**
+ * Compose two affine transforms: `compose(outer, inner)` maps `v` the way
+ * applying `inner` and then `outer` does — `outer.s·(inner.s·v + inner.t) +
+ * outer.t`, per axis.
+ *
+ * This exists for ENC-1316. A showcase view that authors its geometry against
+ * its own clip rectangle (or bakes a data→clip literal in `view.json`) is
+ * re-framed by mapping THAT rectangle onto the plot box, which is a second
+ * affine applied on top of whatever the view already had. Composing is what
+ * makes the re-frame a function of the view's own declarations instead of a
+ * rewrite of them: the authored transform stays exactly as authored, and the
+ * framing is one multiplication away from it.
+ *
+ * Order matters and the names say which is which — `compose(remap, authored)`
+ * frames an already-projected chart; `compose(authored, remap)` does not mean
+ * anything useful.
+ */
+export function composeTransform(outer: Transform2D, inner: Transform2D): Transform2D {
+  return {
+    sx: outer.sx * inner.sx,
+    tx: outer.sx * inner.tx + outer.tx,
+    sy: outer.sy * inner.sy,
+    ty: outer.sy * inner.ty + outer.ty,
+  };
+}

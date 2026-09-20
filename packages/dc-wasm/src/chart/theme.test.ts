@@ -159,8 +159,21 @@ describe("the TS axis theme mirrors dc::Theme (ENC-1253, SPEC D4)", () => {
   it("gridRgba folds gridOpacity into alpha — ThemeManager's GridStyle rule", () => {
     // Pastel is the preset where the two differ: alpha 0.5 AND opacity 0.5.
     expect(gridRgba(AXIS_THEMES.Pastel).a).toBeCloseTo(0.25, 9);
-    // Dark has opacity 1, so the alpha passes through untouched.
-    expect(gridRgba(darkAxisTheme).a).toBeCloseTo(1, 9);
+    // Dark carries its alpha on the COLOUR (0.4, ENC-1316) and leaves the
+    // opacity multiplier at 1, exactly as `midnight` and `neon` do.
+    expect(darkAxisTheme.gridOpacity).toBe(1);
+    expect(gridRgba(darkAxisTheme).a).toBeCloseTo(0.4, 9);
+  });
+
+  it("NO preset draws an opaque gridline except `light` (ENC-1316)", () => {
+    // A gridline is drawn OVER the data, so an opaque one is the nominal colour
+    // whatever it crosses — which is D11 band 3 measured against a data mark
+    // rather than against the pane. `dark` was the second opaque preset until
+    // ENC-1316, and it is the one the showcase draws with.
+    const opaque = Object.entries(AXIS_THEMES)
+      .filter(([, t]) => (gridRgba(t).a ?? 1) >= 1)
+      .map(([name]) => name);
+    expect(opaque).toEqual(["Light"]);
   });
 });
 
@@ -196,6 +209,44 @@ describe("D11's contrast bands, measured on the theme the axis defaults to", () 
     expect(v.ratios.gridDelta255).toBeGreaterThanOrEqual(D11_BANDS.gridDeltaFloor);
     expect(v.ratios.grid).toBeLessThan(v.ratios.tick); // D11's ordering invariant
     expect(v.pass).toBe(true);
+  });
+
+  /**
+   * The two backgrounds that BOUND the default grid's alpha (ENC-1316). Both
+   * are measured off the showcase's own canvas-only rasters, not chosen:
+   * `(57,202,210)` is the brightest pixel the `audio-waveform` gridlines cross,
+   * and `(10,13,18)` is that view's pane clear — the darkest surface any
+   * gridline sits on.
+   */
+  const BRIGHTEST_MARK: Rgba4 = [57 / 255, 202 / 255, 210 / 255, 1];
+  const DARKEST_PANE: Rgba4 = [10 / 255, 13 / 255, 18 / 255, 1];
+
+  it("the default gridline clears band 3 over the BRIGHTEST mark it crosses", () => {
+    // The ceiling is the binding constraint at the bright end, and it is the
+    // one an opaque grid cannot satisfy at all: this is `audio-waveform`'s
+    // 6.25 : 1, in the theme layer, before any pixel is rendered.
+    const v = checkD11AxisBands(defaultAxisTheme, BRIGHTEST_MARK);
+    expect(v.ratios.grid).toBeLessThanOrEqual(D11_BANDS.gridCeiling);
+    expect(v.ratios.gridDelta255).toBeGreaterThanOrEqual(D11_BANDS.gridDeltaFloor);
+
+    const opaque = { ...defaultAxisTheme, gridColor: [0.2, 0.2, 0.25, 1] as Rgba4 };
+    expect(checkD11AxisBands(opaque, BRIGHTEST_MARK).ratios.grid).toBeGreaterThan(
+      D11_BANDS.gridCeiling,
+    );
+  });
+
+  it("…and clears band 3 over the DARKEST pane it sits on", () => {
+    // The visibility floor is the binding constraint at the dark end. Together
+    // the two tests are the derivation of the 0.4 in `Theme.hpp`: turn it up and
+    // the first fails, turn it down and this one does.
+    const v = checkD11AxisBands(defaultAxisTheme, DARKEST_PANE);
+    expect(v.ratios.gridDelta255).toBeGreaterThanOrEqual(D11_BANDS.gridDeltaFloor);
+    expect(v.ratios.grid).toBeLessThanOrEqual(D11_BANDS.gridCeiling);
+
+    const fainter = { ...defaultAxisTheme, gridColor: [0.2, 0.2, 0.25, 0.2] as Rgba4 };
+    expect(checkD11AxisBands(fainter, DARKEST_PANE).ratios.gridDelta255).toBeLessThan(
+      D11_BANDS.gridDeltaFloor,
+    );
   });
 
   it("midnightTheme's ticks FAIL the non-text floor — why it is not the default", () => {

@@ -1076,83 +1076,191 @@ symptom was observed and then removed on a canvas-only capture of the showcase, 
 
 ---
 
-## DC-L-1273 — Only a single-pane view is framed by the plot box; a stacked view and the whole product are not 🟡
+## DC-L-1273 — The stacked view is REFUSED by the plot box, and the product has not adopted it 🟡
+
+> **Narrowed by ENC-1316, 2026-09-20.** This entry used to say *"only a single-pane view is
+> framed"* and that the framing reached **2 of 22** views. It now reaches **13 of the 14 views
+> that draw an axis** — see **DC-L-1316** for what the second fit does and does not promise.
+> Two of the three original halves are gone; the two below are what is left.
 
 **Claim.** ENC-1273 put `frameSeries` on a render path for the first time (that is what retired
-**DC-L14**, §R). It did not put it on *every* render path, and the two that are left are stated
-here rather than implied by a green test.
+**DC-L14**, §R). ENC-1316 put a second, weaker fit on the same path for every other view that
+draws an axis. Neither reaches the two cases below, and they are stated here rather than implied
+by a green test.
 
 1. **A stacked multi-pane view is REFUSED, not framed.** `plotBox()` returns ONE rectangle and
-   `frameSeries` fits ONE domain into it. `candle-overlays` — the showcase's flagship, the view
-   the hero route renders — puts price in clip y `[-0.20, 0.95]` and a cumulative-volume
-   sub-pane in `[-0.95, -0.30]`, with two transforms. Fitting the price series to the whole box
-   would paint it straight over the volume pane, so `apps/showcase/src/views/framing.ts` counts
-   the manifest's `createPane` commands and declines, with the reason in the returned value. Its
-   framing is still the `view.json` literal, and its axis furniture is still laid out against
-   the full-canvas box while its price band occupies the top 58% of it — i.e. the y tick labels
-   span height the price pane does not.
+   both fits put ONE thing inside it. `candle-overlays` — the showcase's flagship, the view the
+   hero route renders — puts price in clip y `[-0.20, 0.95]` and a cumulative-volume sub-pane in
+   `[-0.95, -0.30]`, with two transforms and two pane regions. Fitting either to the whole box
+   would paint it straight over the other, so `apps/showcase/src/views/framing.ts` counts the
+   manifest's `createPane` commands and declines, with the reason in the returned value. Its
+   framing is still the `view.json` literal, and its axis furniture is still laid out against the
+   full-canvas box while its price band occupies the top 58% of it — i.e. the y tick labels span
+   height the price pane does not.
 
    What is missing is a **layout**: two boxes carved out of one, a transform per band, and
    furniture that knows which band it belongs to. `DomainTracker` is not even measuring the
    volume buffer's y (`manifest.ts` registers it `axes: 'x'` on purpose), so there is no second
-   domain to fit yet.
+   domain to fit yet. It is the one axis-drawing view still carrying a `T1.8` failure in
+   `SCORECARD.md` Table B, and it fails it in a way neither fit addresses: its leftmost vertical
+   gridline lands 3px from the y spine, so the spine is inside the scorer's own 3px neighbourhood
+   sample (`ratio 1.09, delta 6` — the VISIBILITY floor, not the ceiling).
 
 2. **`customer-layer` — the live product, and the surface SPEC §1.0 actually measured — has not
    adopted any of it.** It is a separate repo and a separate ticket. Every tier-2 number in
-   SPEC §1.0 was taken there, so **none of them moves because of ENC-1273**. The numbers that
-   moved are the showcase's.
+   SPEC §1.0 was taken there, so **none of them moves because of ENC-1273 or ENC-1316**. The
+   numbers that moved are the showcase's.
 
-**Why it bites.** This is DC-L14's shape at one-third scale, and it bites the same way: "the
-showcase frames its charts now" is true of two views out of twenty-two, and the one a visitor
-sees first on `/` is not one of them. A reader who greps `frameSeries` will now find a render
-path calling it and reasonably conclude the product is framed.
+**Why it bites.** This was DC-L14's shape at one-third scale and it is now DC-L14's shape at
+one-fourteenth: "the showcase frames its charts now" is true of thirteen views out of twenty-two,
+and the one a visitor sees first on `/` is still not one of them. A reader who greps `frameSeries`
+will find a render path calling it and reasonably conclude the product is framed.
 
 **Re-check.**
 ```bash
-# 1 — a render path calls it (this is what DC-L14 asserted was false)
-grep -rl 'frameSeries' apps/ --include=*.ts --include=*.tsx | grep -v '\.test\.'
-# -> apps/showcase/src/views/framing.ts        (the decision: which views, and why not)
-# -> apps/showcase/src/views/useViewSwitch.ts  (the CALL, on the render path)
+# 1 — a render path frames, and there are two fits (ENC-1273 + ENC-1316)
+grep -rl 'frameSeries\|fitRegionToBox' apps/ --include=*.ts --include=*.tsx | grep -v '\.test\.'
+# -> apps/showcase/src/views/useViewSwitch.ts   (the CALLS, on the render path)
+# -> apps/showcase/src/views/framing.ts        (the DECISION: which views, and which fit)
+grep -n "kind: 'series'\|kind: 'pane'" apps/showcase/src/views/framing.ts | head -4
 
-# 2 — ... for exactly the two single-pane views that declare an axisDomain
-grep -c 'createPane' apps/showcase/views/*/manifest.ts \
-  | grep -E 'candles-aapl|ohlc-bars|candle-overlays' | sort
-# -> apps/showcase/views/candle-overlays/manifest.ts:2   (the 2 is the refusal)
-# -> apps/showcase/views/candles-aapl/manifest.ts:1
-# -> apps/showcase/views/ohlc-bars/manifest.ts:1
+# 2 — and exactly ONE axis-drawing view is refused, by its pane count
+pnpm test -- framing
+# -> "frames all 14 axis-drawing views except the stacked one" asserts
+#    refused == [{ id: 'candle-overlays', reason: 'multi-pane' }]
+grep -c 'createPane' apps/showcase/views/candle-overlays/manifest.ts   # -> 2
 
-# 3 — and the flagship, which is what `/` renders, is the refused one
+# 3 — and that refused view is what `/` renders (App.tsx FLAGSHIP_ID picks the
+#     first 'native'-tier view by title)
 node -e "const t=['Candles + Volume — AAPL','Candlestick — AAPL','OHLC Bars — AAPL']; \
          console.log(t.slice().sort((a,b)=>a.localeCompare(b))[0])"
-# -> Candles + Volume — AAPL      (candle-overlays; App.tsx FLAGSHIP_ID picks the first
-#    'native'-tier view by title)
+# -> Candles + Volume — AAPL      (candle-overlays)
 
-# 4 — the other 19 views declare no axisDomain at all, so nothing measures a domain to fit
-grep -rl 'axisDomain' apps/showcase/views/ | wc -l        # -> 3
-ls apps/showcase/views | wc -l                            # -> 22
-
-# 5 — customer-layer is untouched. `<workspace>` is the directory holding the six
+# 4 — customer-layer is untouched. `<workspace>` is the directory holding the six
 #     repos: from a worktree that is ../../../customer-layer, from this checkout ../customer-layer
-grep -rl 'frameSeries\|fitToPlotBox\|plotBox' <workspace>/customer-layer \
+grep -rl 'frameSeries\|fitRegionToBox\|fitToPlotBox\|plotBox' <workspace>/customer-layer \
   --include=*.ts --include=*.tsx | wc -l
 # -> 0
 ```
 
-**Working around it.** For a single-pane view, nothing — it is framed. For anything else, fit it
-yourself and hand the engine both halves (`setPaneRegion` AND `setTransform` from one `PlotBox`,
-plotbox.ts note 7); for a stacked layout you must also decide the band split and carry a second
-domain, which is the work this entry is about.
+**Working around it.** For a single-pane view, nothing — it is framed. For a stacked layout you
+must decide the band split and carry a second domain, which is the work this entry is about; hand
+the engine both halves yourself (`setPaneRegion` AND `setTransform` from one `PlotBox`,
+plotbox.ts note 7), per band.
 
 **Ticket.** None yet for either half. The stacked-layout one is a plot-box *layout* feature, not
 a showcase fix; customer-layer adoption was already called out as out-of-scope by ENC-1273.
 
-**Verified at** `ENC-1273 HEAD`, 2026-09-20 — all five commands run in the ENC-1273 worktree.
+**Verified at** `ENC-1316 HEAD`, 2026-09-20 — all four commands run in the ENC-1316 worktree.
 The framing claim itself is measured, not asserted: on a canvas-only capture of
 `#/view/candles-aapl` (hardware adapter `vendor: nvidia, architecture: ampere`,
 `info.isFallbackAdapter: false` — SPEC D8), the candle ink covers **52.5% → 91.1%** of the
 canvas height at 900×497, and `checkTier2Framing` over the same capture's measured domain goes
 from `edge clearance -526.1px` (the tape running off the right of the render target and being
 cut by the pane scissor) to `pass`.
+
+---
+
+
+
+## DC-L-1316 — The pane fit frames the view's RECTANGLE, not its ink; and a gridline is scored against whatever is within 3 px of it 🟡
+
+**Claim.** ENC-1316 took the plot box from 2 of 22 showcase views to 13 of the 14 that draw an
+axis, and the `'0.0'` tick label that used to sit on a cyan waveform at **1.57 : 1** now sits on
+the pane at **9.28 : 1**. Three things that buys are weaker than they look, and the third is not
+about this engine at all.
+
+1. **A `pane`-fitted view has NO tier-2 framing metric, so its framing quality is unmeasured.**
+   The two fits are not equals. `kind: 'series'` (ENC-1273) fits a **measured domain** into the
+   box and `frameSeries` returns `metrics`, which `checkTier2Framing` scores. `kind: 'pane'`
+   (this ticket) fits the view's own **clip rectangle** — its `setPaneRegion` — into the box and
+   returns `metrics: null`, because there is no measured domain to compute ink extent from.
+   Everything inside that rectangle is carried along unchanged, **including whatever dead margin
+   the author left**: the data ends up inside the box, which is the property the ticket was
+   about, but "framed" does not become "fills its frame" for those eleven views, and nothing
+   measures the difference. Two views out of twenty-two have a domain measurement behind their
+   framing; eleven have a rectangle.
+
+2. **The gridline is drawn ON TOP of the data, and band 3 now rests entirely on one alpha.**
+   Panes render in id order and the furniture pane is created last, so the grid crosses the marks
+   rather than receding behind them. D11 band 3 is therefore measured against *what it crosses*,
+   and an opaque line across a bright mark is a mark: 6.25 : 1 on `audio-waveform`. The fix was
+   the theme's alpha (1.0 → 0.4, `Theme.hpp`), bounded above by the 2.0 : 1 ceiling over the
+   brightest mark and below by the 10/255 visibility floor over the darkest pane — a window of
+   roughly `[0.25, 0.45]`. **It is a window, not a rule**: a view whose marks are brighter than
+   `(57,202,210)` re-opens the ceiling, and nothing measures that until a raster is scored.
+
+   **Drawing the grid BEHIND the data was built, measured, and reverted** — the negative result
+   is the useful part. `AxisSpec.gridTarget` put the grid layer in the data pane at a layer id
+   below the manifest's (layers render in id order too), which removed every ceiling breach.
+   It then failed band 3 the *other* way: an occluded gridline cannot be measured. `score.py`'s
+   `line_sample` excludes positions where the line and its neighbourhood are **exactly** equal,
+   and an antialiased gradient fill is never exactly equal, so the occluded stretch is included
+   and the instrument reports the waveform's own gradient — `line (49,184,196)` vs
+   `near (49,184,195)`, **Δ 1/255** against a 10/255 floor, on 3 of `audio-waveform`'s 10
+   gridlines and 2 of `footprint`'s 15. Both configurations were captured at 900×497 on
+   `vendor: nvidia, architecture: ampere`; only the translucent-on-top one scores 10/10 and
+   15/15.
+
+3. **Band 3 samples ±3 px, so a mark that lands near a gridline is scored AS the gridline's
+   background.** `ecg` is the one axis-drawing view still failing T1.8 after this ticket, 3/3
+   captures, the same 3 of 18 lines each time — and in two of the three the gridline is over the
+   **pane** (`line (22,28,32)`, the correct blend) while its neighbourhood is a QRS spike
+   `(25,127,58)` three pixels away, i.e. the instrument compares a gridline against a mark it is
+   not touching. The third is the `0.0 mV` gridline, which coincides with the isoelectric
+   baseline along the whole width. `candle-overlays` used to fail the same way with the **spine**
+   in its neighbourhood (`Δ 6`); that one happens to be fixed now, by luck of the alpha rather
+   than by design. This is a scorer property, not an engine one — the same family as
+   `SCORECARD.md` §3's letterbox/antialiasing findings, which is **ENC-1315**.
+
+**Why it bites.** (1) is the one that will mislead: `framingResolution.framed === true` reads as
+"this chart is framed", and for eleven views it means "this chart's rectangle is in the right
+place". (2) means the next theme edit, or the next view with a brighter palette, can put the
+grid back over the ceiling with no test failing until someone captures a raster.
+
+**Re-check.**
+```bash
+# 1 — eleven of the thirteen framed views carry NO tier-2 metric
+grep -n "metrics: null" apps/showcase/src/views/useViewSwitch.ts     # -> the pane branch
+pnpm test -- framing
+# -> "frames all 14 axis-drawing views except the stacked one" (13 framed)
+#    and only candles-aapl / ohlc-bars resolve `kind: 'series'`
+
+# 2 — the alpha, and the two bounds that pin it
+grep -n 'gridColor\[4\]' core/include/dc/style/Theme.hpp            # -> {..., 0.4f}
+grep -n 'gridColor: \[0.2, 0.2, 0.25' packages/dc-wasm/src/chart/theme.ts   # -> the TS mirror
+pnpm test -- theme
+# -> "the default gridline clears band 3 over the BRIGHTEST mark it crosses" and
+#    "…and clears band 3 over the DARKEST pane it sits on" — each asserts that
+#    moving the alpha the other way breaks the OTHER bound.
+
+# 3 — and the one view still failing T1.8, with the reason in the measurement
+python3 <workspace>/specs/2026-09-19-chart-quality-bar/harness/score.py \
+  --raster <shots>/ecg.png --scene <scenes>/showcase-ecg.scene.json --diagnose --no-colour \
+  | grep -A1 'T1.8'
+# -> FAIL  3 of 18 gridlines outside the band
+#    (vertical 182 and 669: line (22,28,32) over the pane, near (25,127,58) — a
+#     QRS spike 3px away; horizontal 321: the 0.0 mV line under the baseline)
+```
+
+**Working around it.** For (1): if you need a framed view's ink to fill its box, give it an
+`axisDomain` (ENC-1252) and a single growth transform — `resolveFraming` then picks the `series`
+fit and `checkTier2Framing` scores it. For (2): do not raise the grid alpha to "make the grid
+visible"; the visibility floor is already satisfied and the ceiling is what breaks. For (3):
+nothing from the engine side — read the per-gridline `line`/`near` pair before treating a band-3
+failure as a rendering defect.
+
+**Ticket.** [ENC-1316](https://linear.app/encultured/issue/ENC-1316) for (1) and (2). (3) is a
+scorer finding and belongs with [ENC-1315](https://linear.app/encultured/issue/ENC-1315); no
+ticket of its own yet.
+
+**Verified at** `ENC-1316 HEAD`, 2026-09-20 — all three commands run in the ENC-1316 worktree.
+The numbers come from a 22-view sweep of canvas-only rasters (`canvas.engine-canvas` →
+`toDataURL`, never a committed still — DC-L15), 900×497, hardware adapter `vendor: nvidia,
+architecture: ampere`, `info.isFallbackAdapter: false` (SPEC D8), scored with the `score.py` on
+`main`. Table B moved **T1.7 FAIL→PASS** on `audio-waveform` and **T1.8 FAIL→PASS** on
+`audio-waveform`, `candle-overlays`, `footprint` and `ohlc-bars`; **T1.8 PASS→FAIL** on `ecg`,
+which is (3). No other check on any of the 22 views changed.
 
 ---
 

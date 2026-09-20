@@ -30,6 +30,7 @@ import { dirname, resolve } from "node:path";
 import {
   AXIS_DEFAULTS,
   EngineAxis,
+  GRID_EDGE_TOLERANCE_PX,
   boxesOverlap,
   checkTier1Labels,
   createHostMeasurer,
@@ -296,8 +297,41 @@ describe("planAxis — where the labels land", () => {
     expect(p.droppedLabels).toEqual([
       { text: "09:35:00", axis: "x", reason: "outside the frame" },
     ]);
-    // Its tick mark and gridline are still drawn: the mark is true either way.
-    expect(p.gridLines.filter((g) => g.orientation === "vertical")).toHaveLength(1);
+    // Its tick MARK is still drawn: the mark is true either way.
+    const verticalTicks = [];
+    for (let i = 0; i < p.tickSegments.length; i += 4) {
+      const seg = p.tickSegments.slice(i, i + 4);
+      if (seg[0] === seg[2]) verticalTicks.push(seg);
+    }
+    expect(verticalTicks).toHaveLength(1);
+    // Its GRIDLINE is not, and that is ENC-1316 rather than an accident of this
+    // fixture: value 100 is the domain maximum, so it lands exactly on
+    // `box.x.max`, where a gridline is the frame drawn a second time.
+    expect(p.gridLines.filter((g) => g.orientation === "vertical")).toHaveLength(0);
+  });
+
+  it("drops a gridline that lands ON a box edge — the frame is already there", () => {
+    // ENC-1316. A FITTED view puts its domain minimum exactly on `box.x.min`,
+    // which is exactly where the y spine is drawn: measured on `ohlc-bars`, the
+    // two 1px lines composite to (102,102,115) where each alone is (51,51,64),
+    // and D11 band 3 reads 3.58:1 against a 2.0:1 ceiling. The tick and the
+    // label are untouched — only the redundant line goes.
+    const s = spec({ x: { ticks: [{ value: 0, label: "09:30:00" }] } });
+    const p = planAxis(s);
+    expect(p.gridLines.filter((g) => g.orientation === "vertical")).toHaveLength(0);
+    expect(p.labels.filter((l) => l.role === "xTickLabel").map((l) => l.text)).toEqual([
+      "09:30:00",
+    ]);
+    // A tick one pixel further in is kept: the rule is "on the frame", not
+    // "near the spine" (which is a different problem with a different fix).
+    const inset = spec({
+      x: {
+        ticks: [
+          { value: (GRID_EDGE_TOLERANCE_PX + 1) * (100 / (clipXToPx(s.box.x.max, CANVAS.width) - clipXToPx(s.box.x.min, CANVAS.width))), label: "09:30:01" },
+        ],
+      },
+    });
+    expect(planAxis(inset).gridLines.filter((g) => g.orientation === "vertical")).toHaveLength(1);
   });
 
   it("drops a colliding label and KEEPS its tick mark", () => {
