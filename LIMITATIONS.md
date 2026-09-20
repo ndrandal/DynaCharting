@@ -1121,6 +1121,7 @@ will find a render path calling it and reasonably conclude the product is framed
 # 1 — a render path frames, and there are two fits (ENC-1273 + ENC-1316)
 grep -rl 'frameSeries\|fitRegionToBox' apps/ --include=*.ts --include=*.tsx | grep -v '\.test\.'
 # -> apps/showcase/src/views/useViewSwitch.ts   (the CALLS, on the render path)
+# -> apps/showcase/src/views/framing.ts        (the DECISION: which views, and which fit)
 grep -n "kind: 'series'\|kind: 'pane'" apps/showcase/src/views/framing.ts | head -4
 
 # 2 — and exactly ONE axis-drawing view is refused, by its pane count
@@ -1227,7 +1228,7 @@ pnpm test -- framing
 
 # 2 — the alpha, and the two bounds that pin it
 grep -n 'gridColor\[4\]' core/include/dc/style/Theme.hpp            # -> {..., 0.4f}
-grep -n 'gridColor: \[0.2' packages/dc-wasm/src/chart/theme.ts      # -> the TS mirror
+grep -n 'gridColor: \[0.2, 0.2, 0.25' packages/dc-wasm/src/chart/theme.ts   # -> the TS mirror
 pnpm test -- theme
 # -> "the default gridline clears band 3 over the BRIGHTEST mark it crosses" and
 #    "…and clears band 3 over the DARKEST pane it sits on" — each asserts that
