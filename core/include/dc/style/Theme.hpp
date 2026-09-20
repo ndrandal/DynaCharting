@@ -28,7 +28,27 @@ struct Theme {
   float highlightColor[4]  = {1.0f, 1.0f, 0.3f, 0.5f};
   float drawingColor[4]    = {1.0f, 1.0f, 0.0f, 1.0f};
 
-  float gridColor[4]       = {0.2f, 0.2f, 0.25f, 1.0f};
+  // ENC-1316 — the ALPHA is 0.4, and it is derived rather than chosen. A
+  // gridline is drawn OVER the data marks (the furniture pane is created last,
+  // and panes render in id order), so D11's band-3 ceiling is measured against
+  // whatever it crosses, not against the pane it sits on. With alpha 1.0 — which
+  // is what this default carried, alone among the presets apart from `light` —
+  // the composite is the nominal colour whatever is underneath, so a grey line
+  // across a bright mark is a MARK: measured on the showcase's `audio-waveform`
+  // at 6.25 : 1 against a 2.0 : 1 ceiling, and on `footprint` at 2.55 : 1.
+  // With alpha `a` the composite is `a·grid + (1-a)·bg`, which tracks the
+  // background, and the two bands pin `a` from both sides:
+  //   ceiling   contrast(a·grid + (1-a)·B, B) <= 2.0 for the BRIGHTEST B the
+  //             grid crosses — (57,202,210), the showcase waveform's peak —
+  //             which binds at a ~= 0.45;
+  //   floor     max per-channel |a·(grid - B)| >= 10/255 for the DARKEST B —
+  //             (10,13,18), the showcase's own pane clear — which binds at
+  //             a ~= 0.25.
+  // 0.4 sits inside [0.25, 0.45] with margin at both ends, and is the value
+  // `neon` already uses. Measured, not asserted: with it, `audio-waveform`
+  // scores 10/10 gridlines inside the band and `footprint` 15/15 (ENC-1316,
+  // canvas-only capture, nvidia/ampere).
+  float gridColor[4]       = {0.2f, 0.2f, 0.25f, 0.4f};
   float tickColor[4]       = {0.4f, 0.4f, 0.45f, 1.0f};
   float labelColor[4]      = {0.7f, 0.7f, 0.75f, 1.0f};
   float gridLineWidth{1.0f};

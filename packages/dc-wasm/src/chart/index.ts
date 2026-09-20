@@ -18,6 +18,7 @@ export {
   indexTicks,
   fitAxis,
   fitTransform,
+  composeTransform,
   horizontalGridSegments,
   verticalGridSegments,
   gridSegments,
@@ -115,6 +116,7 @@ export {
   framingMetrics,
   checkTier2Framing,
   frameSeries,
+  fitRegionToBox,
 } from "./plotbox";
 export type {
   CanvasSize,
