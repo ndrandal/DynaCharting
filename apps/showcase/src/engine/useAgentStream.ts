@@ -3,8 +3,20 @@
  * WebSocket data-plane hook. When VITE_SHOWCASE_AGENT_URL is set, it opens the
  * agent (embassy) data plane, sets binaryType=arraybuffer, and forwards each
  * binary message straight into the engine's data plane (host.enqueueData).
- * embassy's text frames (its own scene-init) are IGNORED — the showcase owns
- * its manifest (CONTRACT-buffer-id.md). When the env var is unset, it's inert.
+ * When the env var is unset, it's inert.
+ *
+ * TEXT FRAMES: THE MANIFEST IS STILL IGNORED, THE CLOCK IS NOT (ENC-1282).
+ * embassy's first text frame is its own scene-init envelope
+ * (`{type:'scene-init',commands:[…]}`). The showcase still does NOT apply those
+ * commands — it owns its manifest (CONTRACT-buffer-id.md) — but since ENC-1281
+ * that envelope is also the ONLY place the producer's clock appears:
+ * `createBuffer.timeBasis = {baseMs, periodMs, epochKnown}`, declared once per
+ * buffer (SPEC D6). Reading it is not "applying the manifest": it is one
+ * per-stream declaration lifted out of a frame whose imperative half is
+ * discarded, and it is what turns `t = baseMs + x·periodMs` from a client fit
+ * into the producer's measurement. A buffer whose stream has no uniform bar
+ * period carries no `timeBasis` at all and the axis is DROPPED (SPEC D7
+ * corollary) — which is why `onTimeBasis` is also called with `null`.
  *
  * Optional growth sync (`growth`): the data plane only grows a buffer's BYTES;
  * the renderer draws geometry.vertexCount instances. For a live vertex/instance
@@ -44,9 +56,40 @@ function countRecordsForBuffer(batch: ArrayBuffer, bufferId: number, stride: num
 }
 
 import { useEffect } from 'react';
-import type { EngineHost } from '@repo/dc-wasm';
+import { transmittedBasisFromSceneInit } from '@repo/dc-wasm';
+import type { EngineHost, TimeBasis } from '@repo/dc-wasm';
 
 const AGENT_URL = import.meta.env.VITE_SHOWCASE_AGENT_URL as string | undefined;
+
+/**
+ * True when this build is pointed at a live agent data plane.
+ *
+ * The caller needs this to decide what drives the engine: with a live socket
+ * attached, replaying a captured tape onto the same buffers would interleave two
+ * unrelated record streams on one buffer id.
+ */
+export function agentStreamEnabled(): boolean {
+  return typeof AGENT_URL === 'string' && AGENT_URL.length > 0;
+}
+
+/** Callbacks the live stream reports into. All optional. */
+export interface AgentStreamCallbacks {
+  /**
+   * Every binary batch, with the instant it was observed — the same contract
+   * `useReplay` uses, so one `DomainTracker`/`IndexTimeTracker` pair serves both
+   * inputs. `Date.now()` here is a real wall clock, unlike a tape's `t`.
+   */
+  onBatch?: (batch: ArrayBuffer, observedAtMs: number) => void;
+  /**
+   * The basis the producer declared for the growth buffer, or `null` when it
+   * declared none (drop the axis). Fires on every scene-init frame, because
+   * embassy re-publishes the envelope once it learns a buffer's `baseMs`
+   * mid-stream (embassy `republishTimeBasis`): the FIRST envelope a late joiner
+   * sees may legitimately carry `epochKnown: false`, and the correction arrives
+   * as a second frame rather than as a new connection.
+   */
+  onTimeBasis?: (basis: TimeBasis | null) => void;
+}
 
 /**
  * Drive a live-growing instanced geometry from a streamed buffer.
@@ -112,7 +155,13 @@ function firstRecordX(batch: ArrayBuffer, bufferId: number, xField: number): num
  * count. When the URL is unset (the default), do nothing. Reconnect logic is
  * deliberately omitted.
  */
-export function useAgentStream(host: EngineHost | null, growth?: GrowthSync): void {
+export function useAgentStream(
+  host: EngineHost | null,
+  growth?: GrowthSync,
+  callbacks?: AgentStreamCallbacks,
+): void {
+  const onBatch = callbacks?.onBatch;
+  const onTimeBasis = callbacks?.onTimeBasis;
   useEffect(() => {
     if (!host || !AGENT_URL) return;
 
@@ -199,12 +248,26 @@ export function useAgentStream(host: EngineHost | null, growth?: GrowthSync): vo
       ws = new WebSocket(AGENT_URL);
       ws.binaryType = 'arraybuffer';
       ws.onmessage = (ev: MessageEvent) => {
+        if (typeof ev.data === 'string') {
+          // The manifest half of the envelope is deliberately discarded; only
+          // the per-buffer clock is read (see the module docstring). Matched by
+          // buffer id, never by position — embassy emits createBuffer commands
+          // in sorted-id order, not in the order the manifest declares them.
+          if (onTimeBasis) {
+            onTimeBasis(transmittedBasisFromSceneInit(ev.data, growth?.bufferId));
+          }
+          return;
+        }
         if (ev.data instanceof ArrayBuffer) {
           if (growth) {
             anchorX(ev.data);
             recordTotal += countRecordsForBuffer(ev.data, growth.bufferId, growth.stride);
           }
           host.enqueueData(ev.data);
+          // Date.now(), not performance.now(): a live socket's arrival time is
+          // the only wall clock a FITTED basis can have, and the two clocks are
+          // not on the same origin. A transmitted basis ignores this entirely.
+          onBatch?.(ev.data, Date.now());
           scheduleGrowthSync();
         }
       };
@@ -218,5 +281,5 @@ export function useAgentStream(host: EngineHost | null, growth?: GrowthSync): vo
     return () => {
       ws?.close();
     };
-  }, [host, growth]);
+  }, [host, growth, onBatch, onTimeBasis]);
 }
