@@ -34,6 +34,34 @@
  * LIMITATIONS.md **DC-L-1273**, not an oversight. The two single-pane views
  * (`candles-aapl`, `ohlc-bars`) are framed.
  *
+ * ── TWO FITS, BECAUSE THERE ARE TWO KINDS OF VIEW (ENC-1316) ────────────────
+ *
+ * ENC-1273 reached 2 of 22 views, because a `frameSeries` fit needs a MEASURED
+ * domain (`axisDomain`, ENC-1252) and ONE transform to write it to. Eleven more
+ * views draw an axis and have neither: they author their geometry directly in
+ * clip space (`audio-waveform`, `ridgeline`, `spectrogram`, `streamgraph`), or
+ * bake a data→clip literal across two mirrored transforms (`footprint`,
+ * `depth-ladder`, `volume-profile`), or carry one transform but no axis group
+ * (`ecg`, `renko`, `scatter`, `price-line-area`). For all eleven the axis
+ * furniture was laid out against `plotBox(canvas)` while the data was not, so
+ * the two shared pixels: `audio-waveform`'s `'0.0'` tick label scored **1.57:1**
+ * against the cyan waveform running behind it INSIDE the 64px label gutter.
+ *
+ * What every one of them DOES declare is the clip rectangle it draws inside —
+ * its pane's `setPaneRegion`, the `±0.95` in its own manifest. So the second fit
+ * is a change of RECTANGLE rather than of domain: `fitRegionToBox` maps that
+ * rectangle onto the plot box and the result is COMPOSED onto whatever
+ * transform the view already authored (`composeTransform`), one per transform
+ * the manifest creates, plus one attached to the draw items that have none.
+ * Everything is read out of the view's own manifest; no view file gains a
+ * literal and nothing here names a view.
+ *
+ * It is the weaker fit and it is labelled as such: `kind: 'pane'` preserves
+ * whatever dead margin the author left inside their own rectangle, where
+ * `kind: 'series'` fits the ink itself. What it does guarantee is the property
+ * ENC-1316 is about — the data is inside the box and the gutters are the
+ * furniture's alone.
+ *
  * ── THE OTHER THING THIS TURNS OFF ──────────────────────────────────────────
  *
  * `useReplay`'s `xAnchor` writes its OWN `setTransform` on the first record of
@@ -46,10 +74,11 @@
  * measured rather than assumed.
  */
 
-import type { PlotInsets } from '@repo/dc-wasm';
-import type { SceneManifest } from '../scene/commands';
+import { FULL_CLIP_REGION, type PaneRegion, type PlotInsets, type Transform2D } from '@repo/dc-wasm';
+import type { SceneManifest, SceneCommand } from '../scene/commands';
 import type { GrowthSync } from '../engine/useReplay';
-import type { AxisDomainSpec, ShowcaseView } from './registry';
+import type { AxisSpec } from '../chrome/types';
+import type { AxisDomainSpec, ShowcaseView, ViewTransform } from './registry';
 
 /** The ids a fitted frame is applied to, once a view is known to be framable. */
 export interface ViewFraming {
@@ -61,16 +90,33 @@ export interface ViewFraming {
   insets?: PlotInsets;
 }
 
+/**
+ * The clip-space re-frame for a view that has no measured domain to fit — the
+ * ENC-1316 path. Everything in it is read out of the view's own manifest.
+ */
+export interface PaneFraming {
+  /** The view's single pane. Its region becomes `paneRegionFor(box)`. */
+  paneId: number;
+  /** The clip rectangle the view authored inside — its own `setPaneRegion`. */
+  region: PaneRegion;
+  /** Every transform the manifest creates, with the value it authors for it. */
+  transforms: { id: number; authored: Transform2D }[];
+  /** Draw items the manifest binds with no transform of their own. */
+  untransformedDrawItems: number[];
+  /** Per-view gutters. `undefined` ⇒ `DEFAULT_PLOT_INSETS`. */
+  insets?: PlotInsets;
+}
+
 /** Why a view is NOT framed by the plot box. Reported, never silent. */
 export type FramingRefusal =
-  | 'no-axis-domain' // declares no ENC-1252 axis group: nothing measures its domain
-  | 'no-growth-transform' // no primary growth series, so no transform to fit
+  | 'no-axes' // declares no `chrome.axes`: no furniture, so no box to share
   | 'multi-pane' // stacked panes: one box cannot lay out two (DC-L-1273)
-  | 'no-pane'; // the growth layer's pane is not in the manifest
+  | 'no-pane'; // the manifest creates no pane to frame
 
 /** `resolveFraming`'s answer: the ids, or the reason there are none. */
 export type FramingResolution =
-  | { framed: true; framing: ViewFraming }
+  | { framed: true; kind: 'series'; framing: ViewFraming }
+  | { framed: true; kind: 'pane'; paneFraming: PaneFraming }
   | { framed: false; reason: FramingRefusal; detail: string };
 
 /** The slice of a view this decision needs (so tests can pass manifest modules). */
@@ -78,6 +124,10 @@ export interface FramableView {
   manifest: SceneManifest;
   growth?: GrowthSync;
   axisDomain?: AxisDomainSpec;
+  /** The view's declared axes — a view with none gets no plot box (ENC-1316). */
+  axes?: { x?: AxisSpec; y?: AxisSpec };
+  /** `view.json`'s baked transform: the value `bakeTransform` would have written. */
+  transform?: ViewTransform;
 }
 
 /** Every `createPane` id in a manifest, in scene order. */
