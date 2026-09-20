@@ -53,10 +53,20 @@ zero — it cannot manufacture a sign.
 
 Exit 0 upright, 1 mirrored, 2 could not run.
 
-Verified 2026-09-20 at the ENC-1288 recapture: the pre-ENC-1288 still (537c995)
--> MIRRORED, slope +36.40 px/$, r=+0.9895 (bottom edge); the recaptured still ->
-UPRIGHT, slope -29.24 px/$, r=-0.99998 (top edge). Why every committed still was
-mirrored until then: LIMITATIONS.md DC-L15.
+Verified 2026-09-20 at the ENC-1288 recapture, five cases:
+
+  price-line-area, recaptured                     UPRIGHT   exit 0  -29.24 px/$  r -1.0000
+  price-line-area, recaptured then FLIPPED        MIRRORED  exit 1  +29.24 px/$  r +1.0000
+  price-line-area, the 537c995 still              MIRRORED  exit 1  +36.40 px/$  r +0.9895
+  candle-overlays, recaptured                     refused   exit 2  baseline edge 139 px
+  candle-overlays, the 537c995 still              refused   exit 2  baseline edge 441 px
+
+The last two used to be answers: before ENC-1288 this tool ruled the known-mirrored
+2026-06 `candle-overlays` still **UPRIGHT** at r = -0.97, because `'rect4' in
+manifest.ts` does not mean "baseline area" — candle-overlays' rect4 stream is a
+volume series in a second pane. Of the 22 showcase views exactly ONE satisfies this
+method's premise; the other 21 are refused by name. Why every committed still was
+mirrored until 2026-09-20: LIMITATIONS.md DC-L15.
 """
 
 import base64
