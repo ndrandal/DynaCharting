@@ -779,9 +779,12 @@ anything vertical read off one is inverted. For a claim about orientation or fil
 `scripts/tier0.sh` (which asserts on the presented raster and ships the mirror as a negative
 control). Recapturing the gallery is **ENC-1250's follow-up, not ENC-1250** — it rewrites 23
 binary artifacts and needs the capture harness, whose `EMBASSY_REPO` path does not exist on this
-machine (`apps/showcase/tools/capture.mjs`).
+machine (`apps/showcase/tools/capture.mjs`); `apps/showcase/stills/README.md` marks the
+directory stale until then.
 
-**Ticket.** Recapture: filed as a follow-up on ENC-1250. **Verified at `2423de6`, 2026-09-19.**
+**Ticket.** Recapture + the SPEC correction: **ENC-1276**. **Verified at `2423de6`, 2026-09-19**
+— fit measured on both adapters the tier-0 control run used (llvmpipe, and NVIDIA GeForce
+RTX 3070 Ti / NVK GA104).
 
 ---
 

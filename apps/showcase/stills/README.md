@@ -39,7 +39,7 @@ python3 ../tools/still-orientation.py price-line-area     # exit 1 == mirrored
 | What the renderer draws today | Re-render. These files are a 2026-06 record of *what* was drawn, not of *how it looked*. |
 | Whether one still is mirrored | `python3 ../tools/still-orientation.py <view>` |
 
-Recapturing the gallery needs `../tools/capture.mjs`, whose `EMBASSY_REPO` path does not exist on
+Recapturing the gallery (**ENC-1276**) needs `../tools/capture.mjs`, whose `EMBASSY_REPO` path does not exist on
 this machine. Until that happens, treat everything here as evidence of pipeline coverage only —
 never of orientation, fill direction, or anything else with a vertical sense.
 
