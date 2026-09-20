@@ -153,6 +153,16 @@ def main():
     if not sy:
         die("%s/view.json has no transform.sy — this tool needs a baked Y mapping" % view)
 
+    # This method reads the fill's lower boundary as "the value", which is only
+    # true for a rect4 baseline area. Refuse anything else up front rather than
+    # fitting noise: a candle6 stream parses as 4-float groups just fine and would
+    # produce a meaningless slope.
+    mf = os.path.join(vd, "manifest.ts")
+    if not os.path.exists(mf) or "'rect4'" not in open(mf).read():
+        die("%s is not a rect4 baseline-area view (manifest declares no 'rect4' "
+            "format) — this tool reads the fill's lower edge as the value and has "
+            "no meaning for other marks" % view)
+
     recs = [r for r in decode_records(os.path.join(vd, "records.json")) if r != (0, 0, 0, 0)]
     if len(recs) < 30:
         die("only %d usable rect4 records" % len(recs))
