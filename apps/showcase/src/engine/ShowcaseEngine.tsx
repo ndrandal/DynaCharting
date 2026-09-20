@@ -29,6 +29,17 @@ export interface UseShowcaseEngine {
   error: string | null;
   /** Live frame-stats (fps / frameMs) sink for the FPS HUD. Stable identity. */
   statsHub: FrameStatsHub;
+  /**
+   * The canvas's BACKING-STORE size in device pixels — `canvas.width/height`,
+   * not its CSS box (ENC-1253).
+   *
+   * This is the raster clip space maps onto: `EngineHost.render` uses exactly
+   * these two numbers, and `canvas.toDataURL` — the tier-scorable capture (SPEC
+   * D10) — returns exactly this many pixels. Anything positioning engine
+   * geometry in pixel terms (the axis furniture, its label bounding boxes) must
+   * use this and not `clientWidth`, which is smaller by the device pixel ratio.
+   */
+  canvasSize: { width: number; height: number };
 }
 
 /**
@@ -49,6 +60,7 @@ export function useShowcaseEngine(onReady?: (host: EngineHost) => void): UseShow
   const [host, setHost] = useState<EngineHost | null>(null);
   const [status, setStatus] = useState<EngineStatus>('init');
   const [error, setError] = useState<string | null>(null);
+  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
 
   // Resize the canvas backing store to its CSS box. Returns true only when the
   // dimensions actually changed, so callers can avoid spurious re-render marks
@@ -84,14 +96,21 @@ export function useShowcaseEngine(onReady?: (host: EngineHost) => void): UseShow
           hostRef.current = h;
           setHost(h);
           setStatus('init');
+          setCanvasSize({ width: canvas.width, height: canvas.height });
 
           // Keep the backing store sized to the CSS box.
           const obs = new ResizeObserver(() => {
-            if (canvasElRef.current) {
+            const el = canvasElRef.current;
+            if (el) {
               // Only re-render when the size genuinely changed — the initial
               // observe callback fires at the current size and must not enqueue
               // a redundant render.
-              if (sizeCanvas(canvasElRef.current)) hostRef.current?.markDirty();
+              if (sizeCanvas(el)) {
+                hostRef.current?.markDirty();
+                // Publish the new BACKING-STORE size: the axis furniture's
+                // pixel gutters and label boxes are in these units (ENC-1253).
+                setCanvasSize({ width: el.width, height: el.height });
+              }
             }
           });
           obs.observe(canvas);
@@ -123,6 +142,7 @@ export function useShowcaseEngine(onReady?: (host: EngineHost) => void): UseShow
         canvasElRef.current = null;
         setHost(null);
         setStatus('init');
+        setCanvasSize({ width: 0, height: 0 });
       }
     },
     [sizeCanvas],
@@ -137,5 +157,5 @@ export function useShowcaseEngine(onReady?: (host: EngineHost) => void): UseShow
     };
   }, []);
 
-  return { canvasRef, host, status, error, statsHub: statsHubRef.current };
+  return { canvasRef, host, status, error, statsHub: statsHubRef.current, canvasSize };
 }

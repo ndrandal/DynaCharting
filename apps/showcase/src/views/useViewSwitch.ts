@@ -115,6 +115,19 @@ export interface UseViewSwitch {
   /** Whether the replay loops on completion (ambient motion). */
   loop: boolean;
   setLoop: (l: boolean) => void;
+  /**
+   * Increments every time the scene is torn down and the view's manifest is
+   * re-applied — on a view change, a restart, and EVERY replay loop (ENC-1253).
+   *
+   * It matters to anything that draws into the same scene alongside the
+   * manifest, because panes render in SCENE ORDER and a pane paints its clear
+   * colour across its whole region. The axis furniture is created once; after a
+   * re-apply the view's pane is newer than it, and the view's clear quad covers
+   * it completely — gridlines, ticks, spine and labels all issued, all
+   * invisible, with nothing rejected. `useEngineAxis` watches this and rebuilds
+   * so the furniture is last again.
+   */
+  sceneEpoch: number;
 }
 
 /**
@@ -234,7 +247,7 @@ export function useViewSwitch(host: EngineHost | null, view: ShowcaseView | null
     onBatch,
   });
 
-  return { axisDomain, timeBasis, progress, playing, setPlaying, restart, loop, setLoop };
+  return { axisDomain, timeBasis, progress, playing, setPlaying, restart, loop, setLoop, sceneEpoch: epoch };
 }
 
 /**

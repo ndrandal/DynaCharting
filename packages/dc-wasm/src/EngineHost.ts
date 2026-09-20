@@ -502,6 +502,85 @@ export class EngineHost {
     );
   }
 
+  /**
+   * `setTextGeometry` with an explicit horizontal scale (ENC-1253).
+   *
+   * Clip space is not square: one clip unit is `width/2` pixels across and
+   * `height/2` pixels down, so a layout that scales X and Y by the same number —
+   * all `setTextGeometry` can express — renders every string stretched by the
+   * canvas's aspect ratio (1.5x on a 1800x1200 target). Nothing downstream
+   * compensated: the glyph quads go straight to NDC in the textSDF@1 vertex
+   * shader. Pass `xScale = canvas.height / canvas.width` for glyphs with the
+   * font's own proportions.
+   *
+   * Same readiness gate and same return contract as `setTextGeometry`.
+   */
+  setTextGeometryX(
+    bufferId: number,
+    geometryId: number,
+    text: string,
+    clipX: number,
+    clipY: number,
+    fontSize: number,
+    xScale: number,
+  ): number {
+    if (!this.ready || !this.core || this.rendering || this.pendingControl.length > 0) {
+      return -1;
+    }
+    this.frameDirty = true;
+    return this.core.setTextGeometryX(
+      bufferId,
+      geometryId,
+      text,
+      clipX,
+      clipY,
+      fontSize,
+      xScale,
+    );
+  }
+
+  /**
+   * Measure `text` as the engine will lay it out, without drawing it (ENC-1253).
+   *
+   * Every field is in CLIP units relative to a baseline-left origin, from the
+   * same `dc::layoutText` loop `setTextGeometry` runs — so a label's reported
+   * box is where its glyphs will land. This is the only way JS can learn a
+   * string's width: `setTextGeometry` returns a glyph COUNT, and the quads it
+   * writes go into the render store, which `getBufferBytes` (an ingest-store
+   * reader) does not see.
+   *
+   * Returns `glyphCount: -1` when no font is loaded OR when the core is not
+   * ready / mid-render — the same gate as `setTextGeometry`, because a
+   * measurement taken against a core that has not applied its buffered
+   * `loadFont` would be silently wrong rather than absent.
+   */
+  measureText(
+    text: string,
+    fontSize: number,
+    xScale = 1,
+  ): {
+    advanceWidth: number;
+    inkMinX: number;
+    inkMaxX: number;
+    inkMinY: number;
+    inkMaxY: number;
+    glyphCount: number;
+    glyphPx: number;
+  } {
+    if (!this.ready || !this.core || this.rendering) {
+      return {
+        advanceWidth: 0,
+        inkMinX: 0,
+        inkMaxX: 0,
+        inkMinY: 0,
+        inkMaxY: 0,
+        glyphCount: -1,
+        glyphPx: 0,
+      };
+    }
+    return this.core.measureText(text, fontSize, xScale);
+  }
+
   // -------------------- control plane --------------------
   /**
    * Apply one control command. Accepts a JSON string OR an object (engine-host

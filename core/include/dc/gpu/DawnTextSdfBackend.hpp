@@ -80,9 +80,27 @@ class DawnTextSdfBackend final : public IRendererBackend {
   // reused. The non-indexed path uploads the geometry bytes directly; the
   // indexed (D26) path uploads a CPU-gathered scratch buffer of only the
   // selected glyph instances.
+  //
+  // ENC-1253: the source `CpuBufferStore` versions are remembered, exactly as
+  // ENC-558 does for instancedRect/instancedCandle/lineAA and ENC-569 for
+  // line2d, so RE-LAYING OUT a label re-uploads instead of being ignored.
+  //
+  // This backend was the one the ENC-558 sweep missed, and the reason it was
+  // missed is instructive: nothing had ever re-laid out text. `setTextGeometry`
+  // writes new Glyph8 bytes into the store and bumps its version, but the cache
+  // here was keyed on geometryId ALONE and kept the first upload forever —
+  // including the glyph COUNT — so a chart whose axis labels track a live
+  // domain drew its first set of numbers and then froze them beside gridlines
+  // that kept moving. Measured on the showcase before this fix: the plan said
+  // $410..$418 with three time labels, and the canvas showed $414..$418 with
+  // two, from several seconds earlier. LIMITATIONS.md DC-L17.
   struct GeoBuffers {
-    BufferHandle instanceBuffer{};
-    std::uint32_t instanceCount{0};
+    BufferHandle instanceBuffer{};   // per-instance Glyph8 records
+    std::uint32_t instanceCount{0};  // glyphs drawn (gathered count when indexed)
+    std::size_t bufferCapacity{0};   // byte size of instanceBuffer
+    std::uint64_t vtxVersion{0};     // CpuBufferStore version of vertexBufferId
+    std::uint64_t idxVersion{0};     // CpuBufferStore version of indexBufferId
+    bool built{false};               // false until first successful (re)build
   };
   std::vector<std::pair<std::uint32_t, GeoBuffers>> geoBuffers_;
 
@@ -90,6 +108,12 @@ class DawnTextSdfBackend final : public IRendererBackend {
   // uploadAtlasIfDirty). Returns the valid texture handle, or an invalid one if
   // there is no atlas.
   TextureHandle uploadAtlasIfDirty(GpuDevice& device);
+
+  // (Re)gather + (re)upload gb's instance buffer from the geometry's CURRENT CPU
+  // bytes, stamping the source versions so an unchanged frame is a cache hit.
+  void buildGeoBuffers(GpuDevice& device, const Scene& scene,
+                       CpuBufferStore& gpu, std::uint32_t geometryId,
+                       GeoBuffers& gb);
 
   GeoBuffers& ensureGeoBuffers(GpuDevice& device, const Scene& scene,
                                CpuBufferStore& gpu, std::uint32_t geometryId);

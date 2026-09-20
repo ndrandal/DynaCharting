@@ -68,6 +68,45 @@ export interface DcEngineHostInstance {
     clipY: number,
     fontSize: number,
   ): number;
+  /**
+   * `setTextGeometry` with an explicit horizontal scale (ENC-1253). Clip space
+   * is not square — one clip unit is `w/2` pixels across and `h/2` down — so the
+   * single isotropic scale `setTextGeometry` can express renders every string
+   * stretched by the canvas's aspect ratio. Pass `xScale = height/width` for
+   * glyphs with the font's own proportions; `setTextGeometry` is this with
+   * `xScale = 1`, so no existing caller's output moves.
+   */
+  setTextGeometryX(
+    bufferId: number,
+    geometryId: number,
+    text: string,
+    clipX: number,
+    clipY: number,
+    fontSize: number,
+    xScale: number,
+  ): number;
+  /**
+   * Measure `text` WITHOUT drawing it, running the same `dc::layoutText` loop
+   * `setTextGeometry` runs (ENC-1253). Every field is in CLIP units, relative to
+   * a baseline-left origin; `glyphCount` is -1 with no font loaded. This is what
+   * makes right-aligning a price label, centring a time label, and asserting
+   * that label boxes are disjoint possible from JS — the glyph quads themselves
+   * go into the RENDER store, which `getBufferBytes` (an ingest reader) cannot
+   * see.
+   */
+  measureText(
+    text: string,
+    fontSize: number,
+    xScale: number,
+  ): {
+    advanceWidth: number;
+    inkMinX: number;
+    inkMaxX: number;
+    inkMinY: number;
+    inkMaxY: number;
+    glyphCount: number;
+    glyphPx: number;
+  };
   render(w: number, h: number): number | Promise<number>;
   pick(w: number, h: number, x: number, y: number): number | Promise<number>;
   dispose(): void;

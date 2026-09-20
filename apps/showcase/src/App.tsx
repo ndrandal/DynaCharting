@@ -40,7 +40,7 @@ const FLAGSHIP_ID = VIEWS.find((v) => v.meta.tier === 'native')?.id ?? VIEWS[0]?
 export default function App() {
   const webgpu = useMemo(() => isWebGPUSupported(), []);
   const { route, navigate } = useRouter();
-  const { canvasRef, host, status, error, statsHub } = useShowcaseEngine();
+  const { canvasRef, host, status, error, statsHub, canvasSize } = useShowcaseEngine();
 
   // FPS HUD visibility, toggled with the 'F' key (ENC-563). Default on.
   const [fpsVisible, setFpsVisible] = useState(true);
@@ -56,7 +56,7 @@ export default function App() {
     if (routeViewId) setLastViewId(routeViewId);
   }, [routeViewId]);
 
-  const { axisDomain, timeBasis, progress, playing, setPlaying, restart, loop, setLoop } = useViewSwitch(
+  const { axisDomain, timeBasis, progress, playing, setPlaying, restart, loop, setLoop, sceneEpoch } = useViewSwitch(
     webgpu ? host : null,
     view,
   );
@@ -127,6 +127,9 @@ export default function App() {
       fpsVisible={fpsVisible}
       observedDomain={axisDomain}
       timeBasis={timeBasis}
+      host={host}
+      canvasSize={canvasSize}
+      sceneEpoch={sceneEpoch}
     />
   ) : null;
 
