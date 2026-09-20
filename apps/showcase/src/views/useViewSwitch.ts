@@ -117,7 +117,8 @@ function sameBasis(a: TimeBasis | null, b: TimeBasis | null): boolean {
     a.epochKnown === b.epochKnown &&
     // Provenance is part of the statement, not decoration: a fit that happens
     // to land on the transmitted numbers is still a different claim about the
-    // axis, and the overlay publishes `source` (ENC-1282).
+    // axis, and the overlay publishes `source` beside the numbers
+    // (`deriveAxes.axisDomainReportJson`, ENC-1282).
     a.source === b.source
   );
 }
