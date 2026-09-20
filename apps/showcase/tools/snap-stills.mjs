@@ -29,6 +29,25 @@
  *
  * The showcase is the only thing this touches; the preview server's lifecycle
  * (start/stop by PID) is owned by the caller, never this script.
+ *
+ * ── ENC-1288: THIS SCRIPT MAY NO LONGER WRITE INTO apps/showcase/stills/ ─────
+ *
+ * It produced the 23 stills that were committed for three months while every one
+ * of them was upside down (LIMITATIONS.md DC-L15), and two of its properties are
+ * why the mirror survived:
+ *
+ *   - it screenshots `.single-canvas-region`, i.e. the engine canvas PLUS the
+ *     DOM/SVG chrome overlay. A DOM overlay in a still passes a tier-1 check on
+ *     the engine's behalf, and the flipped axis numbers agreed with the flipped
+ *     geometry, so nothing in the frame contradicted it (SPEC §1.3, D10);
+ *   - it never names the adapter, so a SwiftShader frame and an NVIDIA frame are
+ *     indistinguishable afterwards (SPEC D8).
+ *
+ * The gallery is now captured by `recapture-stills.mjs`, canvas-only and under a
+ * recorded hardware adapter. This script is kept because a composited
+ * canvas+chrome screenshot is a real thing to want — it is how the app LOOKS —
+ * but it refuses the stills directory, so the defect cannot be re-committed by
+ * someone reaching for the obvious tool. Point `--outdir` somewhere else.
  */
 
 import { mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync } from 'node:fs';
@@ -269,6 +288,18 @@ ${cards}
 }
 
 async function main() {
+  // ENC-1288: see the header. A region screenshot may not become a committed still.
+  if (resolve(OUTDIR) === resolve(SHOWCASE_DIR, 'stills')) {
+    console.error(
+      `[snap] REFUSING to write into ${resolve(OUTDIR)}.\n` +
+      `[snap] This script screenshots '.single-canvas-region' — the engine canvas WITH the\n` +
+      `[snap] DOM/SVG chrome composited over it — and records no adapter. Both are why the\n` +
+      `[snap] stills committed at 537c995 stayed upside down for three months without\n` +
+      `[snap] anything in the frame contradicting it (LIMITATIONS.md DC-L15, SPEC D8/D10).\n` +
+      `[snap] To regenerate the gallery:  node apps/showcase/tools/recapture-stills.mjs\n` +
+      `[snap] To use this script anyway:  --outdir <somewhere that is not stills/>`);
+    process.exit(2);
+  }
   mkdirSync(OUTDIR, { recursive: true });
   const views = discoverViews();
   console.log(`[snap] ${views.length} views; url=${URL} wait=${WAIT}ms out=${OUTDIR}`);

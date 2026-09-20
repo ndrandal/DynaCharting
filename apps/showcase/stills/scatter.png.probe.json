@@ -1,0 +1,636 @@
+{
+  "spec": "specs/2026-09-19-chart-quality-bar/SPEC.md D10 (ENC-1262)",
+  "url": "http://localhost:5650/?svgAxis=0#/",
+  "capturedAt": "2026-09-20T16:02:08.856Z",
+  "rasterSha256": "6dfc909cce55b9b58048e7a1fb99c9719b4d9eddc6fbd3d652dea43e9e1ca316",
+  "expression": "(() => {\n  const out = {\n    view: \"scatter\",\n    axis: (window.__dcEngineAxis || {})[\"scatter\"] || null,\n    domain: (window.__dcAxisDomain || {})[\"scatter\"] || null,\n    boundaryErrors: (window.__dcBoundaryErrors || []).length,\n    dom: {\n      overlaySvgs: document.querySelectorAll('.chrome-overlay svg').length,\n      overlaySvgText: document.querySelectorAll('.chrome-overlay svg text').length,\n      overlayNodes: document.querySelectorAll('.chrome-overlay *').length\n    },\n    progress: (() => {\n      const el = document.querySelector('[role=\"slider\"][aria-label=\"Replay position\"]');\n      return el ? Number(el.getAttribute('aria-valuenow')) : null;\n    })()\n  };\n  const c = document.querySelector('canvas.engine-canvas');\n  if (!c || !c.width || !c.height) { out.pix = { ok: false, reason: 'no canvas' }; return out; }\n  const off = document.createElement('canvas');\n  off.width = c.width; off.height = c.height;\n  const ctx = off.getContext('2d');\n  ctx.drawImage(c, 0, 0);\n  let data;\n  try { data = ctx.getImageData(0, 0, off.width, off.height).data; }\n  catch (e) { out.pix = { ok: false, reason: 'readback blocked: ' + (e && e.message) }; return out; }\n  const colors = new Set();\n  let sampled = 0, nonbg = 0, chroma = 0;\n  const stride = 4 * 11;\n  for (let i = 0; i < data.length; i += stride) {\n    sampled++;\n    const r = data[i], g = data[i + 1], b = data[i + 2];\n    if (sampled % 7 === 0) colors.add(r + ',' + g + ',' + b);\n    const dClear = Math.abs(r - 8) + Math.abs(g - 8) + Math.abs(b - 13);\n    const dApp = Math.abs(r - 13) + Math.abs(g - 13) + Math.abs(b - 20);\n    if (Math.min(dClear, dApp) > 36) nonbg++;\n    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);\n    if (mx - mn > 22 && mx > 30) chroma++;\n  }\n  out.pix = {\n    ok: true, w: c.width, h: c.height,\n    distinctColors: colors.size,\n    coverage: sampled ? nonbg / sampled : 0,\n    chroma: sampled ? chroma / sampled : 0,\n    nonbgPixels: nonbg\n  };\n  return out;\n})()",
+  "ok": true,
+  "value": {
+    "view": "scatter",
+    "axis": {
+      "plan": {
+        "gridSegments": [
+          -0.8577777777777778,
+          -0.7132167679762789,
+          0.9644444444444444,
+          -0.7132167679762789,
+          -0.8577777777777778,
+          -0.23928821613893897,
+          0.9644444444444444,
+          -0.23928821613893897,
+          -0.8577777777777778,
+          0.23464033569840093,
+          0.9644444444444444,
+          0.23464033569840093,
+          -0.8577777777777778,
+          0.7085688875357408,
+          0.9644444444444444,
+          0.7085688875357408,
+          -0.6836962853801367,
+          -0.8873239436619719,
+          -0.6836962853801367,
+          0.9517102615694165,
+          -0.35658226900586953,
+          -0.8873239436619719,
+          -0.35658226900586953,
+          0.9517102615694165,
+          -0.029468252631588143,
+          -0.8873239436619719,
+          -0.029468252631588143,
+          0.9517102615694165,
+          0.29764576374267904,
+          -0.8873239436619719,
+          0.29764576374267904,
+          0.9517102615694165,
+          0.6247597801169462,
+          -0.8873239436619719,
+          0.6247597801169462,
+          0.9517102615694165
+        ],
+        "tickSegments": [
+          -0.8711111111111111,
+          -0.7132167679762789,
+          -0.8577777777777778,
+          -0.7132167679762789,
+          -0.8711111111111111,
+          -0.23928821613893897,
+          -0.8577777777777778,
+          -0.23928821613893897,
+          -0.8711111111111111,
+          0.23464033569840093,
+          -0.8577777777777778,
+          0.23464033569840093,
+          -0.8711111111111111,
+          0.7085688875357408,
+          -0.8577777777777778,
+          0.7085688875357408,
+          -0.6836962853801367,
+          -0.9114688128772637,
+          -0.6836962853801367,
+          -0.8873239436619719,
+          -0.35658226900586953,
+          -0.9114688128772637,
+          -0.35658226900586953,
+          -0.8873239436619719,
+          -0.029468252631588143,
+          -0.9114688128772637,
+          -0.029468252631588143,
+          -0.8873239436619719,
+          0.29764576374267904,
+          -0.9114688128772637,
+          0.29764576374267904,
+          -0.8873239436619719,
+          0.6247597801169462,
+          -0.9114688128772637,
+          0.6247597801169462,
+          -0.8873239436619719
+        ],
+        "spineSegments": [
+          -0.8577777777777778,
+          -0.8873239436619719,
+          -0.8577777777777778,
+          0.9517102615694165,
+          -0.8577777777777778,
+          -0.8873239436619719,
+          0.9644444444444444,
+          -0.8873239436619719
+        ],
+        "labels": [
+          {
+            "axis": "y",
+            "role": "yTickLabel",
+            "text": "0",
+            "clipX": -0.8906944451108574,
+            "clipY": -0.7256664664989658,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              49,
+              422,
+              6,
+              8
+            ]
+          },
+          {
+            "axis": "y",
+            "role": "yTickLabel",
+            "text": "50000",
+            "clipX": -0.9349999997019767,
+            "clipY": -0.25173791466162593,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              29,
+              304,
+              26,
+              8
+            ]
+          },
+          {
+            "axis": "y",
+            "role": "yTickLabel",
+            "text": "100000",
+            "clipX": -0.9449814829230307,
+            "clipY": 0.22219063717571397,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              24,
+              186,
+              31,
+              8
+            ]
+          },
+          {
+            "axis": "y",
+            "role": "yTickLabel",
+            "text": "150000",
+            "clipX": -0.9438203695416449,
+            "clipY": 0.6961191890130538,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              25,
+              69,
+              30,
+              7
+            ]
+          },
+          {
+            "axis": "x",
+            "role": "xTickLabel",
+            "text": "$408",
+            "clipX": -0.7058083219696698,
+            "clipY": -0.9579979872941912,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              132,
+              479,
+              21,
+              10
+            ]
+          },
+          {
+            "axis": "x",
+            "role": "xTickLabel",
+            "text": "$410",
+            "clipX": -0.3774211578335809,
+            "clipY": -0.9579979872941912,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              280,
+              479,
+              19,
+              10
+            ]
+          },
+          {
+            "axis": "x",
+            "role": "xTickLabel",
+            "text": "$412",
+            "clipX": -0.04954325205714838,
+            "clipY": -0.9579979872941912,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              427,
+              479,
+              19,
+              10
+            ]
+          },
+          {
+            "axis": "x",
+            "role": "xTickLabel",
+            "text": "$414",
+            "clipX": 0.2768068749149677,
+            "clipY": -0.9579979872941912,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              574,
+              479,
+              20,
+              10
+            ]
+          },
+          {
+            "axis": "x",
+            "role": "xTickLabel",
+            "text": "$416",
+            "clipX": 0.6041755223317153,
+            "clipY": -0.9579979872941912,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              722,
+              479,
+              19,
+              10
+            ]
+          },
+          {
+            "axis": "y",
+            "role": "axisTitle",
+            "text": "Cumulative volume",
+            "clipX": -0.9955555555555555,
+            "clipY": 0.9624413146601776,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              2,
+              2,
+              80,
+              8
+            ]
+          },
+          {
+            "axis": "x",
+            "role": "axisTitle",
+            "text": "Last price",
+            "clipX": 0.8708796343207359,
+            "clipY": -0.983651910625563,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              842,
+              485,
+              40,
+              10
+            ]
+          }
+        ],
+        "gridLines": [
+          {
+            "orientation": "horizontal",
+            "centre": 426,
+            "value": 0
+          },
+          {
+            "orientation": "horizontal",
+            "centre": 308,
+            "value": 50000
+          },
+          {
+            "orientation": "horizontal",
+            "centre": 190,
+            "value": 100000
+          },
+          {
+            "orientation": "horizontal",
+            "centre": 72,
+            "value": 150000
+          },
+          {
+            "orientation": "vertical",
+            "centre": 142,
+            "value": 408
+          },
+          {
+            "orientation": "vertical",
+            "centre": 290,
+            "value": 410
+          },
+          {
+            "orientation": "vertical",
+            "centre": 437,
+            "value": 412
+          },
+          {
+            "orientation": "vertical",
+            "centre": 584,
+            "value": 414
+          },
+          {
+            "orientation": "vertical",
+            "centre": 731,
+            "value": 416
+          }
+        ],
+        "droppedLabels": [],
+        "plotPx": [
+          64,
+          12,
+          883,
+          468
+        ]
+      },
+      "tier1": {
+        "pass": true,
+        "failures": [],
+        "counts": {
+          "x": 5,
+          "y": 4,
+          "titles": 2
+        }
+      },
+      "scene": {
+        "text": [
+          {
+            "role": "yTickLabel",
+            "text": "0",
+            "bbox": [
+              49,
+              422,
+              6,
+              8
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          },
+          {
+            "role": "yTickLabel",
+            "text": "50000",
+            "bbox": [
+              29,
+              304,
+              26,
+              8
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          },
+          {
+            "role": "yTickLabel",
+            "text": "100000",
+            "bbox": [
+              24,
+              186,
+              31,
+              8
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          },
+          {
+            "role": "yTickLabel",
+            "text": "150000",
+            "bbox": [
+              25,
+              69,
+              30,
+              7
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          },
+          {
+            "role": "xTickLabel",
+            "text": "$408",
+            "bbox": [
+              132,
+              479,
+              21,
+              10
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          },
+          {
+            "role": "xTickLabel",
+            "text": "$410",
+            "bbox": [
+              280,
+              479,
+              19,
+              10
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          },
+          {
+            "role": "xTickLabel",
+            "text": "$412",
+            "bbox": [
+              427,
+              479,
+              19,
+              10
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          },
+          {
+            "role": "xTickLabel",
+            "text": "$414",
+            "bbox": [
+              574,
+              479,
+              20,
+              10
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          },
+          {
+            "role": "xTickLabel",
+            "text": "$416",
+            "bbox": [
+              722,
+              479,
+              19,
+              10
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          },
+          {
+            "role": "axisTitle",
+            "text": "Cumulative volume",
+            "bbox": [
+              2,
+              2,
+              80,
+              8
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          },
+          {
+            "role": "axisTitle",
+            "text": "Last price",
+            "bbox": [
+              842,
+              485,
+              40,
+              10
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          }
+        ],
+        "grid": [
+          {
+            "orientation": "horizontal",
+            "centre": 426,
+            "pad": 3
+          },
+          {
+            "orientation": "horizontal",
+            "centre": 308,
+            "pad": 3
+          },
+          {
+            "orientation": "horizontal",
+            "centre": 190,
+            "pad": 3
+          },
+          {
+            "orientation": "horizontal",
+            "centre": 72,
+            "pad": 3
+          },
+          {
+            "orientation": "vertical",
+            "centre": 142,
+            "pad": 3
+          },
+          {
+            "orientation": "vertical",
+            "centre": 290,
+            "pad": 3
+          },
+          {
+            "orientation": "vertical",
+            "centre": 437,
+            "pad": 3
+          },
+          {
+            "orientation": "vertical",
+            "centre": 584,
+            "pad": 3
+          },
+          {
+            "orientation": "vertical",
+            "centre": 731,
+            "pad": 3
+          }
+        ],
+        "axis": {
+          "spines": [
+            {
+              "orientation": "left"
+            },
+            {
+              "orientation": "bottom"
+            }
+          ]
+        },
+        "plot": [
+          64,
+          12,
+          883,
+          468
+        ],
+        "palette": [
+          {
+            "rgb": [
+              28,
+              28,
+              38
+            ],
+            "role": "gridline",
+            "what": "Dark gridColor over the pane"
+          },
+          {
+            "rgb": [
+              102,
+              102,
+              115
+            ],
+            "role": "tick",
+            "what": "Dark tickColor"
+          },
+          {
+            "rgb": [
+              102,
+              102,
+              115
+            ],
+            "role": "spine",
+            "what": "Dark tickColor (the spine)"
+          },
+          {
+            "rgb": [
+              179,
+              179,
+              191
+            ],
+            "role": "label",
+            "what": "Dark labelColor"
+          }
+        ],
+        "theme": {
+          "name": "Dark",
+          "palette": [
+            [
+              28,
+              28,
+              38
+            ],
+            [
+              102,
+              102,
+              115
+            ],
+            [
+              102,
+              102,
+              115
+            ],
+            [
+              179,
+              179,
+              191
+            ]
+          ]
+        }
+      },
+      "refusal": null,
+      "fontLoaded": true,
+      "labelAttempts": 2
+    },
+    "domain": {
+      "x": {
+        "min": 408,
+        "max": 417,
+        "source": "literal"
+      },
+      "y": {
+        "min": 0,
+        "max": 160000,
+        "source": "literal"
+      },
+      "records": 0
+    },
+    "boundaryErrors": 0,
+    "dom": {
+      "overlaySvgs": 0,
+      "overlaySvgText": 0,
+      "overlayNodes": 10
+    },
+    "progress": 93,
+    "pix": {
+      "ok": true,
+      "w": 900,
+      "h": 497,
+      "distinctColors": 46,
+      "coverage": 0.04539641943734015,
+      "chroma": 0.01064823922880189,
+      "nonbgPixels": 1846
+    }
+  }
+}
