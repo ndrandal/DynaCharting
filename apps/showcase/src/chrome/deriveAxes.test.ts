@@ -178,6 +178,34 @@ describe('resolveAxes', () => {
     expect(resolveAxes({ y: { ...y, min: NaN, max: 418 } }, null).axes.y).toBeUndefined();
   });
 
+  it('publishes the clock PROVENANCE beside its numbers, not just epochKnown (ENC-1282)', () => {
+    // `epochKnown` says whether the origin is a real instant. It does not say
+    // who measured it, and the two bases below agree on every number while
+    // making different claims: one is this client timing its own arrivals, the
+    // other is the producer's declaration taken where the bar was cut. A reader
+    // quoting a time off the chart has to be able to tell them apart without
+    // inferring it from `samples: 0`.
+    const xt: AxisSpec = { label: 'Time', format: 'timestamp', ticks: 6 };
+    const measured = { x: { min: 0, max: 120 }, y: null, records: 121, observations: 121 };
+    const numbers = { originMs: 1789920893000, msPerIndex: 1000, epochKnown: true };
+
+    const observed = resolveAxes({ x: xt }, measured, { ...numbers, source: 'observed', samples: 121 });
+    const transmitted = resolveAxes({ x: xt }, measured, { ...numbers, source: 'transmitted', samples: 0 });
+
+    expect(observed.report.x?.time?.source).toBe('observed');
+    expect(transmitted.report.x?.time?.source).toBe('transmitted');
+    expect(JSON.parse(axisDomainReportJson(transmitted.report)).x.time).toEqual({
+      msPerIndex: 1000,
+      originMs: 1789920893000,
+      epochKnown: true,
+      samples: 0,
+      source: 'transmitted',
+    });
+    // The distinction survives serialisation — the attribute is what a reader
+    // (and the capture harness) actually sees.
+    expect(JSON.parse(axisDomainReportJson(observed.report)).x.time.source).toBe('observed');
+  });
+
   it('reports itself as compact JSON for the data attribute / harness read', () => {
     const { report } = resolveAxes(
       { x, y },
