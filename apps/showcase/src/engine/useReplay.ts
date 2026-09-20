@@ -165,8 +165,14 @@ export interface ReplayOptions {
    * handed to the engine (ENC-1252). The axis-domain tracker folds the same
    * bytes the renderer ingests, so the domain the chart states is measured from
    * the data it drew — not from a parallel copy. Must not mutate the buffer.
+   *
+   * `observedAtMs` is the frame's own `t` from the capture — the instant embassy
+   * emitted that batch, relative to the start of the tape (ENC-1254). It is the
+   * ONLY time information anywhere on this path: the dataplane record carries no
+   * timestamp, only embassy's `recordIndex`. It is tape-relative, not a wall
+   * clock, which is why the basis built from it reports `epochKnown: false`.
    */
-  onBatch?: (batch: ArrayBuffer) => void;
+  onBatch?: (batch: ArrayBuffer, observedAtMs: number) => void;
 }
 
 const OP_APPEND = 1;
@@ -329,7 +335,7 @@ export function useReplay(host: EngineHost | null, records: Records | null, opts
     const pushFrame = (i: number) => {
       if (cancelled) return;
       const ab = b64ToArrayBuffer(frames[i].b64);
-      onBatchRef.current?.(ab);
+      onBatchRef.current?.(ab, frames[i].t);
       anchorXFor(ab);
       for (const s of series) {
         counts.set(s.bufferId, (counts.get(s.bufferId) ?? 0) + countRecordsForBuffer(ab, s.bufferId, s.stride));
