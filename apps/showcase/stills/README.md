@@ -50,6 +50,13 @@ grep -a captureMode apps/showcase/stills/price-line-area.png     # -> captureMod
    dwell landed `price-line-area` thirty pixel-columns into a fresh loop: 30 of 267 records
    drawn, and the orientation fit could not be made at all.
 
+   **21 of 22 were taken by that rule; `correlation-heatmap` was not, and the manifest says
+   so.** Its `readinessRule` reads `time-fallback` rather than `full-pass`: it carries zero
+   binary frames and animates only a texture track, so its transport never completes a pass and
+   the frame was taken on a timer once the canvas had content. Recording which rule produced
+   each frame is the point — the weaker rule must not be invisible inside a directory where
+   every file looks alike.
+
 ## What you still may not do with them
 
 A still is **one frame of a loop, and the loop moves**. Tier-1 judgements are made on a fresh
