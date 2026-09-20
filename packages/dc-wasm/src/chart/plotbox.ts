@@ -61,6 +61,28 @@
  *      furniture rectangles explicitly so ENC-1253 never has to guess whether a
  *      tick at `box.y.min` sits on the spine or under it.
  *
+ *   7. THE BOX IS ALSO THE DATA PANE'S `PaneRegion`, AND THE TWO MUST NOT
+ *      DISAGREE. The engine already has a clip-space rectangle per pane
+ *      (`dc::PaneRegion`, `core/include/dc/layout/PaneLayout.hpp`), applied as a
+ *      scissor by `DawnSceneRenderer` and settable at runtime via the
+ *      `setPaneRegion` command. What it has never had is anything tying that
+ *      rectangle to the transform projecting into it — `CHART_AUTHORING.md`
+ *      §"Do not reserve layout margins…" describes authors shrinking the two by
+ *      hand, independently, which is the same class of mistake as a hand-typed
+ *      axis. `paneRegionFor(box)` derives the pane rectangle from the SAME box
+ *      the transform was fitted to, so they cannot drift.
+ *
+ *      Consequence ENC-1253 must plan for: with the data pane scissored to the
+ *      box, axis furniture drawn in the gutters needs a pane whose region is
+ *      wider than the box (`FULL_CLIP_REGION` is provided for exactly that).
+ *      Furniture in the data pane is scissored away, silently.
+ *
+ *      Second consequence, worth having on purpose: the scissor BOUNDS the
+ *      damage of a stale or wrong domain. Geometry can be mis-scaled, but it
+ *      cannot paint over the axis furniture or run off the canvas. That is a
+ *      floor, not the fix — a fit that needs the scissor is already failing
+ *      `checkTier2Framing`.
+ *
  * ── WHAT THIS MODULE IS NOT ─────────────────────────────────────────────────
  *
  * It does not measure the domain (ENC-1252, `domain.ts`), draw anything
@@ -218,6 +240,41 @@ export function gutters(box: PlotBox): PlotGutters {
     right: { x: { min: box.x.max, max: CLIP_RANGE.max }, y: box.y },
     bottom: { x: box.x, y: { min: CLIP_RANGE.min, max: box.y.min } },
     left: { x: { min: CLIP_RANGE.min, max: box.x.min }, y: box.y },
+  };
+}
+
+/**
+ * A pane rectangle in the shape the engine's `setPaneRegion` command and
+ * `SceneBuilder.pane({ region })` take (`dc::PaneRegion`,
+ * `core/include/dc/layout/PaneLayout.hpp`). Clip space, +Y up.
+ */
+export interface PaneRegion {
+  clipXMin: number;
+  clipXMax: number;
+  clipYMin: number;
+  clipYMax: number;
+}
+
+/** The engine's default pane region: the whole clip space. Furniture panes. */
+export const FULL_CLIP_REGION: Readonly<PaneRegion> = {
+  clipXMin: CLIP_RANGE.min,
+  clipXMax: CLIP_RANGE.max,
+  clipYMin: CLIP_RANGE.min,
+  clipYMax: CLIP_RANGE.max,
+};
+
+/**
+ * The data pane's region for `box` — contract note (7). Give this to
+ * `setPaneRegion` on the same pane whose draw items carry the transform
+ * `fitToPlotBox` returned, and the scissor and the fit describe one rectangle
+ * instead of two that happen to agree today.
+ */
+export function paneRegionFor(box: PlotBox): PaneRegion {
+  return {
+    clipXMin: box.x.min,
+    clipXMax: box.x.max,
+    clipYMin: box.y.min,
+    clipYMax: box.y.max,
   };
 }
 
@@ -401,23 +458,45 @@ export function checkTier2Framing(
   return { pass: failures.length === 0, failures };
 }
 
+/** Everything a caller needs to frame one series. See `frameSeries`. */
+export interface FramedSeries {
+  /** The clip-space plot box the data was fitted into. */
+  box: PlotBox;
+  /** The data pane's region — contract note (7). Always present. */
+  paneRegion: PaneRegion;
+  /** The transform to `setTransform`, or null when the domain states nothing. */
+  transform: Transform2D | null;
+  /** The tier-2 score, or null when either axis is unstated. */
+  metrics: FramingMetrics | null;
+}
+
 /**
  * The one-call path: measured domain + canvas → the transform to hand the
- * engine, the box it was fitted to, and the tier-2 score of the result.
- * Returns `null` for the transform when the domain states neither axis.
+ * engine, the pane region to hand it alongside, the box both were derived
+ * from, and the tier-2 score of the result.
+ *
+ * ```ts
+ * const framed = frameSeries(tracker.domain(), { width: canvas.clientWidth, height: canvas.clientHeight });
+ * if (framed.transform) host.applyControl({ cmd: 'setTransform', id: TRANSFORM, ...framed.transform });
+ * host.applyControl({ cmd: 'setPaneRegion', id: PANE, ...framed.paneRegion });
+ * ```
+ *
+ * `transform` is null when the domain states neither axis — a chart with no
+ * data does not get a frame invented for it.
  */
 export function frameSeries(
   domain: { x: Range | null; y: Range | null },
   canvas: CanvasSize,
   insets: PlotInsets = DEFAULT_PLOT_INSETS,
   policy: FitPolicy = {},
-): { box: PlotBox; transform: Transform2D | null; metrics: FramingMetrics | null } {
+): FramedSeries {
   const box = plotBox(canvas, insets);
-  if (!domain.x && !domain.y) return { box, transform: null, metrics: null };
+  const paneRegion = paneRegionFor(box);
+  if (!domain.x && !domain.y) return { box, paneRegion, transform: null, metrics: null };
   const transform = fitToPlotBox(domain, box, policy);
   const metrics =
     domain.x && domain.y
       ? framingMetrics({ x: domain.x, y: domain.y }, transform, box, canvas)
       : null;
-  return { box, transform, metrics };
+  return { box, paneRegion, transform, metrics };
 }
