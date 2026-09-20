@@ -2,6 +2,12 @@
 """ENC-1250 — is a committed showcase still upright, or vertically mirrored?
 
     python3 apps/showcase/tools/still-orientation.py price-line-area
+    python3 apps/showcase/tools/still-orientation.py price-line-area --still <path.png>
+
+`--still` rules on a PNG that is not the committed one — an archived capture, or a
+deliberately flipped frame. It is how a historical claim about a still that has
+since been recaptured stays re-checkable (§C6), and how this tool is shown going
+RED: a checker never seen to fail is not a checker.
 
 Orientation cannot be eyeballed off these images. A mirrored random walk is still
 a random walk, and the axis numbers beside it are a hand-typed DOM overlay
@@ -158,10 +164,18 @@ def fit(xs, ys):
 
 
 def main():
-    view = sys.argv[1] if len(sys.argv) > 1 else "price-line-area"
+    argv = sys.argv[1:]
+    override = None
+    if "--still" in argv:
+        i = argv.index("--still")
+        if i + 1 >= len(argv):
+            die("--still needs a path")
+        override = argv[i + 1]
+        del argv[i:i + 2]
+    view = argv[0] if argv else "price-line-area"
     view = os.path.basename(view).replace(".png", "")
     vd = os.path.join(VIEWS, view)
-    still = os.path.join(STILLS, view + ".png")
+    still = os.path.abspath(override) if override else os.path.join(STILLS, view + ".png")
     for p in (still, os.path.join(vd, "view.json"), os.path.join(vd, "records.json")):
         if not os.path.exists(p):
             die("missing %s" % p)
@@ -253,7 +267,10 @@ def main():
     mir = +sy / 2.0 * h
     mirrored = abs(A - mir) < abs(A - up)
 
-    print("still     : %s  (%dx%d)" % (os.path.relpath(still, REPO), w, h))
+    shown = os.path.relpath(still, REPO)
+    if shown.startswith(".."):
+        shown = still
+    print("still     : %s  (%dx%d)" % (shown, w, h))
     print("records   : %d rect4 records, %d matched to columns" % (len(recs), n))
     print("alignment : %.1f px/record from column %d" % (ppr, x0))
     print("value edge: %s of the fill run   (baseline edge %s spans %s px)"
