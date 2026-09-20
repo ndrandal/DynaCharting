@@ -101,15 +101,18 @@ describe('engineAxisSpec — the 1px bootstrap canvas (ENC-1313)', () => {
     expect(r.spec).not.toBeNull();
   });
 
-  it('passes the refusal through even when a fitted box WOULD have worked', () => {
-    // `box` short-circuits the `plotBox()` call, so this case checks the canvas
-    // guard is not skipped by a caller that happens to supply a box: a 1px
-    // canvas cannot carry axis furniture whatever rectangle you hand it, and
-    // `planAxis` measures its labels in that canvas's pixels.
+  it('still declines when a fitted box is supplied — the guard is on the CANVAS', () => {
+    // Passing `box` short-circuits the box DERIVATION, and the easy version of
+    // this fix would have skipped the check with it. It must not: `planAxis`
+    // measures every label in the CANVAS's pixels, so a canvas that cannot
+    // carry the gutters cannot carry the labels either, whatever rectangle it
+    // is handed. The framed views (ENC-1273) are the ones that supply a box,
+    // and they are two of the eleven that crashed.
     const fitted = plotBox({ width: 1280, height: 800 }, DEFAULT_PLOT_INSETS);
     const r = engineAxisSpec(LITERAL_AXES, TRANSFORM, BOOTSTRAP, null, undefined, fitted);
     expect(r.spec).toBeNull();
-    expect(r.refusal!.reason).toBe('canvas-not-sized');
+    expect(r.refusal!.reason).toBe('plot-box-refused');
+    expect(r.refusal!.detail).toContain('leave no plot box in 1px');
   });
 });
 
