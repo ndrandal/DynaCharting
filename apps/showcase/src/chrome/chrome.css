@@ -184,3 +184,38 @@
 .chrome-fps-sep {
   color: var(--text-faint);
 }
+
+/* --- The chrome error boundary's badge (ENC-1313) ---
+ *
+ * Visible on purpose. A boundary that fires silently is worse than the crash it
+ * caught: the crash at least announced itself by emptying the page. This says
+ * what declined, in place, while the engine canvas keeps rendering behind it.
+ */
+.chrome-error-badge {
+  position: absolute;
+  top: var(--s-3);
+  left: var(--s-3);
+  max-width: min(480px, calc(100% - 2 * var(--s-3)));
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  padding: var(--s-2) var(--s-3);
+  background: color-mix(in srgb, var(--bg-2) 92%, transparent);
+  border: 1px solid var(--state-error);
+  border-radius: var(--r-chip);
+  font-family: var(--font-ui);
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text);
+}
+.chrome-error-badge strong {
+  color: var(--state-error);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.chrome-error-badge .mono {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-hi);
+  overflow-wrap: anywhere;
+}

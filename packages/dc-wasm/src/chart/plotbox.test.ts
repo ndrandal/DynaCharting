@@ -27,6 +27,7 @@ import {
   plotBox,
   pxSpanToClipX,
   pxSpanToClipY,
+  tryPlotBox,
   type PlotInsets,
 } from "./plotbox";
 
@@ -80,6 +81,93 @@ describe("plotBox", () => {
     expect(() => plotBox({ width: 0, height: 800 })).toThrow(PlotBoxError);
     expect(() => plotBox({ width: NaN, height: 800 })).toThrow(PlotBoxError);
     expect(() => plotBox(CANVAS, { ...DEFAULT_PLOT_INSETS, left: -5 })).toThrow(PlotBoxError);
+  });
+
+  it("STILL THROWS on the 1px mount-time canvas — the contract is unchanged (ENC-1313)", () => {
+    // ENC-1313 did not soften this. `plotBox()` is for a caller that OWNS its
+    // canvas, and for that caller a box it cannot have is a programming error.
+    // What changed is that a caller which is HANDED a canvas now has
+    // `tryPlotBox` to ask instead. Pinning the message too: it is quoted in
+    // SPEC §5 Q4, in SCORECARD.md and in `harness/deeplink-crash.mjs`.
+    expect(() => plotBox({ width: 1, height: 1 })).toThrow(
+      "plotBox: horizontal insets (64+16) leave no plot box in 1px",
+    );
+  });
+});
+
+/*
+ * ENC-1313. `plotBox()`'s throw is correct and is also, for one specific caller,
+ * fatal: `useEngineAxis` is a React passive effect handed whatever size the DOM
+ * currently reports, and a mounting canvas reports **1x1**
+ * (`ShowcaseEngine.sizeCanvas` bootstraps at `Math.max(1, …)` before layout).
+ * The throw escaped the effect into a tree with no error boundary and React
+ * unmounted the app: a deep link to 11 of the 22 showcase views showed a white
+ * page, 3/3 cold loads each, at `1e125e3`.
+ *
+ * `tryPlotBox` is the same four checks, reported instead of thrown. The
+ * assertions below are about EQUIVALENCE — the two must never disagree about
+ * which canvases are legal, which is why `plotBox` is implemented in terms of
+ * this rather than beside it.
+ */
+describe("tryPlotBox — the same decision, reported instead of thrown", () => {
+  it("returns the identical box plotBox returns, when one fits", () => {
+    const r = tryPlotBox(CANVAS, DEFAULT_PLOT_INSETS);
+    expect(r.fits).toBe(true);
+    expect(r.fits && r.box).toEqual(plotBox(CANVAS, DEFAULT_PLOT_INSETS));
+  });
+
+  it("DOES NOT THROW on the 1px canvas, and names the condition", () => {
+    // The regression, in the vocabulary of the fix.
+    expect(() => tryPlotBox({ width: 1, height: 1 })).not.toThrow();
+    const r = tryPlotBox({ width: 1, height: 1 });
+    expect(r.fits).toBe(false);
+    expect(!r.fits && r.reason).toBe("horizontal-insets-exceed-canvas");
+    expect(!r.fits && r.detail).toContain("leave no plot box in 1px");
+  });
+
+  it("names each of the four refusals distinctly", () => {
+    const reason = (c: { width: number; height: number }, i?: PlotInsets) => {
+      const r = tryPlotBox(c, i);
+      return r.fits ? "fits" : r.reason;
+    };
+    expect(reason({ width: 0, height: 800 })).toBe("canvas-not-positive");
+    expect(reason({ width: NaN, height: 800 })).toBe("canvas-not-positive");
+    expect(reason(CANVAS, { ...DEFAULT_PLOT_INSETS, left: -5 })).toBe("inset-not-finite");
+    expect(reason({ width: 100, height: 800 }, { ...DEFAULT_PLOT_INSETS, left: 90, right: 20 })).toBe(
+      "horizontal-insets-exceed-canvas",
+    );
+    expect(reason({ width: 1280, height: 30 })).toBe("vertical-insets-exceed-canvas");
+  });
+
+  it("agrees with plotBox on EVERY canvas around the boundary, in both directions", () => {
+    // The equivalence, swept rather than asserted at two points — a guard that
+    // refuses one pixel too many is a guard that silently blanks a small chart,
+    // and it would look exactly like a working one from the 1280x800 side.
+    // 64 + 16 = 80, so the first legal width is 81; 12 + 28 = 40, so 41.
+    for (let width = 0; width <= 120; width++) {
+      for (const height of [0, 39, 40, 41, 42, 800]) {
+        const r = tryPlotBox({ width, height });
+        let threw = false;
+        let thrown: unknown = null;
+        try {
+          const box = plotBox({ width, height });
+          expect(r.fits && r.box).toEqual(box);
+        } catch (e) {
+          threw = true;
+          thrown = e;
+        }
+        expect(threw).toBe(!r.fits);
+        if (threw) {
+          expect(thrown).toBeInstanceOf(PlotBoxError);
+          expect((thrown as Error).message).toBe(r.fits ? "" : r.detail);
+        }
+      }
+    }
+    // …and the boundary is where arithmetic says it is, not one off it.
+    expect(tryPlotBox({ width: 80, height: 800 }).fits).toBe(false);
+    expect(tryPlotBox({ width: 81, height: 800 }).fits).toBe(true);
+    expect(tryPlotBox({ width: 1280, height: 40 }).fits).toBe(false);
+    expect(tryPlotBox({ width: 1280, height: 41 }).fits).toBe(true);
   });
 });
 

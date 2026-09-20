@@ -33,6 +33,7 @@ import { Unsupported } from './components/Unsupported';
 import { EngineCanvas } from './components/EngineCanvas';
 import type { TransportProps } from './components/Transport';
 import { ChromeOverlay } from './chrome/ChromeOverlay';
+import { ChartChromeBoundary } from './components/ErrorBoundary';
 import './chrome/chrome.css';
 
 const FLAGSHIP_ID = VIEWS.find((v) => v.meta.tier === 'native')?.id ?? VIEWS[0]?.id ?? '';
@@ -134,18 +135,30 @@ export default function App() {
   // (ENC-1252 / SPEC D7), and — since ENC-1273 — the FITTED transform that same
   // measurement produced, rather than the view file's baked literal. The ticks
   // and the geometry have to travel through ONE transform or they disagree.
+  //
+  // ENC-1313: WRAPPED IN AN ERROR BOUNDARY, and this is not belt-and-braces.
+  // Everything in here runs in React effects against a canvas whose size, domain
+  // and tick list all change under it, and until this ticket a single throw from
+  // any of it unmounted `<App>` — `#root` empty, no canvas, white page. That is
+  // what a `PlotBoxError` on the 1px mount-time canvas did to 11 of the 22 views.
+  // The chrome is FURNITURE over the engine canvas, so its failure must degrade
+  // to "a chart with no axes" (a real, previously-shipped state) and not to "no
+  // chart". `key` remounts the boundary on a view change: the one place a reset
+  // is meaningful, and the one place it cannot loop.
   const chromeOverlay = view ? (
-    <ChromeOverlay
-      view={view}
-      statsHub={statsHub}
-      fpsVisible={fpsVisible}
-      observedDomain={axisDomain}
-      timeBasis={timeBasis}
-      host={host}
-      canvasSize={canvasSize}
-      sceneEpoch={sceneEpoch}
-      framed={framed}
-    />
+    <ChartChromeBoundary key={view.id}>
+      <ChromeOverlay
+        view={view}
+        statsHub={statsHub}
+        fpsVisible={fpsVisible}
+        observedDomain={axisDomain}
+        timeBasis={timeBasis}
+        host={host}
+        canvasSize={canvasSize}
+        sceneEpoch={sceneEpoch}
+        framed={framed}
+      />
+    </ChartChromeBoundary>
   ) : null;
 
   if (!webgpu) {

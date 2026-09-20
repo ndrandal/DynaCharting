@@ -49,7 +49,7 @@ import {
   type PlotBox,
   type Tier1LabelVerdict,
 } from '@repo/dc-wasm';
-import { engineAxisSpec, SHOWCASE_AXIS_THEME } from './engineAxis';
+import { engineAxisSpec, SHOWCASE_AXIS_THEME, type EngineAxisRefusal } from './engineAxis';
 import type { ResolvedAxes } from './deriveAxes';
 import type { EffectiveTransform } from './mapping';
 
@@ -99,6 +99,19 @@ export interface EngineAxisReport {
   tier1: Tier1LabelVerdict | null;
   /** The scene-JSON fragment `harness/score.py` reads. */
   scene: AxisSceneFragment | null;
+  /**
+   * Why no axis was drawn, when `plan` is null (ENC-1313). Null while an axis
+   * IS drawn.
+   *
+   * This exists so "declined" and "never asked" are different observable
+   * states. Before it, `engineAxisSpec` returned a bare null down four
+   * different paths — one of which was a `PlotBoxError` it did not survive to
+   * report, because the throw unmounted the app first. A published refusal is
+   * the difference between a chart that can be ASKED what it is doing and one
+   * whose silence has to be guessed at (the same discipline as
+   * `window.__dcAxisDomain`, ENC-1252).
+   */
+  refusal: EngineAxisRefusal | null;
   /** Whether the font loaded — labels are not drawn without it. */
   fontLoaded: boolean;
   /**
@@ -148,10 +161,18 @@ export function useEngineAxis(
   const epochRef = useRef<number>(-1);
   const measurerRef = useRef<AxisTextMeasurer | null>(null);
   const [fontLoaded, setFontLoaded] = useState(false);
+  /**
+   * The last refusal that was warned about, so a retry loop that re-runs this
+   * effect many times a second does not print the same line many times a
+   * second. Declining is said ONCE per distinct reason, not once per attempt
+   * (and always published, whether or not it is printed).
+   */
+  const warnedRef = useRef<string | null>(null);
   const [report, setReport] = useState<EngineAxisReport>({
     plan: null,
     tier1: null,
     scene: null,
+    refusal: null,
     fontLoaded: false,
     labelAttempts: 0,
   });
@@ -208,7 +229,14 @@ export function useEngineAxis(
   // axis waiting on the labels.
   useEffect(() => {
     if (!host || !enabled) {
-      setReport({ plan: null, tier1: null, scene: null, fontLoaded, labelAttempts: 0 });
+      setReport({
+        plan: null,
+        tier1: null,
+        scene: null,
+        refusal: { reason: 'no-axes-resolved', detail: 'the engine axis is disabled on this host' },
+        fontLoaded,
+        labelAttempts: 0,
+      });
       return;
     }
     if (!idsRef.current) idsRef.current = createIdAllocator(AXIS_ID_BASE);
@@ -238,17 +266,48 @@ export function useEngineAxis(
      */
     const canMeasure = (): boolean => fontLoaded && host.measureText('0', 0.02, 1).glyphCount > 0;
 
-    const publish = (plan: ReturnType<EngineAxis['sync']>) => {
-      const next: EngineAxisReport = {
-        plan,
-        tier1: checkTier1Labels(plan, canvas, { xIsTime: axes.x?.format === 'timestamp' }),
-        scene: axisSceneFragment(plan, SHOWCASE_AXIS_THEME, GRID_BACKDROP),
-        fontLoaded,
-        labelAttempts: attempts,
-      };
+    const publish = (next: EngineAxisReport) => {
       setReport(next);
       if (viewId) {
         window.__dcEngineAxis = { ...(window.__dcEngineAxis ?? {}), [viewId]: next };
+      }
+    };
+
+    const publishPlan = (plan: ReturnType<EngineAxis['sync']>) =>
+      publish({
+        plan,
+        tier1: checkTier1Labels(plan, canvas, { xIsTime: axes.x?.format === 'timestamp' }),
+        scene: axisSceneFragment(plan, SHOWCASE_AXIS_THEME, GRID_BACKDROP),
+        refusal: null,
+        fontLoaded,
+        labelAttempts: attempts,
+      });
+
+    /**
+     * DECLINE VISIBLY (ENC-1313). The refusal is always published — so
+     * `window.__dcEngineAxis[viewId].refusal` and the overlay's
+     * `data-dc-engine-axis-refusal` can be read off a live page — and
+     * `plot-box-refused` is additionally SAID, because that one means "the frame
+     * you asked for does not fit the canvas you have", which a person should
+     * see. The others are ordinary states: eight views legitimately state no
+     * domain, and every view is unsized for one commit.
+     */
+    const publishRefusal = (refusal: EngineAxisRefusal) => {
+      publish({
+        plan: null,
+        tier1: null,
+        scene: null,
+        refusal,
+        fontLoaded,
+        labelAttempts: attempts,
+      });
+      const key = `${viewId ?? '-'}:${refusal.reason}:${refusal.detail}`;
+      if (refusal.reason === 'plot-box-refused' && warnedRef.current !== key) {
+        warnedRef.current = key;
+        console.warn(
+          `[showcase] engine axis declined to draw on ${viewId ?? 'this view'}: ${refusal.detail}. ` +
+            'No axis furniture this commit; it is retried when the canvas is laid out.',
+        );
       }
     };
 
@@ -276,14 +335,26 @@ export function useEngineAxis(
       // built with, so it is rebuilt whenever this effect re-runs.
       const measurer = fontLoaded ? createHostMeasurer(host, canvas) : null;
       measurerRef.current = measurer;
-      const spec = engineAxisSpec(axes, transform, canvas, measurer, SHOWCASE_AXIS_THEME, box);
+      // `engineAxisSpec` NEVER THROWS (ENC-1313). It used to call `plotBox()`
+      // unguarded, and on the 1x1 canvas this effect sees for one commit at
+      // mount that threw out of the passive effect and unmounted the whole app
+      // on 11 of the 22 views. It now declines by name and we publish that.
+      const { spec, refusal } = engineAxisSpec(
+        axes,
+        transform,
+        canvas,
+        measurer,
+        SHOWCASE_AXIS_THEME,
+        box,
+      );
       if (!spec) {
-        setReport({ plan: null, tier1: null, scene: null, fontLoaded, labelAttempts: attempts });
+        publishRefusal(refusal);
         return;
       }
+      warnedRef.current = null;
       const plan = axis.sync(spec);
       host.markDirty();
-      publish(plan);
+      publishPlan(plan);
       // The probe measures ONE glyph and the sync measures and lays out every
       // label, so the core can go busy in between: `EngineAxis.sync` reports
       // any refusal by pruning the plan, and that shortfall is what is retried.

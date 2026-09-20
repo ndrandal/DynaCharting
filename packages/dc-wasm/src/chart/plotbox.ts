@@ -203,45 +203,128 @@ export class PlotBoxError extends Error {
   }
 }
 
+/** Why a canvas has no plot box. One per condition `tryPlotBox` checks. */
+export type PlotBoxRefusal =
+  /** `width`/`height` non-finite, zero or negative. */
+  | "canvas-not-positive"
+  /** An inset is non-finite or negative. */
+  | "inset-not-finite"
+  /** `left + right >= width`: the price band alone is wider than the canvas. */
+  | "horizontal-insets-exceed-canvas"
+  /** `top + bottom >= height`. */
+  | "vertical-insets-exceed-canvas";
+
 /**
- * The clip-space plot box for `canvas` with `insets` reserved for furniture.
+ * `tryPlotBox`'s answer: the box, or the named reason there is none.
  *
- * Throws `PlotBoxError` if the gutters do not leave a positive-area box, or if
- * any input is non-finite/negative. This is a programming error, not a data
- * condition: the domain can be empty, but the frame cannot be nonsense.
+ * Shaped like `apps/showcase/src/views/framing.ts`'s `FramingResolution` on
+ * purpose — this repo already has an idiom for "declined, and here is why", and
+ * a `reason` a caller can switch on plus a `detail` a human can read is it. It
+ * is deliberately NOT `PlotBox | null`: a null is a refusal a caller can forget
+ * to handle and then render nothing for, which is the failure mode this whole
+ * file's contract notes exist to prevent one layer down.
  */
-export function plotBox(canvas: CanvasSize, insets: PlotInsets = DEFAULT_PLOT_INSETS): PlotBox {
+export type PlotBoxResolution =
+  | { fits: true; box: PlotBox }
+  | { fits: false; reason: PlotBoxRefusal; detail: string };
+
+/**
+ * The clip-space plot box for `canvas`, or the reason it has none.
+ *
+ * CALL THIS — not `plotBox()` — FROM ANYWHERE THAT DOES NOT CHOOSE ITS OWN
+ * CANVAS SIZE. A React effect, a `ResizeObserver` callback and a resize handler
+ * are all handed whatever the DOM currently reports, and what the DOM reports
+ * during mount is **1x1**: a canvas's backing store is bootstrapped at
+ * `Math.max(1, round(clientWidth * dpr))` before layout has run. `64 + 16 >= 1`,
+ * so `plotBox()` throws on it — and a throw out of a passive effect is a React
+ * UNMOUNT of everything up to the nearest error boundary. At DynaCharting
+ * `1e125e3` that took the entire showcase down on a deep link to **11 of its 22
+ * views**, 3/3 cold loads each, and the only visible symptom was a white page
+ * (ENC-1313; LIMITATIONS.md DC-L-1313; re-check
+ * `specs/2026-09-19-chart-quality-bar/harness/deeplink-crash.mjs`).
+ *
+ * A degenerate canvas is a normal transient during mount, not a programming
+ * error, and this function is the half of the contract that says so. The other
+ * half — `plotBox()` — is unchanged and still throws, because a caller that
+ * BUILT its canvas asking for a box it cannot have IS a programming error. The
+ * distinction is not "throw vs null", it is **who chose the size**.
+ *
+ * Whichever you call, DECLINE VISIBLY. A `fits: false` that is silently turned
+ * into "draw nothing" is indistinguishable from "there was nothing to draw",
+ * and that is how §1.3's caption axes went unnoticed for six months.
+ */
+export function tryPlotBox(
+  canvas: CanvasSize,
+  insets: PlotInsets = DEFAULT_PLOT_INSETS,
+): PlotBoxResolution {
   const { width, height } = canvas;
   if (!(Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0)) {
-    throw new PlotBoxError(`plotBox: canvas must be positive and finite, got ${width}x${height}`);
+    return {
+      fits: false,
+      reason: "canvas-not-positive",
+      detail: `plotBox: canvas must be positive and finite, got ${width}x${height}`,
+    };
   }
   for (const side of ["top", "right", "bottom", "left"] as const) {
     const v = insets[side];
     if (!(Number.isFinite(v) && v >= 0)) {
-      throw new PlotBoxError(`plotBox: inset.${side} must be finite and >= 0, got ${v}`);
+      return {
+        fits: false,
+        reason: "inset-not-finite",
+        detail: `plotBox: inset.${side} must be finite and >= 0, got ${v}`,
+      };
     }
   }
   if (insets.left + insets.right >= width) {
-    throw new PlotBoxError(
-      `plotBox: horizontal insets (${insets.left}+${insets.right}) leave no plot box in ${width}px`,
-    );
+    return {
+      fits: false,
+      reason: "horizontal-insets-exceed-canvas",
+      detail: `plotBox: horizontal insets (${insets.left}+${insets.right}) leave no plot box in ${width}px`,
+    };
   }
   if (insets.top + insets.bottom >= height) {
-    throw new PlotBoxError(
-      `plotBox: vertical insets (${insets.top}+${insets.bottom}) leave no plot box in ${height}px`,
-    );
+    return {
+      fits: false,
+      reason: "vertical-insets-exceed-canvas",
+      detail: `plotBox: vertical insets (${insets.top}+${insets.bottom}) leave no plot box in ${height}px`,
+    };
   }
   return {
-    x: {
-      min: CLIP_RANGE.min + pxSpanToClipX(insets.left, canvas),
-      max: CLIP_RANGE.max - pxSpanToClipX(insets.right, canvas),
-    },
-    // Screen-top is clip +Y: `insets.top` comes off `y.max`.
-    y: {
-      min: CLIP_RANGE.min + pxSpanToClipY(insets.bottom, canvas),
-      max: CLIP_RANGE.max - pxSpanToClipY(insets.top, canvas),
+    fits: true,
+    box: {
+      x: {
+        min: CLIP_RANGE.min + pxSpanToClipX(insets.left, canvas),
+        max: CLIP_RANGE.max - pxSpanToClipX(insets.right, canvas),
+      },
+      // Screen-top is clip +Y: `insets.top` comes off `y.max`.
+      y: {
+        min: CLIP_RANGE.min + pxSpanToClipY(insets.bottom, canvas),
+        max: CLIP_RANGE.max - pxSpanToClipY(insets.top, canvas),
+      },
     },
   };
+}
+
+/**
+ * The clip-space plot box for `canvas` with `insets` reserved for furniture.
+ *
+ * Throws `PlotBoxError` if the gutters do not leave a positive-area box, or if
+ * any input is non-finite/negative. That is the contract for a caller that OWNS
+ * its canvas — a builder, a test, a fixed-size export — and it is unchanged:
+ * same four conditions, same messages. Silently clamping would hand back an
+ * inverted or zero-width box and let a downstream `fitAxis` produce a negative
+ * or infinite scale.
+ *
+ * If the size was handed to you rather than chosen by you, call `tryPlotBox`
+ * instead and read its header for why (ENC-1313).
+ *
+ * This is `tryPlotBox` plus a throw, and nothing else, so the two can never
+ * disagree about which canvases are legal.
+ */
+export function plotBox(canvas: CanvasSize, insets: PlotInsets = DEFAULT_PLOT_INSETS): PlotBox {
+  const resolution = tryPlotBox(canvas, insets);
+  if (!resolution.fits) throw new PlotBoxError(resolution.detail);
+  return resolution.box;
 }
 
 /**

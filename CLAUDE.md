@@ -242,8 +242,23 @@ host.applyControl({ cmd: 'setTransform', id: TRANSFORM, ...framed.transform! });
 checkTier2Framing(framed.metrics!);   // { pass, failures } against SPEC D1's tier-2 measures
 ```
 
-Four things to know before building on it, each stated in full in the module header:
+Five things to know before building on it, each stated in full in the module header:
 
+- **`plotBox()` THROWS, so a caller that does not own its canvas must call `tryPlotBox`
+  (ENC-1313, LIMITATIONS.md DC-L-1313).** The gutters are absolute pixels, so any canvas
+  narrower than `left + right` (80px by default) has no box at all, and `plotBox()` refuses it
+  by throwing `PlotBoxError` — correct for a builder, fatal for a React effect. **A mounting
+  canvas is 1x1**: `ShowcaseEngine.sizeCanvas` publishes `Math.max(1, …)` for one commit before
+  layout. That throw, escaping `useEngineAxis`'s passive effect into a tree with no error
+  boundary, **unmounted the entire app on a deep link to 11 of the 22 showcase views** (measured
+  3/3 cold loads each at `1e125e3`). Use `tryPlotBox(canvas, insets)` →
+  `{ fits: true; box } | { fits: false; reason; detail }` anywhere the size is handed to you, and
+  make the refusal visible — `engineAxisSpec` returns a named `refusal` and both
+  `window.__dcEngineAxis` and the overlay's `data-dc-engine-axis-refusal` carry it. Re-check:
+  `specs/2026-09-19-chart-quality-bar/harness/deeplink-crash.mjs` (0 of 22, exit 0).
+  **The reference chart could not have caught it** — `candles-aapl` is a `timestamp` view, whose
+  axis resolves after layout, so it is structurally in the surviving half. That is SPEC §5 Q4's
+  negative transfer, and the reason "we verified it on the reference" is not coverage.
 - **Gutters are CSS pixels, the box is clip units.** A tick label is 11px tall at any chart
   size. `plotBox()` is the only conversion; `pxSpanToClipX/Y` are SPAN helpers and are NOT
   `text.ts`'s same-named POSITION helpers.
