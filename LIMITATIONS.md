@@ -1076,77 +1076,81 @@ symptom was observed and then removed on a canvas-only capture of the showcase, 
 
 ---
 
-## DC-L-1273 — Only a single-pane view is framed by the plot box; a stacked view and the whole product are not 🟡
+## DC-L-1273 — The stacked view is REFUSED by the plot box, and the product has not adopted it 🟡
+
+> **Narrowed by ENC-1316, 2026-09-20.** This entry used to say *"only a single-pane view is
+> framed"* and that the framing reached **2 of 22** views. It now reaches **13 of the 14 views
+> that draw an axis** — see **DC-L-1316** for what the second fit does and does not promise.
+> Two of the three original halves are gone; the two below are what is left.
 
 **Claim.** ENC-1273 put `frameSeries` on a render path for the first time (that is what retired
-**DC-L14**, §R). It did not put it on *every* render path, and the two that are left are stated
-here rather than implied by a green test.
+**DC-L14**, §R). ENC-1316 put a second, weaker fit on the same path for every other view that
+draws an axis. Neither reaches the two cases below, and they are stated here rather than implied
+by a green test.
 
 1. **A stacked multi-pane view is REFUSED, not framed.** `plotBox()` returns ONE rectangle and
-   `frameSeries` fits ONE domain into it. `candle-overlays` — the showcase's flagship, the view
-   the hero route renders — puts price in clip y `[-0.20, 0.95]` and a cumulative-volume
-   sub-pane in `[-0.95, -0.30]`, with two transforms. Fitting the price series to the whole box
-   would paint it straight over the volume pane, so `apps/showcase/src/views/framing.ts` counts
-   the manifest's `createPane` commands and declines, with the reason in the returned value. Its
-   framing is still the `view.json` literal, and its axis furniture is still laid out against
-   the full-canvas box while its price band occupies the top 58% of it — i.e. the y tick labels
-   span height the price pane does not.
+   both fits put ONE thing inside it. `candle-overlays` — the showcase's flagship, the view the
+   hero route renders — puts price in clip y `[-0.20, 0.95]` and a cumulative-volume sub-pane in
+   `[-0.95, -0.30]`, with two transforms and two pane regions. Fitting either to the whole box
+   would paint it straight over the other, so `apps/showcase/src/views/framing.ts` counts the
+   manifest's `createPane` commands and declines, with the reason in the returned value. Its
+   framing is still the `view.json` literal, and its axis furniture is still laid out against the
+   full-canvas box while its price band occupies the top 58% of it — i.e. the y tick labels span
+   height the price pane does not.
 
    What is missing is a **layout**: two boxes carved out of one, a transform per band, and
    furniture that knows which band it belongs to. `DomainTracker` is not even measuring the
    volume buffer's y (`manifest.ts` registers it `axes: 'x'` on purpose), so there is no second
-   domain to fit yet.
+   domain to fit yet. It is the one axis-drawing view still carrying a `T1.8` failure in
+   `SCORECARD.md` Table B, and it fails it in a way neither fit addresses: its leftmost vertical
+   gridline lands 3px from the y spine, so the spine is inside the scorer's own 3px neighbourhood
+   sample (`ratio 1.09, delta 6` — the VISIBILITY floor, not the ceiling).
 
 2. **`customer-layer` — the live product, and the surface SPEC §1.0 actually measured — has not
    adopted any of it.** It is a separate repo and a separate ticket. Every tier-2 number in
-   SPEC §1.0 was taken there, so **none of them moves because of ENC-1273**. The numbers that
-   moved are the showcase's.
+   SPEC §1.0 was taken there, so **none of them moves because of ENC-1273 or ENC-1316**. The
+   numbers that moved are the showcase's.
 
-**Why it bites.** This is DC-L14's shape at one-third scale, and it bites the same way: "the
-showcase frames its charts now" is true of two views out of twenty-two, and the one a visitor
-sees first on `/` is not one of them. A reader who greps `frameSeries` will now find a render
-path calling it and reasonably conclude the product is framed.
+**Why it bites.** This was DC-L14's shape at one-third scale and it is now DC-L14's shape at
+one-fourteenth: "the showcase frames its charts now" is true of thirteen views out of twenty-two,
+and the one a visitor sees first on `/` is still not one of them. A reader who greps `frameSeries`
+will find a render path calling it and reasonably conclude the product is framed.
 
 **Re-check.**
 ```bash
-# 1 — a render path calls it (this is what DC-L14 asserted was false)
-grep -rl 'frameSeries' apps/ --include=*.ts --include=*.tsx | grep -v '\.test\.'
-# -> apps/showcase/src/views/framing.ts        (the decision: which views, and why not)
-# -> apps/showcase/src/views/useViewSwitch.ts  (the CALL, on the render path)
+# 1 — a render path frames, and there are two fits (ENC-1273 + ENC-1316)
+grep -rl 'frameSeries\|fitRegionToBox' apps/ --include=*.ts --include=*.tsx | grep -v '\.test\.'
+# -> apps/showcase/src/views/useViewSwitch.ts   (the CALLS, on the render path)
+grep -n "kind: 'series'\|kind: 'pane'" apps/showcase/src/views/framing.ts | head -4
 
-# 2 — ... for exactly the two single-pane views that declare an axisDomain
-grep -c 'createPane' apps/showcase/views/*/manifest.ts \
-  | grep -E 'candles-aapl|ohlc-bars|candle-overlays' | sort
-# -> apps/showcase/views/candle-overlays/manifest.ts:2   (the 2 is the refusal)
-# -> apps/showcase/views/candles-aapl/manifest.ts:1
-# -> apps/showcase/views/ohlc-bars/manifest.ts:1
+# 2 — and exactly ONE axis-drawing view is refused, by its pane count
+pnpm test -- framing
+# -> "frames all 14 axis-drawing views except the stacked one" asserts
+#    refused == [{ id: 'candle-overlays', reason: 'multi-pane' }]
+grep -c 'createPane' apps/showcase/views/candle-overlays/manifest.ts   # -> 2
 
-# 3 — and the flagship, which is what `/` renders, is the refused one
+# 3 — and that refused view is what `/` renders (App.tsx FLAGSHIP_ID picks the
+#     first 'native'-tier view by title)
 node -e "const t=['Candles + Volume — AAPL','Candlestick — AAPL','OHLC Bars — AAPL']; \
          console.log(t.slice().sort((a,b)=>a.localeCompare(b))[0])"
-# -> Candles + Volume — AAPL      (candle-overlays; App.tsx FLAGSHIP_ID picks the first
-#    'native'-tier view by title)
+# -> Candles + Volume — AAPL      (candle-overlays)
 
-# 4 — the other 19 views declare no axisDomain at all, so nothing measures a domain to fit
-grep -rl 'axisDomain' apps/showcase/views/ | wc -l        # -> 3
-ls apps/showcase/views | wc -l                            # -> 22
-
-# 5 — customer-layer is untouched. `<workspace>` is the directory holding the six
+# 4 — customer-layer is untouched. `<workspace>` is the directory holding the six
 #     repos: from a worktree that is ../../../customer-layer, from this checkout ../customer-layer
-grep -rl 'frameSeries\|fitToPlotBox\|plotBox' <workspace>/customer-layer \
+grep -rl 'frameSeries\|fitRegionToBox\|fitToPlotBox\|plotBox' <workspace>/customer-layer \
   --include=*.ts --include=*.tsx | wc -l
 # -> 0
 ```
 
-**Working around it.** For a single-pane view, nothing — it is framed. For anything else, fit it
-yourself and hand the engine both halves (`setPaneRegion` AND `setTransform` from one `PlotBox`,
-plotbox.ts note 7); for a stacked layout you must also decide the band split and carry a second
-domain, which is the work this entry is about.
+**Working around it.** For a single-pane view, nothing — it is framed. For a stacked layout you
+must decide the band split and carry a second domain, which is the work this entry is about; hand
+the engine both halves yourself (`setPaneRegion` AND `setTransform` from one `PlotBox`,
+plotbox.ts note 7), per band.
 
 **Ticket.** None yet for either half. The stacked-layout one is a plot-box *layout* feature, not
 a showcase fix; customer-layer adoption was already called out as out-of-scope by ENC-1273.
 
-**Verified at** `ENC-1273 HEAD`, 2026-09-20 — all five commands run in the ENC-1273 worktree.
+**Verified at** `ENC-1316 HEAD`, 2026-09-20 — all four commands run in the ENC-1316 worktree.
 The framing claim itself is measured, not asserted: on a canvas-only capture of
 `#/view/candles-aapl` (hardware adapter `vendor: nvidia, architecture: ampere`,
 `info.isFallbackAdapter: false` — SPEC D8), the candle ink covers **52.5% → 91.1%** of the
