@@ -179,8 +179,10 @@ bash scripts/tier0.sh <build-dir>     # default build dir: build-dawn
 `specs/2026-09-19-chart-quality-bar/SPEC.md` **D1** defines tier 0 ("Truthful") as *the mark
 depicts the data*, and its falsifiable check as: render a **known-answer synthetic series** and
 assert on pixels. That check is `core/tests/dc_enc1249_tier0_truthful.cpp` — a monotonic ramp
-through the real `LineRecipe` + `dc::LinearScale`, and a single candle with hand-computed
-extents through the real `CandleRecipe`, both rendered by `DawnSceneRenderer`.
+through the real `LineRecipe` + `dc::LinearScale`, a single candle with hand-computed extents
+through the real `CandleRecipe`, and (ENC-1250) a baseline **area** that must fill from its
+baseline up to the value, on the real `instancedRect@1` rect4 layout and the real
+`price-line-area` transform — all rendered by `DawnSceneRenderer`.
 
 Four things about it are deliberate and easy to get wrong if you extend it:
 
