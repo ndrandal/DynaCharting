@@ -140,39 +140,91 @@ export function useEngineAxis(
 
   // Sync the furniture. Runs on every domain/tick/size/view change; `EngineAxis`
   // rewrites its buffers in place rather than allocating, so this is cheap.
+  //
+  // ── WHY THIS IS NOT JUST `sync(spec)` IN THE EFFECT BODY ──────────────────
+  //
+  // The core is single-async-op, so `EngineHost` refuses `setTextGeometry` and
+  // `measureText` while a render is in flight — they return -1 rather than
+  // aborting the WASM runtime. Control commands and data batches are BUFFERED
+  // instead and replayed on the next drain, so the gridlines, ticks and spine
+  // land whatever the timing. Text does not: it has to return a glyph count
+  // synchronously.
+  //
+  // And the timing is not random. The engine renders from its own rAF loop, and
+  // the domain that triggers this effect is published from a rAF callback too
+  // (`useViewSwitch.onBatch`), so the effect runs in the same frame batch as a
+  // render that has already suspended in ASYNCIFY. Measured on this app: EVERY
+  // attempt landed mid-render and the chart drew 8 gridlines and 0 labels, with
+  // the font loaded and nothing reporting an error.
+  //
+  // So the text half is scheduled onto a macrotask and RETRIED against a cheap
+  // liveness probe until the core answers. `drawGeometryFirst` is deliberate:
+  // the marks appear immediately and the labels follow, rather than the whole
+  // axis waiting on the labels.
   useEffect(() => {
     if (!host || !enabled) {
-      setReport({ plan: null, tier1: null, scene: null, fontLoaded });
+      setReport({ plan: null, tier1: null, scene: null, fontLoaded, labelAttempts: 0 });
       return;
     }
     if (!axisRef.current) {
       axisRef.current = new EngineAxis(host, createIdAllocator(AXIS_ID_BASE));
     }
-    if (fontLoaded && !measurerRef.current) {
-      measurerRef.current = createHostMeasurer(host, canvas);
-    }
-    // The measurer converts clip units to pixels using the canvas it was built
-    // with, so a resize invalidates it.
-    const measurer = fontLoaded ? createHostMeasurer(host, canvas) : null;
-    measurerRef.current = measurer;
+    const axis = axisRef.current;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let attempts = 0;
 
-    const spec = engineAxisSpec(axes, transform, canvas, measurer);
-    if (!spec) {
-      setReport({ plan: null, tier1: null, scene: null, fontLoaded });
-      return;
-    }
-    const plan = axisRef.current.sync(spec);
-    host.markDirty();
-    const next: EngineAxisReport = {
-      plan,
-      tier1: checkTier1Labels(plan, canvas, { xIsTime: axes.x?.format === 'timestamp' }),
-      scene: axisSceneFragment(plan, SHOWCASE_AXIS_THEME, GRID_BACKDROP),
-      fontLoaded,
+    /**
+     * Is the core able to lay text out right now? One glyph through the real
+     * `measureText`: it returns -1 when no font is loaded OR when a render is in
+     * flight, which are exactly the two conditions that make a label silently
+     * not draw. A probe is cheaper than a wrong answer.
+     */
+    const canMeasure = (): boolean => fontLoaded && host.measureText('0', 0.02, 1).glyphCount > 0;
+
+    const publish = (plan: ReturnType<EngineAxis['sync']>) => {
+      const next: EngineAxisReport = {
+        plan,
+        tier1: checkTier1Labels(plan, canvas, { xIsTime: axes.x?.format === 'timestamp' }),
+        scene: axisSceneFragment(plan, SHOWCASE_AXIS_THEME, GRID_BACKDROP),
+        fontLoaded,
+        labelAttempts: attempts,
+      };
+      setReport(next);
+      if (viewId) {
+        window.__dcEngineAxis = { ...(window.__dcEngineAxis ?? {}), [viewId]: next };
+      }
     };
-    setReport(next);
-    if (viewId) {
-      window.__dcEngineAxis = { ...(window.__dcEngineAxis ?? {}), [viewId]: next };
-    }
+
+    const attempt = (): void => {
+      if (cancelled) return;
+      attempts++;
+      // The measurer converts clip units to pixels using the canvas it was
+      // built with, so it is rebuilt whenever this effect re-runs.
+      const measurer = canMeasure() ? createHostMeasurer(host, canvas) : null;
+      measurerRef.current = measurer;
+      const spec = engineAxisSpec(axes, transform, canvas, measurer);
+      if (!spec) {
+        setReport({ plan: null, tier1: null, scene: null, fontLoaded, labelAttempts: attempts });
+        return;
+      }
+      const plan = axis.sync(spec);
+      host.markDirty();
+      publish(plan);
+      // Retry only while labels are OWED: the font is loaded, ticks exist, and
+      // none were placed. A plan that legitimately places no label (no ticks in
+      // frame) is not a failure and must not spin.
+      const owed = fontLoaded && !measurer;
+      if (owed && attempts < LABEL_RETRY_LIMIT) {
+        timer = setTimeout(attempt, LABEL_RETRY_MS);
+      }
+    };
+
+    attempt();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
   }, [host, enabled, viewId, axes, transform, canvas.width, canvas.height, fontLoaded]);
 
   return report;
