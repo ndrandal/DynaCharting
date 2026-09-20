@@ -49,7 +49,7 @@
  * the leftmost bars no longer run under the price labels.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   DomainTracker,
   IndexTimeTracker,
@@ -273,22 +273,64 @@ export function useViewSwitch(
     });
   }, []);
 
+  // --- ENC-1273: the fitted frame ------------------------------------------
+  // Which pane/transform a fitted frame belongs to, or the stated reason there
+  // is none. Derived from the view's own manifest — see `framing.ts`.
+  const framingResolution = useMemo(() => framingFor(view), [view]);
+  const framing = framingResolution?.framed ? framingResolution.framing : null;
+
+  /**
+   * The frame itself: the MEASURED domain (ENC-1252) fitted into the plot box
+   * for the canvas the engine is actually rendering into.
+   *
+   * `canvas` is the canvas's BACKING-STORE size in device pixels — the same
+   * size `ChromeOverlay` hands the engine axis (ENC-1253), which is what makes
+   * `plotBox()` here and `plotBox()` there return the identical rectangle. Feed
+   * one of them the CSS box instead and the gutters differ by the device-pixel
+   * ratio, which renders as furniture that is close to, but not on, the frame.
+   */
+  const framed = useMemo<FramedSeries | null>(() => {
+    if (!framing || !axisDomain) return null;
+    if (!(canvas.width > 0 && canvas.height > 0)) return null;
+    try {
+      return frameSeries(axisDomain, canvas, framing.insets);
+    } catch (e) {
+      // `PlotBoxError` — the gutters do not fit the canvas (a 64px price band on
+      // a 40px-wide canvas mid-resize). Keep the seeded framing and say so
+      // rather than throwing out of a render.
+      console.warn('[showcase] plot box refused this canvas; keeping the seeded framing:', e);
+      return null;
+    }
+  }, [framing, axisDomain, canvas.width, canvas.height]);
+
+  // `applyView` runs from a callback (the replay loop) and needs the CURRENT
+  // frame at that instant, not the one captured when the callback was made.
+  const framedRef = useRef<FramedSeries | null>(null);
+  framedRef.current = framed;
+
   // (Re)apply the scene whenever the selected view changes or the host appears.
   useEffect(() => {
     if (!host || !view) return;
-    appliedRef.current = applyView(host, view, appliedRef.current);
+    appliedRef.current = applyView(host, view, appliedRef.current, framing, framedRef.current);
     setProgress(0);
     setPlaying(true);
     setEpoch((e) => e + 1);
-  }, [host, view]);
+  }, [host, view, framing]);
+
+  // Re-fit when the frame moves — the domain grew, or the canvas resized. The
+  // manifest is NOT re-applied for this: only the two commands change.
+  useEffect(() => {
+    if (!host || !framing || !framed) return;
+    applyFraming(host, framing, framed);
+  }, [host, framing, framed, epoch]);
 
   // Reset + restart helper (shared by loop completion and the restart button).
   const resetAndReplay = useCallback(() => {
     if (!host || !view) return;
-    appliedRef.current = applyView(host, view, appliedRef.current);
+    appliedRef.current = applyView(host, view, appliedRef.current, framing, framedRef.current);
     setProgress(0);
     setEpoch((e) => e + 1);
-  }, [host, view]);
+  }, [host, view, framing]);
 
   const restart = useCallback(() => {
     setPlaying(true);
@@ -313,11 +355,27 @@ export function useViewSwitch(
     onComplete,
     growth: view?.growth,
     growthSeries: view?.growthSeries,
-    xAnchor: view?.xAnchor,
+    // A framed view does NOT get the xAnchor re-derivation: it writes its own
+    // `setTransform` on the first record of every pass, from `view.json`'s
+    // hand-typed 150-index window, and would overwrite the fit once per loop.
+    // Fitting the measured x domain is the same idea, measured (see framing.ts).
+    xAnchor: framing ? undefined : view?.xAnchor,
     onBatch,
   });
 
-  return { axisDomain, timeBasis, progress, playing, setPlaying, restart, loop, setLoop, sceneEpoch: epoch };
+  return {
+    axisDomain,
+    timeBasis,
+    progress,
+    playing,
+    setPlaying,
+    restart,
+    loop,
+    setLoop,
+    sceneEpoch: epoch,
+    framed,
+    framingResolution,
+  };
 }
 
 /**
