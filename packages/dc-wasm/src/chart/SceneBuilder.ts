@@ -28,6 +28,15 @@
 
 import { createIdAllocator, type IdAllocator } from "./ids";
 import { fitTransform, type Range, type Transform2D } from "./scale";
+import {
+  DEFAULT_PLOT_INSETS,
+  fitToPlotBox,
+  paneRegionFor,
+  type CanvasSize,
+  type FitPolicy,
+  type PlotBox,
+  type PlotInsets,
+} from "./plotbox";
 
 // ---- Binary record framing (the data plane wire format) --------------------
 // Per-record: [1B op][4B bufferId LE][4B offset LE][4B len LE][payload].
@@ -136,6 +145,13 @@ export type PaneOptions = {
   name?: string;
   /** Pane region in clip space; emits setPaneRegion when provided. */
   region?: { clipXMin: number; clipXMax: number; clipYMin: number; clipYMax: number };
+  /**
+   * The pane's region expressed as a `PlotBox` (ENC-1256). Prefer this over
+   * `region` for a DATA pane: pass the SAME box `transform({ domain, canvas })`
+   * was fitted to and the scissor and the projection cannot drift apart —
+   * plotbox.ts contract note (7). Ignored when `region` is also given.
+   */
+  plotBox?: PlotBox;
   /** Pane clear color; emits setPaneClearColor when provided. */
   clearColor?: Rgba;
 };
@@ -153,6 +169,19 @@ export type TransformParams =
   | {
       dataRange: { x: Range; y: Range };
       clipRange?: { x: Range; y: Range };
+    }
+  | {
+      /**
+       * The MEASURED domain (`DomainTracker.domain()`, ENC-1252) to frame. An
+       * axis stated as `null` keeps the identity for that axis.
+       */
+      domain: { x: Range | null; y: Range | null };
+      /** Canvas size in CSS pixels — what turns pixel gutters into clip units. */
+      canvas: CanvasSize;
+      /** Gutters reserved for axis furniture. Defaults to DEFAULT_PLOT_INSETS. */
+      insets?: PlotInsets;
+      /** Optional headroom. Defaults to none — plotbox.ts contract note (5). */
+      policy?: FitPolicy;
     };
 
 function isAffine(p: TransformParams): p is Transform2D {
@@ -221,14 +250,15 @@ export class SceneBuilder {
   pane(opts: PaneOptions = {}): PaneHandle {
     const paneId = this.ids.nextFor("pane");
     this.ctrl({ cmd: "createPane", id: paneId, name: opts.name ?? `pane${paneId}` });
-    if (opts.region) {
+    const region = opts.region ?? (opts.plotBox ? paneRegionFor(opts.plotBox) : undefined);
+    if (region) {
       this.ctrl({
         cmd: "setPaneRegion",
         id: paneId,
-        clipXMin: opts.region.clipXMin,
-        clipXMax: opts.region.clipXMax,
-        clipYMin: opts.region.clipYMin,
-        clipYMax: opts.region.clipYMax,
+        clipXMin: region.clipXMin,
+        clipXMax: region.clipXMax,
+        clipYMin: region.clipYMin,
+        clipYMax: region.clipYMax,
       });
     }
     if (opts.clearColor) {
@@ -259,13 +289,28 @@ export class SceneBuilder {
   }
 
   /**
-   * Create a transform and set its affine. Pass a ready `{sx,tx,sy,ty}` OR
-   * `{dataRange, clipRange?}` to fit data extent → clip via `fitTransform`.
+   * Create a transform and set its affine. Three ways to say it:
+   *
+   *   - a ready `{sx,tx,sy,ty}`;
+   *   - `{dataRange, clipRange?}` — fit data extent → clip via `fitTransform`;
+   *   - `{domain, canvas, insets?, policy?}` — FIT THE SERIES TO THE VIEWPORT
+   *     WITH MARGINS (ENC-1256): derive the plot box from `canvas` + `insets`
+   *     and fit the measured `domain` into it. This is the path that reserves
+   *     a band for axis furniture; the other two project into whatever clip
+   *     rect you hand them and reserve nothing.
    */
   transform(params: TransformParams): TransformHandle {
     const transformId = this.ids.nextFor("transform");
     this.ctrl({ cmd: "createTransform", id: transformId });
-    const affine = isAffine(params) ? params : fitTransform(params.dataRange, params.clipRange);
+    const affine = isAffine(params)
+      ? params
+      : "domain" in params
+        ? fitToPlotBox(
+            params.domain,
+            plotBox(params.canvas, params.insets ?? DEFAULT_PLOT_INSETS),
+            params.policy,
+          )
+        : fitTransform(params.dataRange, params.clipRange);
     this.emitTransform(transformId, affine);
     return {
       transformId,
