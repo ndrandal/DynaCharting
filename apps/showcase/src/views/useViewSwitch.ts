@@ -275,6 +275,16 @@ export interface UseViewSwitch {
    * refusal is observable rather than a silent no-op — see `framing.ts`.
    */
   framingResolution: FramingResolution | null;
+  /**
+   * Where the axis GRIDLINES belong for this view (ENC-1316), or null when it
+   * is not framed and they stay in the furniture pane.
+   *
+   * A framed view's pane region IS the plot box, so a gridline issued into it
+   * spans exactly the box and is drawn BEFORE the data — which is the whole
+   * point: a gridline over the marks is a mark, and D11 band 3 measures it as
+   * one (6.25 : 1 on `audio-waveform` against a 2.0 : 1 ceiling).
+   */
+  gridTarget: AxisGridTarget | null;
 }
 
 /**
@@ -421,27 +431,43 @@ export function useViewSwitch(
   // frame at that instant, not the one captured when the callback was made.
   const framedRef = useRef<FramedSeries | null>(null);
   framedRef.current = framed;
+  const remapRef = useRef<Transform2D | null>(null);
+  remapRef.current = remap;
 
   // (Re)apply the scene whenever the selected view changes or the host appears.
   useEffect(() => {
     if (!host || !view) return;
-    appliedRef.current = applyView(host, view, appliedRef.current, framing, framedRef.current);
+    appliedRef.current = applyView(
+      host,
+      view,
+      appliedRef.current,
+      framing,
+      framedRef.current,
+      remapRef.current,
+    );
     setProgress(0);
     setPlaying(true);
     setEpoch((e) => e + 1);
   }, [host, view, framing]);
 
   // Re-fit when the frame moves — the domain grew, or the canvas resized. The
-  // manifest is NOT re-applied for this: only the two commands change.
+  // manifest is NOT re-applied for this: only the framing commands change.
   useEffect(() => {
     if (!host || !framing || !framed) return;
-    applyFraming(host, framing, framed);
-  }, [host, framing, framed, epoch]);
+    applyFraming(host, framing, framed, remap);
+  }, [host, framing, framed, remap, epoch]);
 
   // Reset + restart helper (shared by loop completion and the restart button).
   const resetAndReplay = useCallback(() => {
     if (!host || !view) return;
-    appliedRef.current = applyView(host, view, appliedRef.current, framing, framedRef.current);
+    appliedRef.current = applyView(
+      host,
+      view,
+      appliedRef.current,
+      framing,
+      framedRef.current,
+      remapRef.current,
+    );
     setProgress(0);
     setEpoch((e) => e + 1);
   }, [host, view, framing]);
@@ -454,6 +480,14 @@ export function useViewSwitch(
   const onComplete = useCallback(() => {
     if (loop) resetAndReplay();
   }, [loop, resetAndReplay]);
+
+  // Where the gridlines go. Derived from the same resolution the fit came from,
+  // so "framed" and "grid behind the data" cannot drift apart.
+  const gridTarget = useMemo<AxisGridTarget | null>(() => {
+    if (!framing) return null;
+    const paneId = framing.kind === 'series' ? framing.framing.paneId : framing.paneFraming.paneId;
+    return { paneId, layerId: SHOWCASE_GRID_LAYER_ID };
+  }, [framing]);
 
   // `epoch` in the records identity forces useReplay to re-arm on reset/restart.
   // We pass the same records object; the effect re-runs because `playing`/the
@@ -489,6 +523,7 @@ export function useViewSwitch(
     sceneEpoch: epoch,
     framed,
     framingResolution,
+    gridTarget,
   };
 }
 
