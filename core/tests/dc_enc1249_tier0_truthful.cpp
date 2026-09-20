@@ -33,6 +33,18 @@
 //            down colour;
 //        B5  the gap between two candles is clear (the marks are marks, not a slab).
 //
+//   C. BASELINE AREA (ENC-1250, SPEC D1 "Area fills toward its baseline"). The
+//      real apps/showcase/views/price-line-area scene — the same rect4 layout
+//      (x0, y0=baseline, x1, y1=price), the same instancedRect@1 pipeline and the
+//      same baked view.json Y transform — over a synthetic price ramp:
+//        C1  something is drawn at all;
+//        C2  the fill's TOP edge is the price (the datum the reader takes off);
+//        C3  the fill's BOTTOM edge is the baseline, and C3b that edge is FLAT;
+//        C4  NOTHING is filled above the series — the assertion that separates a
+//            correct fill from the inverted one SPEC section 5 Q6 alleged;
+//        C5  the span between price and baseline really is filled;
+//        C6  a higher price gives a taller column (direction, not just placement).
+//
 // WHICH RASTER (this is load-bearing — LIMITATIONS.md DC-L05)
 // -----------------------------------------------------------
 // Every Dawn backend shader negates clip-space y (`vec4(p.x, -p.y, ...)`) while
@@ -55,9 +67,14 @@
 // A check never seen to fail is not a check, so this binary ships its own negative
 // controls and they are registered as ctest cases with WILL_FAIL:
 //
-//   --invert-data     feed a deliberately WRONG series: the ramp descends, and each
+//   --invert-data     feed a deliberately WRONG series: the ramp descends, each
 //                     candle's (open,close) and (high,low) pairs are swapped so the
-//                     body carries the wick's extents and the wick the body's.
+//                     body carries the wick's extents and the wick the body's, and
+//                     the area's baseline moves ABOVE the series so the fill covers
+//                     the complement. (Swapping the area's y0 and y1 would NOT be
+//                     detectable — the shader mixes y0..y1, so the same span is
+//                     drawn either way. Moving the baseline is the perturbation the
+//                     renderer can actually distinguish: ENC-1250.)
 //   --invert-render   present the RAW readback, i.e. skip the DC-L05 flip — the
 //                     exact silent failure DC-L05 warns a third consumer will hit.
 //
