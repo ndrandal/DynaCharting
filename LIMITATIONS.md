@@ -1307,7 +1307,7 @@ or pointed at it. Its entries recorded conclusions but not *procedures*, so fals
 redoing the original investigation — which nobody did, for 85 days, while its 🔴 top-severity
 entry was wrong.
 
-**Six things this file does differently.**
+**Seven things this file does differently.**
 
 1. **It is repo-local.** This is the variable that actually predicts survival here, and the
    evidence is in the same git history: `CHART_AUTHORING.md`, at this repo's root, was amended
@@ -1342,13 +1342,66 @@ entry was wrong.
    ticket or a PR description without ambiguity, and reusing an id for different content is
    never allowed — retired ids stay retired.
 
+7. **The id is allocated by Linear, not by the author (ENC-1277).** The sequential
+   `DC-Lnn` space **`DC-L01`…`DC-L18` is CLOSED**. Every entry added after ENC-1277 is
+   **`DC-L-<its ENC ticket number>`** — `DC-L-1277`, `DC-L-1301`. You do not pick it, you do
+   not check whether it is free, and there is nothing to race for: Linear already allocated it
+   and it is unique for the same reason the ticket id is.
+
+   *Why the old scheme could not be repaired.* Sequential allocation is racy **by
+   construction**, and the window is the whole life of a branch — not the moment you look. It
+   collided three times in two days, and every one of those authors checked first (one grepped
+   every `enc-12*` remote branch, not just `main`):
+
+   | Colliding tickets | Id |
+   |---|---|
+   | ENC-1252 / ENC-1257 | `DC-L12` |
+   | ENC-1250 / ENC-1254 / ENC-1256 | `DC-L14` (three ways) |
+   | ENC-1251 / ENC-1253 | `DC-L17` |
+
+   **Twice there was no conflict at all.** Git auto-merged the two entries into different parts
+   of the file and left two identical headings coexisting with no marker and no error. And the
+   resolution is its own hazard: taking `--ours` wholesale on this file once silently dropped
+   ENC-1257's entire `DC-L12`, including the only record that `SvgExporter` does not apply the
+   bar-sizing rule. A human reading the diff caught it; nothing else would have.
+
+   *Why the existing eighteen were NOT renumbered.* Device 6 above is the reason — an id is a
+   citation target, and 234 of them exist across 35 files in **two repos** (124 in this one, 110
+   under the workspace's `specs/`), which by the workspace guardrail is two tickets and two PRs
+   with a window where half the citations dangle. Renumbering also cannot reach the citations in
+   merged commit messages, PR bodies and Linear comments at all. And it is not even *defined*:
+   **ten of the eighteen entries say `Ticket. None`**, and `DC-L01`…`DC-L09` all arrived in a
+   single commit (`e95a79d`, ENC-991), so numbering them by their ticket would produce a
+   **nine-way collision** — the exact defect being fixed. Entries that are already merged cannot
+   collide with anything; only future ones can, and those are the ones the new scheme covers.
+
+   *The separator is load-bearing.* `DC-L-1277`, not `DC-L1277`. Without the hyphen, `grep
+   DC-L12` matches `DC-L1277`, and ten of the eighteen legacy ids (`DC-L10`…`DC-L18`) are
+   prefixes of some four-digit ticket. A citation lookup that silently returns an extra entry —
+   or a gate that counts one — is the same class of quiet wrong answer as everything else in
+   this file.
+
+   *And it is checked, not merely written down.* `scripts/check-limitation-ids.sh` fails when
+   two entries share an id, when an id that existed in `origin/main` has vanished (the `--ours`
+   drop), or when a heading's id is malformed. `scripts/limitation-ids.test.ts` runs it inside
+   **`pnpm test`** — the only gate in this repo that needs no Dawn, no GPU and no build, so it
+   is the only one everybody actually runs. `ctest` was the alternative and DC-L01 disqualifies
+   it. Paste it any time:
+
+   ```bash
+   bash scripts/check-limitation-ids.sh   # 0 clean, 1 violation, 2 could-not-run
+   ```
+
 **Adding an entry** — a checklist, not a ceremony:
 
 - [ ] Verify it against current `main` yourself. Someone else's earlier assessment is a lead,
       not evidence.
 - [ ] Write the `Re-check` command and **run it**. Paste the output you actually got.
 - [ ] Stamp `Verified at <sha>, <date>`.
-- [ ] Give it the next free `DC-L*` id, a severity, and a ticket — or say "None", explicitly.
+- [ ] Give it the id `DC-L-<your ENC ticket number>` (device 7 — do **not** pick the next free
+      `DC-Lnn`; that space is closed), a severity, and a ticket — or say "None", explicitly.
+- [ ] Run `bash scripts/check-limitation-ids.sh`. `pnpm test` runs it too, so a bad id fails
+      the gate whether or not you remember.
 - [ ] Say what the **workaround** is. An entry with no workaround and no ticket is a complaint.
 - [ ] Add a pointer from wherever someone would hit it.
 
