@@ -143,12 +143,12 @@ export function pxToClipY(px: number, canvas: CanvasSize): number {
 }
 
 /** CSS-pixel length of a clip-space horizontal distance. Inverse of pxToClipX. */
-export function clipXToPx(clip: number, canvas: CanvasSize): number {
+export function clipSpanToPxX(clip: number, canvas: CanvasSize): number {
   return (clip * canvas.width) / 2;
 }
 
 /** CSS-pixel length of a clip-space vertical distance. Inverse of pxToClipY. */
-export function clipYToPx(clip: number, canvas: CanvasSize): number {
+export function clipSpanToPxY(clip: number, canvas: CanvasSize): number {
   return (clip * canvas.height) / 2;
 }
 
@@ -318,10 +318,10 @@ export function framingMetrics(
   const boxArea = (box.x.max - box.x.min) * (box.y.max - box.y.min);
 
   const edgeClearancePx: PlotInsets = {
-    left: clipXToPx(ink.x.min - CLIP_RANGE.min, canvas),
-    right: clipXToPx(CLIP_RANGE.max - ink.x.max, canvas),
-    bottom: clipYToPx(ink.y.min - CLIP_RANGE.min, canvas),
-    top: clipYToPx(CLIP_RANGE.max - ink.y.max, canvas),
+    left: clipSpanToPxX(ink.x.min - CLIP_RANGE.min, canvas),
+    right: clipSpanToPxX(CLIP_RANGE.max - ink.x.max, canvas),
+    bottom: clipSpanToPxY(ink.y.min - CLIP_RANGE.min, canvas),
+    top: clipSpanToPxY(CLIP_RANGE.max - ink.y.max, canvas),
   };
 
   return {
@@ -335,7 +335,7 @@ export function framingMetrics(
       edgeClearancePx.bottom,
       edgeClearancePx.left,
     ),
-    inkPx: { width: clipXToPx(inkW, canvas), height: clipYToPx(inkH, canvas) },
+    inkPx: { width: clipSpanToPxX(inkW, canvas), height: clipSpanToPxY(inkH, canvas) },
   };
 }
 
