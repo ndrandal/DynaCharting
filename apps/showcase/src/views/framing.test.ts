@@ -28,6 +28,7 @@ import {
   DEFAULT_PLOT_INSETS,
   DomainTracker,
   checkTier2Framing,
+  fitRegionToBox,
   frameSeries,
   framingMetrics,
   plotBox,
@@ -40,8 +41,9 @@ import * as ohlc from '../../views/ohlc-bars/manifest';
 import * as overlays from '../../views/candle-overlays/manifest';
 import { effectiveTransform } from '../chrome/mapping';
 import { firstRecordX } from '../chrome/firstRecordX';
-import { defineView } from './registry';
+import { VIEWS, defineView } from './registry';
 import { framingFor, paneIds, paneOfLayer, resolveFraming } from './framing';
+import { SHOWCASE_FIT_TRANSFORM_ID, SHOWCASE_GRID_LAYER_ID } from './useViewSwitch';
 import type { Records } from '../engine/useReplay';
 import type { ViewMeta } from './registry';
 
@@ -103,20 +105,37 @@ const SINGLE_PANE: { id: string; mod: ManifestModule }[] = [
   { id: 'ohlc-bars', mod: ohlc as unknown as ManifestModule },
 ];
 
+/** The `chrome.axes` a view declares, as `resolveFraming` takes them. */
+function axesOf(viewId: string) {
+  return loadMeta(viewId).chrome?.axes;
+}
+
 describe('resolveFraming — which views the plot box can frame, and why', () => {
-  it('frames the single-pane views, naming the pane out of their own manifest', () => {
-    const c = resolveFraming(candles);
-    expect(c).toEqual({ framed: true, framing: { paneId: 10000, transformId: 10050 } });
+  it('SERIES-fits the two views that measure a domain, from their own manifest', () => {
+    const c = resolveFraming({ ...candles, axes: axesOf('candles-aapl') });
+    expect(c).toEqual({
+      framed: true,
+      kind: 'series',
+      framing: { paneId: 10000, transformId: 10050 },
+    });
     // …and the pane id was DERIVED, not typed here: the growth layer's pane.
     expect(paneOfLayer(candles.manifest, candles.growth.layerId)).toBe(10000);
     expect(paneIds(candles.manifest)).toEqual([10000]);
 
-    const o = resolveFraming(ohlc as unknown as ManifestModule);
+    const o = resolveFraming({
+      ...(ohlc as unknown as ManifestModule),
+      axes: axesOf('ohlc-bars'),
+    });
     expect(o.framed).toBe(true);
+    if (!o.framed) throw new Error('unreachable');
+    expect(o.kind).toBe('series');
   });
 
   it('REFUSES the stacked two-pane view, and says which panes made it stacked', () => {
-    const r = resolveFraming(overlays as unknown as ManifestModule);
+    const r = resolveFraming({
+      ...(overlays as unknown as ManifestModule),
+      axes: axesOf('candle-overlays'),
+    });
     expect(r.framed).toBe(false);
     if (r.framed) throw new Error('unreachable');
     expect(r.reason).toBe('multi-pane');
@@ -127,23 +146,155 @@ describe('resolveFraming — which views the plot box can frame, and why', () =>
     expect(paneIds(overlays.manifest)).toEqual([10000, 10002]);
   });
 
-  it('refuses a view that measures no domain — there is nothing to fit', () => {
+  it('refuses a view that declares no axes — a box with nothing in its gutters', () => {
     const r = resolveFraming({ manifest: candles.manifest, growth: candles.growth });
     expect(r.framed).toBe(false);
     if (r.framed) throw new Error('unreachable');
-    expect(r.reason).toBe('no-axis-domain');
+    expect(r.reason).toBe('no-axes');
   });
 
-  it('refuses a view with no primary growth series', () => {
-    const r = resolveFraming({ manifest: candles.manifest, axisDomain: candles.axisDomain });
-    expect(r.framed).toBe(false);
-    if (r.framed) throw new Error('unreachable');
-    expect(r.reason).toBe('no-growth-transform');
+  it('PANE-fits a view that draws an axis but measures no domain (ENC-1316)', () => {
+    // The same manifest with its `axisDomain` withheld: there is nothing to fit
+    // a domain to, but there is still a rectangle to re-frame — and before this
+    // ticket that case was refused outright, which is how eleven views that
+    // draw an axis ended up with their data in the label gutter.
+    const r = resolveFraming({
+      manifest: candles.manifest,
+      growth: candles.growth,
+      axes: axesOf('candles-aapl'),
+      transform: loadMeta('candles-aapl').transform,
+    });
+    expect(r.framed).toBe(true);
+    if (!r.framed || r.kind !== 'pane') throw new Error('expected a pane fit');
+    expect(r.paneFraming.paneId).toBe(10000);
+    expect(r.paneFraming.region).toEqual({
+      clipXMin: -0.95,
+      clipXMax: 0.95,
+      clipYMin: -0.95,
+      clipYMax: 0.95,
+    });
   });
 
   it('answers for a whole catalog view too (the shape the app passes)', () => {
     expect(framingFor(null)).toBeNull();
     expect(framingFor(buildView('candles-aapl', candles))?.framed).toBe(true);
+  });
+});
+
+describe('ENC-1316 — every view that draws an axis is framed, and nothing else is', () => {
+  /** Views whose `chrome.axes` declare at least one axis. */
+  const withAxes = VIEWS.filter((v) => v.chrome?.axes?.x || v.chrome?.axes?.y);
+  const withoutAxes = VIEWS.filter((v) => !(v.chrome?.axes?.x || v.chrome?.axes?.y));
+
+  it('the catalog splits the way the scorecard measured it', () => {
+    // 22 views; 14 draw an axis (SCORECARD.md Table D), 8 declare none.
+    expect(VIEWS).toHaveLength(22);
+    expect(withAxes).toHaveLength(14);
+    expect(withoutAxes).toHaveLength(8);
+  });
+
+  it('frames all 14 axis-drawing views except the stacked one', () => {
+    const framedIds: string[] = [];
+    const refused: { id: string; reason: string }[] = [];
+    for (const v of withAxes) {
+      const r = framingFor(v)!;
+      if (r.framed) framedIds.push(v.id);
+      else refused.push({ id: v.id, reason: r.reason });
+    }
+    expect(framedIds).toHaveLength(13);
+    // `candle-overlays` is the ONE refusal, and it is refused by DC-L-1273's
+    // rule (two panes need a layout, not a fit) rather than by name.
+    expect(refused).toEqual([{ id: 'candle-overlays', reason: 'multi-pane' }]);
+  });
+
+  it('frames NO view that declares no axes — no gutters for an absent axis', () => {
+    for (const v of withoutAxes) {
+      const r = framingFor(v)!;
+      expect(r.framed).toBe(false);
+      if (r.framed) throw new Error('unreachable');
+      expect(r.reason).toBe('no-axes');
+    }
+  });
+
+  it('every framed view lands its data inside the plot box, on every canvas', () => {
+    for (const v of withAxes) {
+      const r = framingFor(v)!;
+      if (!r.framed || r.kind !== 'pane') continue;
+      for (const { canvas } of CANVASES) {
+        const box = plotBox(canvas, DEFAULT_PLOT_INSETS);
+        const remap = fitRegionToBox(r.paneFraming.region, box);
+        const region = r.paneFraming.region;
+        // The view's own rectangle, carried through the remap, IS the box.
+        expect(region.clipXMin * remap.sx + remap.tx).toBeCloseTo(box.x.min, 9);
+        expect(region.clipXMax * remap.sx + remap.tx).toBeCloseTo(box.x.max, 9);
+        expect(region.clipYMin * remap.sy + remap.ty).toBeCloseTo(box.y.min, 9);
+        expect(region.clipYMax * remap.sy + remap.ty).toBeCloseTo(box.y.max, 9);
+        // …and the gutters are then empty of data by construction: nothing the
+        // view drew inside its region can reach the label band.
+        expect(box.x.min).toBeGreaterThan(-1);
+      }
+    }
+  });
+
+  it('gives every bound draw item a transform to be re-framed by', () => {
+    // The failure this rules out is silent: a draw item with no transform
+    // ignores the remap, so the axis moves and the data does not.
+    for (const v of withAxes) {
+      const r = framingFor(v)!;
+      if (!r.framed || r.kind !== 'pane') continue;
+      const pf = r.paneFraming;
+      const covered = new Set<number>([...pf.untransformedDrawItems]);
+      for (const c of v.manifest.commands) {
+        if (c.cmd === 'attachTransform' && typeof c.drawItemId === 'number') {
+          covered.add(c.drawItemId);
+        }
+      }
+      const bound = v.manifest.commands
+        .filter((c) => c.cmd === 'bindDrawItem' && typeof c.drawItemId === 'number')
+        .map((c) => c.drawItemId as number);
+      expect(bound.length).toBeGreaterThan(0);
+      for (const id of bound) expect(covered.has(id)).toBe(true);
+    }
+  });
+
+  it("reads each transform's AUTHORED value, so the remap composes onto it", () => {
+    // `ecg` sets its transform in the manifest; `price-line-area` creates one
+    // and leaves the values to `view.json`. Composing onto the wrong base is
+    // the one way this is silently off, so both bases are asserted.
+    const ecg = framingFor(VIEWS.find((v) => v.id === 'ecg')!)!;
+    if (!ecg.framed || ecg.kind !== 'pane') throw new Error('expected a pane fit');
+    expect(ecg.paneFraming.transforms).toHaveLength(1);
+    expect(ecg.paneFraming.transforms[0].authored.tx).toBeCloseTo(-0.92, 9);
+
+    const pla = framingFor(VIEWS.find((v) => v.id === 'price-line-area')!)!;
+    if (!pla.framed || pla.kind !== 'pane') throw new Error('expected a pane fit');
+    const baked = VIEWS.find((v) => v.id === 'price-line-area')!.meta.transform!;
+    expect(pla.paneFraming.transforms[0].authored).toEqual({
+      sx: baked.sx,
+      sy: baked.sy,
+      tx: baked.tx,
+      ty: baked.ty,
+    });
+  });
+
+  it('the grid layer id is below EVERY layer any manifest creates', () => {
+    // This number is the whole "gridlines behind the data" mechanism (layers
+    // render in id order). A view added with a layer id below it would draw its
+    // marks UNDER the grid and look like a theme bug.
+    const layerIds = VIEWS.flatMap((v) =>
+      v.manifest.commands
+        .filter((c) => c.cmd === 'createLayer' && typeof c.id === 'number')
+        .map((c) => c.id as number),
+    );
+    expect(layerIds.length).toBeGreaterThan(20);
+    expect(Math.min(...layerIds)).toBeGreaterThan(SHOWCASE_GRID_LAYER_ID);
+    // …and the synthesised fit transform is above every manifest id and below
+    // the engine axis's allocator base, so a stray id is attributable.
+    const ids = VIEWS.flatMap((v) =>
+      v.manifest.commands.filter((c) => typeof c.id === 'number').map((c) => c.id as number),
+    );
+    expect(Math.max(...ids)).toBeLessThan(SHOWCASE_FIT_TRANSFORM_ID);
+    expect(SHOWCASE_FIT_TRANSFORM_ID).toBeLessThan(900000);
   });
 });
 
