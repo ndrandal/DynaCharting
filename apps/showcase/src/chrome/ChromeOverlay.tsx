@@ -94,8 +94,17 @@ interface ChromeOverlayProps {
  */
 function axisSwitches(): { svg: boolean; engine: boolean } {
   if (typeof window === 'undefined') return { svg: true, engine: true };
-  const q = new URLSearchParams(window.location.search);
-  const off = (k: string) => q.get(k) === '0' || q.get(k) === 'false';
+  // Routing here is hash-based (`router.ts`), so `?svgAxis=0` is as likely to
+  // arrive AFTER the `#` as before it. Read both rather than silently ignoring
+  // the spelling a reader is most likely to type.
+  const search = new URLSearchParams(window.location.search);
+  const hashQuery = window.location.hash.includes('?')
+    ? new URLSearchParams(window.location.hash.slice(window.location.hash.indexOf('?') + 1))
+    : new URLSearchParams();
+  const off = (k: string) => {
+    const v = hashQuery.get(k) ?? search.get(k);
+    return v === '0' || v === 'false';
+  };
   return { svg: !off('svgAxis'), engine: !off('engineAxis') };
 }
 
