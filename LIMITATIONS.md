@@ -25,7 +25,7 @@ and corrected them.
 
 ## DC-L01 — A green default `ctest` says nothing about the renderer 🔴
 
-**Claim.** `cmake -B build && ctest --test-dir build` runs **191** tests and builds **no
+**Claim.** `cmake -B build && ctest --test-dir build` runs **192** tests and builds **no
 renderer at all**. `dc_gpu`, `dc_json_host`, all four headless demo servers and **47 render
 tests** are excluded at *configure* time by `DC_FETCH_DAWN` (default `OFF`,
 `core/CMakeLists.txt:165`). They are not "skipped" — they never enter `CTestTestfile.cmake`,
@@ -38,8 +38,8 @@ all** (ENC-1249, `scripts/tier0.sh`).
 
 **Re-check.**
 ```bash
-grep -cE '^\s*add_test\(' core/CMakeLists.txt            # 238  — all tests that exist
-grep -c '^add_test('  build/core/CTestTestfile.cmake     # 191  — all tests you just ran
+grep -cE '^\s*add_test\(' core/CMakeLists.txt            # 239  — all tests that exist
+grep -c '^add_test('  build/core/CTestTestfile.cmake     # 192  — all tests you just ran
 grep -n 'DC_FETCH_DAWN:BOOL' build/CMakeCache.txt        # OFF
 ```
 The 47-test gap is the single `if (DC_HAS_DAWN)` block at `core/CMakeLists.txt:1916-2489`.
@@ -47,10 +47,10 @@ Target-level gap: **52** targets (`dc_gpu`, `dc_glfw_system`, `dc_json_host`,
 `dc_dawn_window_demo`, 4 servers, 44 test executables) behind the four `if (DC_HAS_DAWN)`
 guards at lines 274, 374, 391 and 1916. Measured directly:
 ```bash
-find build-dawn/core -maxdepth 1 -type f -executable | wc -l   # 239
-find build/core      -maxdepth 1 -type f -executable | wc -l   # 190  -> 49 executables missing
+find build-dawn/core -maxdepth 1 -type f -executable | wc -l   # 242
+find build/core      -maxdepth 1 -type f -executable | wc -l   # 192  -> 50 executables missing
 ```
-(49 executables, not 52 targets: `dc_gpu` is a library, and `dc_glfw_system` /
+(50 executables, not 52 targets: `dc_gpu` is a library, and `dc_glfw_system` /
 `dc_dawn_window_demo` need the *second* gate `-DDC_DAWN_WINDOWED=ON`.)
 
 **ENC-1249 corrected two stale details here**, both dating from before ENC-995's stamp: the
@@ -78,7 +78,8 @@ independent gate for `dc_dawn_window_demo` — `-DDC_FETCH_DAWN=ON` alone gets 5
 logic test, taking the pair from 188/231 to 189/232; ENC-995 added another, taking it to
 190/233; **ENC-1249 added three Dawn-only tests, taking it to 190/236 and the gap from 43 to 46;
 ENC-1257 added one default-build and two Dawn-only tests, taking it to 191/238 and the gap
-to 47** (measured post-merge, not predicted). The gap is still exactly the `DC_HAS_DAWN` block, every time. Read the *difference*, not
+to 47; ENC-1251 added one default-build test, taking it to 192/239 with the gap unchanged at
+47** (measured, not predicted). The gap is still exactly the `DC_HAS_DAWN` block, every time. Read the *difference*, not
 the left-hand number: a change that grows the registered count tells you nothing about the
 renderer either — which is the whole point, and is why three consecutive tickets moving this
 number changed nothing about what the default build proves.
@@ -91,9 +92,12 @@ either. The check exits **3** (never 0) when no adapter comes up, and `scripts/t
 that into exit 2 "CANNOT RUN", precisely so it cannot join the class of things this entry is
 about.
 
-**Verified at** `ENC-1249 HEAD`, 2026-09-19 — counted statically from `core/CMakeLists.txt`
-(236) and empirically from a real default configure in the ENC-1249 worktree (190), giving a gap
-of **46**; executable counts measured from `build-dawn` (239) against `build` (190).
+**Verified at** `ENC-1251 HEAD`, 2026-09-19 — counted statically from `core/CMakeLists.txt`
+(239) and empirically from a real default configure in the ENC-1251 worktree (192), giving a gap
+of **47**; executable counts measured from `build-dawn` (242) against `build-default` (192).
+The `236/236` in the *Working around it* block above is ENC-1249's lavapipe figure and is left
+as that session recorded it; this session measured **237 of 239 on hardware**, the two failures
+being the `dc_enc619_dawn_*` pair the correction below pins to the unmodified tree.
 
 ---
 
