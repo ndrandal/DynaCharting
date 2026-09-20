@@ -25,8 +25,8 @@ import {
   gutters,
   paneRegionFor,
   plotBox,
-  pxToClipX,
-  pxToClipY,
+  pxSpanToClipX,
+  pxSpanToClipY,
   type PlotInsets,
 } from "./plotbox";
 
@@ -35,15 +35,15 @@ const CANVAS = { width: 1280, height: 800 };
 describe("pixel ↔ clip conversion", () => {
   it("maps a pixel span to a clip span on each axis", () => {
     // Full width is 2 clip units.
-    expect(pxToClipX(CANVAS.width, CANVAS)).toBeCloseTo(2, 12);
-    expect(pxToClipY(CANVAS.height, CANVAS)).toBeCloseTo(2, 12);
-    expect(pxToClipX(64, CANVAS)).toBeCloseTo(0.1, 12);
-    expect(pxToClipY(28, CANVAS)).toBeCloseTo(0.07, 12);
+    expect(pxSpanToClipX(CANVAS.width, CANVAS)).toBeCloseTo(2, 12);
+    expect(pxSpanToClipY(CANVAS.height, CANVAS)).toBeCloseTo(2, 12);
+    expect(pxSpanToClipX(64, CANVAS)).toBeCloseTo(0.1, 12);
+    expect(pxSpanToClipY(28, CANVAS)).toBeCloseTo(0.07, 12);
   });
 
   it("round-trips", () => {
-    expect(clipSpanToPxX(pxToClipX(137, CANVAS), CANVAS)).toBeCloseTo(137, 9);
-    expect(clipSpanToPxY(pxToClipY(137, CANVAS), CANVAS)).toBeCloseTo(137, 9);
+    expect(clipSpanToPxX(pxSpanToClipX(137, CANVAS), CANVAS)).toBeCloseTo(137, 9);
+    expect(clipSpanToPxY(pxSpanToClipY(137, CANVAS), CANVAS)).toBeCloseTo(137, 9);
   });
 });
 

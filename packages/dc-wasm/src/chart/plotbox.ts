@@ -40,7 +40,10 @@
  *      fraction would shrink the labels on a small canvas and strand them on a
  *      large one. `plotBox()` is the ONLY place that conversion happens; a
  *      consumer that needs another pixel length in clip units calls
- *      `pxToClipX`/`pxToClipY` rather than re-deriving `2/width`.
+ *      `pxSpanToClipX`/`pxSpanToClipY` rather than re-deriving `2/width`.
+ *      Those are SPAN conversions; `text.ts`'s `pxToClipX`/`pxToClipY` are
+ *      POSITION conversions and are not interchangeable — see the note above
+ *      them.
  *
  *   4. THE DOMAIN IS INK EXTENT, NOT MARK CENTRES. `DomainTracker` folds
  *      candle6's `halfWidth`, so its X domain is the span of the BARS, not of
@@ -154,22 +157,35 @@ export const DEFAULT_PLOT_INSETS: Readonly<PlotInsets> = {
   left: 64,
 };
 
+/*
+ * SPAN helpers, not POSITION helpers — and `text.ts` exports the other pair
+ * under names one letter away, so read this before importing both (ENC-1253
+ * will).
+ *
+ *   plotbox.ts  pxSpanToClipX(64, canvas)  -> 0.1   a LENGTH: 64px is 0.1 clip
+ *   text.ts     pxToClipX(64, width)       -> -0.9  a POINT: pixel column 64
+ *
+ * A span has no origin and no Y flip; a position has both. Using one where the
+ * other belongs is off by exactly `-1` on X and mirrored on Y, which renders as
+ * "the axis is in the wrong half of the chart" rather than as an error.
+ */
+
 /** Clip-space length of `px` horizontal CSS pixels on a `canvas`-wide target. */
-export function pxToClipX(px: number, canvas: CanvasSize): number {
+export function pxSpanToClipX(px: number, canvas: CanvasSize): number {
   return (2 * px) / canvas.width;
 }
 
 /** Clip-space length of `px` vertical CSS pixels on a `canvas`-tall target. */
-export function pxToClipY(px: number, canvas: CanvasSize): number {
+export function pxSpanToClipY(px: number, canvas: CanvasSize): number {
   return (2 * px) / canvas.height;
 }
 
-/** CSS-pixel length of a clip-space horizontal distance. Inverse of pxToClipX. */
+/** CSS-pixel length of a clip-space horizontal SPAN. Inverse of pxSpanToClipX. */
 export function clipSpanToPxX(clip: number, canvas: CanvasSize): number {
   return (clip * canvas.width) / 2;
 }
 
-/** CSS-pixel length of a clip-space vertical distance. Inverse of pxToClipY. */
+/** CSS-pixel length of a clip-space vertical SPAN. Inverse of pxSpanToClipY. */
 export function clipSpanToPxY(clip: number, canvas: CanvasSize): number {
   return (clip * canvas.height) / 2;
 }
@@ -217,13 +233,13 @@ export function plotBox(canvas: CanvasSize, insets: PlotInsets = DEFAULT_PLOT_IN
   }
   return {
     x: {
-      min: CLIP_RANGE.min + pxToClipX(insets.left, canvas),
-      max: CLIP_RANGE.max - pxToClipX(insets.right, canvas),
+      min: CLIP_RANGE.min + pxSpanToClipX(insets.left, canvas),
+      max: CLIP_RANGE.max - pxSpanToClipX(insets.right, canvas),
     },
     // Screen-top is clip +Y: `insets.top` comes off `y.max`.
     y: {
-      min: CLIP_RANGE.min + pxToClipY(insets.bottom, canvas),
-      max: CLIP_RANGE.max - pxToClipY(insets.top, canvas),
+      min: CLIP_RANGE.min + pxSpanToClipY(insets.bottom, canvas),
+      max: CLIP_RANGE.max - pxSpanToClipY(insets.top, canvas),
     },
   };
 }
