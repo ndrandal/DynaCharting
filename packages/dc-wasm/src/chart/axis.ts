@@ -837,6 +837,8 @@ export class EngineAxis {
   private readonly maxLabels: number;
   private paneId = 0;
   private gridLayerId = 0;
+  /** Set when the grid layer lives in a CALLER's pane (`AxisSpec.gridTarget`). */
+  private foreignGridPaneId = 0;
   private furnitureLayerId = 0;
   private labelLayerId = 0;
   private scaffolded = false;
@@ -880,7 +882,7 @@ export class EngineAxis {
   sync(spec: AxisSpec): AxisPlan {
     const theme = spec.theme ?? defaultAxisTheme;
     const plan = planAxis(spec);
-    this.ensureScaffold(theme);
+    this.ensureScaffold(theme, spec.gridTarget);
 
     this.grid = this.syncLines(
       this.grid,
@@ -940,6 +942,13 @@ export class EngineAxis {
    */
   dispose(): void {
     if (this.paneId) this.ctrl({ cmd: "delete", id: this.paneId });
+    // A grid layer in the CALLER's pane is not reached by that cascade, and the
+    // caller's pane is torn down and rebuilt on every manifest re-apply — so the
+    // layer has to be dropped by name. Deleting an id the scene no longer has is
+    // a rejection, not a fault (DC-L06): the pane may already have taken it.
+    if (this.foreignGridPaneId && this.gridLayerId) {
+      this.ctrl({ cmd: "delete", id: this.gridLayerId });
+    }
     const dropData = (slot: FurnitureSlot | null) => {
       if (!slot) return;
       this.ctrl({ cmd: "delete", id: slot.geometryId });
@@ -952,6 +961,7 @@ export class EngineAxis {
     this.grid = this.ticks = this.spine = null;
     this.labelSlots = [];
     this.paneId = this.gridLayerId = this.furnitureLayerId = this.labelLayerId = 0;
+    this.foreignGridPaneId = 0;
     this.scaffolded = false;
     this.lastPlan = null;
   }
@@ -968,7 +978,7 @@ export class EngineAxis {
    * layers so the paint order is grid (under the data's siblings), then the
    * spine and ticks, then the labels on top.
    */
-  private ensureScaffold(theme: AxisTheme): void {
+  private ensureScaffold(theme: AxisTheme, gridTarget?: AxisGridTarget): void {
     if (this.scaffolded) return;
     void theme;
     this.paneId = this.ids.nextFor("pane");
@@ -981,8 +991,25 @@ export class EngineAxis {
       clipYMin: FULL_CLIP_REGION.clipYMin,
       clipYMax: FULL_CLIP_REGION.clipYMax,
     });
-    this.gridLayerId = this.ids.nextFor("layer");
-    this.ctrl({ cmd: "createLayer", id: this.gridLayerId, paneId: this.paneId, name: "axis-grid" });
+    // THE GRID GOES BEHIND THE DATA WHEN THE CALLER SAYS WHERE (ENC-1316). Its
+    // layer is created in the caller's data pane with the caller's id, which is
+    // below every layer that pane already holds, so it is drawn after the pane's
+    // clear quad and before the marks. Read ONCE, here: a change of target means
+    // a different pane, which means the whole scaffold has to be rebuilt —
+    // `dispose()` then `sync()`.
+    if (gridTarget) {
+      this.foreignGridPaneId = gridTarget.paneId;
+      this.gridLayerId = gridTarget.layerId;
+      this.ctrl({
+        cmd: "createLayer",
+        id: this.gridLayerId,
+        paneId: gridTarget.paneId,
+        name: "axis-grid",
+      });
+    } else {
+      this.gridLayerId = this.ids.nextFor("layer");
+      this.ctrl({ cmd: "createLayer", id: this.gridLayerId, paneId: this.paneId, name: "axis-grid" });
+    }
     this.furnitureLayerId = this.ids.nextFor("layer");
     this.ctrl({
       cmd: "createLayer",
