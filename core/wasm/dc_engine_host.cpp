@@ -38,6 +38,7 @@
 #include <emscripten/bind.h>
 #include <emscripten/val.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -248,6 +249,19 @@ public:
   // -1 if no font has been loaded.
   int setTextGeometry(double bufferId, double geometryId, const std::string& text,
                       double clipX, double clipY, double fontSize) {
+    return setTextGeometryX(bufferId, geometryId, text, clipX, clipY, fontSize, 1.0);
+  }
+
+  // As setTextGeometry, with an explicit horizontal scale — ENC-1253.
+  //
+  // Clip space is not square: one clip unit is `w/2` pixels across and `h/2`
+  // down, so laying glyphs out with a single isotropic scale (which is all
+  // setTextGeometry could express) renders every string stretched by the
+  // canvas's aspect ratio. Pass `xScale = height/width` for glyphs with the
+  // font's own proportions. `setTextGeometry` is this with `xScale = 1`, so no
+  // existing caller's output moves.
+  int setTextGeometryX(double bufferId, double geometryId, const std::string& text,
+                       double clipX, double clipY, double fontSize, double xScale) {
     if (!fontLoaded_) return -1;
 
     // Rasterize/pack any not-yet-present glyphs (marks the atlas dirty so the
@@ -262,7 +276,7 @@ public:
     dc::TextLayoutResult layout = dc::layoutText(
         atlas_, text.c_str(), static_cast<float>(clipX),
         static_cast<float>(clipY), static_cast<float>(fontSize),
-        static_cast<float>(atlas_.glyphPx()));
+        static_cast<float>(atlas_.glyphPx()), static_cast<float>(xScale));
 
     // Write the instance bytes into the render store (the bytes the
     // DawnTextSdfBackend gathers per-glyph). Mirrors the d3_3 test's
@@ -308,14 +322,18 @@ public:
   // `setTextGeometry(_, _, s, x, y, f)` would apply, and `inkMinX..inkMaxY` are
   // exactly the union of the glyph quads it would emit, relative to (x, y).
   //
-  // UNITS. `fontSize` is in CLIP units of the atlas's raster height, matching
-  // `setTextGeometry`: every metric is scaled by `fontSize / glyphPx()` and
-  // added to a clip-space cursor. `glyphPx` is returned so a caller can derive
-  // the fontSize that yields a wanted pixel height rather than guessing.
+  // UNITS. `fontSize` is the text's ascent-to-descent height in CLIP units
+  // (the atlas rasterizes at `glyphPx`, so the em box is exactly `glyphPx`
+  // atlas pixels and every metric is scaled by `fontSize / glyphPx`); on an
+  // `h`-tall target, `fontSize = 2 * wantedPx / h`. `xScale` matches
+  // `setTextGeometryX` — pass `h / w` for glyphs with the font's own
+  // proportions, 1 for the historical isotropic behaviour. `glyphPx` is
+  // returned so a caller can check that arithmetic rather than assume it.
   //
   // Returns an object; `glyphCount` is -1 with no font loaded (mirroring
   // setTextGeometry) and every other field is then 0.
-  emscripten::val measureText(const std::string& text, double fontSize) {
+  emscripten::val measureText(const std::string& text, double fontSize,
+                              double xScale) {
     emscripten::val out = emscripten::val::object();
     out.set("glyphPx", static_cast<double>(atlas_.glyphPx()));
     if (!fontLoaded_) {
@@ -336,7 +354,7 @@ public:
 
     dc::TextLayoutResult layout = dc::layoutText(
         atlas_, text.c_str(), 0.0f, 0.0f, static_cast<float>(fontSize),
-        static_cast<float>(atlas_.glyphPx()));
+        static_cast<float>(atlas_.glyphPx()), static_cast<float>(xScale));
 
     float minX = 0.0f, maxX = 0.0f, minY = 0.0f, maxY = 0.0f;
     // glyphInstances is 8 floats per glyph: x0,y0,x1,y1,u0,v0,u1,v1.
@@ -672,6 +690,7 @@ EMSCRIPTEN_BINDINGS(dc_engine_host) {
       .function("setTexturePixels", &DcEngineHost::setTexturePixels)
       .function("loadFont", &DcEngineHost::loadFont)
       .function("setTextGeometry", &DcEngineHost::setTextGeometry)
+      .function("setTextGeometryX", &DcEngineHost::setTextGeometryX)
       .function("measureText", &DcEngineHost::measureText)
       .function("render", &DcEngineHost::render)
       .function("selfTestCompute", &DcEngineHost::selfTestCompute)
