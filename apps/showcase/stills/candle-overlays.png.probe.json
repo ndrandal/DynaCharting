@@ -1,9 +1,9 @@
 {
   "spec": "specs/2026-09-19-chart-quality-bar/SPEC.md D10 (ENC-1262)",
   "url": "http://localhost:5650/?svgAxis=0#/",
-  "capturedAt": "2026-09-20T15:58:54.322Z",
-  "rasterSha256": "a3b8340e364aa26ed2bd2198771dedf87a82b80c79b4b3196ce9567d373e5d38",
-  "expression": "(() => {\n  const out = {\n    view: \"candle-overlays\",\n    axis: (window.__dcEngineAxis || {})[\"candle-overlays\"] || null,\n    domain: (window.__dcAxisDomain || {})[\"candle-overlays\"] || null,\n    boundaryErrors: (window.__dcBoundaryErrors || []).length,\n    dom: {\n      overlaySvgs: document.querySelectorAll('.chrome-overlay svg').length,\n      overlaySvgText: document.querySelectorAll('.chrome-overlay svg text').length,\n      overlayNodes: document.querySelectorAll('.chrome-overlay *').length\n    },\n    progress: (() => {\n      const el = document.querySelector('[role=\"slider\"][aria-label=\"Replay position\"]');\n      return el ? Number(el.getAttribute('aria-valuenow')) : null;\n    })()\n  };\n  const c = document.querySelector('canvas.engine-canvas');\n  if (!c || !c.width || !c.height) { out.pix = { ok: false, reason: 'no canvas' }; return out; }\n  const off = document.createElement('canvas');\n  off.width = c.width; off.height = c.height;\n  const ctx = off.getContext('2d');\n  ctx.drawImage(c, 0, 0);\n  let data;\n  try { data = ctx.getImageData(0, 0, off.width, off.height).data; }\n  catch (e) { out.pix = { ok: false, reason: 'readback blocked: ' + (e && e.message) }; return out; }\n  const colors = new Set();\n  let sampled = 0, nonbg = 0, chroma = 0;\n  const stride = 4 * 11;\n  for (let i = 0; i < data.length; i += stride) {\n    sampled++;\n    const r = data[i], g = data[i + 1], b = data[i + 2];\n    if (sampled % 7 === 0) colors.add(r + ',' + g + ',' + b);\n    const dClear = Math.abs(r - 8) + Math.abs(g - 8) + Math.abs(b - 13);\n    const dApp = Math.abs(r - 13) + Math.abs(g - 13) + Math.abs(b - 20);\n    if (Math.min(dClear, dApp) > 36) nonbg++;\n    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);\n    if (mx - mn > 22 && mx > 30) chroma++;\n  }\n  out.pix = {\n    ok: true, w: c.width, h: c.height,\n    distinctColors: colors.size,\n    coverage: sampled ? nonbg / sampled : 0,\n    chroma: sampled ? chroma / sampled : 0,\n    nonbgPixels: nonbg\n  };\n  return out;\n})()",
+  "capturedAt": "2026-09-20T16:21:55.651Z",
+  "rasterSha256": "275703aad151fdffc205ce6b16e7a8d48fc0a9ad555a568693c3bf90efd92232",
+  "expression": "(() => {\n  const out = {\n    view: \"candle-overlays\",\n    axis: (window.__dcEngineAxis || {})[\"candle-overlays\"] || null,\n    domain: (window.__dcAxisDomain || {})[\"candle-overlays\"] || null,\n    boundaryErrors: (window.__dcBoundaryErrors || []).length,\n    dom: {\n      overlaySvgs: document.querySelectorAll('.chrome-overlay svg').length,\n      overlaySvgText: document.querySelectorAll('.chrome-overlay svg text').length,\n      overlayNodes: document.querySelectorAll('.chrome-overlay *').length\n    },\n    progress: (() => {\n      const el = document.querySelector('[role=\"slider\"][aria-label=\"Replay position\"]');\n      return el ? Number(el.getAttribute('aria-valuenow')) : null;\n    })(),\n    readinessRule: window.__dcRecapRule || null\n  };\n  const c = document.querySelector('canvas.engine-canvas');\n  if (!c || !c.width || !c.height) { out.pix = { ok: false, reason: 'no canvas' }; return out; }\n  const off = document.createElement('canvas');\n  off.width = c.width; off.height = c.height;\n  const ctx = off.getContext('2d');\n  ctx.drawImage(c, 0, 0);\n  let data;\n  try { data = ctx.getImageData(0, 0, off.width, off.height).data; }\n  catch (e) { out.pix = { ok: false, reason: 'readback blocked: ' + (e && e.message) }; return out; }\n  const colors = new Set();\n  let sampled = 0, nonbg = 0, chroma = 0;\n  const stride = 4 * 11;\n  for (let i = 0; i < data.length; i += stride) {\n    sampled++;\n    const r = data[i], g = data[i + 1], b = data[i + 2];\n    if (sampled % 7 === 0) colors.add(r + ',' + g + ',' + b);\n    const dClear = Math.abs(r - 8) + Math.abs(g - 8) + Math.abs(b - 13);\n    const dApp = Math.abs(r - 13) + Math.abs(g - 13) + Math.abs(b - 20);\n    if (Math.min(dClear, dApp) > 36) nonbg++;\n    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);\n    if (mx - mn > 22 && mx > 30) chroma++;\n  }\n  out.pix = {\n    ok: true, w: c.width, h: c.height,\n    distinctColors: colors.size,\n    coverage: sampled ? nonbg / sampled : 0,\n    chroma: sampled ? chroma / sampled : 0,\n    nonbgPixels: nonbg\n  };\n  return out;\n})()",
   "ok": true,
   "value": {
     "view": "candle-overlays",
@@ -30,17 +30,17 @@
           0.8149999999999977,
           0.9644444444444444,
           0.8149999999999977,
-          -0.8500316385263408,
+          -0.8500319185984502,
           -0.8873239436619719,
-          -0.8500316385263408,
+          -0.8500319185984502,
           0.9517102615694165,
-          -0.09447397653825296,
+          -0.0944742266387607,
           -0.8873239436619719,
-          -0.09447397653825296,
+          -0.0944742266387607,
           0.9517102615694165,
-          0.6610836854498348,
+          0.6610834653209288,
           -0.8873239436619719,
-          0.6610836854498348,
+          0.6610834653209288,
           0.9517102615694165
         ],
         "tickSegments": [
@@ -64,17 +64,17 @@
           0.8149999999999977,
           -0.8577777777777778,
           0.8149999999999977,
-          -0.8500316385263408,
+          -0.8500319185984502,
           -0.9114688128772637,
-          -0.8500316385263408,
+          -0.8500319185984502,
           -0.8873239436619719,
-          -0.09447397653825296,
+          -0.0944742266387607,
           -0.9114688128772637,
-          -0.09447397653825296,
+          -0.0944742266387607,
           -0.8873239436619719,
-          0.6610836854498348,
+          0.6610834653209288,
           -0.9114688128772637,
-          0.6610836854498348,
+          0.6610834653209288,
           -0.8873239436619719
         ],
         "spineSegments": [
@@ -172,7 +172,7 @@
             "axis": "x",
             "role": "xTickLabel",
             "text": "00:00:00",
-            "clipX": -0.889193675489148,
+            "clipX": -0.8891939555612574,
             "clipY": -0.9533869887381733,
             "fontPx": 11,
             "fontSizeClip": 0.04426559356136821,
@@ -188,7 +188,7 @@
             "axis": "x",
             "role": "xTickLabel",
             "text": "00:00:05",
-            "clipX": -0.1331267551413895,
+            "clipX": -0.13312700524189724,
             "clipY": -0.9533869887381733,
             "fontPx": 11,
             "fontSizeClip": 0.04426559356136821,
@@ -204,7 +204,7 @@
             "axis": "x",
             "role": "xTickLabel",
             "text": "00:00:10",
-            "clipX": 0.6231947962488493,
+            "clipX": 0.6231945761199433,
             "clipY": -0.9533869887381733,
             "fontPx": 11,
             "fontSizeClip": 0.04426559356136821,
@@ -278,17 +278,17 @@
           {
             "orientation": "vertical",
             "centre": 67,
-            "value": 3.9972083653228663
+            "value": 3.9971836530779226
           },
           {
             "orientation": "vertical",
             "centre": 407,
-            "value": 70.66406089368357
+            "value": 70.66403882599171
           },
           {
             "orientation": "vertical",
             "centre": 747,
-            "value": 137.33091342204426
+            "value": 137.33089399890548
           }
         ],
         "droppedLabels": [],
@@ -563,10 +563,10 @@
         "max": 270.40000000596046,
         "source": "derived",
         "time": {
-          "msPerIndex": 74.99979090617715,
-          "originMs": -299.78979160763714,
+          "msPerIndex": 74.99978793107164,
+          "originMs": -299.7879263023904,
           "epochKnown": false,
-          "samples": 626
+          "samples": 621
         }
       },
       "y": {
@@ -574,7 +574,7 @@
         "max": 418.0235900878906,
         "source": "derived"
       },
-      "records": 1134
+      "records": 1119
     },
     "boundaryErrors": 0,
     "dom": {
@@ -582,7 +582,8 @@
       "overlaySvgText": 0,
       "overlayNodes": 19
     },
-    "progress": 94,
+    "progress": 93,
+    "readinessRule": "full-pass",
     "pix": {
       "ok": true,
       "w": 900,
