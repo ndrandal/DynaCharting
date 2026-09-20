@@ -194,11 +194,22 @@ Four things about it are deliberate and easy to get wrong if you extend it:
   vertically mirrored; asserting on it would enshrine the mirror and "prove" that a rising series
   falls. See LIMITATIONS.md **C5**.
 - **It ships its own negative controls, and they are registered tests.**
-  `--invert-data` (a descending ramp; candle body/wick extents swapped) and `--invert-render`
-  (skip the DC-L05 flip) are `ctest` cases with `WILL_FAIL TRUE`, so every run of the suite
-  re-demonstrates that the check *can* fail. A check never seen to fail is not a check.
+  `--invert-data` (a descending ramp; candle body/wick extents swapped; the area's baseline moved
+  *above* the series) and `--invert-render` (skip the DC-L05 flip) are `ctest` cases with
+  `WILL_FAIL TRUE`, so every run of the suite re-demonstrates that the check *can* fail. A check
+  never seen to fail is not a check. Note the area's control moves the **baseline**, not `y0`/`y1`
+  — the shader mixes `y0..y1`, so swapping them renders identically and would not be a control
+  at all.
 - **It does not skip gracefully.** No Dawn adapter is exit **3** ("CANNOT RUN"), never 0 —
   DC-L01's lesson is that a skip which looks like a pass is how a green run came to mean nothing.
+
+> **Do not score a committed still — all 23 are upside down (LIMITATIONS.md DC-L14).**
+> `apps/showcase/stills/*.png` were captured at `537c995` (2026-06-11); the `EngineHost` blit
+> flip landed at `d6b5acd` (2026-06-21). A mirrored random walk still looks like a random walk
+> and the axis numbers are a DOM overlay that flips with it, so nothing in the frame contradicts
+> the mirror — which is how `price-line-area` was read as "fills on the wrong side of the line"
+> for three months (**§C6**). Measure instead:
+> `python3 apps/showcase/tools/still-orientation.py <view>` (exit 1 == mirrored).
 
 > **`dc_json_host --png` captures contain no text (ENC-992).** A chart's
 > `textOverlay` labels are not rasterized by the engine — they are emitted as a
