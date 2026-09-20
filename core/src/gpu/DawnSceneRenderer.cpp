@@ -30,6 +30,8 @@
 //     resolved by each backend from di.transformId (as in GL).
 #include "dc/gpu/DawnSceneRenderer.hpp"
 
+#include "dc/debug/WallClockMs.hpp"
+
 #include "dc/render/CpuBufferStore.hpp"
 #include "dc/render/IRendererBackend.hpp"
 #include "dc/scene/Scene.hpp"
@@ -309,6 +311,17 @@ Stats DawnSceneRenderer::render(const Scene& scene, CpuBufferStore& store,
   Stats stats{};
   if (!inited_) return stats;
 
+  // ENC-1265 — stats.renderCpuMs is a REAL measurement from here down. It spans
+  // the scene walk, the per-pipeline draw encoding and the render-pass
+  // begin/end (DawnDevice submits the encoder inside endRenderPass), and it
+  // stops before the caller's framebuffer readback. See dc/debug/Stats.hpp for
+  // the exact boundary and for what this field used to be.
+  //
+  // Read explicitly before `return stats` rather than written by a scope guard:
+  // local destructors run after the return object is initialised, so a guard
+  // would depend on NRVO to reach the caller. dc/debug/WallClockMs.hpp.
+  const WallClockMs renderClock;
+
   // Frame-level begin pass: bind the main target (id 0), set viewport, clear
   // color + stencil. Mirrors GL Renderer::render's beginRenderPass(pass) with
   // pass.clear + pass.clearStencil. (The default black clear matches GL.)
@@ -433,6 +446,8 @@ Stats DawnSceneRenderer::render(const Scene& scene, CpuBufferStore& store,
   device_->setBlendMode(DeviceBlendMode::Normal);
   device_->setClipState(ClipMode::None);
   device_->endRenderPass();
+
+  stats.renderCpuMs = renderClock.elapsedMs();
   return stats;
 }
 

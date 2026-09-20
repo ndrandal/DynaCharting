@@ -203,9 +203,34 @@ int main() {
 
   // --- Render the WHOLE scene in one walk. --------------------------------
   dc::Stats stats = renderer.render(scene, store, W, H);
-  std::printf("render: drawCalls=%u culled=%u\n", stats.drawCalls,
-              stats.culledDrawCalls);
+  std::printf("render: drawCalls=%u culled=%u renderCpuMs=%.4f\n",
+              stats.drawCalls, stats.culledDrawCalls, stats.renderCpuMs);
   check(stats.drawCalls >= 3, "at least 3 draw calls (tri + rect + line)");
+
+  // --- ENC-1265: stats.renderCpuMs is actually written by the renderer. ----
+  //
+  // This is the RENDERER-SIDE half of the fix and it is inside the 47 tests
+  // DC-L01 excludes at configure time, so it is NOT what protects `main`. The
+  // check that runs in the default build is dc_enc1265_render_timing [5], which
+  // fails if any `*Ms` stats field is assigned nowhere in core/. This one adds
+  // what a source scan cannot see: that the assignment is on the live path and
+  // produces a plausible number after a real Dawn scene walk.
+  //
+  // The field it replaces (`frameMs`) was value-initialised to 0.0 here and
+  // never touched again, for four months, while being displayed as an "ms"
+  // figure in 22 committed stills.
+  check(stats.renderCpuMs > 0.0,
+        "ENC-1265: renderCpuMs is measured, not a value-initialised zero");
+  check(stats.renderCpuMs < 5000.0,
+        "ENC-1265: renderCpuMs is a per-frame ms figure, not a running total");
+
+  // A second walk re-measures rather than accumulating or freezing.
+  {
+    dc::Stats again = renderer.render(scene, store, W, H);
+    std::printf("render #2: renderCpuMs=%.4f\n", again.renderCpuMs);
+    check(again.renderCpuMs > 0.0 && again.renderCpuMs < 5000.0,
+          "ENC-1265: a second render re-measures (not cumulative, not frozen)");
+  }
 
   // --- Read back and assert each element at its expected location. --------
   auto px = [&](int x, int y) {

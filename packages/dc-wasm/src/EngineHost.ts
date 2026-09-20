@@ -51,8 +51,24 @@ import { EventSurface, type EventSurfaceOptions } from "./interaction/EventSurfa
 export type PickResult = { drawItemId: number } | null;
 
 export type EngineStats = {
-  frameMs: number;
-  frameMsP95: number;
+  /** CPU wall-clock inside DawnSceneRenderer::render — the scene walk, the
+   *  per-pipeline draw encoding and the render-pass submit. It is NOT the frame
+   *  time, NOT a GPU time and NOT a frame budget: it excludes GPU execution,
+   *  the framebuffer readback (see `readbackMs`) and the canvas blit.
+   *
+   *  ENC-1265 renamed this from `frameMs`. `frameMs` was assigned by nothing in
+   *  core/, so it was 0.0 on every frame; the showcase HUD substituted
+   *  `1000 / fps` for it and printed one measurement twice under two unit
+   *  labels. Any display of this number must name which quantity it is. */
+  renderCpuMs: number;
+  /** p95 of `renderCpuMs` over the last {@link EngineHost.FRAME_WINDOW_MAX}
+   *  RENDERED frames (not rAF ticks). ENC-1265; was `frameMsP95`, a p95 over a
+   *  window of zeros. */
+  renderCpuMsP95: number;
+  /** CPU wall-clock of the per-frame full-target framebuffer readback. On the
+   *  browser path this is expected to dominate `renderCpuMs` at large canvas
+   *  sizes — that decomposition is the whole point of ENC-1265. */
+  readbackMs: number;
   drawCalls: number;
 
   ingestedBytesThisFrame: number;
@@ -187,8 +203,9 @@ export class EngineHost {
 
   // Stats
   private stats: EngineStats = {
-    frameMs: 0,
-    frameMsP95: 0,
+    renderCpuMs: 0,
+    renderCpuMsP95: 0,
+    readbackMs: 0,
     drawCalls: 0,
     ingestedBytesThisFrame: 0,
     uploadedBytesThisFrame: 0,
@@ -835,8 +852,9 @@ export class EngineHost {
   // -------------------- stats / debug --------------------
   getStats(): EngineStats {
     return {
-      frameMs: this.stats.frameMs,
-      frameMsP95: this.stats.frameMsP95,
+      renderCpuMs: this.stats.renderCpuMs,
+      renderCpuMsP95: this.stats.renderCpuMsP95,
+      readbackMs: this.stats.readbackMs,
       drawCalls: this.stats.drawCalls,
       ingestedBytesThisFrame: this.stats.ingestedBytesThisFrame,
       uploadedBytesThisFrame: this.stats.uploadedBytesThisFrame,
@@ -917,7 +935,8 @@ export class EngineHost {
 
     // Pull stats from the core.
     const s = core.stats();
-    this.stats.frameMs = s.frameMs;
+    this.stats.renderCpuMs = s.renderCpuMs;
+    this.stats.readbackMs = s.readbackMs;
     this.stats.drawCalls = s.drawCalls;
     this.stats.ingestedBytesThisFrame = s.ingestedBytesThisFrame;
     this.stats.uploadedBytesThisFrame = s.uploadedBytesThisFrame;
@@ -925,9 +944,9 @@ export class EngineHost {
     this.stats.queuedBatches = this.dataQueue.length;
     this.stats.droppedBatches = this.droppedBatches;
 
-    this.frameWindow.push(s.frameMs);
+    this.frameWindow.push(s.renderCpuMs);
     if (this.frameWindow.length > this.FRAME_WINDOW_MAX) this.frameWindow.shift();
-    this.stats.frameMsP95 = percentile(this.frameWindow, 0.95);
+    this.stats.renderCpuMsP95 = percentile(this.frameWindow, 0.95);
 
     this.hud?.setStats?.(this.getStats());
   }

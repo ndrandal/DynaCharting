@@ -153,13 +153,19 @@ assert(bytesEqual(readBuffer(20), Uint8Array.from([1, 2, 3, 4])), "buffer 20 byt
 
 // ---------------------------------------------------------------------------
 // 3. stats — the EngineStats-shaped counters the WASM core fills. Render-driven
-//    fields (drawCalls/frameMs) are 0 in node (no GPU render), but the struct
-//    shape + activeBuffers must be correct.
+//    fields (drawCalls/renderCpuMs/readbackMs) are 0 in node (no GPU render),
+//    but the struct shape + activeBuffers must be correct.
+//
+//    ENC-1265 — this key list is the ONLY check in the repo that the committed
+//    .wasm's embind struct still matches the TS type that reads it. `frameMs`
+//    became `renderCpuMs` + `readbackMs`; a stale .wasm makes both `undefined`
+//    here, which fails loudly rather than reaching the HUD as NaN.
 // ---------------------------------------------------------------------------
 console.log("\n[stats] EngineStats shape + counters");
 const s = host.stats();
 const statsKeys = [
-  "frameMs",
+  "renderCpuMs",
+  "readbackMs",
   "drawCalls",
   "culledDrawCalls",
   "ingestedBytesThisFrame",

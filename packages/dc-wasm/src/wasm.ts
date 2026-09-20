@@ -18,7 +18,13 @@ export interface DcControlResult {
 
 /** Per-frame stats from DcEngineHost.stats() — mirrors the C++ value_object. */
 export interface DcEngineStatsRaw {
-  frameMs: number;
+  /** CPU wall-clock inside DawnSceneRenderer::render — scene walk + draw encode
+   *  + submit. NOT a GPU time and NOT a frame budget. ENC-1265; it replaces
+   *  `frameMs`, which was assigned by nothing in core/ and read 0.0 forever. */
+  renderCpuMs: number;
+  /** CPU wall-clock of readFramebufferRGBA — the full-target RGBA8 copy back to
+   *  the heap that precedes the canvas blit. ENC-1265. */
+  readbackMs: number;
   drawCalls: number;
   culledDrawCalls: number;
   ingestedBytesThisFrame: number;
