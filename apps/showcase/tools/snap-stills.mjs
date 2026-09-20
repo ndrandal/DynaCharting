@@ -57,13 +57,6 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SHOWCASE_DIR = resolve(__dirname, '..');
 
-// Playwright is installed in the user's ~/pw harness, not in this workspace, so
-// resolve it from there (overridable via PLAYWRIGHT_DIR). Bare-specifier ESM
-// import can't see it, so we import by absolute path.
-const PLAYWRIGHT_DIR = process.env.PLAYWRIGHT_DIR || join(process.env.HOME || '', 'pw');
-const { chromium } = await import(
-  pathToFileURL(join(PLAYWRIGHT_DIR, 'node_modules', 'playwright', 'index.mjs')).href
-);
 const VIEWS_DIR = join(SHOWCASE_DIR, 'views');
 
 const args = process.argv.slice(2);
@@ -77,6 +70,30 @@ const URL = flag('url', process.env.SHOWCASE_URL || 'http://localhost:5178/');
 // grown, geometry-frame flows mid-stride) — the ENC-586 "show motion" capture.
 const WAIT = Number(flag('wait', '10000'));
 const OUTDIR = flag('outdir', join(SHOWCASE_DIR, 'stills'));
+
+// ENC-1288: see the header. A region screenshot may not become a committed still.
+// Checked BEFORE the playwright import so the refusal is what you see — that
+// import fails outright on a box with no ~/pw harness, which is the state this
+// machine is in, and a resolution error would otherwise hide the real answer.
+if (resolve(OUTDIR) === resolve(SHOWCASE_DIR, 'stills')) {
+  console.error(
+    `[snap] REFUSING to write into ${resolve(OUTDIR)}.\n` +
+    `[snap] This script screenshots '.single-canvas-region' — the engine canvas WITH the\n` +
+    `[snap] DOM/SVG chrome composited over it — and records no adapter. Both are why the\n` +
+    `[snap] stills committed at 537c995 stayed upside down for three months without\n` +
+    `[snap] anything in the frame contradicting it (LIMITATIONS.md DC-L15, SPEC D8/D10).\n` +
+    `[snap] To regenerate the gallery:  node apps/showcase/tools/recapture-stills.mjs\n` +
+    `[snap] To use this script anyway:  --outdir <somewhere that is not stills/>`);
+  process.exit(2);
+}
+
+// Playwright is installed in the user's ~/pw harness, not in this workspace, so
+// resolve it from there (overridable via PLAYWRIGHT_DIR). Bare-specifier ESM
+// import can't see it, so we import by absolute path.
+const PLAYWRIGHT_DIR = process.env.PLAYWRIGHT_DIR || join(process.env.HOME || '', 'pw');
+const { chromium } = await import(
+  pathToFileURL(join(PLAYWRIGHT_DIR, 'node_modules', 'playwright', 'index.mjs')).href
+);
 
 // Chrome WebGPU flags — the proven local config (matches the other pw scripts).
 const CHROME_ARGS = [
@@ -288,18 +305,6 @@ ${cards}
 }
 
 async function main() {
-  // ENC-1288: see the header. A region screenshot may not become a committed still.
-  if (resolve(OUTDIR) === resolve(SHOWCASE_DIR, 'stills')) {
-    console.error(
-      `[snap] REFUSING to write into ${resolve(OUTDIR)}.\n` +
-      `[snap] This script screenshots '.single-canvas-region' — the engine canvas WITH the\n` +
-      `[snap] DOM/SVG chrome composited over it — and records no adapter. Both are why the\n` +
-      `[snap] stills committed at 537c995 stayed upside down for three months without\n` +
-      `[snap] anything in the frame contradicting it (LIMITATIONS.md DC-L15, SPEC D8/D10).\n` +
-      `[snap] To regenerate the gallery:  node apps/showcase/tools/recapture-stills.mjs\n` +
-      `[snap] To use this script anyway:  --outdir <somewhere that is not stills/>`);
-    process.exit(2);
-  }
   mkdirSync(OUTDIR, { recursive: true });
   const views = discoverViews();
   console.log(`[snap] ${views.length} views; url=${URL} wait=${WAIT}ms out=${OUTDIR}`);
