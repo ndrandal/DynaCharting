@@ -25,21 +25,21 @@ and corrected them.
 
 ## DC-L01 — A green default `ctest` says nothing about the renderer 🔴
 
-**Claim.** `cmake -B build && ctest --test-dir build` runs **193** tests and builds **no
+**Claim.** `cmake -B build && ctest --test-dir build` runs **196** tests and builds **no
 renderer at all**. `dc_gpu`, `dc_json_host`, all four headless demo servers and **47 render
 tests** are excluded at *configure* time by `DC_FETCH_DAWN` (default `OFF`,
 `core/CMakeLists.txt:165`). They are not "skipped" — they never enter `CTestTestfile.cmake`,
 so nothing reports them as missing.
 
-**Why it bites.** "193/193 passed" is the most reassuring possible output and it is compatible
+**Why it bites.** "196/196 passed" is the most reassuring possible output and it is compatible
 with the renderer being completely broken. Every pixel-level guarantee in this engine lives in
 the 47 tests that did not run — **including the tier-0 check that the chart depicts its data at
 all** (ENC-1249, `scripts/tier0.sh`).
 
 **Re-check.**
 ```bash
-grep -cE '^\s*add_test\(' core/CMakeLists.txt            # 240  — all tests that exist
-grep -c '^add_test('  build/core/CTestTestfile.cmake     # 193  — all tests you just ran
+grep -cE '^\s*add_test\(' core/CMakeLists.txt            # 243  — all tests that exist
+grep -c '^add_test('  build/core/CTestTestfile.cmake     # 196  — all tests you just ran
 grep -n 'DC_FETCH_DAWN:BOOL' build/CMakeCache.txt        # OFF
 ```
 The 47-test gap is the single `if (DC_HAS_DAWN)` block at `core/CMakeLists.txt:1916-2489`.
@@ -59,8 +59,10 @@ block was already at 1916, not 1899, and the "five guarded ranges" list named bo
 `grep -n 'if (DC_HAS_DAWN)' core/CMakeLists.txt` rather than trusting a transcribed range.
 
 **ENC-1277 re-ran the first two Re-check lines on 2026-09-20 at `f907f93`** and restamped the
-pair `192/239` → **`193/240`**; the **47-test gap is unchanged**, which is the point this entry
-makes and the reason the pair is not worth chasing on its own. Only those two lines were
+pair `192/239` → `193/240`; **ENC-1265 restamped it again the same day** to
+**`196/243`** (three default-build tests: `dc_enc1265_render_timing` and its two
+`WILL_FAIL` negative controls). The **47-test gap is unchanged** through both, which is the
+point this entry makes and the reason the pair is not worth chasing on its own. Only those two lines were
 re-measured — the executable counts below (`242`/`192`) need a `-DDC_FETCH_DAWN=ON` build and
 still carry ENC-1249's stamp.
 
@@ -1154,6 +1156,83 @@ cut by the pane scissor) to `pass`.
 
 ---
 
+
+
+## DC-L-1265 — The HUD's `ms` is CPU encode time; this engine measures no GPU time at all 🟠
+
+**Claim.** ENC-1265 turned `dc::Stats::frameMs` (declared 2026-05, **assigned by nothing**,
+displayed as `1000 / fps`) into `dc::Stats::renderCpuMs`, a real wall-clock measurement. Be
+precise about what survived: it is **CPU wall-clock from the top of
+`DawnSceneRenderer::render` to `device_->endRenderPass()`** — the scene walk, the per-pipeline
+draw encoding, and the queue submit. `DawnDevice::endRenderPass` is `pass_.End(); encoder_.Finish();
+queue_.Submit(...)` and **nothing else**: no `onSubmittedWorkDone`, no fence, no wait. There is
+no timestamp query anywhere in `core/`.
+
+So a badge reading `1 fps · 3.2 ms cpu` says *the CPU-side encode took 3.2 ms*. It does **not**
+say the GPU was idle, and it does not say where the other ~997 ms went. On the browser path
+`readbackMs` (the full-target RGBA8 copy, `DcEngineStats::readbackMs`) accounts for one more
+slice, and the rest — GPU execution, the `putImageData` blit, and every other main-thread job
+between rAF ticks — is still **unmeasured**. `fps` remains the main-thread rAF callback rate,
+not a render rate, exactly as PERF-CLAIMS **C3** describes.
+
+Two smaller edges of the same instrument:
+
+- **Browser-side resolution is the browser's.** Under Emscripten `std::chrono::steady_clock`
+  resolves to WASI `clock_time_get` → `emscripten_get_now()` → **`performance.now()`**, which
+  Chromium coarsens as a Spectre mitigation. A scene walk finishing below that clamp reads
+  `0.0`, and the HUD then shows `–` rather than a number. That is deliberate — ENC-1265 removed
+  the `1000 / fps` fallback, so "no measurement" now prints as no measurement — but `–` means
+  *below the clock's resolution*, not *instant*.
+- **The renderer-side assignment is inside DC-L01's 47.** `stats.renderCpuMs = …` lives in
+  `dc_gpu`, and the only test that asserts it produced a plausible number
+  (`d50_dawn_scene_renderer`, ENC-1265 block) needs `-DDC_FETCH_DAWN=ON`. What runs in the
+  default build is `dc_enc1265_render_timing` **[5]**, a source gate: it fails if any `*Ms`
+  field of `dc::Stats` / `DcEngineStats` is assigned nowhere under `core/src` or `core/wasm`.
+  That gate catches *the original bug's shape* — a declared-but-never-written timing field — and
+  it cannot see whether the value is sane.
+
+**Re-check.**
+```bash
+# 1 — no GPU timing exists anywhere in the engine
+grep -rniE 'writeTimestamp|timestampWrites|QuerySet|timestamp-query' core/src core/include \
+     --include=*.cpp --include=*.hpp | wc -l
+# -> 0
+
+# 2 — the measured span ends at the submit, and the submit does not wait
+grep -n 'renderCpuMs = renderClock' core/src/gpu/DawnSceneRenderer.cpp   # -> 450:
+awk '/void DawnDevice::endRenderPass/,/^}/' core/src/gpu/DawnDevice.cpp
+# -> pass_.End(); encoder_.Finish(); queue_.Submit(1, &cmd);   (no wait, no callback)
+
+# 3 — the browser clock is performance.now()
+node -e 'const fs=require("fs");const m=new WebAssembly.Module(fs.readFileSync(
+  "packages/dc-wasm/wasm/dc_engine_host.wasm"));console.log(
+  WebAssembly.Module.imports(m).map(i=>i.module+"."+i.name)
+    .filter(n=>/now|time|clock/i.test(n)).join("\n"))'
+# -> wasi_snapshot_preview1.clock_time_get
+grep -n '_emscripten_get_now = () => performance.now()' packages/dc-wasm/wasm/dc_engine_host.js
+# -> 3434:  var _emscripten_get_now = () => performance.now();
+
+# 4 — the sane-value assertion is NOT in the build you ran (DC-L01)
+cmake -B build -DDC_BUILD_TESTS=ON >/dev/null && cmake --build build -j$(nproc) >/dev/null
+ctest --test-dir build -N | grep -c d50_dawn_scene_renderer   # -> 0
+ctest --test-dir build -N | grep -c dc_enc1265                # -> 3  (test + 2 negative controls)
+```
+
+**Working around it.** If you need to know whether the GPU is the bottleneck, this engine
+cannot tell you — use the browser's own profiler, or add a `timestamp-query` path (no ticket).
+For the CPU/readback split that *is* available, read `EngineStats.renderCpuMs` and
+`EngineStats.readbackMs` off `EngineHost.getStats()`; the HUD badge deliberately shows only
+`renderCpuMs`, because three numbers in a 14 px badge is how the referent got lost the first
+time.
+
+**Ticket.** [ENC-1265](https://linear.app/encultured/issue/ENC-1265) is this change. GPU
+timestamp queries have no ticket — raise one if a real bottleneck question needs them.
+
+**Verified at** `ENC-1265 HEAD`, 2026-09-20 — commands 1-3 run in the ENC-1265 worktree;
+command 4's counts are `196` registered of `243` declared (the **47-test gap is unchanged** —
+ENC-1265 adds three tests to the default build and one assertion block to an existing Dawn test).
+
+---
 
 # §C — Corrections
 

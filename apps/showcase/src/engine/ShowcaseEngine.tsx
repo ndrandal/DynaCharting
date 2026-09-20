@@ -27,7 +27,7 @@ export interface UseShowcaseEngine {
   status: EngineStatus;
   /** Last error message, if status === 'error'. */
   error: string | null;
-  /** Live frame-stats (fps / frameMs) sink for the FPS HUD. Stable identity. */
+  /** Live frame-stats (fps / renderCpuMs) sink for the FPS HUD. Stable identity. */
   statsHub: FrameStatsHub;
   /**
    * The canvas's BACKING-STORE size in device pixels — `canvas.width/height`,
@@ -52,7 +52,7 @@ export function useShowcaseEngine(onReady?: (host: EngineHost) => void): UseShow
   const resizeObsRef = useRef<ResizeObserver | null>(null);
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
-  // The frame-stats hub bridges the EngineHost HUD sink (fps/frameMs, emitted
+  // The frame-stats hub bridges the EngineHost HUD sink (fps/renderCpuMs, emitted
   // from inside the engine's own rAF loop) to the FPS HUD — stable identity.
   const statsHubRef = useRef<FrameStatsHub | null>(null);
   if (!statsHubRef.current) statsHubRef.current = new FrameStatsHub();
@@ -88,7 +88,7 @@ export function useShowcaseEngine(onReady?: (host: EngineHost) => void): UseShow
         canvasElRef.current = canvas;
         sizeCanvas(canvas);
         try {
-          // Pass a HUD sink so the engine reports fps/frameMs into the hub from
+          // Pass a HUD sink so the engine reports fps/renderCpuMs into the hub from
           // inside its existing rAF loop (no extra timers → no render perturbation).
           const h = new EngineHost({ hud: makeHudSink(statsHubRef.current!) });
           h.init(canvas);
