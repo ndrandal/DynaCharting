@@ -1,9 +1,9 @@
 {
   "spec": "specs/2026-09-19-chart-quality-bar/SPEC.md D10 (ENC-1262)",
   "url": "http://localhost:5650/?svgAxis=0#/",
-  "capturedAt": "2026-09-20T16:00:31.498Z",
-  "rasterSha256": "0b34c4ff34c42b028b0d267d086a042b6157f4391925687f5cd233babefb140f",
-  "expression": "(() => {\n  const out = {\n    view: \"ohlc-bars\",\n    axis: (window.__dcEngineAxis || {})[\"ohlc-bars\"] || null,\n    domain: (window.__dcAxisDomain || {})[\"ohlc-bars\"] || null,\n    boundaryErrors: (window.__dcBoundaryErrors || []).length,\n    dom: {\n      overlaySvgs: document.querySelectorAll('.chrome-overlay svg').length,\n      overlaySvgText: document.querySelectorAll('.chrome-overlay svg text').length,\n      overlayNodes: document.querySelectorAll('.chrome-overlay *').length\n    },\n    progress: (() => {\n      const el = document.querySelector('[role=\"slider\"][aria-label=\"Replay position\"]');\n      return el ? Number(el.getAttribute('aria-valuenow')) : null;\n    })()\n  };\n  const c = document.querySelector('canvas.engine-canvas');\n  if (!c || !c.width || !c.height) { out.pix = { ok: false, reason: 'no canvas' }; return out; }\n  const off = document.createElement('canvas');\n  off.width = c.width; off.height = c.height;\n  const ctx = off.getContext('2d');\n  ctx.drawImage(c, 0, 0);\n  let data;\n  try { data = ctx.getImageData(0, 0, off.width, off.height).data; }\n  catch (e) { out.pix = { ok: false, reason: 'readback blocked: ' + (e && e.message) }; return out; }\n  const colors = new Set();\n  let sampled = 0, nonbg = 0, chroma = 0;\n  const stride = 4 * 11;\n  for (let i = 0; i < data.length; i += stride) {\n    sampled++;\n    const r = data[i], g = data[i + 1], b = data[i + 2];\n    if (sampled % 7 === 0) colors.add(r + ',' + g + ',' + b);\n    const dClear = Math.abs(r - 8) + Math.abs(g - 8) + Math.abs(b - 13);\n    const dApp = Math.abs(r - 13) + Math.abs(g - 13) + Math.abs(b - 20);\n    if (Math.min(dClear, dApp) > 36) nonbg++;\n    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);\n    if (mx - mn > 22 && mx > 30) chroma++;\n  }\n  out.pix = {\n    ok: true, w: c.width, h: c.height,\n    distinctColors: colors.size,\n    coverage: sampled ? nonbg / sampled : 0,\n    chroma: sampled ? chroma / sampled : 0,\n    nonbgPixels: nonbg\n  };\n  return out;\n})()",
+  "capturedAt": "2026-09-20T16:23:32.088Z",
+  "rasterSha256": "895c95dd26309fe861896f821754665c71826a57a52c1c860d14c994696cac29",
+  "expression": "(() => {\n  const out = {\n    view: \"ohlc-bars\",\n    axis: (window.__dcEngineAxis || {})[\"ohlc-bars\"] || null,\n    domain: (window.__dcAxisDomain || {})[\"ohlc-bars\"] || null,\n    boundaryErrors: (window.__dcBoundaryErrors || []).length,\n    dom: {\n      overlaySvgs: document.querySelectorAll('.chrome-overlay svg').length,\n      overlaySvgText: document.querySelectorAll('.chrome-overlay svg text').length,\n      overlayNodes: document.querySelectorAll('.chrome-overlay *').length\n    },\n    progress: (() => {\n      const el = document.querySelector('[role=\"slider\"][aria-label=\"Replay position\"]');\n      return el ? Number(el.getAttribute('aria-valuenow')) : null;\n    })(),\n    readinessRule: window.__dcRecapRule || null\n  };\n  const c = document.querySelector('canvas.engine-canvas');\n  if (!c || !c.width || !c.height) { out.pix = { ok: false, reason: 'no canvas' }; return out; }\n  const off = document.createElement('canvas');\n  off.width = c.width; off.height = c.height;\n  const ctx = off.getContext('2d');\n  ctx.drawImage(c, 0, 0);\n  let data;\n  try { data = ctx.getImageData(0, 0, off.width, off.height).data; }\n  catch (e) { out.pix = { ok: false, reason: 'readback blocked: ' + (e && e.message) }; return out; }\n  const colors = new Set();\n  let sampled = 0, nonbg = 0, chroma = 0;\n  const stride = 4 * 11;\n  for (let i = 0; i < data.length; i += stride) {\n    sampled++;\n    const r = data[i], g = data[i + 1], b = data[i + 2];\n    if (sampled % 7 === 0) colors.add(r + ',' + g + ',' + b);\n    const dClear = Math.abs(r - 8) + Math.abs(g - 8) + Math.abs(b - 13);\n    const dApp = Math.abs(r - 13) + Math.abs(g - 13) + Math.abs(b - 20);\n    if (Math.min(dClear, dApp) > 36) nonbg++;\n    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);\n    if (mx - mn > 22 && mx > 30) chroma++;\n  }\n  out.pix = {\n    ok: true, w: c.width, h: c.height,\n    distinctColors: colors.size,\n    coverage: sampled ? nonbg / sampled : 0,\n    chroma: sampled ? chroma / sampled : 0,\n    nonbgPixels: nonbg\n  };\n  return out;\n})()",
   "ok": true,
   "value": {
     "view": "ohlc-bars",
@@ -30,17 +30,17 @@
           0.9473578044161854,
           0.9644444444444444,
           0.9473578044161854,
-          -0.4008139182230283,
+          -0.4008139291828856,
           -0.8873239436619719,
-          -0.4008139182230283,
+          -0.4008139291828856,
           0.9517102615694165,
-          0.0556046884619098,
+          0.05560472672036598,
           -0.8873239436619719,
-          0.0556046884619098,
+          0.05560472672036598,
           0.9517102615694165,
-          0.5120232951468479,
+          0.5120233826236175,
           -0.8873239436619719,
-          0.5120232951468479,
+          0.5120233826236175,
           0.9517102615694165
         ],
         "tickSegments": [
@@ -64,21 +64,21 @@
           0.9473578044161854,
           -0.8577777777777778,
           0.9473578044161854,
-          -0.8572325249079663,
+          -0.8572325850861371,
           -0.9114688128772637,
-          -0.8572325249079663,
+          -0.8572325850861371,
           -0.8873239436619719,
-          -0.4008139182230283,
+          -0.4008139291828856,
           -0.9114688128772637,
-          -0.4008139182230283,
+          -0.4008139291828856,
           -0.8873239436619719,
-          0.0556046884619098,
+          0.05560472672036598,
           -0.9114688128772637,
-          0.0556046884619098,
+          0.05560472672036598,
           -0.8873239436619719,
-          0.5120232951468479,
+          0.5120233826236175,
           -0.9114688128772637,
-          0.5120232951468479,
+          0.5120233826236175,
           -0.8873239436619719
         ],
         "spineSegments": [
@@ -176,7 +176,7 @@
             "axis": "x",
             "role": "xTickLabel",
             "text": "00:00:00",
-            "clipX": -0.8963945618707735,
+            "clipX": -0.8963946220489443,
             "clipY": -0.9533869887381733,
             "fontPx": 11,
             "fontSizeClip": 0.04426559356136821,
@@ -192,7 +192,7 @@
             "axis": "x",
             "role": "xTickLabel",
             "text": "00:00:05",
-            "clipX": -0.43946669682616485,
+            "clipX": -0.43946670778602215,
             "clipY": -0.9533869887381733,
             "fontPx": 11,
             "fontSizeClip": 0.04426559356136821,
@@ -208,7 +208,7 @@
             "axis": "x",
             "role": "xTickLabel",
             "text": "00:00:10",
-            "clipX": 0.01771579926092437,
+            "clipX": 0.01771583751938055,
             "clipY": -0.9533869887381733,
             "fontPx": 11,
             "fontSizeClip": 0.04426559356136821,
@@ -224,7 +224,7 @@
             "axis": "x",
             "role": "xTickLabel",
             "text": "00:00:15",
-            "clipX": 0.47464366430553306,
+            "clipX": 0.47464375178230267,
             "clipY": -0.9533869887381733,
             "fontPx": 11,
             "fontSizeClip": 0.04426559356136821,
@@ -298,17 +298,17 @@
           {
             "orientation": "vertical",
             "centre": 270,
-            "value": 70.66570169185648
+            "value": 70.6657000910223
           },
           {
             "orientation": "vertical",
             "centre": 475,
-            "value": 137.3317618859222
+            "value": 137.33176747408294
           },
           {
             "orientation": "vertical",
             "centre": 680,
-            "value": 203.99782207998788
+            "value": 203.99783485714357
           }
         ],
         "droppedLabels": [],
@@ -615,14 +615,15 @@
       "overlayNodes": 13
     },
     "progress": 94,
+    "readinessRule": "full-pass",
     "pix": {
       "ok": true,
       "w": 900,
       "h": 497,
-      "distinctColors": 61,
-      "coverage": 0.14061577808380876,
-      "chroma": 0.1008754672437537,
-      "nonbgPixels": 5718
+      "distinctColors": 67,
+      "coverage": 0.14044363564823922,
+      "chroma": 0.10178536297462129,
+      "nonbgPixels": 5711
     }
   }
 }
