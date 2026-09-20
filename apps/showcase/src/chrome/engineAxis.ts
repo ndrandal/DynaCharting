@@ -36,12 +36,40 @@
  *    gets no furniture — the same rule `deriveAxes` applies to the overlay. A
  *    chart that cannot state a domain states no axis; it does not get one
  *    invented for it.
+ *
+ * ── WHY THIS FUNCTION RETURNS A REFUSAL AND NOT A NULL (ENC-1313) ───────────
+ *
+ * This is called from a React PASSIVE EFFECT with whatever canvas size the DOM
+ * currently reports, and during mount that is **1x1** —
+ * `ShowcaseEngine.sizeCanvas` bootstraps the backing store at
+ * `Math.max(1, round(clientWidth * dpr))` and publishes it for one commit before
+ * layout runs. The `canvas.width > 0` guard below passes on 1, and the
+ * unconditional `plotBox(canvas, DEFAULT_PLOT_INSETS)` that used to follow then
+ * threw `PlotBoxError: … leave no plot box in 1px`. A throw out of a passive
+ * effect unmounts everything up to the nearest error boundary, and there was no
+ * error boundary, so it emptied `#root`: **a deep link to 11 of the 22 showcase
+ * views took the whole app down**, 3/3 cold loads each at `1e125e3` (ENC-1262
+ * found it; `harness/deeplink-crash.mjs` is the re-check).
+ *
+ * The eleven were exactly the views whose axes resolve on the FIRST commit — a
+ * literal `min`/`max`, no `TimeBasis` to fit first. `candles-aapl`, the
+ * reference chart, is a `timestamp` view, so it resolves after layout and was
+ * structurally in the surviving half. **ENC-1253 and ENC-1273 were both
+ * verified on it, and neither could have caught this.** That is the negative
+ * transfer SPEC §5 Q4 exists to surface.
+ *
+ * So the four "nothing to draw" paths are now NAMED rather than nulled.
+ * `useEngineAxis` publishes the refusal on `window.__dcEngineAxis[viewId]` and
+ * `ChromeOverlay` puts it in the DOM, because a silent null is how this
+ * project's other defects started: "declined to draw an axis" and "was never
+ * asked for an axis" have to be different observable states, or §1.3's captions
+ * happen again.
  */
 
 import {
   DEFAULT_PLOT_INSETS,
   darkAxisTheme,
-  plotBox,
+  tryPlotBox,
   type AxisSpec,
   type AxisTextMeasurer,
   type AxisTheme,
