@@ -25,21 +25,21 @@ and corrected them.
 
 ## DC-L01 — A green default `ctest` says nothing about the renderer 🔴
 
-**Claim.** `cmake -B build && ctest --test-dir build` runs **192** tests and builds **no
+**Claim.** `cmake -B build && ctest --test-dir build` runs **193** tests and builds **no
 renderer at all**. `dc_gpu`, `dc_json_host`, all four headless demo servers and **47 render
 tests** are excluded at *configure* time by `DC_FETCH_DAWN` (default `OFF`,
 `core/CMakeLists.txt:165`). They are not "skipped" — they never enter `CTestTestfile.cmake`,
 so nothing reports them as missing.
 
-**Why it bites.** "190/190 passed" is the most reassuring possible output and it is compatible
+**Why it bites.** "193/193 passed" is the most reassuring possible output and it is compatible
 with the renderer being completely broken. Every pixel-level guarantee in this engine lives in
 the 47 tests that did not run — **including the tier-0 check that the chart depicts its data at
 all** (ENC-1249, `scripts/tier0.sh`).
 
 **Re-check.**
 ```bash
-grep -cE '^\s*add_test\(' core/CMakeLists.txt            # 239  — all tests that exist
-grep -c '^add_test('  build/core/CTestTestfile.cmake     # 192  — all tests you just ran
+grep -cE '^\s*add_test\(' core/CMakeLists.txt            # 240  — all tests that exist
+grep -c '^add_test('  build/core/CTestTestfile.cmake     # 193  — all tests you just ran
 grep -n 'DC_FETCH_DAWN:BOOL' build/CMakeCache.txt        # OFF
 ```
 The 47-test gap is the single `if (DC_HAS_DAWN)` block at `core/CMakeLists.txt:1916-2489`.
@@ -57,6 +57,12 @@ find build/core      -maxdepth 1 -type f -executable | wc -l   # 192  -> 50 exec
 block was already at 1916, not 1899, and the "five guarded ranges" list named boundaries
 (`361-366`) that no `if (DC_HAS_DAWN)` guard starts at. Re-derive them with
 `grep -n 'if (DC_HAS_DAWN)' core/CMakeLists.txt` rather than trusting a transcribed range.
+
+**ENC-1277 re-ran the first two Re-check lines on 2026-09-20 at `f907f93`** and restamped the
+pair `192/239` → **`193/240`**; the **47-test gap is unchanged**, which is the point this entry
+makes and the reason the pair is not worth chasing on its own. Only those two lines were
+re-measured — the executable counts below (`242`/`192`) need a `-DDC_FETCH_DAWN=ON` build and
+still carry ENC-1249's stamp.
 
 **Working around it.** Build Dawn once (~55-60 min, then incremental) and keep the build dir:
 ```bash
@@ -1307,7 +1313,7 @@ or pointed at it. Its entries recorded conclusions but not *procedures*, so fals
 redoing the original investigation — which nobody did, for 85 days, while its 🔴 top-severity
 entry was wrong.
 
-**Six things this file does differently.**
+**Seven things this file does differently.**
 
 1. **It is repo-local.** This is the variable that actually predicts survival here, and the
    evidence is in the same git history: `CHART_AUTHORING.md`, at this repo's root, was amended
@@ -1342,13 +1348,66 @@ entry was wrong.
    ticket or a PR description without ambiguity, and reusing an id for different content is
    never allowed — retired ids stay retired.
 
+7. **The id is allocated by Linear, not by the author (ENC-1277).** The sequential
+   `DC-Lnn` space **`DC-L01`…`DC-L18` is CLOSED**. Every entry added after ENC-1277 is
+   **`DC-L-<its ENC ticket number>`** — `DC-L-1277`, `DC-L-1301`. You do not pick it, you do
+   not check whether it is free, and there is nothing to race for: Linear already allocated it
+   and it is unique for the same reason the ticket id is.
+
+   *Why the old scheme could not be repaired.* Sequential allocation is racy **by
+   construction**, and the window is the whole life of a branch — not the moment you look. It
+   collided three times in two days, and every one of those authors checked first (one grepped
+   every `enc-12*` remote branch, not just `main`):
+
+   | Colliding tickets | Id |
+   |---|---|
+   | ENC-1252 / ENC-1257 | `DC-L12` |
+   | ENC-1250 / ENC-1254 / ENC-1256 | `DC-L14` (three ways) |
+   | ENC-1251 / ENC-1253 | `DC-L17` |
+
+   **Twice there was no conflict at all.** Git auto-merged the two entries into different parts
+   of the file and left two identical headings coexisting with no marker and no error. And the
+   resolution is its own hazard: taking `--ours` wholesale on this file once silently dropped
+   ENC-1257's entire `DC-L12`, including the only record that `SvgExporter` does not apply the
+   bar-sizing rule. A human reading the diff caught it; nothing else would have.
+
+   *Why the existing eighteen were NOT renumbered.* Device 6 above is the reason — an id is a
+   citation target, and 234 of them exist across 35 files in **two repos** (124 in this one, 110
+   under the workspace's `specs/`), which by the workspace guardrail is two tickets and two PRs
+   with a window where half the citations dangle. Renumbering also cannot reach the citations in
+   merged commit messages, PR bodies and Linear comments at all. And it is not even *defined*:
+   **ten of the eighteen entries say `Ticket. None`**, and `DC-L01`…`DC-L09` all arrived in a
+   single commit (`e95a79d`, ENC-991), so numbering them by their ticket would produce a
+   **nine-way collision** — the exact defect being fixed. Entries that are already merged cannot
+   collide with anything; only future ones can, and those are the ones the new scheme covers.
+
+   *The separator is load-bearing.* `DC-L-1277`, not `DC-L1277`. Without the hyphen, `grep
+   DC-L12` matches `DC-L1277`, and ten of the eighteen legacy ids (`DC-L10`…`DC-L18`) are
+   prefixes of some four-digit ticket. A citation lookup that silently returns an extra entry —
+   or a gate that counts one — is the same class of quiet wrong answer as everything else in
+   this file.
+
+   *And it is checked, not merely written down.* `scripts/check-limitation-ids.sh` fails when
+   two entries share an id, when an id that existed in `origin/main` has vanished (the `--ours`
+   drop), or when a heading's id is malformed. `scripts/limitation-ids.test.ts` runs it inside
+   **`pnpm test`** — the only gate in this repo that needs no Dawn, no GPU and no build, so it
+   is the only one everybody actually runs. `ctest` was the alternative and DC-L01 disqualifies
+   it. Paste it any time:
+
+   ```bash
+   bash scripts/check-limitation-ids.sh   # 0 clean, 1 violation, 2 could-not-run
+   ```
+
 **Adding an entry** — a checklist, not a ceremony:
 
 - [ ] Verify it against current `main` yourself. Someone else's earlier assessment is a lead,
       not evidence.
 - [ ] Write the `Re-check` command and **run it**. Paste the output you actually got.
 - [ ] Stamp `Verified at <sha>, <date>`.
-- [ ] Give it the next free `DC-L*` id, a severity, and a ticket — or say "None", explicitly.
+- [ ] Give it the id `DC-L-<your ENC ticket number>` (device 7 — do **not** pick the next free
+      `DC-Lnn`; that space is closed), a severity, and a ticket — or say "None", explicitly.
+- [ ] Run `bash scripts/check-limitation-ids.sh`. `pnpm test` runs it too, so a bad id fails
+      the gate whether or not you remember.
 - [ ] Say what the **workaround** is. An entry with no workaround and no ticket is a complaint.
 - [ ] Add a pointer from wherever someone would hit it.
 
