@@ -1,0 +1,43 @@
+{
+  "spec": "specs/2026-09-19-chart-quality-bar/SPEC.md D10 (ENC-1262)",
+  "url": "http://localhost:5650/?svgAxis=0#/",
+  "capturedAt": "2026-09-20T16:10:10.294Z",
+  "rasterSha256": "a25adcc526d5fe1226eefbd032b57250a5e386227aa3ad426acb7d2ea0e76034",
+  "expression": "(() => {\n  const out = {\n    view: \"radial-seasonality\",\n    axis: (window.__dcEngineAxis || {})[\"radial-seasonality\"] || null,\n    domain: (window.__dcAxisDomain || {})[\"radial-seasonality\"] || null,\n    boundaryErrors: (window.__dcBoundaryErrors || []).length,\n    dom: {\n      overlaySvgs: document.querySelectorAll('.chrome-overlay svg').length,\n      overlaySvgText: document.querySelectorAll('.chrome-overlay svg text').length,\n      overlayNodes: document.querySelectorAll('.chrome-overlay *').length\n    },\n    progress: (() => {\n      const el = document.querySelector('[role=\"slider\"][aria-label=\"Replay position\"]');\n      return el ? Number(el.getAttribute('aria-valuenow')) : null;\n    })()\n  };\n  const c = document.querySelector('canvas.engine-canvas');\n  if (!c || !c.width || !c.height) { out.pix = { ok: false, reason: 'no canvas' }; return out; }\n  const off = document.createElement('canvas');\n  off.width = c.width; off.height = c.height;\n  const ctx = off.getContext('2d');\n  ctx.drawImage(c, 0, 0);\n  let data;\n  try { data = ctx.getImageData(0, 0, off.width, off.height).data; }\n  catch (e) { out.pix = { ok: false, reason: 'readback blocked: ' + (e && e.message) }; return out; }\n  const colors = new Set();\n  let sampled = 0, nonbg = 0, chroma = 0;\n  const stride = 4 * 11;\n  for (let i = 0; i < data.length; i += stride) {\n    sampled++;\n    const r = data[i], g = data[i + 1], b = data[i + 2];\n    if (sampled % 7 === 0) colors.add(r + ',' + g + ',' + b);\n    const dClear = Math.abs(r - 8) + Math.abs(g - 8) + Math.abs(b - 13);\n    const dApp = Math.abs(r - 13) + Math.abs(g - 13) + Math.abs(b - 20);\n    if (Math.min(dClear, dApp) > 36) nonbg++;\n    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);\n    if (mx - mn > 22 && mx > 30) chroma++;\n  }\n  out.pix = {\n    ok: true, w: c.width, h: c.height,\n    distinctColors: colors.size,\n    coverage: sampled ? nonbg / sampled : 0,\n    chroma: sampled ? chroma / sampled : 0,\n    nonbgPixels: nonbg\n  };\n  return out;\n})()",
+  "ok": true,
+  "value": {
+    "view": "radial-seasonality",
+    "axis": {
+      "plan": null,
+      "tier1": null,
+      "scene": null,
+      "refusal": {
+        "reason": "no-axes-resolved",
+        "detail": "neither axis resolved a domain — a chart that cannot state a domain states no axis"
+      },
+      "fontLoaded": true,
+      "labelAttempts": 1
+    },
+    "domain": {
+      "x": null,
+      "y": null,
+      "records": 0
+    },
+    "boundaryErrors": 0,
+    "dom": {
+      "overlaySvgs": 0,
+      "overlaySvgText": 0,
+      "overlayNodes": 19
+    },
+    "progress": 93,
+    "pix": {
+      "ok": true,
+      "w": 900,
+      "h": 497,
+      "distinctColors": 24,
+      "coverage": 0.2658371040723982,
+      "chroma": 0.2658371040723982,
+      "nonbgPixels": 10810
+    }
+  }
+}
