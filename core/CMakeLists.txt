@@ -894,6 +894,18 @@ if (DC_BUILD_TESTS)
       FONT_PATH="${DC_TEST_FONT}"
     )
     add_test(NAME dc_d5_3_crosshair COMMAND dc_d5_3_crosshair)
+
+    # ENC-1253: layoutText's horizontal scale. Pure (no GPU, no Dawn), so it is
+    # registered in the DEFAULT build and actually runs — see LIMITATIONS.md
+    # DC-L01 on why that distinction matters.
+    add_executable(dc_enc1253_text_layout_xscale
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_enc1253_text_layout_xscale.cpp"
+    )
+    target_link_libraries(dc_enc1253_text_layout_xscale PRIVATE dc)
+    target_compile_definitions(dc_enc1253_text_layout_xscale PRIVATE
+      FONT_PATH="${DC_TEST_FONT}"
+    )
+    add_test(NAME dc_enc1253_text_layout_xscale COMMAND dc_enc1253_text_layout_xscale)
   endif()
 
   # (ENC-501) GL render tests removed — coverage is carried by the Dawn render
