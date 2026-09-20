@@ -583,6 +583,15 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_enc1257_bar_sizing PRIVATE dc)
   add_test(NAME dc_enc1257_bar_sizing COMMAND dc_enc1257_bar_sizing)
 
+  # ENC-1251 — the host arithmetic behind the candle-body (doji) floor. The
+  # pixel proof is dc_enc1249_tier0_truthful case C and needs Dawn; this half is
+  # plain `dc`, so it runs in the build people actually configure (DC-L01).
+  add_executable(dc_enc1251_body_floor
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_enc1251_body_floor.cpp"
+  )
+  target_link_libraries(dc_enc1251_body_floor PRIVATE dc)
+  add_test(NAME dc_enc1251_body_floor COMMAND dc_enc1251_body_floor)
+
   # ENC-605 (P1.14) — Manifest v0 parser (data / scales / coords / marks /
   # encoding): parses a JSON manifest, applies the §6.1 typing checks, and drives
   # the table -> scale -> encode -> mark pipeline to produce DrawItems + geometry.
