@@ -376,18 +376,7 @@ export function useEngineAxis(
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [
-    host,
-    enabled,
-    viewId,
-    sceneEpoch,
-    axes,
-    transform,
-    canvas.width,
-    canvas.height,
-    fontLoaded,
-    box,
-  ]);
+  }, [host, enabled, viewId, sceneEpoch, axes, transform, canvas.width, canvas.height, fontLoaded, box]);
 
   return report;
 }
