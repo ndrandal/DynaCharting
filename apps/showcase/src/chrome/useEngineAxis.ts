@@ -41,6 +41,18 @@ import type { EffectiveTransform } from './mapping';
 const AXIS_ID_BASE = 900000;
 
 /**
+ * How long to wait between attempts to lay the labels out, and how many times.
+ *
+ * 40ms is a little over two frames at 60Hz — long enough that the engine's own
+ * rAF render has finished and the core is idle, short enough that the labels
+ * appear within a couple of frames of the marks. 50 attempts is two seconds,
+ * after which the honest conclusion is that text is not available on this host
+ * and the chart keeps its gridlines, ticks and spine without labels.
+ */
+const LABEL_RETRY_MS = 40;
+const LABEL_RETRY_LIMIT = 50;
+
+/**
  * The font the engine lays the labels out with.
  *
  * `third_party/test_font.ttf` is Fira Sans Regular — the repo's only font, and
@@ -73,6 +85,12 @@ export interface EngineAxisReport {
   scene: AxisSceneFragment | null;
   /** Whether the font loaded — labels are not drawn without it. */
   fontLoaded: boolean;
+  /**
+   * How many attempts it took to get a layout out of the core. > 1 means the
+   * first tries landed while a render was in flight; a value at the retry limit
+   * with `plan.labels` empty means text never became available.
+   */
+  labelAttempts: number;
 }
 
 declare global {
@@ -109,6 +127,7 @@ export function useEngineAxis(
     tier1: null,
     scene: null,
     fontLoaded: false,
+    labelAttempts: 0,
   });
 
   // Load the font once per host. `loadFont` is buffered until the core is ready,
