@@ -93,6 +93,8 @@ export {
   timeToIndex,
   timeDomainFor,
   IndexTimeTracker,
+  timeBasisFromWire,
+  transmittedBasisFromSceneInit,
 } from "./chart/time";
 export type {
   TimeUnit,
@@ -105,6 +107,7 @@ export type {
   TimeBasis,
   TimeBasisSource,
   IndexTimeSource,
+  WireTimeBasis,
 } from "./chart/time";
 // Client-builder helpers (ENC-700): id allocator over the unified namespace.
 export { createIdAllocator } from "./chart/ids";
