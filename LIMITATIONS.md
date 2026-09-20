@@ -808,89 +808,6 @@ and domain observations are carried forward from the ENC-1252 measurement over C
 
 ---
 
-## DC-L16 — Nothing on the market-data path carries a timestamp, so a time axis is the client's *observation* time 🟠
-
-**Claim.** As of ENC-1254 the x axis of the market views renders time rather than `INDEX`
-(SPEC D1 tier 1). The time it renders is **when this client saw the record**, not when the bar
-closed upstream — because no timestamp exists anywhere on the path to render. Four independent
-places drop it:
-
-1. **GMA_V3 does not emit one.** A value update is exactly four keys — `type`, `id`,
-   `streamKey`, `value` (`GMA_V3/src/ws/WSResponder.cpp`). `StreamValue` itself has no time
-   slot (`GMA_V3/include/gma/StreamValue.hpp`).
-2. **The one node that computes a bar boundary throws it away.** `BucketTime` floor-aligns to
-   a wall-clock period expressly so "a 1m bar means the same wall-clock window across the data
-   plane" — and then emits `StreamValue{"", 0.0}` (`GMA_V3/src/nodes/BucketTime.cpp:70,72`).
-   The aligned instant it just computed never enters the stream.
-3. **embassy declares the field and never reads it.** `inboundProbe.Timestamp *int64` exists
-   (`embassy/internal/gma/types.go:53`) and has **zero** readers; the handler signature
-   forecloses it anyway — `type ValueHandler func(value float32)`.
-4. **treaty's dataplane record has no time field**, and the binary record is
-   `[1B op][4B bufferId][4B offsetBytes][4B payloadBytes]` + little-endian f32s. `x` is
-   embassy's `recordIndex`, a uint32 counter.
-
-And the lane could not carry one if it were wired: it is `float32` end to end, whose 24-bit
-mantissa quantises an ms epoch (~1.7e12) to roughly **2-minute** steps.
-
-**What ENC-1254 therefore does.** `IndexTimeTracker` (`packages/dc-wasm/src/chart/time.ts`)
-fits `t = origin + recordIndex·msPerIndex` by least squares from the times at which the client
-*observed* each record, and the fitted `TimeBasis` carries an **`epochKnown`** flag:
-
-- `true` — a live socket stamping `Date.now()`. The labels are real wall-clock instants, and
-  they are the time of *receipt*, not of the bar.
-- `false` — the showcase, replaying a captured tape. The origin is the tape's own zero, the
-  labels are rendered in UTC, and they describe the **capture's cadence** (≈75 ms/record), not
-  a market interval. `candles-aapl`'s 267 bars therefore span 20 seconds of axis, not 267
-  seconds of market.
-
-`epochKnown` and `msPerIndex` are published on `data-dc-axis-domain` /
-`window.__dcAxisDomain[viewId].x.time`, so the distinction is readable without trusting a label.
-
-**Why it bites.** A reader who sees a clock on the x axis will assume it is market time. On the
-showcase it is tape time; on the live product it will be arrival time. Both are true statements
-about the stream and neither is the statement a trading chart normally makes — and because the
-frame contains no second opinion, there is nothing to contradict the assumption (SPEC §1.3, the
-same mechanism that let `INDEX 4→160` stand for six months).
-
-**Re-check.**
-```bash
-# 1, 2, 3 and 4 — run from the WORKSPACE root (the parent of DynaCharting/)
-grep -c 'w.Key(' GMA_V3/src/ws/WSResponder.cpp                    # -> 4  (type,id,streamKey,value)
-grep -n 'onValue(StreamValue' GMA_V3/src/nodes/BucketTime.cpp     # -> StreamValue{"", 0.0} ×2
-grep -rn 'Timestamp' embassy/internal/gma/ | wc -l                # -> 1  (the declaration; no readers)
-grep -n 'type ValueHandler' embassy/internal/gma/client.go        # -> func(value float32)
-grep -cE 'timestamp|epoch|time' treaty/proto/dataplane/v1/dynacharting.proto   # -> 0
-
-# 5 — from the DynaCharting repo root: the capture's ONLY time is the frame's own offset
-python3 -c "import json;d=json.load(open('apps/showcase/views/candles-aapl/records.json'));print(sorted(d['meta']),sorted(d['frames'][0]))"
-# -> ['cadenceMs', 'durationMs', 'frameCount', 'viewId'] ['b64', 't']
-
-# 6 — and the axis says so, rather than implying market time
-npx vitest run apps/showcase/src/chrome/axisTicks.test.ts         # -> 16 passed
-```
-
-**Working around it.** Read `window.__dcAxisDomain[viewId].x.time.epochKnown` before quoting a
-time off a chart. To get *market* time onto the axis, the producer has to state it: the pieces
-already exist — `BucketTime` guarantees `recordIndex` is an exact, wall-clock-aligned bar
-ordinal, and forum already authors the interval (`forum/db/seed/seed.go`, `candleWindowMs =
-3000`) and ships it to GMA as opaque `pipeline_json` that embassy never parses. So
-`t = base + recordIndex × periodMs` would be **exact** if `base` and `periodMs` were transmitted
-once per buffer on the dataplane buffer spec. `TimeBasis.source: 'declared'` is the seam that
-consumes them; nothing produces them yet. This is a `treaty` + `embassy` change, not a client
-one — do not try to infer a bar interval in the browser.
-
-**Ticket.** None yet for the wire change (it belongs to `treaty`/`embassy`, not this repo).
-ENC-1254 landed the client half. DynaCharting's own `dc::TimeScale`
-(`core/include/dc/scale/Scale.hpp`) already maps epoch-ms and needs a timestamp column that the
-live path never produces — it is unreachable for the same reason.
-
-**Verified at** `2423de6`, 2026-09-19 — every command above run by hand in the ENC-1254
-worktree and against the sibling repos at their checked-out state. The `epochKnown: false` /
-`msPerIndex: 74.9998` figures were read off the running showcase over CDP (headless Chrome,
-`vendor: nvidia, architecture: ampere`, `info.isFallbackAdapter: false`, `subgroupMinSize: 32`,
-`maxBufferSize: 2 GiB` — SPEC D8), not inferred from the tests. The float32-mantissa figure is
-arithmetic, not a measurement.
-
 ## DC-L17 — A candle body has a 2 px floor, so a doji is not zero-height on screen 🟡
 
 **Claim.** Since ENC-1251 `instancedCandle@1` floors the height it draws a candle body at:
@@ -1672,6 +1589,137 @@ price labels. Adoption for the data is still **ENC-1273**.
 
 **Verified at** `ENC-1253 HEAD`, 2026-09-20 — commands 1, 3, 4 and 5 re-run unchanged in the
 ENC-1253 worktree; command 2's expected output is restamped above.
+
+---
+
+## DC-L16 — Nothing on the market-data path carries a timestamp, so a time axis is the client's *observation* time ✅ *(RETIRED — fixed by ENC-1282)*
+
+**Retired 2026-09-20** by the *Timestamps on the wire* project — ENC-1279 (treaty `DcTimeBasis`),
+ENC-1280 (GMA_V3 stamps `bucketStartMs`), ENC-1281 (embassy emits the basis on `createBuffer`),
+ENC-1302 (the record's `x` lane became a bar ordinal), ENC-1303 (customer-layer carries it), and
+**ENC-1282** (`73e0354`), this repo's half: `timeBasisFromWire` /
+`transmittedBasisFromSceneInit` turn the producer's declaration into a `TimeBasis` with
+`source: 'transmitted'`, and the showcase's live path prefers it over the fit. ENC-1326
+(`065e6d8`, embassy) unblocked the fixture path that had made the basis unreachable.
+
+**The entry's four claims are now all false, and one is false in a way worth stating**: the lane
+still cannot carry an epoch, and does not have to. The basis rides `createBuffer` once per stream
+and the record's float32 `x` carries a bar ordinal, which is exact to 2²⁴ ≈ 31 years of 1-minute
+bars. `RECORD_HEADER_SIZE` is still **13**.
+
+**MEASURED at retirement** — real `tools/smoke-test/feed-inject.js` → real `gma_server`
+(`TumblingWindow periodMs 1000` → `VectorReducer first/max/min/last`) → real forum-less
+`embassy` → the showcase in headless Chromium 1228 on `nvidia`/`ampere`
+(`info.isFallbackAdapter: false`), canvas-only capture via
+`specs/2026-09-19-chart-quality-bar/harness/shoot-live.mjs`:
+
+```
+createBuffer 10100 timeBasis {"baseMs":1789920893000,"epochKnown":true,"periodMs":1000}
+window.__dcAxisDomain["candles-aapl"].x.time
+  -> {"msPerIndex":1000,"originMs":1789920893000,"epochKnown":true,"samples":0}
+x tick labels -> ["12:15","12:16","12:17","12:18","12:19"]   (baseMs = 12:14:53 EDT)
+parsesAsTimestamp                    -> [true,true,true,true,true]
+harness/score.py T1.5                -> PASS "all 4 x tick labels parse as times"
+```
+
+`samples: 0` is the point: nothing was fitted. `epochKnown: true` is the first time it has been
+true anywhere in this repo.
+
+**And the negative control, same stack, one field removed.** With the bucketing stage dropped
+from the fixture — a stream with no uniform bar period, which declares no basis rather than
+`periodMs: 0` (SPEC D7 corollary) — 1 553 records streamed and the axis was **dropped**, not
+captioned: `data-dc-axis-domain` published `"x":null`, the engine drew **0** x tick labels, and
+the price axis kept rendering, so the emptiness is the time axis's and not the chart's.
+
+**What is NOT retired.** Replaying a captured tape still fits its basis from arrival times and
+still reports `epochKnown: false` — the tape does not carry the producer's declaration (SPEC §4
+non-goal). The paragraphs below describe that path accurately and are the reason
+`TimeBasis.source` distinguishes `'observed'` from `'transmitted'` rather than collapsing them.
+
+The original entry is kept verbatim below.
+
+
+
+**Claim.** As of ENC-1254 the x axis of the market views renders time rather than `INDEX`
+(SPEC D1 tier 1). The time it renders is **when this client saw the record**, not when the bar
+closed upstream — because no timestamp exists anywhere on the path to render. Four independent
+places drop it:
+
+1. **GMA_V3 does not emit one.** A value update is exactly four keys — `type`, `id`,
+   `streamKey`, `value` (`GMA_V3/src/ws/WSResponder.cpp`). `StreamValue` itself has no time
+   slot (`GMA_V3/include/gma/StreamValue.hpp`).
+2. **The one node that computes a bar boundary throws it away.** `BucketTime` floor-aligns to
+   a wall-clock period expressly so "a 1m bar means the same wall-clock window across the data
+   plane" — and then emits `StreamValue{"", 0.0}` (`GMA_V3/src/nodes/BucketTime.cpp:70,72`).
+   The aligned instant it just computed never enters the stream.
+3. **embassy declares the field and never reads it.** `inboundProbe.Timestamp *int64` exists
+   (`embassy/internal/gma/types.go:53`) and has **zero** readers; the handler signature
+   forecloses it anyway — `type ValueHandler func(value float32)`.
+4. **treaty's dataplane record has no time field**, and the binary record is
+   `[1B op][4B bufferId][4B offsetBytes][4B payloadBytes]` + little-endian f32s. `x` is
+   embassy's `recordIndex`, a uint32 counter.
+
+And the lane could not carry one if it were wired: it is `float32` end to end, whose 24-bit
+mantissa quantises an ms epoch (~1.7e12) to roughly **2-minute** steps.
+
+**What ENC-1254 therefore does.** `IndexTimeTracker` (`packages/dc-wasm/src/chart/time.ts`)
+fits `t = origin + recordIndex·msPerIndex` by least squares from the times at which the client
+*observed* each record, and the fitted `TimeBasis` carries an **`epochKnown`** flag:
+
+- `true` — a live socket stamping `Date.now()`. The labels are real wall-clock instants, and
+  they are the time of *receipt*, not of the bar.
+- `false` — the showcase, replaying a captured tape. The origin is the tape's own zero, the
+  labels are rendered in UTC, and they describe the **capture's cadence** (≈75 ms/record), not
+  a market interval. `candles-aapl`'s 267 bars therefore span 20 seconds of axis, not 267
+  seconds of market.
+
+`epochKnown` and `msPerIndex` are published on `data-dc-axis-domain` /
+`window.__dcAxisDomain[viewId].x.time`, so the distinction is readable without trusting a label.
+
+**Why it bites.** A reader who sees a clock on the x axis will assume it is market time. On the
+showcase it is tape time; on the live product it will be arrival time. Both are true statements
+about the stream and neither is the statement a trading chart normally makes — and because the
+frame contains no second opinion, there is nothing to contradict the assumption (SPEC §1.3, the
+same mechanism that let `INDEX 4→160` stand for six months).
+
+**Re-check.**
+```bash
+# 1, 2, 3 and 4 — run from the WORKSPACE root (the parent of DynaCharting/)
+grep -c 'w.Key(' GMA_V3/src/ws/WSResponder.cpp                    # -> 4  (type,id,streamKey,value)
+grep -n 'onValue(StreamValue' GMA_V3/src/nodes/BucketTime.cpp     # -> StreamValue{"", 0.0} ×2
+grep -rn 'Timestamp' embassy/internal/gma/ | wc -l                # -> 1  (the declaration; no readers)
+grep -n 'type ValueHandler' embassy/internal/gma/client.go        # -> func(value float32)
+grep -cE 'timestamp|epoch|time' treaty/proto/dataplane/v1/dynacharting.proto   # -> 0
+
+# 5 — from the DynaCharting repo root: the capture's ONLY time is the frame's own offset
+python3 -c "import json;d=json.load(open('apps/showcase/views/candles-aapl/records.json'));print(sorted(d['meta']),sorted(d['frames'][0]))"
+# -> ['cadenceMs', 'durationMs', 'frameCount', 'viewId'] ['b64', 't']
+
+# 6 — and the axis says so, rather than implying market time
+npx vitest run apps/showcase/src/chrome/axisTicks.test.ts         # -> 16 passed
+```
+
+**Working around it.** Read `window.__dcAxisDomain[viewId].x.time.epochKnown` before quoting a
+time off a chart. To get *market* time onto the axis, the producer has to state it: the pieces
+already exist — `BucketTime` guarantees `recordIndex` is an exact, wall-clock-aligned bar
+ordinal, and forum already authors the interval (`forum/db/seed/seed.go`, `candleWindowMs =
+3000`) and ships it to GMA as opaque `pipeline_json` that embassy never parses. So
+`t = base + recordIndex × periodMs` would be **exact** if `base` and `periodMs` were transmitted
+once per buffer on the dataplane buffer spec. `TimeBasis.source: 'declared'` is the seam that
+consumes them; nothing produces them yet. This is a `treaty` + `embassy` change, not a client
+one — do not try to infer a bar interval in the browser.
+
+**Ticket.** None yet for the wire change (it belongs to `treaty`/`embassy`, not this repo).
+ENC-1254 landed the client half. DynaCharting's own `dc::TimeScale`
+(`core/include/dc/scale/Scale.hpp`) already maps epoch-ms and needs a timestamp column that the
+live path never produces — it is unreachable for the same reason.
+
+**Verified at** `2423de6`, 2026-09-19 — every command above run by hand in the ENC-1254
+worktree and against the sibling repos at their checked-out state. The `epochKnown: false` /
+`msPerIndex: 74.9998` figures were read off the running showcase over CDP (headless Chrome,
+`vendor: nvidia, architecture: ampere`, `info.isFallbackAdapter: false`, `subgroupMinSize: 32`,
+`maxBufferSize: 2 GiB` — SPEC D8), not inferred from the tests. The float32-mantissa figure is
+arithmetic, not a measurement.
 
 ---
 
