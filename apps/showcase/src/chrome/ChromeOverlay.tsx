@@ -13,6 +13,15 @@
  * published report so a reader can tell a live wall clock from a replayed tape's
  * own timeline without squinting at the labels.
  *
+ * THE AXIS IS NOW DRAWN BY THE ENGINE (ENC-1253, SPEC D7 / §1.3). `useEngineAxis`
+ * hands the SAME resolved axes and the SAME transform to `EngineAxis`, which
+ * emits the gridlines, ticks, spine and labels as `lineAA@1` / `textSDF@1`
+ * geometry inside the canvas. The SVG `AxisOverlay` below it is now a DUPLICATE
+ * of that, kept on by default only so the two can be compared during the
+ * transition — `?svgAxis=0` removes it, and the acceptance criterion for
+ * ENC-1253 is that doing so changes nothing about the ticks, gridlines, spine
+ * or labels. `?engineAxis=0` turns the engine-drawn one off instead.
+ *
  * AXIS DOMAIN (ENC-1252, SPEC D7). The axes' bounds are resolved here from the
  * LIVE domain measured off the view's own streamed records (`observedDomain`),
  * falling back to a legacy view.json literal only for views that have not yet
@@ -23,7 +32,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { ObservedDomain, TimeBasis } from '@repo/dc-wasm';
+import type { EngineHost, ObservedDomain, TimeBasis } from '@repo/dc-wasm';
 import type { ShowcaseView } from '../views/registry';
 import { AxisOverlay } from './AxisOverlay';
 import { resolveAxes, axisDomainReportJson, type AxisDomainReport } from './deriveAxes';
@@ -34,6 +43,7 @@ import { ColorbarAxisLabels } from './ColorbarAxisLabels';
 import { effectiveTransform } from './mapping';
 import { firstRecordX } from './firstRecordX';
 import type { FrameStatsHub } from './frameStats';
+import { useEngineAxis } from './useEngineAxis';
 
 interface ChromeOverlayProps {
   view: ShowcaseView;
@@ -55,6 +65,32 @@ interface ChromeOverlayProps {
    * back to the record-index labels it replaced.
    */
   timeBasis?: TimeBasis | null;
+  /**
+   * The live engine host — the axis is drawn INTO it (ENC-1253). Null before
+   * the WASM module is ready, in which case no engine furniture is drawn and
+   * the SVG overlay is all there is, exactly as before this ticket.
+   */
+  host?: EngineHost | null;
+  /**
+   * The canvas's BACKING-STORE size in device pixels. The engine axis is laid
+   * out in these units because that is the raster clip space maps onto and the
+   * raster `canvas.toDataURL` returns (SPEC D10) — not the CSS box the SVG
+   * overlay is sized to.
+   */
+  canvasSize?: { width: number; height: number };
+}
+
+/**
+ * Query-string switches for the two axis renderers, so the acceptance criterion
+ * ("removing the SVG overlay changes nothing about the axis") is one URL rather
+ * than a code edit. Both default ON during the transition; `?svgAxis=0` is the
+ * configuration a reviewer should look at.
+ */
+function axisSwitches(): { svg: boolean; engine: boolean } {
+  if (typeof window === 'undefined') return { svg: true, engine: true };
+  const q = new URLSearchParams(window.location.search);
+  const off = (k: string) => q.get(k) === '0' || q.get(k) === 'false';
+  return { svg: !off('svgAxis'), engine: !off('engineAxis') };
 }
 
 /** Window surface the domain report is published on (see the module header). */
@@ -70,7 +106,10 @@ export function ChromeOverlay({
   fpsVisible,
   observedDomain = null,
   timeBasis = null,
+  host = null,
+  canvasSize = { width: 0, height: 0 },
 }: ChromeOverlayProps) {
+  const switches = useMemo(axisSwitches, []);
   const boxRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
 
@@ -107,6 +146,17 @@ export function ChromeOverlay({
     window.__dcAxisDomain = { ...(window.__dcAxisDomain ?? {}), [view.id]: report };
   }, [view.id, report]);
 
+  // ENC-1253: the engine draws the axis. This is the call that makes the
+  // canvas-only raster contain gridlines, ticks, a spine and labels.
+  useEngineAxis(
+    switches.engine ? host : null,
+    view.id,
+    resolvedAxes,
+    transform,
+    canvasSize,
+    switches.engine,
+  );
+
   const hasAxes = !!resolvedAxes.x || !!resolvedAxes.y;
   const hasLegend = !!chrome?.legend?.length;
   const hasColorbar = !!chrome?.colorbar;
@@ -121,7 +171,7 @@ export function ChromeOverlay({
       data-dc-view={view.id}
       data-dc-axis-domain={reportJson}
     >
-      {hasAxes && (
+      {hasAxes && switches.svg && (
         <AxisOverlay axes={resolvedAxes} transform={transform} width={size.w} height={size.h} />
       )}
       {/* Categorical symbol labels for heatmaps (correlation matrix etc.). */}
