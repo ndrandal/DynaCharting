@@ -742,19 +742,27 @@ export class EngineAxis {
     return plan;
   }
 
-  /** Remove every resource this axis owns. */
+  /**
+   * Remove every resource this axis owns.
+   *
+   * The engine's teardown verb is `{cmd:'delete', id}` — one command that
+   * resolves the kind from the registry (`CommandProcessor::cmdDelete`), not a
+   * per-kind `destroyX`. Deleting the PANE cascades to its layers and their
+   * draw items; geometries and buffers are top-level resources and the cascade
+   * does not reach them, so they are deleted explicitly. Same order and same
+   * reasoning as the showcase's `resetScene`.
+   */
   dispose(): void {
-    const drop = (slot: FurnitureSlot | null) => {
+    if (this.paneId) this.ctrl({ cmd: "delete", id: this.paneId });
+    const dropData = (slot: FurnitureSlot | null) => {
       if (!slot) return;
-      this.ctrl({ cmd: "destroyDrawItem", id: slot.drawItemId });
-      this.ctrl({ cmd: "destroyGeometry", id: slot.geometryId });
-      this.ctrl({ cmd: "destroyBuffer", id: slot.bufferId });
+      this.ctrl({ cmd: "delete", id: slot.geometryId });
+      this.ctrl({ cmd: "delete", id: slot.bufferId });
     };
-    drop(this.grid);
-    drop(this.ticks);
-    drop(this.spine);
-    for (const s of this.labelSlots) drop(s);
-    if (this.paneId) this.ctrl({ cmd: "destroyPane", id: this.paneId });
+    dropData(this.grid);
+    dropData(this.ticks);
+    dropData(this.spine);
+    for (const s of this.labelSlots) dropData(s);
     this.grid = this.ticks = this.spine = null;
     this.labelSlots = [];
     this.paneId = this.gridLayerId = this.furnitureLayerId = this.labelLayerId = 0;
