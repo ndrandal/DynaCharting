@@ -714,14 +714,100 @@ npx vitest run apps/showcase/src/chrome/deriveAxes.test.ts                  # ->
 live and both name their provenance. Do not infer the visible window from the stated domain;
 they are not the same number until (2) lands.
 
-**Ticket.** **ENC-1253** (render the marks in the engine) and **ENC-1256** (fit the series to
-the viewport, which is what makes the transform a function of this domain). Converting the
-remaining 11 views is unticketed.
+**Update, 2026-09-19 (ENC-1256) — part (2) now has a primitive, and still has no caller.**
+`packages/dc-wasm/src/chart/plotbox.ts` supplies the missing output side: a clip-space plot box
+derived from pixel gutters, `fitToPlotBox` / `frameSeries` to map a measured `ObservedDomain`
+onto it, and `checkTier2Framing` to score the result against SPEC D1's tier-2 measures. So "the
+measured domain does not drive the framing" is no longer a *missing capability*. It is now an
+*unadopted* one: every `view.json` still bakes its `transform` literal, the numbers in (2) above
+are unchanged on the app path, and the new module has zero callers on any render path. That
+half is **DC-L14**, which is where the re-check for it now lives.
 
-**Verified at** `ENC-1252 HEAD`, 2026-09-19 — greps run in the ENC-1252 worktree; the
-tick-count and domain observations taken from the running showcase over CDP on a headed Chrome
-(`vendor: nvidia, architecture: ampere` — SPEC D8), replaying the committed `candles-aapl` /
-`candle-overlays` captures.
+**Ticket.** **ENC-1253** (render the marks in the engine). Part (2)'s primitive is **ENC-1256**
+(done); adopting it on the showcase and customer-layer render paths is **DC-L14**. Converting
+the remaining 11 views is unticketed.
+
+**Verified at** `ENC-1256 HEAD`, 2026-09-19 — (1) and (3)'s greps re-run in the ENC-1256
+worktree and unchanged; (2)'s tick-count and domain observations are carried forward from the
+ENC-1252 measurement over CDP on a headed Chrome (`vendor: nvidia, architecture: ampere` —
+SPEC D8), replaying the committed `candles-aapl` / `candle-overlays` captures, and remain true
+because nothing on the app path changed.
+
+---
+
+## DC-L14 — The plot box exists, and no render path frames anything with it 🟡
+
+**Claim.** As of ENC-1256 this engine finally has a plot-box concept —
+`packages/dc-wasm/src/chart/plotbox.ts`: a clip-space rectangle inset from the canvas by
+per-side gutters given in CSS pixels, `gutters()` naming the four furniture bands,
+`paneRegionFor()` deriving the matching `setPaneRegion`, `fitToPlotBox()` / `frameSeries()`
+mapping an ENC-1252 `ObservedDomain` into it, and `checkTier2Framing()` scoring the result
+against SPEC D1's tier-2 measures. It is exported from `@repo/dc-wasm` and
+`@repo/dc-wasm/chart`, and covered by 32 unit tests including a before/after reconstruction of
+the live NEXO chart's measured framing.
+
+**Nothing that renders calls any of it.** The one consumer is `SceneBuilder`'s
+`transform({domain, canvas})` / `pane({plotBox})` overloads, and `SceneBuilder` itself has zero
+non-test callers — so the whole chain is reachable only from tests. Concretely:
+
+- Every `apps/showcase/views/*/view.json` still bakes a literal `transform`, and
+  `useViewSwitch.bakeTransform` still writes that literal into the engine. **The showcase's
+  framing is exactly what it was**; DC-L13 part (2)'s measured numbers are unchanged.
+- `customer-layer` (the live product, and the surface SPEC §1.0 measured) is a separate repo
+  and has not adopted it either.
+
+**Why it bites.** This is the **DC-L08 shape**, and DC-L08 is in this file precisely because
+nobody noticed it happening: a well-built layer with no callers reads, at a glance, like a
+capability the product has. Someone who greps `plotBox` and finds a tested module will
+reasonably conclude the charts are framed. They are not. The tier-2 numbers on the *product*
+move when a render path calls `frameSeries`, not when this module lands.
+
+It is logged at 🟡 rather than 🟠 because, unlike DC-L08, the gap is one call site rather than
+an unreachable subsystem — the module is pure, exported, and has a worked example in
+`SceneBuilder.test.ts`.
+
+**Re-check.**
+```bash
+# 1 — the primitive exists, is exported, and is covered
+grep -c 'export function frameSeries' packages/dc-wasm/src/chart/plotbox.ts        # -> 1
+grep -c 'from "./chart/plotbox"' packages/dc-wasm/src/index.ts                     # -> 2
+npx vitest run packages/dc-wasm/src/chart/plotbox.test.ts                          # -> 32 passed
+
+# 2 — and no app references it at all
+grep -rl 'frameSeries\|fitToPlotBox\|plotBox' apps/ --include=*.ts --include=*.tsx | wc -l   # -> 0
+
+# 3 — its only package-side consumer is SceneBuilder ...
+grep -rl 'frameSeries\|fitToPlotBox\|paneRegionFor' packages/ --include=*.ts \
+  | grep -v 'chart/plotbox' | grep -v 'index.ts'          # -> packages/dc-wasm/src/chart/SceneBuilder.ts
+
+# 4 — ... which is itself never constructed outside a test (the DC-L08 shape)
+grep -rl 'new SceneBuilder' apps/ packages/ --include=*.ts --include=*.tsx \
+  | grep -v '\.test\.' | wc -l                            # -> 0
+
+# 5 — the showcase still bakes a literal, so its framing is unchanged
+grep -h '"transform"' apps/showcase/views/candles-aapl/view.json
+# -> "transform": { "sx": 0.011333333, "sy": 0.10625, "tx": -0.895333333, "ty": -43.88125 },
+```
+
+**Working around it.** To frame a chart today you call it yourself:
+
+```ts
+const framed = frameSeries(tracker.domain(), { width: canvas.clientWidth, height: canvas.clientHeight });
+host.applyControl({ cmd: 'setPaneRegion', id: PANE, ...framed.paneRegion });
+if (framed.transform) host.applyControl({ cmd: 'setTransform', id: TRANSFORM, ...framed.transform });
+```
+
+Re-run it when the domain moves or the canvas resizes — nothing recomputes it for you. Do not
+read `checkTier2Framing` passing in a unit test as the product being framed; score the delivered
+raster (SPEC D10) for that.
+
+**Ticket.** **ENC-1273** — adopt the plot box on the showcase render path (`useViewSwitch` +
+the chrome overlay's tick mapping, which must map through the SAME transform or the ticks and
+the geometry will disagree). customer-layer adoption is separate and unticketed. **ENC-1253**
+(engine-drawn axis marks) is the first intended consumer of `gutters()`.
+
+**Verified at** `ENC-1256 HEAD`, 2026-09-19 — all five commands run in the ENC-1256 worktree
+after the module landed.
 
 ---
 

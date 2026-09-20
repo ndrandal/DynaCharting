@@ -198,6 +198,37 @@ Four things about it are deliberate and easy to get wrong if you extend it:
 - **It does not skip gracefully.** No Dawn adapter is exit **3** ("CANNOT RUN"), never 0 —
   DC-L01's lesson is that a skip which looks like a pass is how a green run came to mean nothing.
 
+#### The plot box — the frame data is fitted into (ENC-1256)
+
+`packages/dc-wasm/src/chart/plotbox.ts` is this engine's **only** plot-box / margin concept.
+Before it, geometry was projected into the whole of clip space and nothing reserved a band for
+axis furniture — which is why the live chart measured 66.4% dead margin with seven candles
+sharing one clipped top row (SPEC §1.0).
+
+```ts
+import { frameSeries, checkTier2Framing } from '@repo/dc-wasm';       // or '@repo/dc-wasm/chart'
+const framed = frameSeries(tracker.domain(), { width, height });      // tracker = ENC-1252 DomainTracker
+host.applyControl({ cmd: 'setPaneRegion', id: PANE, ...framed.paneRegion });
+host.applyControl({ cmd: 'setTransform', id: TRANSFORM, ...framed.transform! });
+checkTier2Framing(framed.metrics!);   // { pass, failures } against SPEC D1's tier-2 measures
+```
+
+Four things to know before building on it, each stated in full in the module header:
+
+- **Gutters are CSS pixels, the box is clip units.** A tick label is 11px tall at any chart
+  size. `plotBox()` is the only conversion; `pxSpanToClipX/Y` are SPAN helpers and are NOT
+  `text.ts`'s same-named POSITION helpers.
+- **The domain is ink extent, not mark centres** — `DomainTracker` folds candle6's `halfWidth`.
+  That is what makes "no geometry touches the frame edge" follow from a positive inset, and it
+  is why `paddingFrac` defaults to 0.
+- **The box is also the data pane's `PaneRegion`.** `paneRegionFor(box)` derives it, so the
+  scissor and the projection cannot drift. Axis furniture drawn in the gutters therefore needs
+  a pane with a wider region (`FULL_CLIP_REGION`), or it is scissored away silently.
+- **It has no caller on any render path yet — LIMITATIONS.md DC-L14.** The showcase still bakes
+  a literal `transform` per view. A green `plotbox.test.ts` is not the product being framed.
+  Adoption is ENC-1273; ENC-1253 (engine-drawn ticks/gridlines/spine) positions against
+  `gutters()`.
+
 > **`dc_json_host --png` captures contain no text (ENC-992).** A chart's
 > `textOverlay` labels are not rasterized by the engine — they are emitted as a
 > `TEXT` protocol message for the browser client to composite, so a one-shot PNG
