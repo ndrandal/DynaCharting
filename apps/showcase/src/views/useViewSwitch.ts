@@ -79,9 +79,14 @@ import type { ShowcaseView } from './registry';
  *
  * Above every hand-picked manifest id (the 10000-10999 band) and below the
  * engine axis's own allocator base (900000), so a stray id in a scene dump is
- * attributable at a glance. It is deleted and re-created on every apply because
- * `resetScene` only knows about ids the MANIFEST created, so this one outlives
- * the scene it belongs to.
+ * attributable at a glance.
+ *
+ * It is created ONCE per host and never deleted: `resetScene` tears down only
+ * the ids the MANIFEST created, so this one outlives every scene it is used in
+ * and `createTransform` on it a second time is a `DUPLICATE_ID` rejection. The
+ * engine logs every rejection (`EngineHost.applyControl`), and a rejection that
+ * fires on every replay loop is how a console stops being read — DC-L06's whole
+ * point. So the creation is tracked rather than retried.
  */
 export const SHOWCASE_FIT_TRANSFORM_ID = 880000;
 
@@ -136,6 +141,7 @@ function applyFraming(
   resolution: FramingResolution,
   framed: FramedSeries,
   remap: Transform2D | null,
+  fitTransform: { created: boolean },
 ): void {
   if (!resolution.framed) return;
   if (resolution.kind === 'series') {
@@ -161,13 +167,10 @@ function applyFraming(
     host.applyControl({ cmd: 'setTransform', id: t.id, sx: c.sx, sy: c.sy, tx: c.tx, ty: c.ty });
   }
   if (pf.untransformedDrawItems.length > 0) {
-    // Delete-then-create: `resetScene` tears down only the ids the MANIFEST
-    // created, so this one survives a re-apply and `createTransform` on a live
-    // id is a rejection. Deleting an id that is not there is also a rejection,
-    // and both are harmless (DC-L06) — what is NOT harmless is a stale
-    // transform silently keeping the previous canvas's fit.
-    host.applyControl({ cmd: 'delete', id: SHOWCASE_FIT_TRANSFORM_ID });
-    host.applyControl({ cmd: 'createTransform', id: SHOWCASE_FIT_TRANSFORM_ID });
+    if (!fitTransform.created) {
+      host.applyControl({ cmd: 'createTransform', id: SHOWCASE_FIT_TRANSFORM_ID });
+      fitTransform.created = true;
+    }
     host.applyControl({
       cmd: 'setTransform',
       id: SHOWCASE_FIT_TRANSFORM_ID,
@@ -204,10 +207,11 @@ function applyView(
   resolution: FramingResolution | null,
   framed: FramedSeries | null,
   remap: Transform2D | null,
+  fitTransform: { created: boolean },
 ): SceneManifest {
   resetScene(host, prev);
   const applied = applyManifest(host, view.manifest);
-  if (resolution?.framed && framed) applyFraming(host, resolution, framed, remap);
+  if (resolution?.framed && framed) applyFraming(host, resolution, framed, remap, fitTransform);
   else bakeTransform(host, view);
   return applied;
 }
@@ -409,6 +413,13 @@ export function useViewSwitch(
   framedRef.current = framed;
   const remapRef = useRef<Transform2D | null>(null);
   remapRef.current = remap;
+  // Whether SHOWCASE_FIT_TRANSFORM_ID exists on THIS host. Reset when the host
+  // is replaced (a fresh scene has none), never on a view change — the id is
+  // outside every manifest and so survives `resetScene`.
+  const fitTransformRef = useRef<{ created: boolean }>({ created: false });
+  useEffect(() => {
+    fitTransformRef.current = { created: false };
+  }, [host]);
 
   // (Re)apply the scene whenever the selected view changes or the host appears.
   useEffect(() => {
@@ -420,6 +431,7 @@ export function useViewSwitch(
       framing,
       framedRef.current,
       remapRef.current,
+      fitTransformRef.current,
     );
     setProgress(0);
     setPlaying(true);
@@ -430,7 +442,7 @@ export function useViewSwitch(
   // manifest is NOT re-applied for this: only the framing commands change.
   useEffect(() => {
     if (!host || !framing || !framed) return;
-    applyFraming(host, framing, framed, remap);
+    applyFraming(host, framing, framed, remap, fitTransformRef.current);
   }, [host, framing, framed, remap, epoch]);
 
   // Reset + restart helper (shared by loop completion and the restart button).
@@ -443,6 +455,7 @@ export function useViewSwitch(
       framing,
       framedRef.current,
       remapRef.current,
+      fitTransformRef.current,
     );
     setProgress(0);
     setEpoch((e) => e + 1);
