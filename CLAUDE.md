@@ -252,12 +252,21 @@ Four things to know before building on it, each stated in full in the module hea
 - **The box is also the data pane's `PaneRegion`.** `paneRegionFor(box)` derives it, so the
   scissor and the projection cannot drift. Axis furniture drawn in the gutters therefore needs
   a pane with a wider region (`FULL_CLIP_REGION`), or it is scissored away silently.
-- **The DATA is still not framed by it — LIMITATIONS.md DC-L14.** Every `view.json` still bakes
-  a literal `transform`, and nothing on a render path calls `frameSeries`. A green
-  `plotbox.test.ts` is not the product being framed; adoption is **ENC-1273**. ENC-1253 is the
-  box's first app caller, but only for the AXIS: the furniture is laid out against
-  `plotBox(canvas)` while the bars are still on the baked literal, which is why the leftmost
-  bars run under the price labels.
+- **The DATA is framed by it on the showcase, and only there (ENC-1273).**
+  `apps/showcase/src/views/useViewSwitch.ts` fits the ENC-1252 measured domain into the box and
+  applies **both** halves `frameSeries` returns; `ChromeOverlay` then maps its ticks through
+  that same fitted transform and that same box, so the furniture and the geometry cannot
+  describe two frames. That retired DC-L14. What it does NOT cover is **DC-L-1273**: a stacked
+  multi-pane view is *refused* (`apps/showcase/src/views/framing.ts` counts `createPane` — one
+  box cannot lay out two panes), which includes `candle-overlays`, the view `/` renders; and
+  `customer-layer`, the surface SPEC §1.0 measured, has adopted none of it. So a green
+  `plotbox.test.ts` still is not the product being framed — score the raster (SPEC D10).
+- **Two things that will bite the next adopter**, both found by ENC-1273 rather than reasoned
+  about. `useReplay`'s `xAnchor` writes its own `setTransform` on the first record of every
+  replay pass, so it must not stay armed on a framed view or it overwrites the fit once per
+  loop. And the fit must be recomputed against the **backing-store** canvas size — the same one
+  `ChromeOverlay` hands the axis — or the two `plotBox()` calls differ by the device-pixel
+  ratio and the furniture lands near, but not on, the frame.
 
 #### The axis — drawn by the engine (ENC-1253)
 
