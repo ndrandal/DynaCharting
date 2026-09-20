@@ -999,10 +999,93 @@ arithmetic, not a measurement.
 
 ---
 
+## DC-L17 — A pane's clear colour paints over every pane created before it 🟠
+
+**Claim.** WebGPU has no scissored mid-pass clear, so `DawnSceneRenderer` implements a pane's
+clear colour as a **full-pane quad drawn inside the render pass**, bounded by the pane scissor
+(`core/src/gpu/DawnSceneRenderer.cpp` → `clearPane`, ENC-511). Panes are walked in **scene
+order**. Therefore a pane created LATER does not merely render on top of earlier panes' draw
+items — its clear quad **erases them**, everywhere its region overlaps theirs.
+
+There is no warning, no rejection and nothing in the error list. Every command succeeds; the
+pixels are simply gone.
+
+**How it bit (ENC-1253).** The engine axis lives in its own pane at `FULL_CLIP_REGION`, because
+the data pane's region is the plot box and furniture drawn there is scissored away (plotbox.ts
+contract note 7). The showcase creates the axis once and **re-applies the view's manifest on
+every replay loop** (`useViewSwitch` → `resetScene` + `applyManifest`, roughly every 20s), which
+makes the view's pane newer than the axis pane. Its clear — `±0.95`, i.e. most of the canvas —
+then covered the lot. Measured: 8 gridlines, 8 tick marks, 2 spines and 10 labels all issued,
+`applyControl` rejections **zero**, the published plan reporting `tier1.pass`, and the canvas
+containing nothing but candles.
+
+Note the shape: this is the *same* failure mode as the pane-scissor trap one level down — the
+correct commands, accepted, producing no pixels — and the two have opposite fixes (be inside the
+region / be after the pane).
+
+**Re-check.**
+```bash
+# 1 — the clear is a drawn quad inside the pass, walked in scene order
+grep -n 'clearPane(\*pane' core/src/gpu/DawnSceneRenderer.cpp
+# -> 342:      clearPane(*pane, pane->clearColor);
+grep -n 'in scene order' core/src/gpu/DawnSceneRenderer.cpp
+# -> 325:  // Walk all draw items: pane (scissor) -> layer -> drawItem, in scene order.
+
+# 2 — and the showcase really does re-create its pane on every loop
+sed -n '/^function applyView/,/^}/p' apps/showcase/src/views/useViewSwitch.ts
+# -> resetScene(host, prev); applyManifest(host, view.manifest); bakeTransform(...)
+grep -n 'resetAndReplay()' apps/showcase/src/views/useViewSwitch.ts   # -> the loop calls it
+```
+
+**Working around it.** Create your overlay pane AFTER every pane it must sit on top of, and
+**re-create it whenever those panes are re-created**. `useEngineAxis` watches
+`useViewSwitch`'s `sceneEpoch` and does exactly that: `dispose()`, `IdAllocator.reset()` (so the
+ids are reused rather than walked), then re-sync. Do not reach for z-order — there is none; the
+only ordering the renderer has is creation order.
+
+**Ticket.** None. The workaround is cheap and correct, and the alternative — an explicit pane
+z-order, or a clear that does not overwrite — is a renderer design change nobody has asked for.
+Raise one if a second consumer hits it.
+
+**Verified at** `ENC-1253 HEAD`, 2026-09-20 — both greps run in the ENC-1253 worktree; the
+symptom was observed and then removed on a canvas-only capture of the showcase, hardware adapter
+(`vendor: nvidia, architecture: ampere`, `info.isFallbackAdapter: false` — SPEC D8).
+
+---
+
 # §C — Corrections
 
 Beliefs that were held confidently and were wrong. They are here because each one cost real
 time, and because a reader who half-remembers the wrong version needs to find the correction.
+
+### C0 — ENC-558 fixed the stale-GPU-buffer cache in every Dawn backend except `textSDF@1`
+
+ENC-558 (and ENC-569 for `line2d@1`) taught the Dawn backends to remember the `CpuBufferStore`
+**version** each cached GPU instance buffer was built from, and to re-gather when it moves —
+which is what lets a streaming series keep animating past the first frame. Six backends carry
+the comment; `DawnTextSdfBackend` did not. Its `ensureGeoBuffers` was keyed on `geometryId`
+alone and returned the first upload forever, glyph **count** included.
+
+Nothing noticed for four months because **nothing had ever re-laid out text**. The browser's
+only text caller was a one-shot demo; the C++ recipes that build axis labels are unbound in the
+WASM module (`strings dc_engine_host.wasm | grep -ci recipe` → `0`). A cache that is only ever
+written once cannot be observed to be stale.
+
+ENC-1253 was the first caller to re-lay out a label — an axis whose numbers track a measured
+domain — and the symptom was a chart whose gridlines moved while its numbers did not: the plan
+said `$410 … $418` with three time labels, and the canvas showed `$414 … $418` with two, from
+several seconds earlier. The fix is the ENC-558 pattern, ported verbatim
+(`core/src/gpu/DawnTextSdfBackend.cpp` `buildGeoBuffers` + the version check in
+`ensureGeoBuffers`), and it is in the committed wasm.
+
+Re-check: `grep -c 'vtxVersion' core/include/dc/gpu/DawnTextSdfBackend.hpp` → `1` (it was `0`),
+and `grep -l 'vtxVersion' core/include/dc/gpu/Dawn*.hpp | wc -l` → `9`, i.e. every geometry
+backend now carries it.
+
+The general lesson is the one this file keeps relearning: **a capability with one caller is a
+capability with no coverage.** DC-L08 and §1.2 of the chart-quality SPEC are the same shape, and
+in-engine text was in it — "unused, not unbuilt" (ENC-1260) turned out to also mean "unused, and
+broken in a way only use could reveal".
 
 ### C1 — `AxisRecipe::enableAALines` does not antialias anything
 
