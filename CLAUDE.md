@@ -229,10 +229,70 @@ Four things to know before building on it, each stated in full in the module hea
 - **The box is also the data pane's `PaneRegion`.** `paneRegionFor(box)` derives it, so the
   scissor and the projection cannot drift. Axis furniture drawn in the gutters therefore needs
   a pane with a wider region (`FULL_CLIP_REGION`), or it is scissored away silently.
-- **It has no caller on any render path yet — LIMITATIONS.md DC-L14.** The showcase still bakes
-  a literal `transform` per view. A green `plotbox.test.ts` is not the product being framed.
-  Adoption is ENC-1273; ENC-1253 (engine-drawn ticks/gridlines/spine) positions against
-  `gutters()`.
+- **The DATA is still not framed by it — LIMITATIONS.md DC-L14.** Every `view.json` still bakes
+  a literal `transform`, and nothing on a render path calls `frameSeries`. A green
+  `plotbox.test.ts` is not the product being framed; adoption is **ENC-1273**. ENC-1253 is the
+  box's first app caller, but only for the AXIS: the furniture is laid out against
+  `plotBox(canvas)` while the bars are still on the baked literal, which is why the leftmost
+  bars run under the price labels.
+
+#### The axis — drawn by the engine (ENC-1253)
+
+`packages/dc-wasm/src/chart/axis.ts` is where gridlines, tick marks, the spine and the tick
+labels come from. They are **engine geometry, not DOM**: `lineAA@1` rect4 segments authored
+directly in clip space, and `textSDF@1` glyph runs, into the same scene and the same canvas as
+the data (SPEC **D7**, **D6**/**D10**).
+
+```ts
+import { EngineAxis, createHostMeasurer, planAxis, darkAxisTheme, frameSeries } from '@repo/dc-wasm';
+const framed = frameSeries(tracker.domain(), canvas);          // ENC-1256
+const axis = new EngineAxis(host, createIdAllocator(900000));
+axis.sync({ box: framed.box, canvas, transform: framed.transform!,
+            y: { ticks: priceTicks }, x: { ticks: timeTicks },   // ENC-1254 shapes
+            theme: darkAxisTheme,
+            measurer: createHostMeasurer(host, canvas)! });
+```
+
+Five things to know before extending it — each one is a way the axis fails **silently**:
+
+- **The furniture needs its OWN pane, at `FULL_CLIP_REGION`.** The data pane's region *is* the
+  plot box (plotbox.ts note 7), applied as a scissor, and ticks/labels live in the gutters
+  outside it. Draw them in the data pane and they are clipped away with nothing rejected.
+- **…and that pane must be created AFTER every pane it sits on top of, and re-created whenever
+  those are — LIMITATIONS.md DC-L17.** A pane's clear colour is a drawn quad walked in scene
+  order, so a newer pane *erases* an older one's pixels. The showcase re-applies its manifest on
+  every replay loop; `useEngineAxis` watches `useViewSwitch`'s `sceneEpoch` and rebuilds.
+- **Text is MEASURED, never estimated.** `DcEngineHost.measureText(text, fontSize, xScale)`
+  (ENC-1253) runs the same `dc::layoutText` loop `setTextGeometry` runs, so a label's reported
+  box is where its glyphs land. `fontSize` is the ascent-to-descent height **in clip units**
+  (`fontSizeForPx(px, canvas)`), and `xScale` must be `canvas.height / canvas.width` or every
+  string renders stretched by the canvas's aspect ratio — use `setTextGeometryX`.
+- **`setTextGeometry` and `measureText` return -1 while a render is in flight**, and the engine
+  renders from its own rAF loop, so a naive sync in a React effect loses every label. Probe,
+  then retry on a macrotask (`useEngineAxis`), and never write half an axis: a fresh gridline
+  beside a stale number is the disagreement this whole project is about.
+- **Colours come from a `Theme`** — `packages/dc-wasm/src/chart/theme.ts` mirrors `dc::Theme`'s
+  axis knobs and `theme.test.ts` parses the C++ and fails if the two drift. The default is
+  `darkTheme()`, chosen by measurement: `midnightTheme()`'s `tickColor` is 2.46:1 on the black
+  the render target clears to, under D11's 3:1 floor. `checkD11AxisBands()` is that check.
+
+Score it the way the project requires — a **canvas-only** capture, a hardware adapter, and a
+scene dumped by the renderer rather than typed:
+
+```bash
+# showcase dev server on its own port; Chrome with all three hardware flags (harness/README.md)
+node specs/2026-09-19-chart-quality-bar/harness/shoot-live.mjs \
+  --port <cdp> --url 'http://localhost:<port>/?svgAxis=0#/view/candles-aapl' \
+  --canvas 'canvas.engine-canvas' --dwell 22000 --out /tmp/<ENC>-shot.png
+node apps/showcase/tools/axis-scene.mjs --port <cdp> --view candles-aapl \
+  --raster /tmp/<ENC>-shot.png --out /tmp/<ENC>-scene.json
+python3 specs/2026-09-19-chart-quality-bar/harness/score.py \
+  --raster /tmp/<ENC>-shot.png --scene /tmp/<ENC>-scene.json --diagnose
+```
+
+`--diagnose` is not optional today: tier 0 is UNPROVEN on every build without a
+`-DDC_FETCH_DAWN=ON` `scripts/tier0.sh` artifact (DC-L01), and an UNPROVEN tier 0 marks every
+tier above it NOT SCORED.
 
 > **Do not score a committed still — all 23 are upside down (LIMITATIONS.md DC-L15).**
 > `apps/showcase/stills/*.png` were captured at `537c995` (2026-06-11); the `EngineHost` blit
