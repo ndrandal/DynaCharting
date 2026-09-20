@@ -280,11 +280,50 @@ def main():
     print("predicted : upright %+.2f   mirrored %+.2f   (sy=%.9f, H=%d; "
           "|measured/predicted| = %.2f)"
           % (up, mir, sy, h, abs(A) / abs(mir) if mir else float("nan")))
-    print("            SIGN decides; the magnitude carries ENC-1316's composed "
-          "plot-box fit and is not asserted on.")
+    print("            SIGN decides; the magnitude is a SANITY BOUND only — it "
+          "carries ENC-1316's composed plot-box fit.")
     print()
     if abs(r) < 0.8:
         die("fit too weak to rule (|r| = %.3f < 0.8)" % abs(r))
+
+    # ENC-1288 — TWO REFUSALS THE TOOL USED TO SKIP, AND WHY.
+    #
+    # Run over all 22 stills, this tool returned a CONFIDENT WRONG verdict for
+    # `candle-overlays`: UPRIGHT, r = -0.97, on the 2026-06-11 still that every
+    # other line of evidence says is mirrored. `'rect4' in manifest.ts` is far too
+    # weak a gate — candle-overlays' rect4 stream is a VOLUME series in a second
+    # pane, so "the fill run between two edges" spans two panes and means nothing,
+    # and the search happily found a strong correlation with a slope of -0.00.
+    #
+    # Both refusals below are computed from numbers the fit already produced, and
+    # both were already printed above while the verdict ignored them:
+    #
+    #   1. the OTHER edge must be the flat baseline. The method's whole premise is
+    #      "one edge is constant, the other carries the value". candle-overlays'
+    #      was 139 px on the new still and 441 px on the old one.
+    #   2. the slope's MAGNITUDE must be in the same neighbourhood as sy/2*H. This
+    #      is deliberately a loose bound, not an assertion — the composed plot-box
+    #      fit (ENC-1316) scales it by a positive factor near 1 — but a ratio of
+    #      0.00, which is what convicted candle-overlays of being upright, is not a
+    #      measurement of that mapping at all.
+    #
+    # A refusal is exit 2 and is never a verdict: DC-L01's rule is that "could not
+    # run" must not be reported as a pass, and it must not be reported as a FAIL
+    # either.
+    flat_tol = 0.05 * h
+    if ospread is None or ospread > flat_tol:
+        die("the %s edge is not a flat baseline (spans %s px, tolerance %.0f px = "
+            "5%% of H) — so this is not a rect4 baseline area and neither edge is "
+            "reliably 'the value'. The 'rect4' declaration in manifest.ts is not "
+            "enough: candle-overlays declares one for a VOLUME series in a second "
+            "pane and this tool ruled it UPRIGHT, wrongly, before ENC-1288."
+            % (other, "?" if ospread is None else ospread, flat_tol))
+    ratio = abs(A) / abs(mir) if mir else 0.0
+    if not (0.25 <= ratio <= 4.0):
+        die("slope magnitude %.2f px/unit is %.2fx the predicted %.2f — outside "
+            "[0.25, 4]. The sign would still be readable, but a fit this far from "
+            "the view's own Y mapping is not measuring that mapping, so the sign "
+            "is not evidence about it either." % (abs(A), ratio, abs(mir)))
     print("VERDICT   : %s" % ("MIRRORED — see LIMITATIONS.md DC-L15" if mirrored
                               else "UPRIGHT"))
     return 1 if mirrored else 0
