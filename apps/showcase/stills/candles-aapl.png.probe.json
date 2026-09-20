@@ -1,9 +1,9 @@
 {
   "spec": "specs/2026-09-19-chart-quality-bar/SPEC.md D10 (ENC-1262)",
   "url": "http://localhost:5650/?svgAxis=0#/",
-  "capturedAt": "2026-09-20T15:59:42.671Z",
-  "rasterSha256": "ecfbf48395341fb0c1619abaf50940e91d304f46928f350a1ab77643f997a513",
-  "expression": "(() => {\n  const out = {\n    view: \"candles-aapl\",\n    axis: (window.__dcEngineAxis || {})[\"candles-aapl\"] || null,\n    domain: (window.__dcAxisDomain || {})[\"candles-aapl\"] || null,\n    boundaryErrors: (window.__dcBoundaryErrors || []).length,\n    dom: {\n      overlaySvgs: document.querySelectorAll('.chrome-overlay svg').length,\n      overlaySvgText: document.querySelectorAll('.chrome-overlay svg text').length,\n      overlayNodes: document.querySelectorAll('.chrome-overlay *').length\n    },\n    progress: (() => {\n      const el = document.querySelector('[role=\"slider\"][aria-label=\"Replay position\"]');\n      return el ? Number(el.getAttribute('aria-valuenow')) : null;\n    })()\n  };\n  const c = document.querySelector('canvas.engine-canvas');\n  if (!c || !c.width || !c.height) { out.pix = { ok: false, reason: 'no canvas' }; return out; }\n  const off = document.createElement('canvas');\n  off.width = c.width; off.height = c.height;\n  const ctx = off.getContext('2d');\n  ctx.drawImage(c, 0, 0);\n  let data;\n  try { data = ctx.getImageData(0, 0, off.width, off.height).data; }\n  catch (e) { out.pix = { ok: false, reason: 'readback blocked: ' + (e && e.message) }; return out; }\n  const colors = new Set();\n  let sampled = 0, nonbg = 0, chroma = 0;\n  const stride = 4 * 11;\n  for (let i = 0; i < data.length; i += stride) {\n    sampled++;\n    const r = data[i], g = data[i + 1], b = data[i + 2];\n    if (sampled % 7 === 0) colors.add(r + ',' + g + ',' + b);\n    const dClear = Math.abs(r - 8) + Math.abs(g - 8) + Math.abs(b - 13);\n    const dApp = Math.abs(r - 13) + Math.abs(g - 13) + Math.abs(b - 20);\n    if (Math.min(dClear, dApp) > 36) nonbg++;\n    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);\n    if (mx - mn > 22 && mx > 30) chroma++;\n  }\n  out.pix = {\n    ok: true, w: c.width, h: c.height,\n    distinctColors: colors.size,\n    coverage: sampled ? nonbg / sampled : 0,\n    chroma: sampled ? chroma / sampled : 0,\n    nonbgPixels: nonbg\n  };\n  return out;\n})()",
+  "capturedAt": "2026-09-20T16:22:43.694Z",
+  "rasterSha256": "e68e085be86f64e9f137990c785bd43842e1e2df0096e0fc55f6b87991a743b0",
+  "expression": "(() => {\n  const out = {\n    view: \"candles-aapl\",\n    axis: (window.__dcEngineAxis || {})[\"candles-aapl\"] || null,\n    domain: (window.__dcAxisDomain || {})[\"candles-aapl\"] || null,\n    boundaryErrors: (window.__dcBoundaryErrors || []).length,\n    dom: {\n      overlaySvgs: document.querySelectorAll('.chrome-overlay svg').length,\n      overlaySvgText: document.querySelectorAll('.chrome-overlay svg text').length,\n      overlayNodes: document.querySelectorAll('.chrome-overlay *').length\n    },\n    progress: (() => {\n      const el = document.querySelector('[role=\"slider\"][aria-label=\"Replay position\"]');\n      return el ? Number(el.getAttribute('aria-valuenow')) : null;\n    })(),\n    readinessRule: window.__dcRecapRule || null\n  };\n  const c = document.querySelector('canvas.engine-canvas');\n  if (!c || !c.width || !c.height) { out.pix = { ok: false, reason: 'no canvas' }; return out; }\n  const off = document.createElement('canvas');\n  off.width = c.width; off.height = c.height;\n  const ctx = off.getContext('2d');\n  ctx.drawImage(c, 0, 0);\n  let data;\n  try { data = ctx.getImageData(0, 0, off.width, off.height).data; }\n  catch (e) { out.pix = { ok: false, reason: 'readback blocked: ' + (e && e.message) }; return out; }\n  const colors = new Set();\n  let sampled = 0, nonbg = 0, chroma = 0;\n  const stride = 4 * 11;\n  for (let i = 0; i < data.length; i += stride) {\n    sampled++;\n    const r = data[i], g = data[i + 1], b = data[i + 2];\n    if (sampled % 7 === 0) colors.add(r + ',' + g + ',' + b);\n    const dClear = Math.abs(r - 8) + Math.abs(g - 8) + Math.abs(b - 13);\n    const dApp = Math.abs(r - 13) + Math.abs(g - 13) + Math.abs(b - 20);\n    if (Math.min(dClear, dApp) > 36) nonbg++;\n    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);\n    if (mx - mn > 22 && mx > 30) chroma++;\n  }\n  out.pix = {\n    ok: true, w: c.width, h: c.height,\n    distinctColors: colors.size,\n    coverage: sampled ? nonbg / sampled : 0,\n    chroma: sampled ? chroma / sampled : 0,\n    nonbgPixels: nonbg\n  };\n  return out;\n})()",
   "ok": true,
   "value": {
     "view": "candles-aapl",
@@ -30,21 +30,21 @@
           0.9473578044161854,
           0.9644444444444444,
           0.9473578044161854,
-          -0.8551527999660212,
+          -0.8551524012883888,
           -0.8873239436619719,
-          -0.8551527999660212,
+          -0.8551524012883888,
           0.9517102615694165,
-          -0.39980996652708667,
+          -0.3998098944423016,
           -0.8873239436619719,
-          -0.39980996652708667,
+          -0.3998098944423016,
           0.9517102615694165,
-          0.055532866911848,
+          0.05553261240378582,
           -0.8873239436619719,
-          0.055532866911848,
+          0.05553261240378582,
           0.9517102615694165,
-          0.5108757003507826,
+          0.5108751192498729,
           -0.8873239436619719,
-          0.5108757003507826,
+          0.5108751192498729,
           0.9517102615694165
         ],
         "tickSegments": [
@@ -68,21 +68,21 @@
           0.9473578044161854,
           -0.8577777777777778,
           0.9473578044161854,
-          -0.8551527999660212,
+          -0.8551524012883888,
           -0.9114688128772637,
-          -0.8551527999660212,
+          -0.8551524012883888,
           -0.8873239436619719,
-          -0.39980996652708667,
+          -0.3998098944423016,
           -0.9114688128772637,
-          -0.39980996652708667,
+          -0.3998098944423016,
           -0.8873239436619719,
-          0.055532866911848,
+          0.05553261240378582,
           -0.9114688128772637,
-          0.055532866911848,
+          0.05553261240378582,
           -0.8873239436619719,
-          0.5108757003507826,
+          0.5108751192498729,
           -0.9114688128772637,
-          0.5108757003507826,
+          0.5108751192498729,
           -0.8873239436619719
         ],
         "spineSegments": [
@@ -180,7 +180,7 @@
             "axis": "x",
             "role": "xTickLabel",
             "text": "00:00:00",
-            "clipX": -0.8943148369288284,
+            "clipX": -0.8943144382511959,
             "clipY": -0.9533869887381733,
             "fontPx": 11,
             "fontSizeClip": 0.04426559356136821,
@@ -196,7 +196,7 @@
             "axis": "x",
             "role": "xTickLabel",
             "text": "00:00:05",
-            "clipX": -0.4384627451302232,
+            "clipX": -0.4384626730454381,
             "clipY": -0.9533869887381733,
             "fontPx": 11,
             "fontSizeClip": 0.04426559356136821,
@@ -212,7 +212,7 @@
             "axis": "x",
             "role": "xTickLabel",
             "text": "00:00:10",
-            "clipX": 0.01764397771086257,
+            "clipX": 0.017643723202800388,
             "clipY": -0.9533869887381733,
             "fontPx": 11,
             "fontSizeClip": 0.04426559356136821,
@@ -228,7 +228,7 @@
             "axis": "x",
             "role": "xTickLabel",
             "text": "00:00:15",
-            "clipX": 0.47349606950946777,
+            "clipX": 0.47349548840855815,
             "clipY": -0.9533869887381733,
             "fontPx": 11,
             "fontSizeClip": 0.04426559356136821,
@@ -302,22 +302,22 @@
           {
             "orientation": "vertical",
             "centre": 65,
-            "value": 3.9843351600073
+            "value": 3.984393532246991
           },
           {
             "orientation": "vertical",
             "centre": 270,
-            "value": 70.65318953210624
+            "value": 70.65320008637367
           },
           {
             "orientation": "vertical",
             "centre": 475,
-            "value": 137.3220439042052
+            "value": 137.32200664050038
           },
           {
             "orientation": "vertical",
             "centre": 680,
-            "value": 203.99089827630414
+            "value": 203.99081319462707
           }
         ],
         "droppedLabels": [],
@@ -609,10 +609,10 @@
         "max": 270.40000000596046,
         "source": "derived",
         "time": {
-          "msPerIndex": 74.99753891215072,
-          "originMs": -298.81533120169775,
+          "msPerIndex": 74.99760991735062,
+          "originMs": -298.82137475578037,
           "epochKnown": false,
-          "samples": 517
+          "samples": 514
         }
       },
       "y": {
@@ -620,7 +620,7 @@
         "max": 418.0235900878906,
         "source": "derived"
       },
-      "records": 268
+      "records": 269
     },
     "boundaryErrors": 0,
     "dom": {
@@ -628,15 +628,16 @@
       "overlaySvgText": 0,
       "overlayNodes": 13
     },
-    "progress": 93,
+    "progress": 92,
+    "readinessRule": "full-pass",
     "pix": {
       "ok": true,
       "w": 900,
       "h": 497,
-      "distinctColors": 60,
-      "coverage": 0.14388648435963014,
-      "chroma": 0.10338382844776707,
-      "nonbgPixels": 5851
+      "distinctColors": 57,
+      "coverage": 0.14376352547708046,
+      "chroma": 0.10289199291756837,
+      "nonbgPixels": 5846
     }
   }
 }
