@@ -808,69 +808,6 @@ and domain observations are carried forward from the ENC-1252 measurement over C
 
 ---
 
-## DC-L15 — Every committed showcase still is vertically MIRRORED: all 23 predate the ENC-696 blit fix 🔴
-
-**Claim.** The 23 PNGs in `apps/showcase/stills/` were all captured in one commit — `537c995`,
-**2026-06-11** — and the Y-orientation fix they needed landed in `d6b5acd`, **2026-06-21**, ten
-days later (§R L2, DC-L05). Every one of them is therefore an **upside-down** picture of a
-correct render. They are the *only* rendered evidence several documents reason from, and nothing
-in the repo says they are stale.
-
-This is not a claim about the renderer. `EngineHost.blitFramebuffer` flips rows today
-(`packages/dc-wasm/src/EngineHost.ts:918-934`, regression test `EngineHost.blit.test.ts`) and
-the engine's own rect geometry is right — `instructions.json` puts the baseline in `y0` and the
-value in `y1`, and `instancedRect@1` fills between them. The stills simply predate the fix.
-
-**Why it bites — it already did.** `specs/2026-09-19-chart-quality-bar/SPEC.md` §1.1 reads
-`price-line-area.png` as *"the area is filled on the wrong side of the line… the dark silhouette
-is the price series"* and scores the view **tier 0 (Truthful) FAIL**. §5 Q6 then made that a
-locked open question. Both are artifacts of the mirror: the green mass **is** the fill, the dark
-region **is** the complement, and the whole frame is flipped. §5 Q1 checked the right things —
-the blit flip is intact, `sy` is positive — and drew the wrong conclusion, because it compared
-the still against *today's* code instead of against the code that produced it. See **§C6**.
-
-The general trap: a mirrored random walk still looks like a random walk, and the axis numbers
-beside it are a hand-typed DOM overlay (SPEC §1.3), so **nothing in the frame contradicts the
-mirror**. Orientation cannot be eyeballed off these images at all; it has to be measured against
-the data the capture replayed.
-
-**Re-check.**
-```bash
-# 1 — every still is from one pre-fix commit, and the fix came later
-git log -1 --format='%h %ad' --date=short -- apps/showcase/stills/   # -> 537c995 2026-06-11
-git log -1 --format='%h %ad' --date=short -S 'fbH - 1 - y' \
-  -- packages/dc-wasm/src/EngineHost.ts                              # -> d6b5acd 2026-06-21
-for f in apps/showcase/stills/*.png; do \
-  git log -1 --format='%ad' --date=short -- "$f"; done | sort -u     # -> 2026-06-11 (only)
-
-# 2 — the mirror, measured on price-line-area.png against its own records.json.
-#     Fit the green fill's lower boundary against the price each column replayed:
-#     view.json's sy=0.121428571 over H=600 predicts -36.43 px/$ upright and
-#     +36.43 px/$ mirrored.
-python3 apps/showcase/tools/still-orientation.py price-line-area   # exit 1 == mirrored
-# -> fit       : slope +36.40 px/unit   r = +0.9895   median|resid| = 0.3 px
-# -> predicted : upright -36.43   mirrored +36.43   (sy=0.121428571, H=600)
-# -> VERDICT   : MIRRORED
-
-# 3 — the engine itself is correct (this is the control for 2)
-bash scripts/tier0.sh          # case C: C2/C3/C4 hold on the presented raster
-```
-
-**Working around it.** Do not score, measure or cite a committed still. Treat
-`apps/showcase/stills/` as a 2026-06 contact sheet of *what was drawn*, not of *how it looked*;
-anything vertical read off one is inverted. For a claim about orientation or fill direction use
-`scripts/tier0.sh` (which asserts on the presented raster and ships the mirror as a negative
-control). Recapturing the gallery is **ENC-1250's follow-up, not ENC-1250** — it rewrites 23
-binary artifacts and needs the capture harness, whose `EMBASSY_REPO` path does not exist on this
-machine (`apps/showcase/tools/capture.mjs`); `apps/showcase/stills/README.md` marks the
-directory stale until then.
-
-**Ticket.** Recapture + the SPEC correction: **ENC-1276**. **Verified at `2423de6`, 2026-09-19**
-— fit measured on both adapters the tier-0 control run used (llvmpipe, and NVIDIA GeForce
-RTX 3070 Ti / NVK GA104).
-
----
-
 ## DC-L16 — Nothing on the market-data path carries a timestamp, so a time axis is the client's *observation* time 🟠
 
 **Claim.** As of ENC-1254 the x axis of the market views renders time rather than `INDEX`
@@ -1843,3 +1780,133 @@ case the old L4 taught us.
 
 **Severity.** 🔴 will silently produce a wrong result or a false green. 🟠 will cost you an
 afternoon. 🟡 is a sharp edge you should know about before you hit it.
+
+---
+
+## DC-L15 — Every committed showcase still is vertically MIRRORED: all 23 predate the ENC-696 blit fix ✅ *(RETIRED — fixed by ENC-1288)*
+
+**Retired 2026-09-20** by ENC-1288, which recaptured the gallery. Every PNG in
+`apps/showcase/stills/` is now a frame taken at `2c03358` (ENC-1316 HEAD) rather than at
+`537c995`, and the re-check below is the old one **inverted**: the tool that convicted
+`price-line-area` of being mirrored now acquits it, and the archived pre-recapture file still
+convicts. Both halves are asserted, because "the mirror is gone" and "the instrument still
+detects a mirror" are different claims and only the pair is worth anything.
+
+**How the new stills were taken**, and each clause is a thing the old ones could not say:
+
+- **canvas-only** — `canvas.engine-canvas` → `canvas.toDataURL('image/png')`, so no DOM or SVG
+  chrome is composited into any frame (SPEC D10). The old stills were screenshots of
+  `.single-canvas-region`, i.e. the canvas *plus* the hand-typed overlay, which is the second
+  half of why the mirror survived: the numbers beside the geometry flipped with it.
+- **on a named hardware adapter** — `vendor: nvidia, architecture: ampere`,
+  `adapter.info.isFallbackAdapter: false` on all 22, recorded per still in
+  `apps/showcase/stills/capture-manifest.json` (SPEC D8). `--allow-software` is never passed.
+- **at a known point in the replay** — the capture waits for one full pass of the view's own
+  transport scrubber (seen ≤5%, then ≥92%) instead of a fixed 10s wait into a ~20s loop.
+  Measured 2026-09-20: a 40s *fixed* dwell landed `price-line-area` 30 pixel-columns into a
+  fresh loop, 30 of 267 records drawn, and the orientation fit could not be made at all.
+- **nothing was flipped** — a vertical flip of a stale artifact would have reproduced 2026-06
+  geometry wearing 2026-09 orientation, and silently re-frozen three months of renderer change.
+  `apps/showcase/tools/recapture-stills.mjs` drives the running engine.
+
+**The tool had a defect of exactly the shape it exists to catch, and the recapture is what
+exposed it.** `still-orientation.py` read only the **lowest** fill row per column. On a mirrored
+frame that is the value edge; on an upright frame it is the flat baseline, the fitted Y has zero
+variance, and the tool exits 2 — so it could return MIRRORED or CANNOT RUN and **never UPRIGHT**.
+It was never wrong about a still, and it could never have confirmed one was fixed. It now reads
+both edges of the fill run and rules on whichever varies (ENC-1288).
+
+**Re-check** — the old one, inverted, plus the control that keeps it honest.
+```bash
+# 1 — no still predates the blit fix any more (d6b5acd, 2026-06-21)
+for f in apps/showcase/stills/*.png; do \
+  git log -1 --format='%ad' --date=short -- "$f"; done | sort -u   # -> 2026-09-20 (only)
+
+# 2 — the mirror is GONE, measured against the data the capture replayed
+python3 apps/showcase/tools/still-orientation.py price-line-area   # exit 0 == upright
+# -> value edge: top of the fill run   (baseline edge bottom spans 0 px)
+# -> fit       : slope -29.24 px/unit   r = -1.0000   median|resid| = 0.2 px
+# -> VERDICT   : UPRIGHT
+
+# 3 — and the instrument can still SEE a mirror (a check never seen to fail is not a check):
+#     the archived pre-recapture still, and the new one flipped, both convict.
+d=$(mktemp -d); git show 537c995:apps/showcase/stills/price-line-area.png > "$d/old.png"
+python3 apps/showcase/tools/still-orientation.py price-line-area --still "$d/old.png"
+# -> VERDICT   : MIRRORED  (exit 1; slope +36.40, r = +0.9895)
+
+# 4 — every capture names a hardware adapter
+python3 -c "import json;m=json.load(open('apps/showcase/stills/capture-manifest.json'));\
+print(len(m['stills']),m['adapters'],all(s['adapter']['infoIsFallbackAdapter']=='false' for s in m['stills']))"
+# -> 22 ['nvidia/ampere'] True
+```
+
+**What is NOT retired.** Nothing here says a still is *scorable*. It says a still is no longer
+upside down and now names the machine that drew it. The standing rule that a tier-1 judgement is
+made on a fresh canvas-only capture, not on a committed PNG, is SPEC D10's and is unchanged —
+a still is a picture of one frame of a loop, and the loop moves.
+
+**Ticket.** Recapture: **ENC-1288** (the SPEC correction was ENC-1276). The original entry
+follows verbatim; §H's argument is that a falsification is worth more than a claim.
+
+---
+
+### The original entry, as it stood at `2c03358`
+
+**Claim.** The 23 PNGs in `apps/showcase/stills/` were all captured in one commit — `537c995`,
+**2026-06-11** — and the Y-orientation fix they needed landed in `d6b5acd`, **2026-06-21**, ten
+days later (§R L2, DC-L05). Every one of them is therefore an **upside-down** picture of a
+correct render. They are the *only* rendered evidence several documents reason from, and nothing
+in the repo says they are stale.
+
+This is not a claim about the renderer. `EngineHost.blitFramebuffer` flips rows today
+(`packages/dc-wasm/src/EngineHost.ts:918-934`, regression test `EngineHost.blit.test.ts`) and
+the engine's own rect geometry is right — `instructions.json` puts the baseline in `y0` and the
+value in `y1`, and `instancedRect@1` fills between them. The stills simply predate the fix.
+
+**Why it bites — it already did.** `specs/2026-09-19-chart-quality-bar/SPEC.md` §1.1 reads
+`price-line-area.png` as *"the area is filled on the wrong side of the line… the dark silhouette
+is the price series"* and scores the view **tier 0 (Truthful) FAIL**. §5 Q6 then made that a
+locked open question. Both are artifacts of the mirror: the green mass **is** the fill, the dark
+region **is** the complement, and the whole frame is flipped. §5 Q1 checked the right things —
+the blit flip is intact, `sy` is positive — and drew the wrong conclusion, because it compared
+the still against *today's* code instead of against the code that produced it. See **§C6**.
+
+The general trap: a mirrored random walk still looks like a random walk, and the axis numbers
+beside it are a hand-typed DOM overlay (SPEC §1.3), so **nothing in the frame contradicts the
+mirror**. Orientation cannot be eyeballed off these images at all; it has to be measured against
+the data the capture replayed.
+
+**Re-check.**
+```bash
+# 1 — every still is from one pre-fix commit, and the fix came later
+git log -1 --format='%h %ad' --date=short -- apps/showcase/stills/   # -> 537c995 2026-06-11
+git log -1 --format='%h %ad' --date=short -S 'fbH - 1 - y' \
+  -- packages/dc-wasm/src/EngineHost.ts                              # -> d6b5acd 2026-06-21
+for f in apps/showcase/stills/*.png; do \
+  git log -1 --format='%ad' --date=short -- "$f"; done | sort -u     # -> 2026-06-11 (only)
+
+# 2 — the mirror, measured on price-line-area.png against its own records.json.
+#     Fit the green fill's lower boundary against the price each column replayed:
+#     view.json's sy=0.121428571 over H=600 predicts -36.43 px/$ upright and
+#     +36.43 px/$ mirrored.
+python3 apps/showcase/tools/still-orientation.py price-line-area   # exit 1 == mirrored
+# -> fit       : slope +36.40 px/unit   r = +0.9895   median|resid| = 0.3 px
+# -> predicted : upright -36.43   mirrored +36.43   (sy=0.121428571, H=600)
+# -> VERDICT   : MIRRORED
+
+# 3 — the engine itself is correct (this is the control for 2)
+bash scripts/tier0.sh          # case C: C2/C3/C4 hold on the presented raster
+```
+
+**Working around it.** Do not score, measure or cite a committed still. Treat
+`apps/showcase/stills/` as a 2026-06 contact sheet of *what was drawn*, not of *how it looked*;
+anything vertical read off one is inverted. For a claim about orientation or fill direction use
+`scripts/tier0.sh` (which asserts on the presented raster and ships the mirror as a negative
+control). Recapturing the gallery is **ENC-1250's follow-up, not ENC-1250** — it rewrites 23
+binary artifacts and needs the capture harness, whose `EMBASSY_REPO` path does not exist on this
+machine (`apps/showcase/tools/capture.mjs`); `apps/showcase/stills/README.md` marks the
+directory stale until then.
+
+**Ticket.** Recapture + the SPEC correction: **ENC-1276**. **Verified at `2423de6`, 2026-09-19**
+— fit measured on both adapters the tier-0 control run used (llvmpipe, and NVIDIA GeForce
+RTX 3070 Ti / NVK GA104).
