@@ -405,13 +405,13 @@ ${cards}
  * not evidence about any renderer; the per-view PNGs beside it are. It is taken
  * with `--mode page`, which stamps `captureMode=page` and `tier1Scorable:false`
  * into the file, so it can never be mistaken for one of them. */
-async function shootContactSheet(results) {
-  const htmlPath = join(OUTDIR, 'contact-sheet.html');
-  const out = join(OUTDIR, 'contact-sheet.png');
-  const rows = Math.ceil(results.length / 5);
-  const height = 260 + rows * 430;
-  const profile = mkdtempSync(join(tmpdir(), 'ENC-1288-sheet-'));
+const SHEET_WIDTH = 1958;
 
+/* One pass of the contact sheet: launch a headless Chrome at a given window
+ * height and let shoot-live take a `page` shot of the local HTML file. */
+async function sheetPass(height, out, probe) {
+  const htmlPath = join(OUTDIR, 'contact-sheet.html');
+  const profile = mkdtempSync(join(tmpdir(), 'ENC-1288-sheet-'));
   if (await cdpUp(CDP_PORT)) {
     console.error(`FATAL something already answers CDP on ${CDP_PORT}`);
     process.exit(2);
@@ -419,14 +419,14 @@ async function shootContactSheet(results) {
   const chrome = spawn(CHROME, [
     '--headless=new', '--no-sandbox', '--disable-gpu-sandbox',
     `--remote-debugging-port=${CDP_PORT}`,
-    `--window-size=1958,${height}`,
+    `--window-size=${SHEET_WIDTH},${height}`,
     '--force-device-scale-factor=1',
     `--user-data-dir=${join(profile, 'profile')}`,
     'about:blank',
   ], { stdio: 'ignore', env: { ...process.env, DISPLAY: '', WAYLAND_DISPLAY: '' } });
   try {
     for (let i = 0; i < 40; i++) { if (await cdpUp(CDP_PORT)) break; await sleep(500); }
-    const code = await run(process.execPath, [
+    const argv = [
       SHOOT_LIVE,
       '--port', String(CDP_PORT),
       '--url', `file://${htmlPath}`,
@@ -437,9 +437,12 @@ async function shootContactSheet(results) {
       // would never fire. The sheet is ready when every <img> has decoded.
       '--until', `(() => Array.from(document.images).every(i => i.complete && i.naturalWidth > 0))()`,
       '--out', out,
+      // A file:// page gets no WebGPU adapter at all, so D8's gate has nothing to
+      // rule on. This is the one shot in the directory that is not a render.
       '--allow-software',
-    ]);
-    return code;
+    ];
+    if (probe) argv.push('--probe', probe);
+    return await run(process.execPath, argv);
   } finally {
     try { chrome.kill('SIGTERM'); } catch { /* gone */ }
     await sleep(300);
@@ -447,6 +450,34 @@ async function shootContactSheet(results) {
     for (let i = 0; i < 20; i++) { if (!(await cdpUp(CDP_PORT))) break; await sleep(500); }
     try { rmSync(profile, { recursive: true, force: true }); } catch { /* best effort */ }
   }
+}
+
+/* TWO passes, because `Page.captureScreenshot` shoots the VIEWPORT and the
+ * sheet's height depends on how the grid reflows — guessing it leaves either a
+ * band of dead background under the last row or a truncated sheet, and both are
+ * silent. Pass 1 is a throwaway shot whose only purpose is the probe:
+ * `document.documentElement.scrollHeight` at this exact width. Pass 2 shoots at
+ * that height. Cropping the pass-1 PNG instead would mean re-encoding it, which
+ * would drop shoot-live's tEXt provenance chunks — the thing that lets this file
+ * answer for itself. */
+async function shootContactSheet(results) {
+  const out = join(OUTDIR, 'contact-sheet.png');
+  const scratch = mkdtempSync(join(tmpdir(), 'ENC-1288-measure-'));
+  const probeOut = join(scratch, 'measure.png');
+  let height = 260 + Math.ceil(results.length / 5) * 430;   // fallback estimate
+  const m = await sheetPass(1200, probeOut, 'document.documentElement.scrollHeight');
+  if (m === 0) {
+    try {
+      const v = JSON.parse(readFileSync(probeOut + '.probe.json', 'utf8'))?.value;
+      if (Number.isFinite(v) && v >= 400 && v <= 16000) height = Math.ceil(v);
+      else console.log(`[recap] contact sheet: scrollHeight ${v} out of range; using ${height}`);
+    } catch (e) { console.log('[recap] contact sheet: could not read scrollHeight: ' + e.message); }
+  } else {
+    console.log(`[recap] contact sheet: measuring pass exited ${m}; using estimate ${height}`);
+  }
+  try { rmSync(scratch, { recursive: true, force: true }); } catch { /* best effort */ }
+  console.log(`[recap] contact sheet: ${SHEET_WIDTH}x${height}`);
+  return sheetPass(height, out, null);
 }
 
 async function main() {
