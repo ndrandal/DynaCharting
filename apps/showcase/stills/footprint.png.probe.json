@@ -1,0 +1,912 @@
+{
+  "spec": "specs/2026-09-19-chart-quality-bar/SPEC.md D10 (ENC-1262)",
+  "url": "http://localhost:5650/?svgAxis=0#/",
+  "capturedAt": "2026-09-20T16:08:35.356Z",
+  "rasterSha256": "e01229ba040183755d89f240b35352ec8d732037202ca5eaa65f4221305a041d",
+  "expression": "(() => {\n  const out = {\n    view: \"footprint\",\n    axis: (window.__dcEngineAxis || {})[\"footprint\"] || null,\n    domain: (window.__dcAxisDomain || {})[\"footprint\"] || null,\n    boundaryErrors: (window.__dcBoundaryErrors || []).length,\n    dom: {\n      overlaySvgs: document.querySelectorAll('.chrome-overlay svg').length,\n      overlaySvgText: document.querySelectorAll('.chrome-overlay svg text').length,\n      overlayNodes: document.querySelectorAll('.chrome-overlay *').length\n    },\n    progress: (() => {\n      const el = document.querySelector('[role=\"slider\"][aria-label=\"Replay position\"]');\n      return el ? Number(el.getAttribute('aria-valuenow')) : null;\n    })()\n  };\n  const c = document.querySelector('canvas.engine-canvas');\n  if (!c || !c.width || !c.height) { out.pix = { ok: false, reason: 'no canvas' }; return out; }\n  const off = document.createElement('canvas');\n  off.width = c.width; off.height = c.height;\n  const ctx = off.getContext('2d');\n  ctx.drawImage(c, 0, 0);\n  let data;\n  try { data = ctx.getImageData(0, 0, off.width, off.height).data; }\n  catch (e) { out.pix = { ok: false, reason: 'readback blocked: ' + (e && e.message) }; return out; }\n  const colors = new Set();\n  let sampled = 0, nonbg = 0, chroma = 0;\n  const stride = 4 * 11;\n  for (let i = 0; i < data.length; i += stride) {\n    sampled++;\n    const r = data[i], g = data[i + 1], b = data[i + 2];\n    if (sampled % 7 === 0) colors.add(r + ',' + g + ',' + b);\n    const dClear = Math.abs(r - 8) + Math.abs(g - 8) + Math.abs(b - 13);\n    const dApp = Math.abs(r - 13) + Math.abs(g - 13) + Math.abs(b - 20);\n    if (Math.min(dClear, dApp) > 36) nonbg++;\n    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);\n    if (mx - mn > 22 && mx > 30) chroma++;\n  }\n  out.pix = {\n    ok: true, w: c.width, h: c.height,\n    distinctColors: colors.size,\n    coverage: sampled ? nonbg / sampled : 0,\n    chroma: sampled ? chroma / sampled : 0,\n    nonbgPixels: nonbg\n  };\n  return out;\n})()",
+  "ok": true,
+  "value": {
+    "view": "footprint",
+    "axis": {
+      "plan": {
+        "gridSegments": [
+          -0.8577777777777778,
+          -0.858286561474108,
+          0.9644444444444444,
+          -0.858286561474108,
+          -0.8577777777777778,
+          -0.6356666313671504,
+          0.9644444444444444,
+          -0.6356666313671504,
+          -0.8577777777777778,
+          -0.4130467012601929,
+          0.9644444444444444,
+          -0.4130467012601929,
+          -0.8577777777777778,
+          -0.19042677115323536,
+          0.9644444444444444,
+          -0.19042677115323536,
+          -0.8577777777777778,
+          0.03219315895372221,
+          0.9644444444444444,
+          0.03219315895372221,
+          -0.8577777777777778,
+          0.2548130890606797,
+          0.9644444444444444,
+          0.2548130890606797,
+          -0.8577777777777778,
+          0.47743301916763725,
+          0.9644444444444444,
+          0.47743301916763725,
+          -0.8577777777777778,
+          0.7000529492745948,
+          0.9644444444444444,
+          0.7000529492745948,
+          -0.8577777777777778,
+          0.9226728793815524,
+          0.9644444444444444,
+          0.9226728793815524,
+          0.11087719298245524,
+          -0.8873239436619719,
+          0.11087719298245524,
+          0.9517102615694165,
+          0.26480701754385727,
+          -0.8873239436619719,
+          0.26480701754385727,
+          0.9517102615694165,
+          0.4187368421052611,
+          -0.8873239436619719,
+          0.4187368421052611,
+          0.9517102615694165,
+          0.5726666666666649,
+          -0.8873239436619719,
+          0.5726666666666649,
+          0.9517102615694165,
+          0.7265964912280687,
+          -0.8873239436619719,
+          0.7265964912280687,
+          0.9517102615694165,
+          0.8805263157894725,
+          -0.8873239436619719,
+          0.8805263157894725,
+          0.9517102615694165
+        ],
+        "tickSegments": [
+          -0.8711111111111111,
+          -0.858286561474108,
+          -0.8577777777777778,
+          -0.858286561474108,
+          -0.8711111111111111,
+          -0.6356666313671504,
+          -0.8577777777777778,
+          -0.6356666313671504,
+          -0.8711111111111111,
+          -0.4130467012601929,
+          -0.8577777777777778,
+          -0.4130467012601929,
+          -0.8711111111111111,
+          -0.19042677115323536,
+          -0.8577777777777778,
+          -0.19042677115323536,
+          -0.8711111111111111,
+          0.03219315895372221,
+          -0.8577777777777778,
+          0.03219315895372221,
+          -0.8711111111111111,
+          0.2548130890606797,
+          -0.8577777777777778,
+          0.2548130890606797,
+          -0.8711111111111111,
+          0.47743301916763725,
+          -0.8577777777777778,
+          0.47743301916763725,
+          -0.8711111111111111,
+          0.7000529492745948,
+          -0.8577777777777778,
+          0.7000529492745948,
+          -0.8711111111111111,
+          0.9226728793815524,
+          -0.8577777777777778,
+          0.9226728793815524,
+          0.11087719298245524,
+          -0.9114688128772637,
+          0.11087719298245524,
+          -0.8873239436619719,
+          0.26480701754385727,
+          -0.9114688128772637,
+          0.26480701754385727,
+          -0.8873239436619719,
+          0.4187368421052611,
+          -0.9114688128772637,
+          0.4187368421052611,
+          -0.8873239436619719,
+          0.5726666666666649,
+          -0.9114688128772637,
+          0.5726666666666649,
+          -0.8873239436619719,
+          0.7265964912280687,
+          -0.9114688128772637,
+          0.7265964912280687,
+          -0.8873239436619719,
+          0.8805263157894725,
+          -0.9114688128772637,
+          0.8805263157894725,
+          -0.8873239436619719
+        ],
+        "spineSegments": [
+          -0.8577777777777778,
+          -0.8873239436619719,
+          -0.8577777777777778,
+          0.9517102615694165,
+          -0.8577777777777778,
+          -0.8873239436619719,
+          0.9644444444444444,
+          -0.8873239436619719
+        ],
+        "labels": [
+          {
+            "axis": "y",
+            "role": "yTickLabel",
+            "text": "0",
+            "clipX": -0.8906944451108574,
+            "clipY": -0.8707362599967949,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              49,
+              458,
+              6,
+              8
+            ]
+          },
+          {
+            "axis": "y",
+            "role": "yTickLabel",
+            "text": "10",
+            "clipX": -0.8995148158818482,
+            "clipY": -0.6481163298898374,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              45,
+              403,
+              10,
+              7
+            ]
+          },
+          {
+            "axis": "y",
+            "role": "yTickLabel",
+            "text": "20",
+            "clipX": -0.900777778699994,
+            "clipY": -0.42549639978287984,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              44,
+              347,
+              11,
+              8
+            ]
+          },
+          {
+            "axis": "y",
+            "role": "yTickLabel",
+            "text": "30",
+            "clipX": -0.9008592601120471,
+            "clipY": -0.20287646967592232,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              44,
+              292,
+              11,
+              8
+            ]
+          },
+          {
+            "axis": "y",
+            "role": "yTickLabel",
+            "text": "40",
+            "clipX": -0.9015314812958239,
+            "clipY": 0.019743460431035253,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              44,
+              237,
+              11,
+              7
+            ]
+          },
+          {
+            "axis": "y",
+            "role": "yTickLabel",
+            "text": "50",
+            "clipX": -0.9008999998867511,
+            "clipY": 0.24236339053799272,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              44,
+              181,
+              11,
+              8
+            ]
+          },
+          {
+            "axis": "y",
+            "role": "yTickLabel",
+            "text": "60",
+            "clipX": -0.9015518530458211,
+            "clipY": 0.4649833206449503,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              44,
+              126,
+              11,
+              8
+            ]
+          },
+          {
+            "axis": "y",
+            "role": "yTickLabel",
+            "text": "70",
+            "clipX": -0.8997388902306556,
+            "clipY": 0.6876032507519079,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              45,
+              71,
+              10,
+              7
+            ]
+          },
+          {
+            "axis": "y",
+            "role": "yTickLabel",
+            "text": "80",
+            "clipX": -0.9019185203313826,
+            "clipY": 0.9102231808588654,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              44,
+              15,
+              11,
+              8
+            ]
+          },
+          {
+            "axis": "x",
+            "role": "xTickLabel",
+            "text": "400",
+            "clipX": 0.09417348814474558,
+            "clipY": -0.9533869887381733,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              492,
+              479,
+              16,
+              7
+            ]
+          },
+          {
+            "axis": "x",
+            "role": "xTickLabel",
+            "text": "405",
+            "clipX": 0.24861257106581824,
+            "clipY": -0.9533869887381733,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              562,
+              479,
+              15,
+              7
+            ]
+          },
+          {
+            "axis": "x",
+            "role": "xTickLabel",
+            "text": "410",
+            "clipX": 0.4033062868920183,
+            "clipY": -0.9533869887381733,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              631,
+              479,
+              15,
+              7
+            ]
+          },
+          {
+            "axis": "x",
+            "role": "xTickLabel",
+            "text": "415",
+            "clipX": 0.5577453707444153,
+            "clipY": -0.9533869887381733,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              701,
+              479,
+              14,
+              7
+            ]
+          },
+          {
+            "axis": "x",
+            "role": "xTickLabel",
+            "text": "420",
+            "clipX": 0.710534454605753,
+            "clipY": -0.9533869887381733,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              769,
+              479,
+              15,
+              7
+            ]
+          },
+          {
+            "axis": "x",
+            "role": "xTickLabel",
+            "text": "425",
+            "clipX": 0.8649735384581501,
+            "clipY": -0.9533869887381733,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              839,
+              479,
+              15,
+              7
+            ]
+          },
+          {
+            "axis": "y",
+            "role": "axisTitle",
+            "text": "Price·time level",
+            "clipX": -0.9955555555555555,
+            "clipY": 0.9578303161041597,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              2,
+              2,
+              70,
+              9
+            ]
+          },
+          {
+            "axis": "x",
+            "role": "axisTitle",
+            "text": "Volume",
+            "clipX": 0.8913111081719398,
+            "clipY": -0.9910295090602497,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              851,
+              487,
+              31,
+              8
+            ]
+          }
+        ],
+        "gridLines": [
+          {
+            "orientation": "horizontal",
+            "centre": 462,
+            "value": 0
+          },
+          {
+            "orientation": "horizontal",
+            "centre": 406,
+            "value": 10
+          },
+          {
+            "orientation": "horizontal",
+            "centre": 351,
+            "value": 20
+          },
+          {
+            "orientation": "horizontal",
+            "centre": 296,
+            "value": 30
+          },
+          {
+            "orientation": "horizontal",
+            "centre": 241,
+            "value": 40
+          },
+          {
+            "orientation": "horizontal",
+            "centre": 185,
+            "value": 50
+          },
+          {
+            "orientation": "horizontal",
+            "centre": 130,
+            "value": 60
+          },
+          {
+            "orientation": "horizontal",
+            "centre": 75,
+            "value": 70
+          },
+          {
+            "orientation": "horizontal",
+            "centre": 19,
+            "value": 80
+          },
+          {
+            "orientation": "vertical",
+            "centre": 500,
+            "value": 400
+          },
+          {
+            "orientation": "vertical",
+            "centre": 569,
+            "value": 405
+          },
+          {
+            "orientation": "vertical",
+            "centre": 638,
+            "value": 410
+          },
+          {
+            "orientation": "vertical",
+            "centre": 708,
+            "value": 415
+          },
+          {
+            "orientation": "vertical",
+            "centre": 777,
+            "value": 420
+          },
+          {
+            "orientation": "vertical",
+            "centre": 846,
+            "value": 425
+          }
+        ],
+        "droppedLabels": [],
+        "plotPx": [
+          64,
+          12,
+          883,
+          468
+        ]
+      },
+      "tier1": {
+        "pass": true,
+        "failures": [],
+        "counts": {
+          "x": 6,
+          "y": 9,
+          "titles": 2
+        }
+      },
+      "scene": {
+        "text": [
+          {
+            "role": "yTickLabel",
+            "text": "0",
+            "bbox": [
+              49,
+              458,
+              6,
+              8
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          },
+          {
+            "role": "yTickLabel",
+            "text": "10",
+            "bbox": [
+              45,
+              403,
+              10,
+              7
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          },
+          {
+            "role": "yTickLabel",
+            "text": "20",
+            "bbox": [
+              44,
+              347,
+              11,
+              8
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          },
+          {
+            "role": "yTickLabel",
+            "text": "30",
+            "bbox": [
+              44,
+              292,
+              11,
+              8
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          },
+          {
+            "role": "yTickLabel",
+            "text": "40",
+            "bbox": [
+              44,
+              237,
+              11,
+              7
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          },
+          {
+            "role": "yTickLabel",
+            "text": "50",
+            "bbox": [
+              44,
+              181,
+              11,
+              8
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          },
+          {
+            "role": "yTickLabel",
+            "text": "60",
+            "bbox": [
+              44,
+              126,
+              11,
+              8
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          },
+          {
+            "role": "yTickLabel",
+            "text": "70",
+            "bbox": [
+              45,
+              71,
+              10,
+              7
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          },
+          {
+            "role": "yTickLabel",
+            "text": "80",
+            "bbox": [
+              44,
+              15,
+              11,
+              8
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          },
+          {
+            "role": "xTickLabel",
+            "text": "400",
+            "bbox": [
+              492,
+              479,
+              16,
+              7
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          },
+          {
+            "role": "xTickLabel",
+            "text": "405",
+            "bbox": [
+              562,
+              479,
+              15,
+              7
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          },
+          {
+            "role": "xTickLabel",
+            "text": "410",
+            "bbox": [
+              631,
+              479,
+              15,
+              7
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          },
+          {
+            "role": "xTickLabel",
+            "text": "415",
+            "bbox": [
+              701,
+              479,
+              14,
+              7
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          },
+          {
+            "role": "xTickLabel",
+            "text": "420",
+            "bbox": [
+              769,
+              479,
+              15,
+              7
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          },
+          {
+            "role": "xTickLabel",
+            "text": "425",
+            "bbox": [
+              839,
+              479,
+              15,
+              7
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          },
+          {
+            "role": "axisTitle",
+            "text": "Price·time level",
+            "bbox": [
+              2,
+              2,
+              70,
+              9
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          },
+          {
+            "role": "axisTitle",
+            "text": "Volume",
+            "bbox": [
+              851,
+              487,
+              31,
+              8
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          }
+        ],
+        "grid": [
+          {
+            "orientation": "horizontal",
+            "centre": 462,
+            "pad": 3
+          },
+          {
+            "orientation": "horizontal",
+            "centre": 406,
+            "pad": 3
+          },
+          {
+            "orientation": "horizontal",
+            "centre": 351,
+            "pad": 3
+          },
+          {
+            "orientation": "horizontal",
+            "centre": 296,
+            "pad": 3
+          },
+          {
+            "orientation": "horizontal",
+            "centre": 241,
+            "pad": 3
+          },
+          {
+            "orientation": "horizontal",
+            "centre": 185,
+            "pad": 3
+          },
+          {
+            "orientation": "horizontal",
+            "centre": 130,
+            "pad": 3
+          },
+          {
+            "orientation": "horizontal",
+            "centre": 75,
+            "pad": 3
+          },
+          {
+            "orientation": "horizontal",
+            "centre": 19,
+            "pad": 3
+          },
+          {
+            "orientation": "vertical",
+            "centre": 500,
+            "pad": 3
+          },
+          {
+            "orientation": "vertical",
+            "centre": 569,
+            "pad": 3
+          },
+          {
+            "orientation": "vertical",
+            "centre": 638,
+            "pad": 3
+          },
+          {
+            "orientation": "vertical",
+            "centre": 708,
+            "pad": 3
+          },
+          {
+            "orientation": "vertical",
+            "centre": 777,
+            "pad": 3
+          },
+          {
+            "orientation": "vertical",
+            "centre": 846,
+            "pad": 3
+          }
+        ],
+        "axis": {
+          "spines": [
+            {
+              "orientation": "left"
+            },
+            {
+              "orientation": "bottom"
+            }
+          ]
+        },
+        "plot": [
+          64,
+          12,
+          883,
+          468
+        ],
+        "palette": [
+          {
+            "rgb": [
+              28,
+              28,
+              38
+            ],
+            "role": "gridline",
+            "what": "Dark gridColor over the pane"
+          },
+          {
+            "rgb": [
+              102,
+              102,
+              115
+            ],
+            "role": "tick",
+            "what": "Dark tickColor"
+          },
+          {
+            "rgb": [
+              102,
+              102,
+              115
+            ],
+            "role": "spine",
+            "what": "Dark tickColor (the spine)"
+          },
+          {
+            "rgb": [
+              179,
+              179,
+              191
+            ],
+            "role": "label",
+            "what": "Dark labelColor"
+          }
+        ],
+        "theme": {
+          "name": "Dark",
+          "palette": [
+            [
+              28,
+              28,
+              38
+            ],
+            [
+              102,
+              102,
+              115
+            ],
+            [
+              102,
+              102,
+              115
+            ],
+            [
+              179,
+              179,
+              191
+            ]
+          ]
+        }
+      },
+      "refusal": null,
+      "fontLoaded": true,
+      "labelAttempts": 5
+    },
+    "domain": {
+      "x": {
+        "min": 398,
+        "max": 425,
+        "source": "literal"
+      },
+      "y": {
+        "min": 0,
+        "max": 80,
+        "source": "literal"
+      },
+      "records": 0
+    },
+    "boundaryErrors": 0,
+    "dom": {
+      "overlaySvgs": 0,
+      "overlaySvgText": 0,
+      "overlayNodes": 13
+    },
+    "progress": 93,
+    "pix": {
+      "ok": true,
+      "w": 900,
+      "h": 497,
+      "distinctColors": 74,
+      "coverage": 0.5154436356482393,
+      "chroma": 0.4763918945504623,
+      "nonbgPixels": 20960
+    }
+  }
+}
