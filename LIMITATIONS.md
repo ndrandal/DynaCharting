@@ -770,102 +770,39 @@ Parts **(2)** and **(3)** are unchanged and still true: every view still bakes a
 can see in the raster is that the data is not fitted to the plot box the furniture is laid out
 against, so the leftmost bars run under the price labels.
 
+**Update, 2026-09-20 (ENC-1273) — PART (2) IS NO LONGER TRUE for the two single-pane views that
+declare an `axisDomain`.** `useViewSwitch` calls `frameSeries(measuredDomain, canvas)` and
+applies both halves it returns, and the chrome overlay maps its ticks through that same fitted
+transform, so on `candles-aapl` and `ohlc-bars` the data and the furniture are now laid out
+against ONE box. **DC-L14 is retired** (§R) and what remains of (2) is **DC-L-1273**: a stacked
+multi-pane view (`candle-overlays`, which is what `/` renders) is refused rather than framed,
+and `customer-layer` has adopted none of it.
+
+Two corrections to the paragraph above, both measured on a canvas-only capture of
+`#/view/candles-aapl` (hardware adapter `vendor: nvidia, architecture: ampere`,
+`info.isFallbackAdapter: false`):
+
+- **"~44% of the stated domain is off-frame" was right, and it was the RIGHT-hand failure**, not
+  a left-hand one: the literal's X window is 150 record-indices against a 270-index tape, so the
+  tail projected to clip x ≈ 2.17 — off the render target — and the pane scissor cut it at
+  ±0.95 (raster column 877 of 900, which is exactly `(0.95+1)/2·900`). Fitted, the ink ends on
+  the box edge.
+- **"the leftmost bars run under the price labels" is canvas-width dependent**, which is why it
+  is easy to see once and not reproduce. The literal puts the first bar at clip −0.8545 while
+  the label gutter's inner edge is at `−1 + 128/width`; they cross at **width ≈ 880 px**.
+  Measured: at 760×280 the candle ink starts at raster column **55**, inside the 64 px label
+  band; at 900×497 it starts at column **65**, just outside it. After the fit it starts at
+  column 67 and 68 respectively — inside the box at both sizes, because the fit is a function
+  of the canvas rather than a constant.
+
 **Ticket.** Part (1): **ENC-1253**, done. Part (2)'s primitive is **ENC-1256** (done); adopting
-it on the showcase and customer-layer render paths is **DC-L14** / **ENC-1273**. Converting the
-remaining 11 views is unticketed.
+it on the showcase render path is **ENC-1273** (done, DC-L14 retired), and what is still
+unadopted is **DC-L-1273**. Converting the remaining 11 views is unticketed.
 
-**Verified at** `ENC-1253 HEAD`, 2026-09-20 — (3)'s greps re-run in the ENC-1253 worktree and
-unchanged. (1) is retired by the measurement above. (2)'s tick-count and domain observations are
-carried forward from the ENC-1252 measurement over CDP and remain true because nothing on the
-framing path changed.
-
----
-
-## DC-L14 — The plot box exists, and no render path frames anything with it 🟡
-
-**Claim.** As of ENC-1256 this engine finally has a plot-box concept —
-`packages/dc-wasm/src/chart/plotbox.ts`: a clip-space rectangle inset from the canvas by
-per-side gutters given in CSS pixels, `gutters()` naming the four furniture bands,
-`paneRegionFor()` deriving the matching `setPaneRegion`, `fitToPlotBox()` / `frameSeries()`
-mapping an ENC-1252 `ObservedDomain` into it, and `checkTier2Framing()` scoring the result
-against SPEC D1's tier-2 measures. It is exported from `@repo/dc-wasm` and
-`@repo/dc-wasm/chart`, and covered by 32 unit tests including a before/after reconstruction of
-the live NEXO chart's measured framing.
-
-**Nothing that renders calls any of it.** The one consumer is `SceneBuilder`'s
-`transform({domain, canvas})` / `pane({plotBox})` overloads, and `SceneBuilder` itself has zero
-non-test callers — so the whole chain is reachable only from tests. Concretely:
-
-- Every `apps/showcase/views/*/view.json` still bakes a literal `transform`, and
-  `useViewSwitch.bakeTransform` still writes that literal into the engine. **The showcase's
-  framing is exactly what it was**; DC-L13 part (2)'s measured numbers are unchanged.
-- `customer-layer` (the live product, and the surface SPEC §1.0 measured) is a separate repo
-  and has not adopted it either.
-
-**Why it bites.** This is the **DC-L08 shape**, and DC-L08 is in this file precisely because
-nobody noticed it happening: a well-built layer with no callers reads, at a glance, like a
-capability the product has. Someone who greps `plotBox` and finds a tested module will
-reasonably conclude the charts are framed. They are not. The tier-2 numbers on the *product*
-move when a render path calls `frameSeries`, not when this module lands.
-
-It is logged at 🟡 rather than 🟠 because, unlike DC-L08, the gap is one call site rather than
-an unreachable subsystem — the module is pure, exported, and has a worked example in
-`SceneBuilder.test.ts`.
-
-**Re-check.**
-```bash
-# 1 — the primitive exists, is exported, and is covered
-grep -c 'export function frameSeries' packages/dc-wasm/src/chart/plotbox.ts        # -> 1
-grep -c 'from "./chart/plotbox"' packages/dc-wasm/src/index.ts                     # -> 2
-npx vitest run packages/dc-wasm/src/chart/plotbox.test.ts                          # -> 32 passed
-
-# 2 — one app file references it now, and it is the AXIS, not the framing
-grep -rl 'frameSeries\|fitToPlotBox\|plotBox' apps/ --include=*.ts --include=*.tsx
-# -> apps/showcase/src/chrome/engineAxis.ts   (ENC-1253: the furniture is laid
-#    out against plotBox(canvas); the DATA is still on the view's baked literal,
-#    which is what this entry is about and is unchanged)
-
-# 3 — its only package-side consumer is SceneBuilder ...
-grep -rl 'frameSeries\|fitToPlotBox\|paneRegionFor' packages/ --include=*.ts \
-  | grep -v 'chart/plotbox' | grep -v 'index.ts'          # -> packages/dc-wasm/src/chart/SceneBuilder.ts
-
-# 4 — ... which is itself never constructed outside a test (the DC-L08 shape)
-grep -rl 'new SceneBuilder' apps/ packages/ --include=*.ts --include=*.tsx \
-  | grep -v '\.test\.' | wc -l                            # -> 0
-
-# 5 — the showcase still bakes a literal, so its framing is unchanged
-grep -h '"transform"' apps/showcase/views/candles-aapl/view.json
-# -> "transform": { "sx": 0.011333333, "sy": 0.10625, "tx": -0.895333333, "ty": -43.88125 },
-```
-
-**Working around it.** To frame a chart today you call it yourself:
-
-```ts
-const framed = frameSeries(tracker.domain(), { width: canvas.clientWidth, height: canvas.clientHeight });
-host.applyControl({ cmd: 'setPaneRegion', id: PANE, ...framed.paneRegion });
-if (framed.transform) host.applyControl({ cmd: 'setTransform', id: TRANSFORM, ...framed.transform });
-```
-
-Re-run it when the domain moves or the canvas resizes — nothing recomputes it for you. Do not
-read `checkTier2Framing` passing in a unit test as the product being framed; score the delivered
-raster (SPEC D10) for that.
-
-**Ticket.** **ENC-1273** — adopt the plot box on the showcase render path (`useViewSwitch` +
-the chrome overlay's tick mapping, which must map through the SAME transform or the ticks and
-the geometry will disagree). customer-layer adoption is separate and unticketed. **ENC-1253**
-(engine-drawn axis marks) is the first intended consumer of `gutters()`.
-
-**Update, 2026-09-20 (ENC-1253).** `plotBox()` now has its first app caller —
-`apps/showcase/src/chrome/engineAxis.ts` lays the axis furniture out against it. That does NOT
-retire this entry, and the distinction is the whole point: the furniture knows where the frame
-is, the DATA still does not go there. Every `view.json` still bakes its `transform`, no render
-path calls `frameSeries`, and `grep -rl 'new SceneBuilder' apps/ packages/ --include=*.ts
---include=*.tsx | grep -v '\.test\.'` is still empty. The visible consequence, in the
-ENC-1253 capture: the leftmost bars are drawn to the left of the plot box's left edge, under the
-price labels. Adoption for the data is still **ENC-1273**.
-
-**Verified at** `ENC-1253 HEAD`, 2026-09-20 — commands 1, 3, 4 and 5 re-run unchanged in the
-ENC-1253 worktree; command 2's expected output is restamped above.
+**Verified at** `ENC-1273 HEAD`, 2026-09-20 — (3)'s greps re-run in the ENC-1273 worktree and
+unchanged. (1) is retired by the ENC-1253 measurement above; (2) is retired for the single-pane
+views by the ENC-1273 measurement above, and its remainder moved to DC-L-1273. (2)'s tick-count
+and domain observations are carried forward from the ENC-1252 measurement over CDP.
 
 ---
 
@@ -1137,6 +1074,87 @@ symptom was observed and then removed on a canvas-only capture of the showcase, 
 
 ---
 
+## DC-L-1273 — Only a single-pane view is framed by the plot box; a stacked view and the whole product are not 🟡
+
+**Claim.** ENC-1273 put `frameSeries` on a render path for the first time (that is what retired
+**DC-L14**, §R). It did not put it on *every* render path, and the two that are left are stated
+here rather than implied by a green test.
+
+1. **A stacked multi-pane view is REFUSED, not framed.** `plotBox()` returns ONE rectangle and
+   `frameSeries` fits ONE domain into it. `candle-overlays` — the showcase's flagship, the view
+   the hero route renders — puts price in clip y `[-0.20, 0.95]` and a cumulative-volume
+   sub-pane in `[-0.95, -0.30]`, with two transforms. Fitting the price series to the whole box
+   would paint it straight over the volume pane, so `apps/showcase/src/views/framing.ts` counts
+   the manifest's `createPane` commands and declines, with the reason in the returned value. Its
+   framing is still the `view.json` literal, and its axis furniture is still laid out against
+   the full-canvas box while its price band occupies the top 58% of it — i.e. the y tick labels
+   span height the price pane does not.
+
+   What is missing is a **layout**: two boxes carved out of one, a transform per band, and
+   furniture that knows which band it belongs to. `DomainTracker` is not even measuring the
+   volume buffer's y (`manifest.ts` registers it `axes: 'x'` on purpose), so there is no second
+   domain to fit yet.
+
+2. **`customer-layer` — the live product, and the surface SPEC §1.0 actually measured — has not
+   adopted any of it.** It is a separate repo and a separate ticket. Every tier-2 number in
+   SPEC §1.0 was taken there, so **none of them moves because of ENC-1273**. The numbers that
+   moved are the showcase's.
+
+**Why it bites.** This is DC-L14's shape at one-third scale, and it bites the same way: "the
+showcase frames its charts now" is true of two views out of twenty-two, and the one a visitor
+sees first on `/` is not one of them. A reader who greps `frameSeries` will now find a render
+path calling it and reasonably conclude the product is framed.
+
+**Re-check.**
+```bash
+# 1 — a render path calls it (this is what DC-L14 asserted was false)
+grep -rl 'frameSeries' apps/ --include=*.ts --include=*.tsx | grep -v '\.test\.'
+# -> apps/showcase/src/views/framing.ts        (the decision: which views, and why not)
+# -> apps/showcase/src/views/useViewSwitch.ts  (the CALL, on the render path)
+
+# 2 — ... for exactly the two single-pane views that declare an axisDomain
+grep -c 'createPane' apps/showcase/views/*/manifest.ts \
+  | grep -E 'candles-aapl|ohlc-bars|candle-overlays' | sort
+# -> apps/showcase/views/candle-overlays/manifest.ts:2   (the 2 is the refusal)
+# -> apps/showcase/views/candles-aapl/manifest.ts:1
+# -> apps/showcase/views/ohlc-bars/manifest.ts:1
+
+# 3 — and the flagship, which is what `/` renders, is the refused one
+node -e "const t=['Candles + Volume — AAPL','Candlestick — AAPL','OHLC Bars — AAPL']; \
+         console.log(t.slice().sort((a,b)=>a.localeCompare(b))[0])"
+# -> Candles + Volume — AAPL      (candle-overlays; App.tsx FLAGSHIP_ID picks the first
+#    'native'-tier view by title)
+
+# 4 — the other 19 views declare no axisDomain at all, so nothing measures a domain to fit
+grep -rl 'axisDomain' apps/showcase/views/ | wc -l        # -> 3
+ls apps/showcase/views | wc -l                            # -> 22
+
+# 5 — customer-layer is untouched. `<workspace>` is the directory holding the six
+#     repos: from a worktree that is ../../../customer-layer, from this checkout ../customer-layer
+grep -rl 'frameSeries\|fitToPlotBox\|plotBox' <workspace>/customer-layer \
+  --include=*.ts --include=*.tsx | wc -l
+# -> 0
+```
+
+**Working around it.** For a single-pane view, nothing — it is framed. For anything else, fit it
+yourself and hand the engine both halves (`setPaneRegion` AND `setTransform` from one `PlotBox`,
+plotbox.ts note 7); for a stacked layout you must also decide the band split and carry a second
+domain, which is the work this entry is about.
+
+**Ticket.** None yet for either half. The stacked-layout one is a plot-box *layout* feature, not
+a showcase fix; customer-layer adoption was already called out as out-of-scope by ENC-1273.
+
+**Verified at** `ENC-1273 HEAD`, 2026-09-20 — all five commands run in the ENC-1273 worktree.
+The framing claim itself is measured, not asserted: on a canvas-only capture of
+`#/view/candles-aapl` (hardware adapter `vendor: nvidia, architecture: ampere`,
+`info.isFallbackAdapter: false` — SPEC D8), the candle ink covers **52.5% → 91.1%** of the
+canvas height at 900×497, and `checkTier2Framing` over the same capture's measured domain goes
+from `edge clearance -526.1px` (the tape running off the right of the render target and being
+cut by the pane scissor) to `pass`.
+
+---
+
+
 # §C — Corrections
 
 Beliefs that were held confidently and were wrong. They are here because each one cost real
@@ -1299,6 +1317,130 @@ The `L*` ids below belong to the superseded workspace-level document
 ENC-696 landed at 19:52:31 and ENC-701 at 19:52:34 on 2026-06-21; the document was committed at
 20:06:20 the same evening. Fourteen minutes. Its author could not have known, because the file
 lived in a different repository from the code it described.
+
+---
+
+## DC-L14 — The plot box exists, and no render path frames anything with it ✅ *(RETIRED — fixed by ENC-1273)*
+
+**Retired 2026-09-20** by ENC-1273, which put `frameSeries` on the showcase's render path:
+`useViewSwitch` fits the ENC-1252 measured domain into the plot box and applies BOTH halves the
+call returns (`setPaneRegion` and `setTransform`, contract note 7), and the chrome overlay maps
+its ticks through that SAME fitted transform and that SAME box rather than reproducing one. The
+original entry is kept verbatim below, because §H's whole argument is that a falsification is
+worth more than a claim.
+
+**What the measurement says**, on a canvas-only capture of `#/view/candles-aapl` off the app's
+own vite server, hardware adapter (`vendor: nvidia, architecture: ampere`,
+`info.isFallbackAdapter: false`, `subgroupMinSize: 32` — SPEC D8), scored against the domain
+folded out of the view's own committed capture:
+
+| 900×497 canvas | before | after |
+|---|---|---|
+| `checkTier2Framing` | **FAIL** — `edge clearance -526.1px < 4px` | **PASS** |
+| dead margin (of canvas) | 19.9% | 16.2% — *all* of it reserved gutter (`gutterFrac` 16.2%) |
+| fill ratio (ink ÷ plot box) | 0.956 | 1.000 |
+| min edge clearance | **−526.1px** (right) | **+12.0px** (top) |
+| candle ink, measured off the raster | 90.3% of width × **52.5%** of height | 89.4% × **91.1%** |
+
+Two things in that table are worth keeping. The **fill ratio nearly passed while the framing
+was broken** — 0.956 against a 0.9 floor — because the ink overflowed the box horizontally by
+about as much as it underfilled it vertically, and the two errors cancel in an area ratio. Only
+`minEdgeClearancePx` caught it. And the −526px is not a rounding artifact: the baked literal's
+X window is 150 record-indices while the capture runs to index 270, so the last ~40% of the tape
+was projected to clip x > 1 — off the render target — and what the raster shows is the pane
+scissor cutting it at ±0.95, which looks exactly like a chart that ends there.
+
+**What is left**, and it is not nothing: only single-pane views are framed, the flagship view is
+a stacked two-pane one that is refused, and `customer-layer` — the surface SPEC §1.0 measured —
+has adopted none of it. That is **DC-L-1273**, in the active section.
+
+---
+
+### The original entry, as it stood at `ENC-1253 HEAD`
+
+**Claim.** As of ENC-1256 this engine finally has a plot-box concept —
+`packages/dc-wasm/src/chart/plotbox.ts`: a clip-space rectangle inset from the canvas by
+per-side gutters given in CSS pixels, `gutters()` naming the four furniture bands,
+`paneRegionFor()` deriving the matching `setPaneRegion`, `fitToPlotBox()` / `frameSeries()`
+mapping an ENC-1252 `ObservedDomain` into it, and `checkTier2Framing()` scoring the result
+against SPEC D1's tier-2 measures. It is exported from `@repo/dc-wasm` and
+`@repo/dc-wasm/chart`, and covered by 32 unit tests including a before/after reconstruction of
+the live NEXO chart's measured framing.
+
+**Nothing that renders calls any of it.** The one consumer is `SceneBuilder`'s
+`transform({domain, canvas})` / `pane({plotBox})` overloads, and `SceneBuilder` itself has zero
+non-test callers — so the whole chain is reachable only from tests. Concretely:
+
+- Every `apps/showcase/views/*/view.json` still bakes a literal `transform`, and
+  `useViewSwitch.bakeTransform` still writes that literal into the engine. **The showcase's
+  framing is exactly what it was**; DC-L13 part (2)'s measured numbers are unchanged.
+- `customer-layer` (the live product, and the surface SPEC §1.0 measured) is a separate repo
+  and has not adopted it either.
+
+**Why it bites.** This is the **DC-L08 shape**, and DC-L08 is in this file precisely because
+nobody noticed it happening: a well-built layer with no callers reads, at a glance, like a
+capability the product has. Someone who greps `plotBox` and finds a tested module will
+reasonably conclude the charts are framed. They are not. The tier-2 numbers on the *product*
+move when a render path calls `frameSeries`, not when this module lands.
+
+It is logged at 🟡 rather than 🟠 because, unlike DC-L08, the gap is one call site rather than
+an unreachable subsystem — the module is pure, exported, and has a worked example in
+`SceneBuilder.test.ts`.
+
+**Re-check.**
+```bash
+# 1 — the primitive exists, is exported, and is covered
+grep -c 'export function frameSeries' packages/dc-wasm/src/chart/plotbox.ts        # -> 1
+grep -c 'from "./chart/plotbox"' packages/dc-wasm/src/index.ts                     # -> 2
+npx vitest run packages/dc-wasm/src/chart/plotbox.test.ts                          # -> 32 passed
+
+# 2 — one app file references it now, and it is the AXIS, not the framing
+grep -rl 'frameSeries\|fitToPlotBox\|plotBox' apps/ --include=*.ts --include=*.tsx
+# -> apps/showcase/src/chrome/engineAxis.ts   (ENC-1253: the furniture is laid
+#    out against plotBox(canvas); the DATA is still on the view's baked literal,
+#    which is what this entry is about and is unchanged)
+
+# 3 — its only package-side consumer is SceneBuilder ...
+grep -rl 'frameSeries\|fitToPlotBox\|paneRegionFor' packages/ --include=*.ts \
+  | grep -v 'chart/plotbox' | grep -v 'index.ts'          # -> packages/dc-wasm/src/chart/SceneBuilder.ts
+
+# 4 — ... which is itself never constructed outside a test (the DC-L08 shape)
+grep -rl 'new SceneBuilder' apps/ packages/ --include=*.ts --include=*.tsx \
+  | grep -v '\.test\.' | wc -l                            # -> 0
+
+# 5 — the showcase still bakes a literal, so its framing is unchanged
+grep -h '"transform"' apps/showcase/views/candles-aapl/view.json
+# -> "transform": { "sx": 0.011333333, "sy": 0.10625, "tx": -0.895333333, "ty": -43.88125 },
+```
+
+**Working around it.** To frame a chart today you call it yourself:
+
+```ts
+const framed = frameSeries(tracker.domain(), { width: canvas.clientWidth, height: canvas.clientHeight });
+host.applyControl({ cmd: 'setPaneRegion', id: PANE, ...framed.paneRegion });
+if (framed.transform) host.applyControl({ cmd: 'setTransform', id: TRANSFORM, ...framed.transform });
+```
+
+Re-run it when the domain moves or the canvas resizes — nothing recomputes it for you. Do not
+read `checkTier2Framing` passing in a unit test as the product being framed; score the delivered
+raster (SPEC D10) for that.
+
+**Ticket.** **ENC-1273** — adopt the plot box on the showcase render path (`useViewSwitch` +
+the chrome overlay's tick mapping, which must map through the SAME transform or the ticks and
+the geometry will disagree). customer-layer adoption is separate and unticketed. **ENC-1253**
+(engine-drawn axis marks) is the first intended consumer of `gutters()`.
+
+**Update, 2026-09-20 (ENC-1253).** `plotBox()` now has its first app caller —
+`apps/showcase/src/chrome/engineAxis.ts` lays the axis furniture out against it. That does NOT
+retire this entry, and the distinction is the whole point: the furniture knows where the frame
+is, the DATA still does not go there. Every `view.json` still bakes its `transform`, no render
+path calls `frameSeries`, and `grep -rl 'new SceneBuilder' apps/ packages/ --include=*.ts
+--include=*.tsx | grep -v '\.test\.'` is still empty. The visible consequence, in the
+ENC-1253 capture: the leftmost bars are drawn to the left of the plot box's left edge, under the
+price labels. Adoption for the data is still **ENC-1273**.
+
+**Verified at** `ENC-1253 HEAD`, 2026-09-20 — commands 1, 3, 4 and 5 re-run unchanged in the
+ENC-1253 worktree; command 2's expected output is restamped above.
 
 ---
 
