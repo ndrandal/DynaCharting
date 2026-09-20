@@ -2,6 +2,8 @@
 
 interface ImportMetaEnv {
   readonly VITE_SHOWCASE_AGENT_URL?: string;
+  /** Dataplane session to subscribe to on that socket. Default 'showcase'. */
+  readonly VITE_SHOWCASE_AGENT_SESSION?: string;
 }
 
 interface ImportMeta {

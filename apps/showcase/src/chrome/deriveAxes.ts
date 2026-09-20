@@ -34,7 +34,7 @@
  * ENC-1256. This module only produces a number the chart can state.
  */
 
-import type { ObservedDomain, TimeBasis } from '@repo/dc-wasm';
+import type { ObservedDomain, TimeBasis, TimeBasisSource } from '@repo/dc-wasm';
 import type { AxisSpec } from './types';
 
 /** An axis whose domain is settled: `min`/`max` are present and finite. */
@@ -65,7 +65,14 @@ export interface AxisDomainFact {
    * a reader can tell a live wall clock from a replayed tape's own timeline
    * WITHOUT reading the labels — the same reason `source` is published.
    */
-  time?: { msPerIndex: number; originMs: number; epochKnown: boolean; samples: number };
+  time?: {
+    msPerIndex: number;
+    originMs: number;
+    epochKnown: boolean;
+    samples: number;
+    /** How the basis was arrived at — see `TimeBasisSource` (ENC-1282). */
+    source: TimeBasisSource;
+  };
 }
 
 /** What the chart can STATE about its own axes. Published for observation. */
@@ -110,6 +117,15 @@ function resolveAxis(
           originMs: basis.originMs,
           epochKnown: basis.epochKnown,
           samples: basis.samples,
+          // ENC-1282: the PROVENANCE of the clock, published beside the numbers
+          // for the same reason ENC-1252 publishes `derived|literal` beside the
+          // domain. `epochKnown` says whether the origin is a real instant; it
+          // does not say who measured it. 'observed' is this client timing its
+          // own arrivals, 'transmitted' is the producer's declaration taken
+          // where the bar was cut, and a reader quoting a time off this chart
+          // needs to be able to tell them apart without inferring it from
+          // `samples: 0`.
+          source: basis.source,
         }
       : undefined;
   const withBasis = (axis: ResolvedAxisSpec): ResolvedAxisSpec =>
@@ -179,6 +195,7 @@ export function axisDomainReportJson(report: AxisDomainReport): string {
                   originMs: +f.time.originMs.toFixed(6),
                   epochKnown: f.time.epochKnown,
                   samples: f.time.samples,
+                  source: f.time.source,
                 },
               }
             : {}),

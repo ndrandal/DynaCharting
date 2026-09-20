@@ -3,8 +3,20 @@
  * WebSocket data-plane hook. When VITE_SHOWCASE_AGENT_URL is set, it opens the
  * agent (embassy) data plane, sets binaryType=arraybuffer, and forwards each
  * binary message straight into the engine's data plane (host.enqueueData).
- * embassy's text frames (its own scene-init) are IGNORED — the showcase owns
- * its manifest (CONTRACT-buffer-id.md). When the env var is unset, it's inert.
+ * When the env var is unset, it's inert.
+ *
+ * TEXT FRAMES: THE MANIFEST IS STILL IGNORED, THE CLOCK IS NOT (ENC-1282).
+ * embassy's first text frame is its own scene-init envelope
+ * (`{type:'scene-init',commands:[…]}`). The showcase still does NOT apply those
+ * commands — it owns its manifest (CONTRACT-buffer-id.md) — but since ENC-1281
+ * that envelope is also the ONLY place the producer's clock appears:
+ * `createBuffer.timeBasis = {baseMs, periodMs, epochKnown}`, declared once per
+ * buffer (SPEC D6). Reading it is not "applying the manifest": it is one
+ * per-stream declaration lifted out of a frame whose imperative half is
+ * discarded, and it is what turns `t = baseMs + x·periodMs` from a client fit
+ * into the producer's measurement. A buffer whose stream has no uniform bar
+ * period carries no `timeBasis` at all and the axis is DROPPED (SPEC D7
+ * corollary) — which is why `onTimeBasis` is also called with `null`.
  *
  * Optional growth sync (`growth`): the data plane only grows a buffer's BYTES;
  * the renderer draws geometry.vertexCount instances. For a live vertex/instance
@@ -44,9 +56,85 @@ function countRecordsForBuffer(batch: ArrayBuffer, bufferId: number, stride: num
 }
 
 import { useEffect } from 'react';
-import type { EngineHost } from '@repo/dc-wasm';
+import { isSceneInitFrame, transmittedBasisFromSceneInit } from '@repo/dc-wasm';
+import type { EngineHost, TimeBasis } from '@repo/dc-wasm';
 
 const AGENT_URL = import.meta.env.VITE_SHOWCASE_AGENT_URL as string | undefined;
+
+/**
+ * Which dataplane session to subscribe to, default `showcase` (the `sessionId`
+ * the showcase's own `instruction.json` fixtures declare).
+ *
+ * embassy's `/data` socket hands a connection NOTHING until it names a session:
+ * the handler's only inbound message is `{"type":"subscribe","sessionId":"…"}`
+ * and the scene-init envelope plus every buffer snapshot are enqueued inside
+ * that call (embassy `internal/dataplane/server.go` `subscribe`). A connection
+ * that never subscribes stays open and silent — which looks exactly like a feed
+ * with no data, and is why this hook went unexercised.
+ */
+const AGENT_SESSION =
+  (import.meta.env.VITE_SHOWCASE_AGENT_SESSION as string | undefined) || 'showcase';
+
+/**
+ * True when this build is pointed at a live agent data plane.
+ *
+ * The caller needs this to decide what drives the engine: with a live socket
+ * attached, replaying a captured tape onto the same buffers would interleave two
+ * unrelated record streams on one buffer id.
+ */
+export function agentStreamEnabled(): boolean {
+  return typeof AGENT_URL === 'string' && AGENT_URL.length > 0;
+}
+
+/** Callbacks the live stream reports into. All optional. */
+export interface AgentStreamCallbacks {
+  /**
+   * Every binary batch, with the instant it was observed — the same contract
+   * `useReplay` uses, so one `DomainTracker`/`IndexTimeTracker` pair serves both
+   * inputs. `Date.now()` here is a real wall clock, unlike a tape's `t`.
+   */
+  onBatch?: (batch: ArrayBuffer, observedAtMs: number) => void;
+  /**
+   * The basis the producer declared for the growth buffer, or `null` when it
+   * declared none (drop the axis). Fires on every scene-init frame.
+   *
+   * IN PRACTICE THERE IS EXACTLY ONE, AND THAT IS A REAL CONSTRAINT. embassy
+   * learns a buffer's `baseMs` from the producer's FIRST bucket stamp, which
+   * can arrive after a client has already connected; the envelope it re-renders
+   * then (`republishTimeBasis`) updates only the snapshot handed to FUTURE
+   * subscribers and is deliberately NOT broadcast, because a scene-init is not
+   * idempotent at the client — its `createBuffer` commands recreate the
+   * buffers, so pushing the corrected envelope would zero exactly the records
+   * the basis was learned from (ENC-1101, and embassy
+   * `internal/dataplane/server.go` `UpdateSceneSnapshot` says so at length).
+   *
+   * MEASURED (2026-09-20): a client that subscribed 76 ms into a fresh stream
+   * received `{"baseMs":0,"epochKnown":false,"periodMs":1000}` and no further
+   * envelope in 14 s, while a client subscribing a few seconds later received
+   * `{"baseMs":1789922150000,"epochKnown":true,"periodMs":1000}`. So a browser
+   * that opens within the first bar of a stream shows a tape-relative axis
+   * until it reconnects. Handling a second frame costs nothing and is correct
+   * if embassy ever gains a non-destructive push, but do not design as though
+   * the correction will arrive.
+   */
+  onTimeBasis?: (basis: TimeBasis | null) => void;
+  /**
+   * Which buffer's clock to report. Separate from `growth` because the growth
+   * descriptor is only defined for views that also declare an `xAnchor`, and a
+   * view can want a time axis without wanting a live geometry rebuild. With no
+   * id, `onTimeBasis` is never called at all — see the gate in `onmessage`.
+   */
+  basisBufferId?: number;
+  /**
+   * Bump to tear the socket down and reconnect. The caller needs this because
+   * resetting the scene (`restart`) deletes and recreates the buffer this hook
+   * has been counting records into: without a re-arm, `recordTotal`,
+   * `syncedCount`, `curGeometryId` and `xAnchored` would survive a teardown
+   * they describe, and the next growth sync would declare a vertex count from
+   * the OLD stream over the NEW, near-empty buffer.
+   */
+  rearmKey?: number;
+}
 
 /**
  * Drive a live-growing instanced geometry from a streamed buffer.
@@ -112,7 +200,15 @@ function firstRecordX(batch: ArrayBuffer, bufferId: number, xField: number): num
  * count. When the URL is unset (the default), do nothing. Reconnect logic is
  * deliberately omitted.
  */
-export function useAgentStream(host: EngineHost | null, growth?: GrowthSync): void {
+export function useAgentStream(
+  host: EngineHost | null,
+  growth?: GrowthSync,
+  callbacks?: AgentStreamCallbacks,
+): void {
+  const onBatch = callbacks?.onBatch;
+  const onTimeBasis = callbacks?.onTimeBasis;
+  const basisBufferId = callbacks?.basisBufferId;
+  const rearmKey = callbacks?.rearmKey ?? 0;
   useEffect(() => {
     if (!host || !AGENT_URL) return;
 
@@ -198,13 +294,43 @@ export function useAgentStream(host: EngineHost | null, growth?: GrowthSync): vo
     try {
       ws = new WebSocket(AGENT_URL);
       ws.binaryType = 'arraybuffer';
+      ws.onopen = () => {
+        ws?.send(JSON.stringify({ type: 'subscribe', sessionId: AGENT_SESSION }));
+      };
       ws.onmessage = (ev: MessageEvent) => {
+        if (typeof ev.data === 'string') {
+          // SCENE-INIT ONLY, and the gate is load-bearing. embassy sends three
+          // kinds of text frame on this socket: the scene-init envelope, sticky
+          // `setGeometryVertexCount` frames (replayed AFTER the envelope on
+          // every subscribe — `internal/dataplane/server.go` `subscribe`), and
+          // `setTransform` frames from the range tracker at a ~250 ms cadence
+          // whenever a recipe declares axis groups. Handing any of those to
+          // `transmittedBasisFromSceneInit` gets `null` back — correctly, they
+          // carry no basis — and forwarding that null would retract a good
+          // basis and DROP the axis, deterministically at connect and then
+          // again four times a second. "Not a scene-init" and "a scene-init
+          // that declares no basis" are different answers and only the second
+          // one is this callback's business.
+          if (!onTimeBasis) return;
+          if (!isSceneInitFrame(ev.data)) return;
+          // Matched by buffer id, never by position — embassy emits
+          // createBuffer commands in sorted-id order, not in the order the
+          // manifest declares them. With no buffer to match, publish nothing
+          // rather than borrowing whichever buffer happens to carry a clock.
+          if (basisBufferId === undefined) return;
+          onTimeBasis(transmittedBasisFromSceneInit(ev.data, basisBufferId));
+          return;
+        }
         if (ev.data instanceof ArrayBuffer) {
           if (growth) {
             anchorX(ev.data);
             recordTotal += countRecordsForBuffer(ev.data, growth.bufferId, growth.stride);
           }
           host.enqueueData(ev.data);
+          // Date.now(), not performance.now(): a live socket's arrival time is
+          // the only wall clock a FITTED basis can have, and the two clocks are
+          // not on the same origin. A transmitted basis ignores this entirely.
+          onBatch?.(ev.data, Date.now());
           scheduleGrowthSync();
         }
       };
@@ -218,5 +344,5 @@ export function useAgentStream(host: EngineHost | null, growth?: GrowthSync): vo
     return () => {
       ws?.close();
     };
-  }, [host, growth]);
+  }, [host, growth, onBatch, onTimeBasis, basisBufferId, rearmKey]);
 }

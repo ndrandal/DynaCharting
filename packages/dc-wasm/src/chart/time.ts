@@ -548,48 +548,98 @@ export function decimalsForTicks(values: readonly number[]): number {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * How a `TimeBasis` was arrived at.
+ * How a `TimeBasis` was arrived at \u2014 three epistemic classes, deliberately
+ * not two (ENC-1282; timestamps-on-the-wire SPEC D6).
  *
- * 'observed' — fitted from (recordIndex, observation-time) pairs taken off the
- *              real record stream. The D7 path.
- * 'declared' — supplied by a caller that knows the cadence out of band. Kept so
- *              a producer that DOES carry a bar interval can state it; it is a
- *              caption in the D7 sense and is labelled as one.
+ * 'observed'    \u2014 fitted by least squares from (x, observation-time) pairs
+ *                 taken off the real record stream. A measurement OF THIS
+ *                 CLIENT: it measures when the records arrived here, not when
+ *                 the bars were cut upstream. ENC-1254's path, and the one
+ *                 LIMITATIONS.md DC-L16 was written to name.
+ * 'transmitted' \u2014 read off the wire, from `createBuffer.timeBasis` (treaty
+ *                 `dataplane.v1.DcTimeBasis`). A measurement OF THE PRODUCER:
+ *                 `baseMs` is the aligned bucket boundary GMA_V3 stamped where
+ *                 the bar was cut and `periodMs` is the bar width forum
+ *                 authored, so `t = baseMs + x\u00b7periodMs` is exact rather
+ *                 than fitted, and `epochKnown` is the producer's statement
+ *                 rather than the client's guess.
+ * 'declared'    \u2014 asserted by a caller that claims to know the cadence out
+ *                 of band. NOT the wire path, and not a measurement: nothing
+ *                 verifies it, which makes it a caption in the D7 sense and it
+ *                 is labelled as one. It has no producer anywhere in this
+ *                 workspace and must not acquire one \u2014 a basis that came
+ *                 off the wire is 'transmitted'.
+ *
+ * WHY THREE AND NOT TWO. SPEC D6 left one seam here ('declared') and called it
+ * a caption. A transmitted basis is the opposite of a caption: it is the only
+ * basis on this path that was measured where the bar was defined. Shipping it
+ * under the 'declared' label would re-create precisely the confusion DC-L16
+ * exists to name \u2014 an axis whose stated provenance reads as an
+ * unverifiable assertion when it is in fact the producer's own clock \u2014 and
+ * would leave a reader unable to tell the two apart, since one label would then
+ * cover both. Rewriting 'declared''s comment instead would have had the same
+ * effect for the opposite reason: it would have deleted the name for an
+ * unverifiable assertion while a consumer can still hand one in.
  */
-export type TimeBasisSource = "observed" | "declared";
+export type TimeBasisSource = "observed" | "transmitted" | "declared";
 
 /**
- * A linear map from a record index to an instant: `t = originMs + index·msPerIndex`.
+ * A linear map from a record's x lane to an instant: `t = originMs + x·msPerIndex`.
  *
- * ── READ THIS BEFORE TRUSTING A LABEL ────────────────────────────────────────
- * The dataplane record carries NO timestamp. `x` is embassy's `recordIndex`, a
- * uint32 counter (`embassy/internal/pipeline/compound_route.go`), and the
- * binary record format has no time field at all. So the only time a client can
- * measure is WHEN IT OBSERVED THE RECORD — not when the bar closed upstream.
- * Those coincide on a live feed and do not on a replayed capture, which is
- * emitted at the capture's own cadence.
+ * ── READ THIS BEFORE TRUSTING A LABEL ─────────────────────
+ * There are two ways to arrive at this map and they are not the same evidence.
  *
- * `epochKnown` is how that distinction survives into the chart:
+ *  - A basis the PRODUCER transmitted (`source: 'transmitted'`). Since ENC-1281
+ *    the dataplane declares `timeBasis {baseMs, periodMs, epochKnown}` once per
+ *    buffer on `createBuffer`, and since ENC-1302 the record's x lane is a BAR
+ *    ORDINAL on the producer's grid, not a count of records delivered
+ *    (`embassy/internal/pipeline/compound_route.go`; SPEC D7). So
+ *    `t = baseMs + x·periodMs` is exact. Use `timeBasisFromWire`.
+ *  - A basis this CLIENT fitted (`source: 'observed'`, `IndexTimeTracker`). The
+ *    only time it can see is WHEN IT OBSERVED THE RECORD — not when the bar
+ *    closed upstream. Those coincide on a live feed and do not on a replayed
+ *    capture, which is emitted at the capture's own cadence.
  *
- *  - true  — `originMs` is a real epoch (a live client stamping `Date.now()` on
- *            arrival). Labels are wall-clock instants; format in the local zone.
+ * The x lane is NOT the buffer index and must not be treated as one. Gaps in it
+ * are real — a quiet bar that emitted nothing, a coalesced frame, a silent
+ * mid-pipeline drop — and rendering them as gaps is the point (SPEC D7): the
+ * alternative, counting deliveries, shifts every later bar one period early,
+ * permanently and undetectably. A late joiner's first x is not 0 either.
+ *
+ * `epochKnown` is how the real/relative distinction survives into the chart:
+ *
+ *  - true  — `originMs` is a real epoch: the aligned bucket boundary the
+ *            producer stamped, or (for a fitted basis) a live client stamping
+ *            `Date.now()` on arrival. Labels are wall-clock instants; format in
+ *            the local zone.
  *  - false — `originMs` is relative to some tape's zero (a replay stamping the
- *            capture's own `t`). Labels are offsets along that tape rendered in
- *            clock form; format in UTC, or a local zone offset will shift 0 to
- *            19:00 and invent a claim the tape never made.
+ *            capture's own `t`, or a producer with no wall-clock bar grid).
+ *            Labels are offsets along that tape rendered in clock form; format
+ *            in UTC, or a local zone offset will shift 0 to 19:00 and invent a
+ *            claim the tape never made.
  *
- * Publish it next to the domain, the way ENC-1252 publishes `source:
- * derived|literal`. An axis whose provenance is not stated is a caption again.
+ * A stream with no uniform bar period declares NO BASIS AT ALL — never
+ * `periodMs: 0` (SPEC D7 corollary). A consumer with no basis DROPS the axis; it
+ * does not fall back to index labels under a heading that says "Time".
+ *
+ * Publish `source` and `epochKnown` next to the domain, the way ENC-1252
+ * publishes `source: derived|literal`. An axis whose provenance is not stated is
+ * a caption again.
  */
 export interface TimeBasis {
-  /** Epoch ms at record index 0 (extrapolated; may precede the first record). */
+  /** Epoch ms at x = 0 (extrapolated; may precede the first record). */
   originMs: number;
-  /** Milliseconds per unit of record index. */
+  /** Milliseconds per unit of x — the bar width, for a transmitted basis. */
   msPerIndex: number;
   source: TimeBasisSource;
   /** Whether `originMs` is a real epoch — see the interface docs. */
   epochKnown: boolean;
-  /** Samples the fit was taken over (1 for 'declared'). */
+  /**
+   * Samples the fit was taken over. **0 for a basis that was not fitted**
+   * ('transmitted' and 'declared'): a transmitted basis is two exact scalars,
+   * not a regression, so reporting a sample count for it would imply a
+   * confidence it neither has nor needs.
+   */
   samples: number;
 }
 
@@ -609,6 +659,163 @@ export function timeDomainFor(basis: TimeBasis, indexDomain: Range): Range {
   const a = indexToTime(basis, indexDomain.min);
   const b = indexToTime(basis, indexDomain.max);
   return a <= b ? { min: a, max: b } : { min: b, max: a };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 6a. The TRANSMITTED basis — read off the wire, not fitted (ENC-1282, SPEC D6)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The wire form of a transmitted basis: treaty `dataplane.v1.DcTimeBasis`, as it
+ * rides `DcCreateBufferCmd.timeBasis` on the dataplane's scene-init frame.
+ *
+ * `int64` on the wire; the adapter that produces this object has already
+ * narrowed both fields to `number` and refuses anything outside the safe-integer
+ * range, so this type is `number` rather than `bigint` on purpose.
+ */
+export interface WireTimeBasis {
+  /** Epoch ms (UTC) of bar ordinal 0. */
+  baseMs: number;
+  /** Bar width in ms. Always > 0 when the basis is present. */
+  periodMs: number;
+  /** True when `baseMs` is a real wall clock taken where the bar was cut. */
+  epochKnown: boolean;
+}
+
+/**
+ * Build a `TimeBasis` from a transmitted `DcTimeBasis`, or `null` if the value
+ * is not one.
+ *
+ * This is the whole of ENC-1282's input change: the map is `t = baseMs +
+ * x·periodMs` where `x` is the record's bar ordinal, so `originMs = baseMs` and
+ * `msPerIndex = periodMs` exactly — no fit, no samples, no drift.
+ *
+ * IT REFUSES RATHER THAN REPAIRS, and that is deliberate. Every rejection below
+ * returns `null`, and a caller with no basis DROPS the time axis (the ENC-1254
+ * behaviour this keeps). The alternative — coercing a malformed declaration into
+ * some nearby basis — would put a plausible clock on the axis with nothing
+ * behind it, which is the caption failure DC-L16 names, now with the producer's
+ * authority borrowed to sell it.
+ *
+ *  - `periodMs` must be a safe integer and **strictly > 0**. A stream with no uniform
+ *    bar period declares no basis at all and never declares `periodMs: 0`
+ *    (SPEC D7 corollary), so a 0 here is a producer bug, not "no cadence", and
+ *    silently accepting it would divide the axis by zero.
+ *  - `baseMs` and `periodMs` must be JSON **numbers** and safe integers. The
+ *    canonical protobuf-JSON int64-as-string form `{"baseMs":"1789862400000"}`
+ *    is rejected, not coerced: coercing would let the emitter drift to a second
+ *    representation and keep working, which is the `max_bytes`/`byteLength`/
+ *    `maxBytes` divergence this field is trying not to repeat.
+ *  - `epochKnown: false` is allowed and means the grid is tape-relative — a
+ *    legitimate producer statement, not an error. An ABSENT `epochKnown` reads
+ *    as `false`; a present non-boolean is rejected.
+ *
+ * THE RULES ABOVE ARE NOT INVENTED HERE. They mirror, field for field,
+ * `customer-layer/apps/web/src/wire/dataplane.ts` `adaptHostTimeBasis`
+ * (ENC-1303), the other consumer of this exact wire field. Two readers of one
+ * field that disagree about what is valid is a divergence waiting to be
+ * discovered by a chart that renders in one app and drops its axis in the
+ * other, so the agreement is deliberate and worth preserving on both sides.
+ * That is also why an absent `epochKnown` defaults to `false` rather than being
+ * refused: it is proto3's default for a `bool`, and it is the conservative
+ * direction — the client never UPGRADES a basis to "real wall clock" without
+ * being told, it only ever declines to.
+ */
+export function timeBasisFromWire(value: unknown): TimeBasis | null {
+  if (typeof value !== "object" || value === null) return null;
+  const v = value as Record<string, unknown>;
+  const baseMs = v.baseMs;
+  const periodMs = v.periodMs;
+  const epochKnown = v.epochKnown;
+  if (typeof baseMs !== "number" || !Number.isSafeInteger(baseMs)) return null;
+  if (typeof periodMs !== "number" || !Number.isSafeInteger(periodMs) || periodMs <= 0) {
+    return null;
+  }
+  if (epochKnown !== undefined && typeof epochKnown !== "boolean") return null;
+  return {
+    originMs: baseMs,
+    msPerIndex: periodMs,
+    source: "transmitted",
+    epochKnown: epochKnown === true,
+    samples: 0,
+  };
+}
+
+/**
+ * True when `frame` is a dataplane **scene-init** envelope.
+ *
+ * Exists because "this is not a scene-init" and "this is a scene-init that
+ * declares no basis" are different answers, and `transmittedBasisFromSceneInit`
+ * returns `null` for both. A consumer that conflates them retracts a good basis
+ * every time any other text frame arrives — and embassy sends two other kinds on
+ * the same socket: sticky `setGeometryVertexCount` frames, replayed after the
+ * envelope on every subscribe, and `setTransform` frames from the range tracker
+ * at roughly 250 ms. The first makes the axis drop deterministically at connect;
+ * the second makes it flicker four times a second.
+ *
+ * Accepts the parsed object or the raw text. A bare command array is NOT a
+ * scene-init: it carries no `type`, so a caller that has already unwrapped the
+ * envelope has also already made this decision.
+ */
+export function isSceneInitFrame(frame: unknown): boolean {
+  let value: unknown = frame;
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return false;
+    }
+  }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  return (value as Record<string, unknown>).type === "scene-init";
+}
+
+/**
+ * Pull the transmitted basis out of a dataplane scene-init frame.
+ *
+ * Accepts either the parsed envelope (`{type: 'scene-init', commands: [...]}`),
+ * a bare command array, or the raw text frame, and returns the basis declared on
+ * the `createBuffer` for `bufferId` — or, when `bufferId` is omitted, the first
+ * `createBuffer` that carries one.
+ *
+ * Returns `null` for every "there is no basis here" case, which includes the
+ * ordinary one: a buffer whose stream has no uniform bar period carries no
+ * `timeBasis` key at all, and its axis is dropped.
+ *
+ * Buffers are matched by id and never by position: the envelope's `createBuffer`
+ * commands are emitted in sorted-id order, not in the order a view's manifest
+ * declares them.
+ */
+export function transmittedBasisFromSceneInit(
+  frame: unknown,
+  bufferId?: number,
+): TimeBasis | null {
+  let value: unknown = frame;
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return null;
+    }
+  }
+  const commands = Array.isArray(value)
+    ? value
+    : typeof value === "object" && value !== null
+      ? (value as Record<string, unknown>).commands
+      : undefined;
+  if (!Array.isArray(commands)) return null;
+  for (const raw of commands) {
+    if (typeof raw !== "object" || raw === null) continue;
+    const cmd = raw as Record<string, unknown>;
+    if (cmd.cmd !== "createBuffer") continue;
+    if (bufferId !== undefined && cmd.id !== bufferId) continue;
+    const basis = timeBasisFromWire(cmd.timeBasis);
+    if (basis) return basis;
+    // A matched buffer with no (or a malformed) basis is an answer, not a
+    // reason to keep looking at other buffers' clocks.
+    if (bufferId !== undefined) return null;
+  }
+  return null;
 }
 
 const OP_APPEND = 1;

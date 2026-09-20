@@ -61,6 +61,9 @@ export {
   timeToIndex,
   timeDomainFor,
   IndexTimeTracker,
+  timeBasisFromWire,
+  transmittedBasisFromSceneInit,
+  isSceneInitFrame,
 } from "./time";
 export type {
   TimeUnit,
@@ -73,6 +76,7 @@ export type {
   TimeBasis,
   TimeBasisSource,
   IndexTimeSource,
+  WireTimeBasis,
 } from "./time";
 
 export { createIdAllocator } from "./ids";

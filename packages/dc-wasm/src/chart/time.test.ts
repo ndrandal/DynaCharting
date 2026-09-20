@@ -22,6 +22,9 @@ import {
   indexToTime,
   timeToIndex,
   timeDomainFor,
+  timeBasisFromWire,
+  transmittedBasisFromSceneInit,
+  isSceneInitFrame,
   type TimeBasis,
 } from "./time";
 
@@ -399,5 +402,213 @@ describe("IndexTimeTracker — the basis is measured, not assumed", () => {
     expect(timeDomainFor(b, { min: 3.6, max: 270.4 })).toEqual({ min: 1270, max: 21280 });
     // A zero cadence cannot be inverted, and says so rather than returning 0.
     expect(timeToIndex({ ...b, msPerIndex: 0 }, 1300)).toBeNaN();
+  });
+});
+
+
+/* ───────────────────────────────────────────────────────────────────────────
+ * ENC-1282 — THE TRANSMITTED BASIS
+ *
+ * The input change: a fitted estimate becomes a measurement the producer took
+ * where the bar was cut. These assert the two things that separate the new
+ * input from the old one — that it is EXACT on the producer's grid, and that a
+ * GAP in that grid stays a gap instead of shifting later bars earlier.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+/** A realistic wire basis: 1-minute bars from a real epoch. */
+const WIRE = { baseMs: 1789862400000, periodMs: 60000, epochKnown: true };
+
+describe("timeBasisFromWire — the producer's clock, not a fit", () => {
+  it("maps baseMs/periodMs straight onto originMs/msPerIndex, with no samples", () => {
+    const b = timeBasisFromWire(WIRE)!;
+    expect(b).toEqual({
+      originMs: 1789862400000,
+      msPerIndex: 60000,
+      source: "transmitted",
+      epochKnown: true,
+      samples: 0,
+    });
+  });
+
+  it("is labelled 'transmitted', not 'declared' — a measurement is not a caption", () => {
+    expect(timeBasisFromWire(WIRE)!.source).toBe("transmitted");
+    expect(timeBasisFromWire(WIRE)!.source).not.toBe("declared");
+  });
+
+  it("carries a tape-relative producer statement through unchanged", () => {
+    const b = timeBasisFromWire({ ...WIRE, baseMs: 0, epochKnown: false })!;
+    expect(b.epochKnown).toBe(false);
+    expect(b.originMs).toBe(0);
+  });
+
+  it("REFUSES periodMs 0 — a stream with no bar grid declares no basis at all", () => {
+    // SPEC D7 corollary. A 0 here is a producer bug, and accepting it would
+    // divide the axis by zero rather than drop it.
+    expect(timeBasisFromWire({ ...WIRE, periodMs: 0 })).toBeNull();
+    expect(timeBasisFromWire({ ...WIRE, periodMs: -60000 })).toBeNull();
+    expect(timeBasisFromWire({ ...WIRE, periodMs: Number.NaN })).toBeNull();
+    expect(timeBasisFromWire({ ...WIRE, periodMs: Number.POSITIVE_INFINITY })).toBeNull();
+  });
+
+  it("reads an ABSENT epochKnown as false, and refuses a present non-boolean", () => {
+    // Field for field with customer-layer's `adaptHostTimeBasis` (ENC-1303),
+    // the other reader of this same wire field: absent is proto3's `false`, and
+    // false is the conservative direction — the client never upgrades a basis
+    // to "real wall clock" without being told.
+    const b = timeBasisFromWire({ baseMs: 0, periodMs: 60000 })!;
+    expect(b.epochKnown).toBe(false);
+    expect(b.source).toBe("transmitted");
+    expect(timeBasisFromWire({ ...WIRE, epochKnown: "true" })).toBeNull();
+    expect(timeBasisFromWire({ ...WIRE, epochKnown: 1 })).toBeNull();
+    expect(timeBasisFromWire({ ...WIRE, epochKnown: null })).toBeNull();
+  });
+
+  it("REFUSES the protobuf-JSON int64-as-string form rather than coercing it", () => {
+    // The expected drift, and the one `max_bytes`/`byteLength`/`maxBytes`
+    // already cost this project once. Rejecting degrades to no basis.
+    expect(timeBasisFromWire({ ...WIRE, baseMs: "1789862400000" })).toBeNull();
+    expect(timeBasisFromWire({ ...WIRE, periodMs: "60000" })).toBeNull();
+  });
+
+  it("REFUSES a baseMs or periodMs that is not a safe integer, and every non-object", () => {
+    expect(timeBasisFromWire({ ...WIRE, baseMs: 1.5 })).toBeNull();
+    expect(timeBasisFromWire({ ...WIRE, baseMs: 2 ** 62 })).toBeNull();
+    expect(timeBasisFromWire({ ...WIRE, periodMs: 60000.5 })).toBeNull();
+    for (const v of [null, undefined, 0, "", [], "not json"]) {
+      expect(timeBasisFromWire(v)).toBeNull();
+    }
+  });
+
+  it("is EXACT where a float32 epoch would be quantised to ~2 minutes", () => {
+    // D4's arithmetic: Math.fround of a current ms epoch loses ~131 s. The
+    // basis never goes through the float32 lane; only the ordinal does.
+    const b = timeBasisFromWire(WIRE)!;
+    for (const x of [0, 1, 7, 1440, 525600]) {
+      expect(indexToTime(b, x)).toBe(WIRE.baseMs + x * WIRE.periodMs);
+    }
+    // The float32 grid at a current epoch steps by 131072 ms = 2.18 min, so a
+    // per-record float32 epoch could not express a 1-minute bar at all.
+    expect(Math.fround(WIRE.baseMs + 16384) - Math.fround(WIRE.baseMs)).toBe(131072);
+    expect(Math.fround(WIRE.baseMs)).not.toBe(WIRE.baseMs);
+  });
+});
+
+describe("a gap in x is a GAP, not a shift (SPEC D7)", () => {
+  // Bars 3 and 4 were quiet: TumblingWindow emitted nothing for them
+  // (`EmptyBucketDoesNotEmit`). Five records are delivered, carrying ordinals
+  // 0,1,2,5,6 — the count of records is 5, the count of bars elapsed is 7.
+  const ordinals = [0, 1, 2, 5, 6];
+
+  it("places every delivered bar at the instant the producer named", () => {
+    const b = timeBasisFromWire(WIRE)!;
+    expect(ordinals.map((x) => indexToTime(b, x))).toEqual([
+      1789862400000, 1789862460000, 1789862520000, 1789862700000, 1789862760000,
+    ]);
+  });
+
+  it("and the delivery-count reading puts the last bar 2 minutes early", () => {
+    // The defect D7 removes, stated as a number: reading the x lane as "the
+    // i-th record I received" drags every bar after a gap one periodMs earlier
+    // per lost bar, permanently and undetectably.
+    const b = timeBasisFromWire(WIRE)!;
+    const byOrdinal = ordinals.map((x) => indexToTime(b, x));
+    const byDelivery = ordinals.map((_, i) => indexToTime(b, i));
+    expect(byOrdinal[4] - byDelivery[4]).toBe(2 * WIRE.periodMs);
+    // ...and it is invisible at the head of the stream, which is why it stood.
+    expect(byOrdinal[0] - byDelivery[0]).toBe(0);
+  });
+
+  it("a late joiner's first ordinal is not 0 and still lands correctly", () => {
+    const b = timeBasisFromWire(WIRE)!;
+    expect(indexToTime(b, 3600)).toBe(WIRE.baseMs + 3600 * WIRE.periodMs);
+    expect(timeToIndex(b, WIRE.baseMs + 3600 * WIRE.periodMs)).toBe(3600);
+  });
+});
+
+describe("transmittedBasisFromSceneInit — lifting the clock out of the envelope", () => {
+  const envelope = {
+    type: "scene-init",
+    commands: [
+      { cmd: "setClearColor", rgba: [0, 0, 0, 1] },
+      { cmd: "createBuffer", id: 10100, byteLength: 0, timeBasis: WIRE },
+      { cmd: "createBuffer", id: 10200, byteLength: 0 },
+      { cmd: "createGeometry", id: 10300, vertexBufferId: 10100 },
+    ],
+  };
+
+  it("reads the basis for the named buffer, from an object or its raw text", () => {
+    expect(transmittedBasisFromSceneInit(envelope, 10100)!.msPerIndex).toBe(60000);
+    expect(transmittedBasisFromSceneInit(JSON.stringify(envelope), 10100)!.epochKnown).toBe(true);
+    expect(transmittedBasisFromSceneInit(envelope.commands, 10100)!.originMs).toBe(WIRE.baseMs);
+  });
+
+  it("matches by id, never by position", () => {
+    // embassy emits createBuffer commands in sorted-id order, not in the order
+    // a manifest declares them, so an index-based read is a coin flip.
+    expect(transmittedBasisFromSceneInit(envelope, 10200)).toBeNull();
+    expect(transmittedBasisFromSceneInit(envelope, 99999)).toBeNull();
+  });
+
+  it("does not borrow another buffer's clock for a buffer that declared none", () => {
+    const reordered = {
+      type: "scene-init",
+      commands: [
+        { cmd: "createBuffer", id: 10200, byteLength: 0 },
+        { cmd: "createBuffer", id: 10100, byteLength: 0, timeBasis: WIRE },
+      ],
+    };
+    expect(transmittedBasisFromSceneInit(reordered, 10200)).toBeNull();
+  });
+
+  it("with no bufferId, takes the first buffer that actually carries one", () => {
+    expect(transmittedBasisFromSceneInit(envelope)!.source).toBe("transmitted");
+    expect(
+      transmittedBasisFromSceneInit({ type: "scene-init", commands: [{ cmd: "createBuffer", id: 1 }] }),
+    ).toBeNull();
+  });
+
+  it("returns null for every not-an-envelope, including malformed JSON", () => {
+    for (const v of ["", "{", "[", null, undefined, 7, { type: "scene-init" }, { commands: 3 }]) {
+      expect(transmittedBasisFromSceneInit(v)).toBeNull();
+    }
+  });
+
+  it("a malformed timeBasis drops the axis rather than captioning it", () => {
+    const bad = {
+      type: "scene-init",
+      commands: [{ cmd: "createBuffer", id: 10100, timeBasis: { baseMs: 0, periodMs: 0, epochKnown: true } }],
+    };
+    expect(transmittedBasisFromSceneInit(bad, 10100)).toBeNull();
+  });
+});
+
+
+describe("isSceneInitFrame — the gate that stops a good basis being retracted", () => {
+  // "not a scene-init" and "a scene-init that declares no basis" are different
+  // answers, and `transmittedBasisFromSceneInit` returns null for both. embassy
+  // sends two other kinds of text frame on the same socket, so a consumer that
+  // conflates them drops the axis at connect and then four times a second.
+  it("accepts the envelope, as an object or as its raw text", () => {
+    expect(isSceneInitFrame({ type: "scene-init", commands: [] })).toBe(true);
+    expect(isSceneInitFrame('{"type":"scene-init","commands":[]}')).toBe(true);
+  });
+
+  it("rejects the OTHER text frames embassy actually sends on this socket", () => {
+    // sticky growth counts, replayed after the envelope on every subscribe
+    expect(isSceneInitFrame('{"cmd":"setGeometryVertexCount","id":10200,"vertexCount":211}')).toBe(
+      false,
+    );
+    // the range tracker's live re-frame, ~250 ms cadence
+    expect(isSceneInitFrame('{"cmd":"setTransform","id":10050,"sx":0.08,"tx":-1}')).toBe(false);
+  });
+
+  it("rejects a bare command array — unwrapping the envelope IS the decision", () => {
+    expect(isSceneInitFrame([{ cmd: "createBuffer", id: 10100, timeBasis: WIRE }])).toBe(false);
+  });
+
+  it("rejects malformed JSON and every non-envelope", () => {
+    for (const v of ["", "{", "not json", null, undefined, 7, [], { type: "other" }, {}]) {
+      expect(isSceneInitFrame(v)).toBe(false);
+    }
   });
 });

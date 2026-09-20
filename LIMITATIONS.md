@@ -808,89 +808,6 @@ and domain observations are carried forward from the ENC-1252 measurement over C
 
 ---
 
-## DC-L16 — Nothing on the market-data path carries a timestamp, so a time axis is the client's *observation* time 🟠
-
-**Claim.** As of ENC-1254 the x axis of the market views renders time rather than `INDEX`
-(SPEC D1 tier 1). The time it renders is **when this client saw the record**, not when the bar
-closed upstream — because no timestamp exists anywhere on the path to render. Four independent
-places drop it:
-
-1. **GMA_V3 does not emit one.** A value update is exactly four keys — `type`, `id`,
-   `streamKey`, `value` (`GMA_V3/src/ws/WSResponder.cpp`). `StreamValue` itself has no time
-   slot (`GMA_V3/include/gma/StreamValue.hpp`).
-2. **The one node that computes a bar boundary throws it away.** `BucketTime` floor-aligns to
-   a wall-clock period expressly so "a 1m bar means the same wall-clock window across the data
-   plane" — and then emits `StreamValue{"", 0.0}` (`GMA_V3/src/nodes/BucketTime.cpp:70,72`).
-   The aligned instant it just computed never enters the stream.
-3. **embassy declares the field and never reads it.** `inboundProbe.Timestamp *int64` exists
-   (`embassy/internal/gma/types.go:53`) and has **zero** readers; the handler signature
-   forecloses it anyway — `type ValueHandler func(value float32)`.
-4. **treaty's dataplane record has no time field**, and the binary record is
-   `[1B op][4B bufferId][4B offsetBytes][4B payloadBytes]` + little-endian f32s. `x` is
-   embassy's `recordIndex`, a uint32 counter.
-
-And the lane could not carry one if it were wired: it is `float32` end to end, whose 24-bit
-mantissa quantises an ms epoch (~1.7e12) to roughly **2-minute** steps.
-
-**What ENC-1254 therefore does.** `IndexTimeTracker` (`packages/dc-wasm/src/chart/time.ts`)
-fits `t = origin + recordIndex·msPerIndex` by least squares from the times at which the client
-*observed* each record, and the fitted `TimeBasis` carries an **`epochKnown`** flag:
-
-- `true` — a live socket stamping `Date.now()`. The labels are real wall-clock instants, and
-  they are the time of *receipt*, not of the bar.
-- `false` — the showcase, replaying a captured tape. The origin is the tape's own zero, the
-  labels are rendered in UTC, and they describe the **capture's cadence** (≈75 ms/record), not
-  a market interval. `candles-aapl`'s 267 bars therefore span 20 seconds of axis, not 267
-  seconds of market.
-
-`epochKnown` and `msPerIndex` are published on `data-dc-axis-domain` /
-`window.__dcAxisDomain[viewId].x.time`, so the distinction is readable without trusting a label.
-
-**Why it bites.** A reader who sees a clock on the x axis will assume it is market time. On the
-showcase it is tape time; on the live product it will be arrival time. Both are true statements
-about the stream and neither is the statement a trading chart normally makes — and because the
-frame contains no second opinion, there is nothing to contradict the assumption (SPEC §1.3, the
-same mechanism that let `INDEX 4→160` stand for six months).
-
-**Re-check.**
-```bash
-# 1, 2, 3 and 4 — run from the WORKSPACE root (the parent of DynaCharting/)
-grep -c 'w.Key(' GMA_V3/src/ws/WSResponder.cpp                    # -> 4  (type,id,streamKey,value)
-grep -n 'onValue(StreamValue' GMA_V3/src/nodes/BucketTime.cpp     # -> StreamValue{"", 0.0} ×2
-grep -rn 'Timestamp' embassy/internal/gma/ | wc -l                # -> 1  (the declaration; no readers)
-grep -n 'type ValueHandler' embassy/internal/gma/client.go        # -> func(value float32)
-grep -cE 'timestamp|epoch|time' treaty/proto/dataplane/v1/dynacharting.proto   # -> 0
-
-# 5 — from the DynaCharting repo root: the capture's ONLY time is the frame's own offset
-python3 -c "import json;d=json.load(open('apps/showcase/views/candles-aapl/records.json'));print(sorted(d['meta']),sorted(d['frames'][0]))"
-# -> ['cadenceMs', 'durationMs', 'frameCount', 'viewId'] ['b64', 't']
-
-# 6 — and the axis says so, rather than implying market time
-npx vitest run apps/showcase/src/chrome/axisTicks.test.ts         # -> 16 passed
-```
-
-**Working around it.** Read `window.__dcAxisDomain[viewId].x.time.epochKnown` before quoting a
-time off a chart. To get *market* time onto the axis, the producer has to state it: the pieces
-already exist — `BucketTime` guarantees `recordIndex` is an exact, wall-clock-aligned bar
-ordinal, and forum already authors the interval (`forum/db/seed/seed.go`, `candleWindowMs =
-3000`) and ships it to GMA as opaque `pipeline_json` that embassy never parses. So
-`t = base + recordIndex × periodMs` would be **exact** if `base` and `periodMs` were transmitted
-once per buffer on the dataplane buffer spec. `TimeBasis.source: 'declared'` is the seam that
-consumes them; nothing produces them yet. This is a `treaty` + `embassy` change, not a client
-one — do not try to infer a bar interval in the browser.
-
-**Ticket.** None yet for the wire change (it belongs to `treaty`/`embassy`, not this repo).
-ENC-1254 landed the client half. DynaCharting's own `dc::TimeScale`
-(`core/include/dc/scale/Scale.hpp`) already maps epoch-ms and needs a timestamp column that the
-live path never produces — it is unreachable for the same reason.
-
-**Verified at** `2423de6`, 2026-09-19 — every command above run by hand in the ENC-1254
-worktree and against the sibling repos at their checked-out state. The `epochKnown: false` /
-`msPerIndex: 74.9998` figures were read off the running showcase over CDP (headless Chrome,
-`vendor: nvidia, architecture: ampere`, `info.isFallbackAdapter: false`, `subgroupMinSize: 32`,
-`maxBufferSize: 2 GiB` — SPEC D8), not inferred from the tests. The float32-mantissa figure is
-arithmetic, not a measurement.
-
 ## DC-L17 — A candle body has a 2 px floor, so a doji is not zero-height on screen 🟡
 
 **Claim.** Since ENC-1251 `instancedCandle@1` floors the height it draws a candle body at:
@@ -1675,122 +1592,186 @@ ENC-1253 worktree; command 2's expected output is restamped above.
 
 ---
 
-# §H — How this file stays true
+## DC-L16 — Nothing on the market-data path carries a timestamp, so a time axis is the client's *observation* time ✅ *(RETIRED for the LIVE path by ENC-1282 — replay is unchanged, and so is a default build)*
 
-The previous limitations log failed in a specific, diagnosable way, and this section is the
-response to that diagnosis rather than a promise to try harder.
+**Retired 2026-09-20** by the *Timestamps on the wire* project — ENC-1279 (treaty `DcTimeBasis`),
+ENC-1280 (GMA_V3 stamps `bucketStartMs`), ENC-1281 (embassy emits the basis on `createBuffer`),
+ENC-1302 (the record's `x` lane became a bar ordinal), ENC-1303 (customer-layer carries it), and
+**ENC-1282**, this repo's half: `timeBasisFromWire` / `transmittedBasisFromSceneInit` turn the
+producer's declaration into a `TimeBasis` with `source: 'transmitted'`, which the overlay now
+publishes beside the numbers, and the showcase's live path prefers it over the fit. ENC-1326
+(`065e6d8`, embassy, **branch open, not merged**) made the forum-less instruction-file DECODE
+carry `pipeline`/`node`/`operations` — without it no fixture could declare a bar period, so no
+basis existed to consume.
 
-**What went wrong.** It lived in `specs/`, in a different repo from the code. Its author could
-not see two fixes that landed fourteen minutes earlier. Nothing in any subsequent PR touched it
-or pointed at it. Its entries recorded conclusions but not *procedures*, so falsifying one meant
-redoing the original investigation — which nobody did, for 85 days, while its 🔴 top-severity
-entry was wrong.
+**Three of the entry's four claims are now false; the fourth is still true and did not need to
+change.** GMA_V3 emits `bucketStartMs`, `BucketTime`/`TumblingWindow` keep the boundary they
+compute, and embassy declares the basis — but the binary record still has **no time field**, and
+it does not need one. The basis rides `createBuffer` once per stream and the record's float32 `x`
+carries a bar ordinal, exact to 2²⁴ = 16 777 216 bars: ~31 years at 1-minute bars, and **194 days
+at the `periodMs: 1000` measured below**, which is the figure that applies to the run quoted here.
+`RECORD_HEADER_SIZE` is still **13**.
 
-**Seven things this file does differently.**
+**SCOPE, stated because the heading alone would overclaim.** This retires the entry for a **live
+data plane**. A default `pnpm --filter @repo/showcase dev` is replay-only, none of the 22
+committed views is reachable this way, and none of their `instruction.json` files carries a
+pipeline — so in a default build every chart still shows a fitted, tape-relative axis. The live
+fixtures that produce the measurement are committed at
+`apps/showcase/tools/live/` with the four processes written down; the ENC-1326 branch they need
+(embassy) is open and **not merged**.
 
-1. **It is repo-local.** This is the variable that actually predicts survival here, and the
-   evidence is in the same git history: `CHART_AUTHORING.md`, at this repo's root, was amended
-   by **both** of the last two feature PRs (`6a6f3d4`, `6684a00`) *on the day each landed*. The
-   workspace-level limitations file got **one** commit in 85 days. Same authors, same period,
-   same discipline — different directory. A doc a contributor has already checked out is a doc
-   they can fix in the PR that falsified it.
+**MEASURED at retirement** — real `GMA_V3/tools/smoke-test/feed-inject.js` → real `gma_server`
+(`TumblingWindow periodMs 1000` → `VectorReducer first/max/min/last`) → real forum-less
+`embassy` on `apps/showcase/tools/live/candles-live.instruction.json` → the showcase in headless
+Chromium 1228 on `nvidia`/`ampere` (`info.isFallbackAdapter: false`), canvas-only capture via
+`specs/2026-09-19-chart-quality-bar/harness/shoot-live.mjs`. One capture, one set of numbers:
 
-2. **Every entry carries a `Re-check` command.** If falsifying an entry costs an investigation,
-   nobody falsifies it. If it costs one paste, the next person through does it for free. This is
-   also an admission gate: **if you cannot write the one-liner, the entry is not ready** — you
-   have an impression, not a limitation.
+```
+createBuffer 10100 timeBasis {"baseMs":1789922556000,"epochKnown":true,"periodMs":1000}
+window.__dcAxisDomain["candles-aapl"].x.time
+  -> {"msPerIndex":1000,"originMs":1789922556000,"epochKnown":true,"samples":0,
+      "source":"transmitted"}
+records: 74   x domain: -0.4 .. 219.4   (220 BARS, not 74)
+x tick labels -> ["12:43","12:44","12:45","12:46"]
+harness/score.py T1.5 -> PASS "all 4 x tick labels parse as times"
+```
 
-3. **Every entry carries a `Verified at <sha> (<date>)`.** A stale SHA is a visible expiry date,
-   which the old file had no equivalent of. The rule: **if your change touches a file an entry's
-   `Re-check` names, run it and either restamp the entry or move it to §R.** That rule is
-   mechanical, scoped to files you already have open, and is the whole maintenance burden.
+An earlier capture of the same stack over a dense feed gave
+`["12:15","12:16","12:17","12:18","12:19"]` against `baseMs = 12:14:53 EDT`, and the in-page run
+of D1's own exported `parsesAsTimestamp` over those labels returned `[true,true,true,true,true]`.
+The two captures are quoted separately on purpose: a label count from one and a verdict string
+from the other would not describe any run that happened.
 
-4. **Nothing is deleted.** Fixed entries move to §R with the commit that killed them; wrong
-   beliefs move to §C. Silently dropping an entry is indistinguishable from forgetting it, and a
-   reader who cannot see the log correcting itself has no reason to believe the entries that
-   remain.
+`samples: 0` is the point: nothing was fitted. `epochKnown: true` is the first time it has been
+true anywhere in this repo.
 
-5. **Pointers live where the limitation is hit**, not only here. This PR installed them rather
-   than promising them: `CLAUDE.md` (top, the `ctest` block → DC-L01, the `--png` block →
-   DC-L02/DC-L03) and `CHART_AUTHORING.md` (header, §8 and §9 → DC-L04). Adding the pointer is
-   part of adding an entry. The DC-L02 evidence is the argument for doing it: 76 of 277 trial
-   writeups filed the same by-design behaviour as a bug, because the only record of it was
-   somewhere they were not.
+**The T1.5 above is PROVISIONAL and is quoted as such.** That verdict's own result is
+`attained: -1, stoppedAt: 0` — tier 0 is UNPROVEN because the scene can cite no
+`scripts/tier0.sh` run (it needs a `DC_FETCH_DAWN=ON` build — **DC-L01**), which is true of every
+verdict committed in that harness. T1.5 therefore ran under `--diagnose`. The primary evidence
+for this retirement is the in-page run of D1's own exported `parsesAsTimestamp` over the engine's
+labels; score.py's independent regex set corroborates it. Neither is a tier claim.
 
-6. **Entry ids are stable and greppable.** `DC-L04` can be cited from a code comment, a Linear
-   ticket or a PR description without ambiguity, and reusing an id for different content is
-   never allowed — retired ids stay retired.
+**The gap renders as TIME, and that is the half worth checking.** The feed above ran at 3 000 ms
+into 1 000 ms buckets, so two of every three buckets were genuinely empty and `TumblingWindow`
+emitted nothing for them (`EmptyBucketDoesNotEmit`, D7 mechanism 1 — not a stalled producer, and
+not a lossy socket). On the wire the ordinals arrive `0, 3, 6, 9, … 33` — **12 records across 34
+bars**. On screen, in the capture above, **74 records span 219.8 ordinals = 219.8 s of axis**, and
+`originMs + x.max·msPerIndex` lands 2.0 s before the wall clock at read time. A delivery-count
+reading of the same lane would have drawn 74 s of axis and placed the newest bar two and a half
+minutes early — cumulatively, 1 `periodMs` per bar nobody sent. That is the defect D7 removes,
+and its absence is visible in the rendered domain rather than inferred from the wire. The
+executed unit proof of the mechanism itself is embassy's
+`internal/pipeline/bar_ordinal_test.go:134,180,214`, which includes a negative control for the
+old lane's drift.
 
-7. **The id is allocated by Linear, not by the author (ENC-1277).** The sequential
-   `DC-Lnn` space **`DC-L01`…`DC-L18` is CLOSED**. Every entry added after ENC-1277 is
-   **`DC-L-<its ENC ticket number>`** — `DC-L-1277`, `DC-L-1301`. You do not pick it, you do
-   not check whether it is free, and there is nothing to race for: Linear already allocated it
-   and it is unique for the same reason the ticket id is.
+**And the negative control, same stack, one field removed.** With the bucketing stage dropped
+from the fixture (`apps/showcase/tools/live/candles-live-nobasis.instruction.json`) — a stream
+with no uniform bar period, which declares no basis rather than `periodMs: 0` (SPEC D7
+corollary) — 1 553 records streamed and the axis was **dropped**, not captioned:
+`data-dc-axis-domain` published `"x":null`, the engine drew **0** x tick labels, and the price
+axis kept rendering, so the emptiness is the time axis's and not the chart's.
 
-   *Why the old scheme could not be repaired.* Sequential allocation is racy **by
-   construction**, and the window is the whole life of a branch — not the moment you look. It
-   collided three times in two days, and every one of those authors checked first (one grepped
-   every `enc-12*` remote branch, not just `main`):
+**What is NOT retired.** Replaying a captured tape still fits its basis from arrival times and
+still reports `epochKnown: false` — the tape does not carry the producer's declaration (SPEC §4
+non-goal). The paragraphs below describe that path accurately and are the reason
+`TimeBasis.source` distinguishes `'observed'` from `'transmitted'` rather than collapsing them.
 
-   | Colliding tickets | Id |
-   |---|---|
-   | ENC-1252 / ENC-1257 | `DC-L12` |
-   | ENC-1250 / ENC-1254 / ENC-1256 | `DC-L14` (three ways) |
-   | ENC-1251 / ENC-1253 | `DC-L17` |
+**And one live case still reports `epochKnown: false`, by upstream design.** embassy learns
+`baseMs` from the producer's FIRST bucket stamp, so a client that subscribes before that stamp
+arrives gets `{"baseMs":0,"epochKnown":false,…}`. The corrected envelope embassy re-renders is
+given only to FUTURE subscribers and is deliberately not broadcast, because a scene-init is not
+idempotent at the client and pushing it would zero exactly the records the basis was learned from
+(ENC-1101; `embassy/internal/dataplane/server.go` `UpdateSceneSnapshot`). Measured: a client that
+subscribed **76 ms** into a fresh stream saw `epochKnown: false` and no further envelope in 14 s;
+one that subscribed seconds later saw `baseMs: 1789922150000, epochKnown: true`. A browser that
+opens inside the first bar therefore shows a tape-relative axis **until it reconnects** — which
+is correct behaviour on both sides and is not the failure this entry described.
 
-   **Twice there was no conflict at all.** Git auto-merged the two entries into different parts
-   of the file and left two identical headings coexisting with no marker and no error. And the
-   resolution is its own hazard: taking `--ours` wholesale on this file once silently dropped
-   ENC-1257's entire `DC-L12`, including the only record that `SvgExporter` does not apply the
-   bar-sizing rule. A human reading the diff caught it; nothing else would have.
+The original entry is kept verbatim below.
 
-   *Why the existing eighteen were NOT renumbered.* Device 6 above is the reason — an id is a
-   citation target, and 234 of them exist across 35 files in **two repos** (124 in this one, 110
-   under the workspace's `specs/`), which by the workspace guardrail is two tickets and two PRs
-   with a window where half the citations dangle. Renumbering also cannot reach the citations in
-   merged commit messages, PR bodies and Linear comments at all. And it is not even *defined*:
-   **ten of the eighteen entries say `Ticket. None`**, and `DC-L01`…`DC-L09` all arrived in a
-   single commit (`e95a79d`, ENC-991), so numbering them by their ticket would produce a
-   **nine-way collision** — the exact defect being fixed. Entries that are already merged cannot
-   collide with anything; only future ones can, and those are the ones the new scheme covers.
 
-   *The separator is load-bearing.* `DC-L-1277`, not `DC-L1277`. Without the hyphen, `grep
-   DC-L12` matches `DC-L1277`, and ten of the eighteen legacy ids (`DC-L10`…`DC-L18`) are
-   prefixes of some four-digit ticket. A citation lookup that silently returns an extra entry —
-   or a gate that counts one — is the same class of quiet wrong answer as everything else in
-   this file.
 
-   *And it is checked, not merely written down.* `scripts/check-limitation-ids.sh` fails when
-   two entries share an id, when an id that existed in `origin/main` has vanished (the `--ours`
-   drop), or when a heading's id is malformed. `scripts/limitation-ids.test.ts` runs it inside
-   **`pnpm test`** — the only gate in this repo that needs no Dawn, no GPU and no build, so it
-   is the only one everybody actually runs. `ctest` was the alternative and DC-L01 disqualifies
-   it. Paste it any time:
+**Claim.** As of ENC-1254 the x axis of the market views renders time rather than `INDEX`
+(SPEC D1 tier 1). The time it renders is **when this client saw the record**, not when the bar
+closed upstream — because no timestamp exists anywhere on the path to render. Four independent
+places drop it:
 
-   ```bash
-   bash scripts/check-limitation-ids.sh   # 0 clean, 1 violation, 2 could-not-run
-   ```
+1. **GMA_V3 does not emit one.** A value update is exactly four keys — `type`, `id`,
+   `streamKey`, `value` (`GMA_V3/src/ws/WSResponder.cpp`). `StreamValue` itself has no time
+   slot (`GMA_V3/include/gma/StreamValue.hpp`).
+2. **The one node that computes a bar boundary throws it away.** `BucketTime` floor-aligns to
+   a wall-clock period expressly so "a 1m bar means the same wall-clock window across the data
+   plane" — and then emits `StreamValue{"", 0.0}` (`GMA_V3/src/nodes/BucketTime.cpp:70,72`).
+   The aligned instant it just computed never enters the stream.
+3. **embassy declares the field and never reads it.** `inboundProbe.Timestamp *int64` exists
+   (`embassy/internal/gma/types.go:53`) and has **zero** readers; the handler signature
+   forecloses it anyway — `type ValueHandler func(value float32)`.
+4. **treaty's dataplane record has no time field**, and the binary record is
+   `[1B op][4B bufferId][4B offsetBytes][4B payloadBytes]` + little-endian f32s. `x` is
+   embassy's `recordIndex`, a uint32 counter.
 
-**Adding an entry** — a checklist, not a ceremony:
+And the lane could not carry one if it were wired: it is `float32` end to end, whose 24-bit
+mantissa quantises an ms epoch (~1.7e12) to roughly **2-minute** steps.
 
-- [ ] Verify it against current `main` yourself. Someone else's earlier assessment is a lead,
-      not evidence.
-- [ ] Write the `Re-check` command and **run it**. Paste the output you actually got.
-- [ ] Stamp `Verified at <sha>, <date>`.
-- [ ] Give it the id `DC-L-<your ENC ticket number>` (device 7 — do **not** pick the next free
-      `DC-Lnn`; that space is closed), a severity, and a ticket — or say "None", explicitly.
-- [ ] Run `bash scripts/check-limitation-ids.sh`. `pnpm test` runs it too, so a bad id fails
-      the gate whether or not you remember.
-- [ ] Say what the **workaround** is. An entry with no workaround and no ticket is a complaint.
-- [ ] Add a pointer from wherever someone would hit it.
+**What ENC-1254 therefore does.** `IndexTimeTracker` (`packages/dc-wasm/src/chart/time.ts`)
+fits `t = origin + recordIndex·msPerIndex` by least squares from the times at which the client
+*observed* each record, and the fitted `TimeBasis` carries an **`epochKnown`** flag:
 
-**Retiring an entry:** move the row to §R with the fixing commit and ticket, and if a residual
-survives, open the new entry and link them in both directions (DC-L05 and DC-L06 are the worked
-examples). If the entry was not merely fixed but *wrong*, it belongs in §C as well — that is the
-case the old L4 taught us.
+- `true` — a live socket stamping `Date.now()`. The labels are real wall-clock instants, and
+  they are the time of *receipt*, not of the bar.
+- `false` — the showcase, replaying a captured tape. The origin is the tape's own zero, the
+  labels are rendered in UTC, and they describe the **capture's cadence** (≈75 ms/record), not
+  a market interval. `candles-aapl`'s 267 bars therefore span 20 seconds of axis, not 267
+  seconds of market.
 
-**Severity.** 🔴 will silently produce a wrong result or a false green. 🟠 will cost you an
-afternoon. 🟡 is a sharp edge you should know about before you hit it.
+`epochKnown` and `msPerIndex` are published on `data-dc-axis-domain` /
+`window.__dcAxisDomain[viewId].x.time`, so the distinction is readable without trusting a label.
+
+**Why it bites.** A reader who sees a clock on the x axis will assume it is market time. On the
+showcase it is tape time; on the live product it will be arrival time. Both are true statements
+about the stream and neither is the statement a trading chart normally makes — and because the
+frame contains no second opinion, there is nothing to contradict the assumption (SPEC §1.3, the
+same mechanism that let `INDEX 4→160` stand for six months).
+
+**Re-check.**
+```bash
+# 1, 2, 3 and 4 — run from the WORKSPACE root (the parent of DynaCharting/)
+grep -c 'w.Key(' GMA_V3/src/ws/WSResponder.cpp                    # -> 4  (type,id,streamKey,value)
+grep -n 'onValue(StreamValue' GMA_V3/src/nodes/BucketTime.cpp     # -> StreamValue{"", 0.0} ×2
+grep -rn 'Timestamp' embassy/internal/gma/ | wc -l                # -> 1  (the declaration; no readers)
+grep -n 'type ValueHandler' embassy/internal/gma/client.go        # -> func(value float32)
+grep -cE 'timestamp|epoch|time' treaty/proto/dataplane/v1/dynacharting.proto   # -> 0
+
+# 5 — from the DynaCharting repo root: the capture's ONLY time is the frame's own offset
+python3 -c "import json;d=json.load(open('apps/showcase/views/candles-aapl/records.json'));print(sorted(d['meta']),sorted(d['frames'][0]))"
+# -> ['cadenceMs', 'durationMs', 'frameCount', 'viewId'] ['b64', 't']
+
+# 6 — and the axis says so, rather than implying market time
+npx vitest run apps/showcase/src/chrome/axisTicks.test.ts         # -> 16 passed
+```
+
+**Working around it.** Read `window.__dcAxisDomain[viewId].x.time.epochKnown` before quoting a
+time off a chart. To get *market* time onto the axis, the producer has to state it: the pieces
+already exist — `BucketTime` guarantees `recordIndex` is an exact, wall-clock-aligned bar
+ordinal, and forum already authors the interval (`forum/db/seed/seed.go`, `candleWindowMs =
+3000`) and ships it to GMA as opaque `pipeline_json` that embassy never parses. So
+`t = base + recordIndex × periodMs` would be **exact** if `base` and `periodMs` were transmitted
+once per buffer on the dataplane buffer spec. `TimeBasis.source: 'declared'` is the seam that
+consumes them; nothing produces them yet. This is a `treaty` + `embassy` change, not a client
+one — do not try to infer a bar interval in the browser.
+
+**Ticket.** None yet for the wire change (it belongs to `treaty`/`embassy`, not this repo).
+ENC-1254 landed the client half. DynaCharting's own `dc::TimeScale`
+(`core/include/dc/scale/Scale.hpp`) already maps epoch-ms and needs a timestamp column that the
+live path never produces — it is unreachable for the same reason.
+
+**Verified at** `2423de6`, 2026-09-19 — every command above run by hand in the ENC-1254
+worktree and against the sibling repos at their checked-out state. The `epochKnown: false` /
+`msPerIndex: 74.9998` figures were read off the running showcase over CDP (headless Chrome,
+`vendor: nvidia, architecture: ampere`, `info.isFallbackAdapter: false`, `subgroupMinSize: 32`,
+`maxBufferSize: 2 GiB` — SPEC D8), not inferred from the tests. The float32-mantissa figure is
+arithmetic, not a measurement.
 
 ---
 
@@ -1948,3 +1929,122 @@ directory stale until then.
 **Ticket.** Recapture + the SPEC correction: **ENC-1276**. **Verified at `2423de6`, 2026-09-19**
 — fit measured on both adapters the tier-0 control run used (llvmpipe, and NVIDIA GeForce
 RTX 3070 Ti / NVK GA104).
+
+---
+
+# §H — How this file stays true
+
+The previous limitations log failed in a specific, diagnosable way, and this section is the
+response to that diagnosis rather than a promise to try harder.
+
+**What went wrong.** It lived in `specs/`, in a different repo from the code. Its author could
+not see two fixes that landed fourteen minutes earlier. Nothing in any subsequent PR touched it
+or pointed at it. Its entries recorded conclusions but not *procedures*, so falsifying one meant
+redoing the original investigation — which nobody did, for 85 days, while its 🔴 top-severity
+entry was wrong.
+
+**Seven things this file does differently.**
+
+1. **It is repo-local.** This is the variable that actually predicts survival here, and the
+   evidence is in the same git history: `CHART_AUTHORING.md`, at this repo's root, was amended
+   by **both** of the last two feature PRs (`6a6f3d4`, `6684a00`) *on the day each landed*. The
+   workspace-level limitations file got **one** commit in 85 days. Same authors, same period,
+   same discipline — different directory. A doc a contributor has already checked out is a doc
+   they can fix in the PR that falsified it.
+
+2. **Every entry carries a `Re-check` command.** If falsifying an entry costs an investigation,
+   nobody falsifies it. If it costs one paste, the next person through does it for free. This is
+   also an admission gate: **if you cannot write the one-liner, the entry is not ready** — you
+   have an impression, not a limitation.
+
+3. **Every entry carries a `Verified at <sha> (<date>)`.** A stale SHA is a visible expiry date,
+   which the old file had no equivalent of. The rule: **if your change touches a file an entry's
+   `Re-check` names, run it and either restamp the entry or move it to §R.** That rule is
+   mechanical, scoped to files you already have open, and is the whole maintenance burden.
+
+4. **Nothing is deleted.** Fixed entries move to §R with the commit that killed them; wrong
+   beliefs move to §C. Silently dropping an entry is indistinguishable from forgetting it, and a
+   reader who cannot see the log correcting itself has no reason to believe the entries that
+   remain.
+
+5. **Pointers live where the limitation is hit**, not only here. This PR installed them rather
+   than promising them: `CLAUDE.md` (top, the `ctest` block → DC-L01, the `--png` block →
+   DC-L02/DC-L03) and `CHART_AUTHORING.md` (header, §8 and §9 → DC-L04). Adding the pointer is
+   part of adding an entry. The DC-L02 evidence is the argument for doing it: 76 of 277 trial
+   writeups filed the same by-design behaviour as a bug, because the only record of it was
+   somewhere they were not.
+
+6. **Entry ids are stable and greppable.** `DC-L04` can be cited from a code comment, a Linear
+   ticket or a PR description without ambiguity, and reusing an id for different content is
+   never allowed — retired ids stay retired.
+
+7. **The id is allocated by Linear, not by the author (ENC-1277).** The sequential
+   `DC-Lnn` space **`DC-L01`…`DC-L18` is CLOSED**. Every entry added after ENC-1277 is
+   **`DC-L-<its ENC ticket number>`** — `DC-L-1277`, `DC-L-1301`. You do not pick it, you do
+   not check whether it is free, and there is nothing to race for: Linear already allocated it
+   and it is unique for the same reason the ticket id is.
+
+   *Why the old scheme could not be repaired.* Sequential allocation is racy **by
+   construction**, and the window is the whole life of a branch — not the moment you look. It
+   collided three times in two days, and every one of those authors checked first (one grepped
+   every `enc-12*` remote branch, not just `main`):
+
+   | Colliding tickets | Id |
+   |---|---|
+   | ENC-1252 / ENC-1257 | `DC-L12` |
+   | ENC-1250 / ENC-1254 / ENC-1256 | `DC-L14` (three ways) |
+   | ENC-1251 / ENC-1253 | `DC-L17` |
+
+   **Twice there was no conflict at all.** Git auto-merged the two entries into different parts
+   of the file and left two identical headings coexisting with no marker and no error. And the
+   resolution is its own hazard: taking `--ours` wholesale on this file once silently dropped
+   ENC-1257's entire `DC-L12`, including the only record that `SvgExporter` does not apply the
+   bar-sizing rule. A human reading the diff caught it; nothing else would have.
+
+   *Why the existing eighteen were NOT renumbered.* Device 6 above is the reason — an id is a
+   citation target, and 234 of them exist across 35 files in **two repos** (124 in this one, 110
+   under the workspace's `specs/`), which by the workspace guardrail is two tickets and two PRs
+   with a window where half the citations dangle. Renumbering also cannot reach the citations in
+   merged commit messages, PR bodies and Linear comments at all. And it is not even *defined*:
+   **ten of the eighteen entries say `Ticket. None`**, and `DC-L01`…`DC-L09` all arrived in a
+   single commit (`e95a79d`, ENC-991), so numbering them by their ticket would produce a
+   **nine-way collision** — the exact defect being fixed. Entries that are already merged cannot
+   collide with anything; only future ones can, and those are the ones the new scheme covers.
+
+   *The separator is load-bearing.* `DC-L-1277`, not `DC-L1277`. Without the hyphen, `grep
+   DC-L12` matches `DC-L1277`, and ten of the eighteen legacy ids (`DC-L10`…`DC-L18`) are
+   prefixes of some four-digit ticket. A citation lookup that silently returns an extra entry —
+   or a gate that counts one — is the same class of quiet wrong answer as everything else in
+   this file.
+
+   *And it is checked, not merely written down.* `scripts/check-limitation-ids.sh` fails when
+   two entries share an id, when an id that existed in `origin/main` has vanished (the `--ours`
+   drop), or when a heading's id is malformed. `scripts/limitation-ids.test.ts` runs it inside
+   **`pnpm test`** — the only gate in this repo that needs no Dawn, no GPU and no build, so it
+   is the only one everybody actually runs. `ctest` was the alternative and DC-L01 disqualifies
+   it. Paste it any time:
+
+   ```bash
+   bash scripts/check-limitation-ids.sh   # 0 clean, 1 violation, 2 could-not-run
+   ```
+
+**Adding an entry** — a checklist, not a ceremony:
+
+- [ ] Verify it against current `main` yourself. Someone else's earlier assessment is a lead,
+      not evidence.
+- [ ] Write the `Re-check` command and **run it**. Paste the output you actually got.
+- [ ] Stamp `Verified at <sha>, <date>`.
+- [ ] Give it the id `DC-L-<your ENC ticket number>` (device 7 — do **not** pick the next free
+      `DC-Lnn`; that space is closed), a severity, and a ticket — or say "None", explicitly.
+- [ ] Run `bash scripts/check-limitation-ids.sh`. `pnpm test` runs it too, so a bad id fails
+      the gate whether or not you remember.
+- [ ] Say what the **workaround** is. An entry with no workaround and no ticket is a complaint.
+- [ ] Add a pointer from wherever someone would hit it.
+
+**Retiring an entry:** move the row to §R with the fixing commit and ticket, and if a residual
+survives, open the new entry and link them in both directions (DC-L05 and DC-L06 are the worked
+examples). If the entry was not merely fixed but *wrong*, it belongs in §C as well — that is the
+case the old L4 taught us.
+
+**Severity.** 🔴 will silently produce a wrong result or a false green. 🟠 will cost you an
+afternoon. 🟡 is a sharp edge you should know about before you hit it.

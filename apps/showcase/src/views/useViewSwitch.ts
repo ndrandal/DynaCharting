@@ -69,6 +69,7 @@ import {
 import { applyManifest, resetScene } from '../scene/sceneController';
 import type { SceneManifest } from '../scene/commands';
 import { useReplay } from '../engine/useReplay';
+import { agentStreamEnabled, useAgentStream } from '../engine/useAgentStream';
 import { effectiveTransform } from '../chrome/mapping';
 import { framingFor, type FramingResolution } from './framing';
 import type { ShowcaseView } from './registry';
@@ -113,7 +114,12 @@ function sameBasis(a: TimeBasis | null, b: TimeBasis | null): boolean {
   return (
     Math.abs(a.msPerIndex - b.msPerIndex) < 1e-6 &&
     Math.abs(a.originMs - b.originMs) < 1e-6 &&
-    a.epochKnown === b.epochKnown
+    a.epochKnown === b.epochKnown &&
+    // Provenance is part of the statement, not decoration: a fit that happens
+    // to land on the transmitted numbers is still a different claim about the
+    // axis, and the overlay publishes `source` beside the numbers
+    // (`deriveAxes.axisDomainReportJson`, ENC-1282).
+    a.source === b.source
   );
 }
 
@@ -296,6 +302,13 @@ export function useViewSwitch(
   const [timeBasis, setTimeBasis] = useState<TimeBasis | null>(null);
   const timeBasisRef = useRef<TimeBasis | null>(null);
 
+  // --- ENC-1282: the TRANSMITTED time basis --------------------------------
+  // The producer's own clock, read off `createBuffer.timeBasis` on the live
+  // agent socket (SPEC D6). Held separately from the fitted basis rather than
+  // folded into the tracker because the two are different evidence and the
+  // overlay states which one it is.
+  const [transmittedBasis, setTransmittedBasis] = useState<TimeBasis | null>(null);
+
   // A fresh tracker per view: an axis group belongs to one view's buffers.
   useEffect(() => {
     const spec = view?.axisDomain;
@@ -312,6 +325,7 @@ export function useViewSwitch(
       : null;
     timeBasisRef.current = null;
     setTimeBasis(null);
+    setTransmittedBasis(null);
   }, [view]);
 
   // Fold every replayed batch. Publishing is coalesced to one animation frame
@@ -478,7 +492,51 @@ export function useViewSwitch(
   // is to key the records object identity. We clone a shallow wrapper per epoch.
   const sessionRecords = useReplaySession(records, epoch);
 
-  useReplay(host, sessionRecords, {
+  // --- ENC-1282: the LIVE input ---------------------------------------------
+  // When VITE_SHOWCASE_AGENT_URL is set this build is driven by a real embassy
+  // data plane instead of a captured tape, and the replay is switched off: two
+  // unrelated record streams appended to one buffer id would interleave, and the
+  // domain measured off the mixture would describe neither.
+  const live = agentStreamEnabled();
+
+  // useAgentStream's growth descriptor is the view's own, plus the X-anchor
+  // window it needs to frame from the FIRST ordinal it sees. That anchoring is
+  // what makes a late joiner renderable at all: `x` is a bar ordinal on the
+  // producer's grid (SPEC D7), so a client that connects an hour in receives
+  // records at x ≈ 3600, not x ≈ 0, and a fixed [0, window] transform would put
+  // every one of them off the right edge.
+  const liveGrowth = useMemo(() => {
+    const g = view?.growth;
+    const a = view?.xAnchor;
+    if (!live || !g || !a) return undefined;
+    return { ...g, ...a };
+  }, [live, view]);
+
+  const onTimeBasis = useCallback((basis: TimeBasis | null) => {
+    setTransmittedBasis((prev) => (sameBasis(prev, basis) ? prev : basis));
+  }, []);
+
+  // `basisBufferId` is NOT `liveGrowth.bufferId`: `liveGrowth` also needs an
+  // `xAnchor`, which only 5 of the 22 views declare, and a view can want a time
+  // axis without wanting a live geometry rebuild. Passing the growth buffer's id
+  // directly also closes the borrowing case — with no id to match, the hook
+  // publishes no basis at all rather than taking the first buffer on the wire
+  // that happens to carry a clock.
+  //
+  // `rearmKey: epoch` ties the socket's lifetime to the scene's. `restart`
+  // resets the scene, which DELETES and recreates the buffer this stream has
+  // been counting records into; without the re-arm the hook's `recordTotal`,
+  // `syncedCount`, `curGeometryId` and `xAnchored` would outlive the buffer they
+  // describe and the next growth sync would declare the old stream's vertex
+  // count over a new, near-empty buffer.
+  useAgentStream(live ? host : null, liveGrowth, {
+    onBatch,
+    onTimeBasis,
+    basisBufferId: view?.growth?.bufferId,
+    rearmKey: epoch,
+  });
+
+  useReplay(host, live ? null : sessionRecords, {
     playing,
     onProgress: setProgress,
     onComplete,
@@ -492,9 +550,25 @@ export function useViewSwitch(
     onBatch,
   });
 
+  /**
+   * The basis the chart states — TRANSMITTED BEATS FITTED (ENC-1282, SPEC D2).
+   *
+   * Not a preference: a transmitted basis is a measurement taken where the bar
+   * was cut, and a fitted one is a measurement of when this client happened to
+   * receive the record. When both exist they describe different things, and the
+   * producer's is the one the axis is claiming to show.
+   *
+   * The fallback is `null`, never the fit: a live stream whose producer declared
+   * no basis has no uniform bar grid at all (SPEC D7 corollary), so substituting
+   * an arrival-time fit would answer a question the producer declined to answer.
+   * `resolveAxis` drops a `timestamp` axis with no basis rather than captioning
+   * it, which is the behaviour ENC-1254 already shipped.
+   */
+  const statedBasis = live ? transmittedBasis : timeBasis;
+
   return {
     axisDomain,
-    timeBasis,
+    timeBasis: statedBasis,
     progress,
     playing,
     setPlaying,

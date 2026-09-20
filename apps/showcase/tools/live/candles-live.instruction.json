@@ -1,0 +1,125 @@
+{
+  "id": "slice-candles-live",
+  "sessionId": "showcase",
+  "subscriptions": [
+    {
+      "id": "r-open",
+      "streamKey": "NEXO",
+      "field": "lastPrice",
+      "pipeline": [
+        {
+          "type": "TumblingWindow",
+          "periodMs": 1000
+        },
+        {
+          "type": "VectorReducer",
+          "fn": "first"
+        }
+      ]
+    },
+    {
+      "id": "r-high",
+      "streamKey": "NEXO",
+      "field": "lastPrice",
+      "pipeline": [
+        {
+          "type": "TumblingWindow",
+          "periodMs": 1000
+        },
+        {
+          "type": "VectorReducer",
+          "fn": "max"
+        }
+      ]
+    },
+    {
+      "id": "r-low",
+      "streamKey": "NEXO",
+      "field": "lastPrice",
+      "pipeline": [
+        {
+          "type": "TumblingWindow",
+          "periodMs": 1000
+        },
+        {
+          "type": "VectorReducer",
+          "fn": "min"
+        }
+      ]
+    },
+    {
+      "id": "r-close",
+      "streamKey": "NEXO",
+      "field": "lastPrice",
+      "pipeline": [
+        {
+          "type": "TumblingWindow",
+          "periodMs": 1000
+        },
+        {
+          "type": "VectorReducer",
+          "fn": "last"
+        }
+      ]
+    }
+  ],
+  "visualization": {
+    "recipe": "showcase-explicit-v1",
+    "bindings": [
+      {
+        "slot": "ohlc.open",
+        "requestId": "r-open",
+        "bufferId": 10100,
+        "mode": "compound",
+        "stride": 24,
+        "intraOffset": 4,
+        "slotBit": 0
+      },
+      {
+        "slot": "ohlc.high",
+        "requestId": "r-high",
+        "bufferId": 10100,
+        "mode": "compound",
+        "stride": 24,
+        "intraOffset": 8,
+        "slotBit": 1
+      },
+      {
+        "slot": "ohlc.low",
+        "requestId": "r-low",
+        "bufferId": 10100,
+        "mode": "compound",
+        "stride": 24,
+        "intraOffset": 12,
+        "slotBit": 2
+      },
+      {
+        "slot": "ohlc.close",
+        "requestId": "r-close",
+        "bufferId": 10100,
+        "mode": "compound",
+        "stride": 24,
+        "intraOffset": 16,
+        "slotBit": 3
+      }
+    ],
+    "buffers": [
+      {
+        "bufferId": 10100,
+        "stride": 24,
+        "fullMask": 15,
+        "staticFields": [
+          {
+            "intraOffset": 0,
+            "kind": "recordIndex"
+          },
+          {
+            "intraOffset": 20,
+            "kind": "const",
+            "value": 0.4
+          }
+        ]
+      }
+    ]
+  }
+}
