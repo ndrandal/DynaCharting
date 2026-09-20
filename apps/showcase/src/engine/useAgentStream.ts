@@ -118,6 +118,22 @@ export interface AgentStreamCallbacks {
    * the correction will arrive.
    */
   onTimeBasis?: (basis: TimeBasis | null) => void;
+  /**
+   * Which buffer's clock to report. Separate from `growth` because the growth
+   * descriptor is only defined for views that also declare an `xAnchor`, and a
+   * view can want a time axis without wanting a live geometry rebuild. With no
+   * id, `onTimeBasis` is never called at all — see the gate in `onmessage`.
+   */
+  basisBufferId?: number;
+  /**
+   * Bump to tear the socket down and reconnect. The caller needs this because
+   * resetting the scene (`restart`) deletes and recreates the buffer this hook
+   * has been counting records into: without a re-arm, `recordTotal`,
+   * `syncedCount`, `curGeometryId` and `xAnchored` would survive a teardown
+   * they describe, and the next growth sync would declare a vertex count from
+   * the OLD stream over the NEW, near-empty buffer.
+   */
+  rearmKey?: number;
 }
 
 /**
@@ -191,6 +207,8 @@ export function useAgentStream(
 ): void {
   const onBatch = callbacks?.onBatch;
   const onTimeBasis = callbacks?.onTimeBasis;
+  const basisBufferId = callbacks?.basisBufferId;
+  const rearmKey = callbacks?.rearmKey ?? 0;
   useEffect(() => {
     if (!host || !AGENT_URL) return;
 
@@ -281,13 +299,32 @@ export function useAgentStream(
       };
       ws.onmessage = (ev: MessageEvent) => {
         if (typeof ev.data === 'string') {
-          // The manifest half of the envelope is deliberately discarded; only
-          // the per-buffer clock is read (see the module docstring). Matched by
-          // buffer id, never by position — embassy emits createBuffer commands
-          // in sorted-id order, not in the order the manifest declares them.
-          if (onTimeBasis) {
-            onTimeBasis(transmittedBasisFromSceneInit(ev.data, growth?.bufferId));
+          // SCENE-INIT ONLY, and the gate is load-bearing. embassy sends three
+          // kinds of text frame on this socket: the scene-init envelope, sticky
+          // `setGeometryVertexCount` frames (replayed AFTER the envelope on
+          // every subscribe — `internal/dataplane/server.go` `subscribe`), and
+          // `setTransform` frames from the range tracker at a ~250 ms cadence
+          // whenever a recipe declares axis groups. Handing any of those to
+          // `transmittedBasisFromSceneInit` gets `null` back — correctly, they
+          // carry no basis — and forwarding that null would retract a good
+          // basis and DROP the axis, deterministically at connect and then
+          // again four times a second. "Not a scene-init" and "a scene-init
+          // that declares no basis" are different answers and only the second
+          // one is this callback's business.
+          if (!onTimeBasis) return;
+          let frame: unknown;
+          try {
+            frame = JSON.parse(ev.data);
+          } catch {
+            return;
           }
+          if ((frame as { type?: unknown } | null)?.type !== 'scene-init') return;
+          // Matched by buffer id, never by position — embassy emits
+          // createBuffer commands in sorted-id order, not in the order the
+          // manifest declares them. With no buffer to match, publish nothing
+          // rather than borrowing whichever buffer happens to carry a clock.
+          if (basisBufferId === undefined) return;
+          onTimeBasis(transmittedBasisFromSceneInit(frame, basisBufferId));
           return;
         }
         if (ev.data instanceof ArrayBuffer) {
@@ -313,5 +350,5 @@ export function useAgentStream(
     return () => {
       ws?.close();
     };
-  }, [host, growth, onBatch, onTimeBasis]);
+  }, [host, growth, onBatch, onTimeBasis, basisBufferId, rearmKey]);
 }

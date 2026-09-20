@@ -515,7 +515,25 @@ export function useViewSwitch(
     setTransmittedBasis((prev) => (sameBasis(prev, basis) ? prev : basis));
   }, []);
 
-  useAgentStream(live ? host : null, liveGrowth, { onBatch, onTimeBasis });
+  // `basisBufferId` is NOT `liveGrowth.bufferId`: `liveGrowth` also needs an
+  // `xAnchor`, which only 5 of the 22 views declare, and a view can want a time
+  // axis without wanting a live geometry rebuild. Passing the growth buffer's id
+  // directly also closes the borrowing case — with no id to match, the hook
+  // publishes no basis at all rather than taking the first buffer on the wire
+  // that happens to carry a clock.
+  //
+  // `rearmKey: epoch` ties the socket's lifetime to the scene's. `restart`
+  // resets the scene, which DELETES and recreates the buffer this stream has
+  // been counting records into; without the re-arm the hook's `recordTotal`,
+  // `syncedCount`, `curGeometryId` and `xAnchored` would outlive the buffer they
+  // describe and the next growth sync would declare the old stream's vertex
+  // count over a new, near-empty buffer.
+  useAgentStream(live ? host : null, liveGrowth, {
+    onBatch,
+    onTimeBasis,
+    basisBufferId: view?.growth?.bufferId,
+    rearmKey: epoch,
+  });
 
   useReplay(host, live ? null : sessionRecords, {
     playing,
