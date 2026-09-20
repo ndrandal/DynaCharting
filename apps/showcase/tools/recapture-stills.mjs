@@ -169,14 +169,40 @@ const cdpUp = async (port) => {
  * replay pass, not a wall-clock delay. It accumulates the minimum progress it
  * has seen in a page global, so "we are near the end of a pass that we watched
  * start" is decidable from a stateless poll. */
+const FALLBACK_MS = 60000;
 const untilExpr = () => `(() => {
   const el = document.querySelector('[role="slider"][aria-label="Replay position"]');
   const c = document.querySelector('canvas.engine-canvas');
   if (!el || !c || c.width <= 16 || c.height <= 16) return false;
+  window.__dcRecapT0 = window.__dcRecapT0 || Date.now();
   const p = Number(el.getAttribute('aria-valuenow'));
-  if (!Number.isFinite(p)) return false;
-  window.__dcRecapMin = Math.min(window.__dcRecapMin ?? 100, p);
-  return window.__dcRecapMin <= 5 && p >= 92;
+  if (Number.isFinite(p)) {
+    window.__dcRecapMin = Math.min(window.__dcRecapMin ?? 100, p);
+    if (window.__dcRecapMin <= 5 && p >= 92) { window.__dcRecapRule = 'full-pass'; return true; }
+  }
+  // A view whose transport never advances — \`correlation-heatmap\` has ZERO binary
+  // frames and animates only a texture track, so its scrubber sits at one value —
+  // would otherwise burn the whole --timeout and then be captured at an unknown
+  // moment anyway. Fall back on TIME, but only once something is actually drawn,
+  // and SAY SO: the rule used is reported per still in capture-manifest.json, so a
+  // frame taken by the weaker rule is never mistakable for one taken by the strong
+  // one. Silence here is what would make the two look alike.
+  if (Date.now() - window.__dcRecapT0 < ${FALLBACK_MS}) return false;
+  try {
+    const off = document.createElement('canvas');
+    off.width = c.width; off.height = c.height;
+    const ctx = off.getContext('2d');
+    ctx.drawImage(c, 0, 0);
+    const d = ctx.getImageData(0, 0, off.width, off.height).data;
+    let n = 0;
+    for (let i = 0; i < d.length; i += 4 * 97) {
+      const dClear = Math.abs(d[i] - 8) + Math.abs(d[i + 1] - 8) + Math.abs(d[i + 2] - 13);
+      const dApp = Math.abs(d[i] - 13) + Math.abs(d[i + 1] - 13) + Math.abs(d[i + 2] - 20);
+      if (Math.min(dClear, dApp) > 36) n++;
+      if (n > 200) { window.__dcRecapRule = 'time-fallback'; return true; }
+    }
+  } catch (e) { /* readback blocked — keep waiting */ }
+  return false;
 })()`;
 
 /* Switch to the view through the app's own router, from the hero route. */
@@ -185,6 +211,8 @@ const execExpr = (id) => `(async () => {
   location.hash = ${JSON.stringify('#/view/' + id)};
   await new Promise((r) => setTimeout(r, 1500));
   window.__dcRecapMin = undefined;
+  window.__dcRecapT0 = 0;
+  window.__dcRecapRule = null;
   return location.hash;
 })()`;
 
@@ -207,7 +235,8 @@ const probeExpr = (id) => `(() => {
     progress: (() => {
       const el = document.querySelector('[role="slider"][aria-label="Replay position"]');
       return el ? Number(el.getAttribute('aria-valuenow')) : null;
-    })()
+    })(),
+    readinessRule: window.__dcRecapRule || null
   };
   const c = document.querySelector('canvas.engine-canvas');
   if (!c || !c.width || !c.height) { out.pix = { ok: false, reason: 'no canvas' }; return out; }
@@ -547,13 +576,14 @@ async function main() {
       bytes: cap?.bytes ?? null,
       adapter: cap?.adapter ?? null,
       replayProgressPct: probe?.value?.progress ?? null,
+      readinessRule: probe?.value?.readinessRule ?? null,
       boundaryErrors: probe?.value?.boundaryErrors ?? null,
       chromeOverlayNodes: probe?.value?.dom?.overlayNodes ?? null,
       verdict,
     });
     console.log(`[recap] ${v.id.padEnd(22)} exit=${code} ${verdict.padEnd(7)} ` +
       `cov=${pix?.coverage != null ? (pix.coverage * 100).toFixed(1) + '%' : 'n/a'} ` +
-      `progress=${probe?.value?.progress ?? '?'}% ` +
+      `progress=${probe?.value?.progress ?? '?'}% rule=${probe?.value?.readinessRule ?? 'none'} ` +
       `adapter=${cap?.adapter?.adapter?.vendor ?? '?'}/${cap?.adapter?.adapter?.architecture ?? '?'} ` +
       `fallback=${cap?.adapter?.infoIsFallbackAdapter ?? '?'}`);
   }
@@ -561,6 +591,7 @@ async function main() {
   // ── acceptance, asserted here rather than left to a reader ────────────────
   const bad = rows.filter((r) =>
     !r.still ||
+    r.shootLiveExit !== 0 ||
     r.captureMode !== 'canvas' ||
     r.tier1Scorable !== true ||
     r.adapter?.infoIsFallbackAdapter !== 'false' ||
@@ -581,7 +612,10 @@ async function main() {
     url: `${URL_BASE}?svgAxis=0#/`,
     captureMode: 'canvas',
     source: "canvas.engine-canvas -> canvas.toDataURL('image/png')",
-    readiness: 'one full replay pass: scrubber aria-valuenow seen <=5% then >=92%',
+    readiness: "per still, in `readinessRule`: 'full-pass' = the scrubber was seen at "
+      + "<=5% and then >=92%; 'time-fallback' = the transport never advanced (a "
+      + `texture-only view), so the frame was taken after ${FALLBACK_MS}ms with content on `
+      + "the canvas; null = neither fired and shoot-live timed out (see shootLiveExit).",
     chromeArgs: CHROME_ARGS,
     adapters,
     adapterLine,
