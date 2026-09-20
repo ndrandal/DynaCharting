@@ -563,6 +563,104 @@ export function checkTier1Labels(
   };
 }
 
+// ── The scene descriptor the tier scorer consumes ───────────────────────────
+
+/**
+ * The scene-JSON fragment describing what this axis DREW, in the vocabulary
+ * `specs/2026-09-19-chart-quality-bar/harness/score.py` reads.
+ *
+ * The scorer grades a scene declaration corroborated by pixel probes — it looks
+ * for ink inside each declared label box, samples each declared gridline's row
+ * or column, and classifies the raster's colours against the declared palette.
+ * `scenes/README.md` states the intended source explicitly: "a scene dumped by
+ * the renderer cannot describe an axis the renderer did not draw." This is that
+ * dump. It is emitted from the PLAN — the same numbers that were handed to the
+ * engine — so it cannot describe a label the engine was not asked to draw.
+ *
+ * It is deliberately a FRAGMENT: `tier0`, `series` and `raster` belong to the
+ * capture and the data path, not to the axis, and inventing them here is how a
+ * scene ends up asserting something nobody measured.
+ */
+export interface AxisSceneFragment {
+  text: {
+    role: "xTickLabel" | "yTickLabel" | "axisTitle";
+    text: string;
+    bbox: [number, number, number, number];
+    fontPx: number;
+    source: "engine";
+  }[];
+  grid: { orientation: "horizontal" | "vertical"; centre: number; pad: number }[];
+  axis: { spines: { orientation: "left" | "bottom" }[] };
+  plot: [number, number, number, number];
+  palette: { rgb: [number, number, number]; role: string; what: string }[];
+  theme: { name: string; palette: [number, number, number][] };
+}
+
+/** 0..1 float → the 0..255 integer the raster quantises it to. */
+function to255(c: number): number {
+  return Math.round(Math.max(0, Math.min(1, c)) * 255);
+}
+
+/** An `Rgba4`-ish triple at 8-bit, for declaring a colour to the scorer. */
+function rgb255(c: readonly number[]): [number, number, number] {
+  return [to255(c[0]), to255(c[1]), to255(c[2])];
+}
+
+/**
+ * Describe a drawn axis for the tier scorer.
+ *
+ * `gridPad` is the half-width of the neighbourhood `score.py` compares each
+ * gridline pixel against; 3 is its default and matches a 1px line with an
+ * antialiased fringe.
+ *
+ * The declared gridline colour is the theme's gridline COMPOSITED over the
+ * background it is drawn on, because that is what the raster contains. A theme
+ * whose gridline carries alpha (midnight, pastel, neon, bloomberg all do)
+ * declares a colour that appears nowhere in the frame otherwise.
+ */
+export function axisSceneFragment(
+  plan: AxisPlan,
+  theme: AxisTheme,
+  background: readonly [number, number, number],
+  gridPad = 3,
+): AxisSceneFragment {
+  const g = gridRgba(theme);
+  const a = g.a ?? 1;
+  const gridComposited: [number, number, number] = [
+    g.r * a + background[0] * (1 - a),
+    g.g * a + background[1] * (1 - a),
+    g.b * a + background[2] * (1 - a),
+  ];
+  const palette = [
+    { rgb: rgb255(gridComposited), role: "gridline", what: `${theme.name} gridColor over the pane` },
+    { rgb: rgb255(theme.tickColor), role: "tick", what: `${theme.name} tickColor` },
+    { rgb: rgb255(theme.tickColor), role: "spine", what: `${theme.name} tickColor (the spine)` },
+    { rgb: rgb255(theme.labelColor), role: "label", what: `${theme.name} labelColor` },
+  ];
+  return {
+    text: plan.labels.map((l) => ({
+      role: l.role,
+      text: l.text,
+      bbox: l.bbox,
+      fontPx: l.fontPx,
+      source: "engine" as const,
+    })),
+    grid: plan.gridLines.map((l) => ({
+      orientation: l.orientation,
+      centre: l.centre,
+      pad: gridPad,
+    })),
+    axis: {
+      spines: Array.from({ length: plan.spineSegments.length / 4 }, (_, i) => ({
+        orientation: i === 0 ? ("left" as const) : ("bottom" as const),
+      })),
+    },
+    plot: plan.plotPx,
+    palette,
+    theme: { name: theme.name, palette: palette.map((p) => p.rgb) },
+  };
+}
+
 // ── Driving a live engine ───────────────────────────────────────────────────
 
 /** The engine surface `EngineAxis` drives. `EngineHost` satisfies it. */
