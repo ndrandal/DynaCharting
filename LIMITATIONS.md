@@ -1234,6 +1234,94 @@ ENC-1265 adds three tests to the default build and one assertion block to an exi
 
 ---
 
+## DC-L-1313 — `plotBox()` throws, and a mounting canvas is 1 px: a caller handed a canvas must ask `tryPlotBox` 🟠
+
+**Claim.** `plotBox()` is a **total** function with a **partial** domain: it refuses any canvas
+its gutters do not fit, and it refuses by **throwing** (`PlotBoxError`). That is the right
+contract for a caller that owns its canvas — a silently clamped box hands `fitAxis` a negative
+or infinite scale, i.e. a chart that is mirrored or blank for a reason nobody can find, which is
+why ENC-1256 wrote it that way. What it is **not** is a contract a React effect can hold, because
+an effect is handed whatever size the DOM currently reports and **a mounting canvas is 1x1**:
+`ShowcaseEngine.sizeCanvas` bootstraps the backing store at
+`Math.max(1, Math.round(clientWidth * dpr))` and publishes that as `canvasSize` for one commit
+before layout runs.
+
+`64 + 16 >= 1`, so `plotBox()` throws. The throw escaped `useEngineAxis`'s passive effect, and
+until ENC-1313 **nothing in the showcase was an error boundary** — so React unmounted `<App>`:
+`#root` empty, no canvas, a white page. Measured by ENC-1262 at `1e125e3`: **a deep link to 11 of
+the 22 showcase views took the whole app down, 3/3 cold loads each.**
+
+**The sampling lesson, which is the part worth keeping.** The eleven were exactly the views whose
+axes resolve on the **first** commit — a literal `min`/`max`, no `TimeBasis` to fit first. The
+three `timestamp` views resolve later and the eight views with no `chrome.axes` never resolve at
+all, so both survived. **The reference chart (`candles-aapl`) is a `timestamp` view**, i.e.
+structurally in the surviving half. ENC-1253 and ENC-1273 were each verified on it, correctly and
+carefully, and **neither verification could have found this** — the property that made the
+reference a good reference (its axis is fitted from measured data) is the same property that put
+it on the safe side of the bug it was shipping. That is the negative transfer
+`specs/2026-09-19-chart-quality-bar/SPEC.md` §5 **Q4** exists to surface, and *"we validated it on
+the reference"* is the exact reasoning that made it invisible. A guard sampled on the reference
+chart is a guard sampled on one bit of a two-bit space.
+
+**What now holds, and what still does not.**
+
+* `plotBox()` **still throws**, unchanged, same messages. Its callers own their canvas.
+* `tryPlotBox(canvas, insets)` is the same four checks returning
+  `{ fits: true; box } | { fits: false; reason; detail }` — the `framing.ts` `FramingRefusal`
+  idiom, not a bare null. `plotBox()` is now literally `tryPlotBox` + throw, so the two cannot
+  drift.
+* `engineAxisSpec` returns `{ spec, refusal }`. All four of its "nothing to draw" paths are
+  **named**, and `useEngineAxis` publishes the refusal on `window.__dcEngineAxis[viewId].refusal`
+  while `ChromeOverlay` puts it in the DOM as `data-dc-engine-axis-refusal`. Declining is a state
+  the page can be **asked** about; it does not look like "no axis was wanted".
+* Two error boundaries (`apps/showcase/src/components/ErrorBoundary.tsx`) bound the blast radius
+  of the **next** throw: a chrome failure degrades to a chart with no furniture, and anything
+  above it renders a named panel instead of a blank page. They record to
+  `window.__dcBoundaryErrors`, so "it survived" and "nothing went wrong" are distinguishable.
+* **`frameSeries()` still throws**, and its one caller (`useViewSwitch`) still catches it with a
+  `try`/`catch` + `console.warn` rather than a typed refusal. That asymmetry is deliberate for
+  now — it works, and it predates this ticket — but it is the seam to convert next if a third
+  caller appears.
+* **The 1 px bootstrap publish was deliberately NOT removed.** It would make this instance
+  impossible while leaving the class intact (a 60 px-wide container is legal and fails the same
+  way), and it would make the guard unobservable by arriving late — the failure mode the fix is
+  supposed to rule out. So the guard fires for real, on every cold load of those eleven views, and
+  the axis is drawn one commit later when the `ResizeObserver` publishes the laid-out size.
+
+**Re-check.**
+```bash
+# 1 — the seam does not throw on the size the app actually publishes at mount
+pnpm test -- engineAxis            # 10 assertions; the first is `.not.toThrow()` on 1x1
+
+# 2 — plotBox's own contract is unchanged: it STILL throws, same message
+node -e 'process.exit(0)' && pnpm test -- plotbox
+
+# 3 — the whole app, through the real path (needs a vite + a WebGPU chrome; see
+#     specs/2026-09-19-chart-quality-bar/harness/README.md for the flags)
+node specs/2026-09-19-chart-quality-bar/harness/deeplink-crash.mjs \
+  --port <cdp> --vite-port <vite> --reps 3 --views "$(ls apps/showcase/views | tr '\n' ' ')"
+# -> "0 of 22 deep-linked views take the app down", exit 0
+
+# 4 — it SURVIVED is weaker than NOTHING WENT WRONG. Ask the page:
+#     window.__dcBoundaryErrors            -> undefined / []      (no boundary fired)
+#     window.__dcEngineAxis[v].refusal     -> null once laid out
+```
+
+**Working around it.** Calling `plotBox()` from anywhere that does not control the canvas size —
+a React effect, a `ResizeObserver` callback, a resize handler — is the bug. Use `tryPlotBox` and
+handle `fits: false` visibly. If you need the throw (an authoring-time builder, a test), keep
+`plotBox()`.
+
+**Ticket.** [ENC-1313](https://linear.app/encultured/issue/ENC-1313). Found by
+[ENC-1262](https://linear.app/encultured/issue/ENC-1262) while scoring the 22 views.
+
+**Verified at** `ENC-1313 HEAD`, 2026-09-20 — commands 1, 2 and 4 run in the ENC-1313 worktree;
+command 3 run over all 22 views, 3 cold loads each, headless Chrome 149,
+`--enable-unsafe-webgpu --enable-features=Vulkan --ignore-gpu-blocklist --use-angle=vulkan`:
+**11 crashing before the change, 0 after**.
+
+---
+
 # §C — Corrections
 
 Beliefs that were held confidently and were wrong. They are here because each one cost real
