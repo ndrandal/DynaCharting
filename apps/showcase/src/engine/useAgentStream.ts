@@ -62,6 +62,20 @@ import type { EngineHost, TimeBasis } from '@repo/dc-wasm';
 const AGENT_URL = import.meta.env.VITE_SHOWCASE_AGENT_URL as string | undefined;
 
 /**
+ * Which dataplane session to subscribe to, default `showcase` (the `sessionId`
+ * the showcase's own `instruction.json` fixtures declare).
+ *
+ * embassy's `/data` socket hands a connection NOTHING until it names a session:
+ * the handler's only inbound message is `{"type":"subscribe","sessionId":"…"}`
+ * and the scene-init envelope plus every buffer snapshot are enqueued inside
+ * that call (embassy `internal/dataplane/server.go` `subscribe`). A connection
+ * that never subscribes stays open and silent — which looks exactly like a feed
+ * with no data, and is why this hook went unexercised.
+ */
+const AGENT_SESSION =
+  (import.meta.env.VITE_SHOWCASE_AGENT_SESSION as string | undefined) || 'showcase';
+
+/**
  * True when this build is pointed at a live agent data plane.
  *
  * The caller needs this to decide what drives the engine: with a live socket
@@ -247,6 +261,9 @@ export function useAgentStream(
     try {
       ws = new WebSocket(AGENT_URL);
       ws.binaryType = 'arraybuffer';
+      ws.onopen = () => {
+        ws?.send(JSON.stringify({ type: 'subscribe', sessionId: AGENT_SESSION }));
+      };
       ws.onmessage = (ev: MessageEvent) => {
         if (typeof ev.data === 'string') {
           // The manifest half of the envelope is deliberately discarded; only
