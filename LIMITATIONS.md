@@ -857,6 +857,42 @@ as this file, and now point at DC-L04 and at the `triGradient@1` workaround.
 Worth noting as a pattern: the authoring guide and the limitations log had drifted into
 contradicting each other, and the guide was the one people read.
 
+### C6 — "`price-line-area` fills on the wrong side of the line" — it does not; the still is upside down
+
+`specs/2026-09-19-chart-quality-bar/SPEC.md` §1.1 scored `price-line-area` a **tier-0 (Truthful)
+failure** — *"the area is filled on the wrong side of the line. The dark silhouette is the price
+series; the green mass is everything above it"* — and §5 Q6 promoted that to a locked open
+question. It was wrong. The green mass **is** the fill and the dark region **is** the complement;
+the frame is vertically **mirrored**, because every committed still was captured at `537c995`
+(2026-06-11) and the `EngineHost` blit flip landed at `d6b5acd` (2026-06-21), ten days later.
+
+The engine was never at fault. `instruction.json` puts the baseline in `y0` and the streamed
+value in `y1`, `instancedRect@1` mixes `y0..y1`, and the baked `sy` is positive — all three of
+which §5 Q1 checked and found correct. **Q1's error was comparing a 2026-06 artifact against
+2026-09 source** and concluding the mirror had been ruled out. The fix it verified was real; it
+just postdated the picture.
+
+Why nobody caught it for three months: **a mirrored random walk is still a random walk.** The
+only numbers in the frame are a hand-typed DOM overlay (SPEC §1.3), so they flip with the image
+and agree with it either way. There is no feature of the picture that contradicts the mirror —
+which is exactly DC-L05's "silent on any vertically symmetric scene" one level up, at the level
+of a whole chart instead of a single mark. Orientation had to be measured against the data the
+capture replayed, and the measurement is decisive because the two hypotheses differ in **sign**:
+`view.json`'s `sy = 0.121428571` over `H = 600` predicts **-36.43 px/$** upright and
+**+36.43 px/$** mirrored, and the fill boundary fits **+36.40 px/$** at `r = +0.9895`.
+
+Re-check:
+```bash
+python3 apps/showcase/tools/still-orientation.py price-line-area   # -> VERDICT : MIRRORED
+bash scripts/tier0.sh                                             # -> case C: the ENGINE fills correctly
+```
+
+**The lesson, and it is DC-L09's lesson arriving somewhere new:** a rendered artifact carries the
+date of the code that drew it, not the date you look at it. Before reading a bug out of a
+committed image, check whether the image predates the fix — `git log -1 -- <image>` against
+`git log -1 -S<the fix> -- <source>` is the whole test, and it cost three months here.
+See **DC-L14**.
+
 ---
 
 # §R — Retired
