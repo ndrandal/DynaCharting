@@ -1,0 +1,866 @@
+{
+  "spec": "specs/2026-09-19-chart-quality-bar/SPEC.md D10 (ENC-1262)",
+  "url": "http://localhost:5650/?svgAxis=0#/",
+  "capturedAt": "2026-09-20T16:01:20.384Z",
+  "rasterSha256": "4b4e5028068d175323622e2f300b555262638b7915102260a564eeab2017a2d9",
+  "expression": "(() => {\n  const out = {\n    view: \"price-line-area\",\n    axis: (window.__dcEngineAxis || {})[\"price-line-area\"] || null,\n    domain: (window.__dcAxisDomain || {})[\"price-line-area\"] || null,\n    boundaryErrors: (window.__dcBoundaryErrors || []).length,\n    dom: {\n      overlaySvgs: document.querySelectorAll('.chrome-overlay svg').length,\n      overlaySvgText: document.querySelectorAll('.chrome-overlay svg text').length,\n      overlayNodes: document.querySelectorAll('.chrome-overlay *').length\n    },\n    progress: (() => {\n      const el = document.querySelector('[role=\"slider\"][aria-label=\"Replay position\"]');\n      return el ? Number(el.getAttribute('aria-valuenow')) : null;\n    })()\n  };\n  const c = document.querySelector('canvas.engine-canvas');\n  if (!c || !c.width || !c.height) { out.pix = { ok: false, reason: 'no canvas' }; return out; }\n  const off = document.createElement('canvas');\n  off.width = c.width; off.height = c.height;\n  const ctx = off.getContext('2d');\n  ctx.drawImage(c, 0, 0);\n  let data;\n  try { data = ctx.getImageData(0, 0, off.width, off.height).data; }\n  catch (e) { out.pix = { ok: false, reason: 'readback blocked: ' + (e && e.message) }; return out; }\n  const colors = new Set();\n  let sampled = 0, nonbg = 0, chroma = 0;\n  const stride = 4 * 11;\n  for (let i = 0; i < data.length; i += stride) {\n    sampled++;\n    const r = data[i], g = data[i + 1], b = data[i + 2];\n    if (sampled % 7 === 0) colors.add(r + ',' + g + ',' + b);\n    const dClear = Math.abs(r - 8) + Math.abs(g - 8) + Math.abs(b - 13);\n    const dApp = Math.abs(r - 13) + Math.abs(g - 13) + Math.abs(b - 20);\n    if (Math.min(dClear, dApp) > 36) nonbg++;\n    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);\n    if (mx - mn > 22 && mx > 30) chroma++;\n  }\n  out.pix = {\n    ok: true, w: c.width, h: c.height,\n    distinctColors: colors.size,\n    coverage: sampled ? nonbg / sampled : 0,\n    chroma: sampled ? chroma / sampled : 0,\n    nonbgPixels: nonbg\n  };\n  return out;\n})()",
+  "ok": true,
+  "value": {
+    "view": "price-line-area",
+    "axis": {
+      "plan": {
+        "gridSegments": [
+          -0.8577777777777778,
+          -0.6730001620629054,
+          0.9644444444444444,
+          -0.6730001620629054,
+          -0.8577777777777778,
+          -0.4379356404193615,
+          0.9644444444444444,
+          -0.4379356404193615,
+          -0.8577777777777778,
+          -0.20287111877581765,
+          0.9644444444444444,
+          -0.20287111877581765,
+          -0.8577777777777778,
+          0.032193402867726206,
+          0.9644444444444444,
+          0.032193402867726206,
+          -0.8577777777777778,
+          0.26725792451127717,
+          0.9644444444444444,
+          0.26725792451127717,
+          -0.8577777777777778,
+          0.502322446154821,
+          0.9644444444444444,
+          0.502322446154821,
+          -0.8577777777777778,
+          0.7373869677983649,
+          0.9644444444444444,
+          0.7373869677983649,
+          -0.5444834371929825,
+          -0.8873239436619719,
+          -0.5444834371929825,
+          0.9517102615694165,
+          -0.3270955293567252,
+          -0.8873239436619719,
+          -0.3270955293567252,
+          0.9517102615694165,
+          -0.10970762152046787,
+          -0.8873239436619719,
+          -0.10970762152046787,
+          0.9517102615694165,
+          0.10768028631578941,
+          -0.8873239436619719,
+          0.10768028631578941,
+          0.9517102615694165,
+          0.3250681941520468,
+          -0.8873239436619719,
+          0.3250681941520468,
+          0.9517102615694165,
+          0.5424561019883041,
+          -0.8873239436619719,
+          0.5424561019883041,
+          0.9517102615694165,
+          0.7598440098245614,
+          -0.8873239436619719,
+          0.7598440098245614,
+          0.9517102615694165
+        ],
+        "tickSegments": [
+          -0.8711111111111111,
+          -0.6730001620629054,
+          -0.8577777777777778,
+          -0.6730001620629054,
+          -0.8711111111111111,
+          -0.4379356404193615,
+          -0.8577777777777778,
+          -0.4379356404193615,
+          -0.8711111111111111,
+          -0.20287111877581765,
+          -0.8577777777777778,
+          -0.20287111877581765,
+          -0.8711111111111111,
+          0.032193402867726206,
+          -0.8577777777777778,
+          0.032193402867726206,
+          -0.8711111111111111,
+          0.26725792451127717,
+          -0.8577777777777778,
+          0.26725792451127717,
+          -0.8711111111111111,
+          0.502322446154821,
+          -0.8577777777777778,
+          0.502322446154821,
+          -0.8711111111111111,
+          0.7373869677983649,
+          -0.8577777777777778,
+          0.7373869677983649,
+          -0.5444834371929825,
+          -0.9114688128772637,
+          -0.5444834371929825,
+          -0.8873239436619719,
+          -0.3270955293567252,
+          -0.9114688128772637,
+          -0.3270955293567252,
+          -0.8873239436619719,
+          -0.10970762152046787,
+          -0.9114688128772637,
+          -0.10970762152046787,
+          -0.8873239436619719,
+          0.10768028631578941,
+          -0.9114688128772637,
+          0.10768028631578941,
+          -0.8873239436619719,
+          0.3250681941520468,
+          -0.9114688128772637,
+          0.3250681941520468,
+          -0.8873239436619719,
+          0.5424561019883041,
+          -0.9114688128772637,
+          0.5424561019883041,
+          -0.8873239436619719,
+          0.7598440098245614,
+          -0.9114688128772637,
+          0.7598440098245614,
+          -0.8873239436619719
+        ],
+        "spineSegments": [
+          -0.8577777777777778,
+          -0.8873239436619719,
+          -0.8577777777777778,
+          0.9517102615694165,
+          -0.8577777777777778,
+          -0.8873239436619719,
+          0.9644444444444444,
+          -0.8873239436619719
+        ],
+        "labels": [
+          {
+            "axis": "y",
+            "role": "yTickLabel",
+            "text": "$406",
+            "clipX": -0.9232055518031119,
+            "clipY": -0.6849887590536099,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              34,
+              411,
+              21,
+              10
+            ]
+          },
+          {
+            "axis": "y",
+            "role": "yTickLabel",
+            "text": "$408",
+            "clipX": -0.9237148138880729,
+            "clipY": -0.44992423741006604,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              34,
+              352,
+              21,
+              10
+            ]
+          },
+          {
+            "axis": "y",
+            "role": "yTickLabel",
+            "text": "$410",
+            "clipX": -0.9211685183644294,
+            "clipY": -0.21485971576652219,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              35,
+              294,
+              20,
+              10
+            ]
+          },
+          {
+            "axis": "y",
+            "role": "yTickLabel",
+            "text": "$412",
+            "clipX": -0.9196407395601272,
+            "clipY": 0.02020480587702167,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              36,
+              235,
+              19,
+              11
+            ]
+          },
+          {
+            "axis": "y",
+            "role": "yTickLabel",
+            "text": "$414",
+            "clipX": -0.9211685183644294,
+            "clipY": 0.25526932752057263,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              35,
+              177,
+              20,
+              10
+            ]
+          },
+          {
+            "axis": "y",
+            "role": "yTickLabel",
+            "text": "$416",
+            "clipX": -0.9206592562794684,
+            "clipY": 0.4903338491641165,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              35,
+              119,
+              20,
+              10
+            ]
+          },
+          {
+            "axis": "y",
+            "role": "yTickLabel",
+            "text": "$418",
+            "clipX": -0.9211685183644294,
+            "clipY": 0.7253983708076603,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              35,
+              60,
+              20,
+              10
+            ]
+          },
+          {
+            "axis": "x",
+            "role": "xTickLabel",
+            "text": "20",
+            "clipX": -0.5551269561884762,
+            "clipY": -0.9533869887381733,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              200,
+              479,
+              10,
+              7
+            ]
+          },
+          {
+            "axis": "x",
+            "role": "xTickLabel",
+            "text": "40",
+            "clipX": -0.33811589965013383,
+            "clipY": -0.9533869887381733,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              298,
+              479,
+              10,
+              7
+            ]
+          },
+          {
+            "axis": "x",
+            "role": "xTickLabel",
+            "text": "60",
+            "clipX": -0.12099280733437168,
+            "clipY": -0.9533869887381733,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              396,
+              479,
+              10,
+              7
+            ]
+          },
+          {
+            "axis": "x",
+            "role": "xTickLabel",
+            "text": "80",
+            "clipX": 0.09646639650460143,
+            "clipY": -0.9533869887381733,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              493,
+              479,
+              11,
+              7
+            ]
+          },
+          {
+            "axis": "x",
+            "role": "xTickLabel",
+            "text": "100",
+            "clipX": 0.30937282295264756,
+            "clipY": -0.9533869887381733,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              589,
+              479,
+              15,
+              7
+            ]
+          },
+          {
+            "axis": "x",
+            "role": "xTickLabel",
+            "text": "120",
+            "clipX": 0.5274023971416537,
+            "clipY": -0.9533869887381733,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              687,
+              479,
+              14,
+              7
+            ]
+          },
+          {
+            "axis": "x",
+            "role": "xTickLabel",
+            "text": "140",
+            "clipX": 0.7444134546113186,
+            "clipY": -0.9533869887381733,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              785,
+              479,
+              14,
+              7
+            ]
+          },
+          {
+            "axis": "y",
+            "role": "axisTitle",
+            "text": "Price",
+            "clipX": -0.9955555555555555,
+            "clipY": 0.9624413146601776,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              2,
+              2,
+              21,
+              8
+            ]
+          },
+          {
+            "axis": "x",
+            "role": "axisTitle",
+            "text": "Index",
+            "clipX": 0.90858518242836,
+            "clipY": -0.9910295090602497,
+            "fontPx": 11,
+            "fontSizeClip": 0.04426559356136821,
+            "xScale": 0.5522222222222222,
+            "bbox": [
+              859,
+              487,
+              23,
+              8
+            ]
+          }
+        ],
+        "gridLines": [
+          {
+            "orientation": "horizontal",
+            "centre": 416,
+            "value": 406
+          },
+          {
+            "orientation": "horizontal",
+            "centre": 357,
+            "value": 408
+          },
+          {
+            "orientation": "horizontal",
+            "centre": 299,
+            "value": 410
+          },
+          {
+            "orientation": "horizontal",
+            "centre": 240,
+            "value": 412
+          },
+          {
+            "orientation": "horizontal",
+            "centre": 182,
+            "value": 414
+          },
+          {
+            "orientation": "horizontal",
+            "centre": 124,
+            "value": 416
+          },
+          {
+            "orientation": "horizontal",
+            "centre": 65,
+            "value": 418
+          },
+          {
+            "orientation": "vertical",
+            "centre": 205,
+            "value": 20
+          },
+          {
+            "orientation": "vertical",
+            "centre": 303,
+            "value": 40
+          },
+          {
+            "orientation": "vertical",
+            "centre": 401,
+            "value": 60
+          },
+          {
+            "orientation": "vertical",
+            "centre": 498,
+            "value": 80
+          },
+          {
+            "orientation": "vertical",
+            "centre": 596,
+            "value": 100
+          },
+          {
+            "orientation": "vertical",
+            "centre": 694,
+            "value": 120
+          },
+          {
+            "orientation": "vertical",
+            "centre": 792,
+            "value": 140
+          }
+        ],
+        "droppedLabels": [],
+        "plotPx": [
+          64,
+          12,
+          883,
+          468
+        ]
+      },
+      "tier1": {
+        "pass": true,
+        "failures": [],
+        "counts": {
+          "x": 7,
+          "y": 7,
+          "titles": 2
+        }
+      },
+      "scene": {
+        "text": [
+          {
+            "role": "yTickLabel",
+            "text": "$406",
+            "bbox": [
+              34,
+              411,
+              21,
+              10
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          },
+          {
+            "role": "yTickLabel",
+            "text": "$408",
+            "bbox": [
+              34,
+              352,
+              21,
+              10
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          },
+          {
+            "role": "yTickLabel",
+            "text": "$410",
+            "bbox": [
+              35,
+              294,
+              20,
+              10
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          },
+          {
+            "role": "yTickLabel",
+            "text": "$412",
+            "bbox": [
+              36,
+              235,
+              19,
+              11
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          },
+          {
+            "role": "yTickLabel",
+            "text": "$414",
+            "bbox": [
+              35,
+              177,
+              20,
+              10
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          },
+          {
+            "role": "yTickLabel",
+            "text": "$416",
+            "bbox": [
+              35,
+              119,
+              20,
+              10
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          },
+          {
+            "role": "yTickLabel",
+            "text": "$418",
+            "bbox": [
+              35,
+              60,
+              20,
+              10
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          },
+          {
+            "role": "xTickLabel",
+            "text": "20",
+            "bbox": [
+              200,
+              479,
+              10,
+              7
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          },
+          {
+            "role": "xTickLabel",
+            "text": "40",
+            "bbox": [
+              298,
+              479,
+              10,
+              7
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          },
+          {
+            "role": "xTickLabel",
+            "text": "60",
+            "bbox": [
+              396,
+              479,
+              10,
+              7
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          },
+          {
+            "role": "xTickLabel",
+            "text": "80",
+            "bbox": [
+              493,
+              479,
+              11,
+              7
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          },
+          {
+            "role": "xTickLabel",
+            "text": "100",
+            "bbox": [
+              589,
+              479,
+              15,
+              7
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          },
+          {
+            "role": "xTickLabel",
+            "text": "120",
+            "bbox": [
+              687,
+              479,
+              14,
+              7
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          },
+          {
+            "role": "xTickLabel",
+            "text": "140",
+            "bbox": [
+              785,
+              479,
+              14,
+              7
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          },
+          {
+            "role": "axisTitle",
+            "text": "Price",
+            "bbox": [
+              2,
+              2,
+              21,
+              8
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          },
+          {
+            "role": "axisTitle",
+            "text": "Index",
+            "bbox": [
+              859,
+              487,
+              23,
+              8
+            ],
+            "fontPx": 11,
+            "source": "engine"
+          }
+        ],
+        "grid": [
+          {
+            "orientation": "horizontal",
+            "centre": 416,
+            "pad": 3
+          },
+          {
+            "orientation": "horizontal",
+            "centre": 357,
+            "pad": 3
+          },
+          {
+            "orientation": "horizontal",
+            "centre": 299,
+            "pad": 3
+          },
+          {
+            "orientation": "horizontal",
+            "centre": 240,
+            "pad": 3
+          },
+          {
+            "orientation": "horizontal",
+            "centre": 182,
+            "pad": 3
+          },
+          {
+            "orientation": "horizontal",
+            "centre": 124,
+            "pad": 3
+          },
+          {
+            "orientation": "horizontal",
+            "centre": 65,
+            "pad": 3
+          },
+          {
+            "orientation": "vertical",
+            "centre": 205,
+            "pad": 3
+          },
+          {
+            "orientation": "vertical",
+            "centre": 303,
+            "pad": 3
+          },
+          {
+            "orientation": "vertical",
+            "centre": 401,
+            "pad": 3
+          },
+          {
+            "orientation": "vertical",
+            "centre": 498,
+            "pad": 3
+          },
+          {
+            "orientation": "vertical",
+            "centre": 596,
+            "pad": 3
+          },
+          {
+            "orientation": "vertical",
+            "centre": 694,
+            "pad": 3
+          },
+          {
+            "orientation": "vertical",
+            "centre": 792,
+            "pad": 3
+          }
+        ],
+        "axis": {
+          "spines": [
+            {
+              "orientation": "left"
+            },
+            {
+              "orientation": "bottom"
+            }
+          ]
+        },
+        "plot": [
+          64,
+          12,
+          883,
+          468
+        ],
+        "palette": [
+          {
+            "rgb": [
+              28,
+              28,
+              38
+            ],
+            "role": "gridline",
+            "what": "Dark gridColor over the pane"
+          },
+          {
+            "rgb": [
+              102,
+              102,
+              115
+            ],
+            "role": "tick",
+            "what": "Dark tickColor"
+          },
+          {
+            "rgb": [
+              102,
+              102,
+              115
+            ],
+            "role": "spine",
+            "what": "Dark tickColor (the spine)"
+          },
+          {
+            "rgb": [
+              179,
+              179,
+              191
+            ],
+            "role": "label",
+            "what": "Dark labelColor"
+          }
+        ],
+        "theme": {
+          "name": "Dark",
+          "palette": [
+            [
+              28,
+              28,
+              38
+            ],
+            [
+              102,
+              102,
+              115
+            ],
+            [
+              102,
+              102,
+              115
+            ],
+            [
+              179,
+              179,
+              191
+            ]
+          ]
+        }
+      },
+      "refusal": null,
+      "fontLoaded": true,
+      "labelAttempts": 2
+    },
+    "domain": {
+      "x": {
+        "min": 4,
+        "max": 160,
+        "source": "literal"
+      },
+      "y": {
+        "min": 406,
+        "max": 418,
+        "source": "literal"
+      },
+      "records": 0
+    },
+    "boundaryErrors": 0,
+    "dom": {
+      "overlaySvgs": 0,
+      "overlaySvgText": 0,
+      "overlayNodes": 10
+    },
+    "progress": 92,
+    "pix": {
+      "ok": true,
+      "w": 900,
+      "h": 497,
+      "distinctColors": 61,
+      "coverage": 0.42981506984064527,
+      "chroma": 0.40175585284280935,
+      "nonbgPixels": 17478
+    }
+  }
+}
