@@ -132,16 +132,45 @@ from this repo; `SHOOT_LIVE=` overrides). Reusing it is deliberate: it reads
 Chromium 1228 — refuses to shoot on a software adapter, and stamps the capture
 mode into the PNG as a `tEXt` chunk. See `stills/README.md`.
 
-### `tools/snap-stills.mjs` — the OLD capture; it refuses the stills directory
+### `tools/snap-stills.mjs` — the composited capture; it refuses the stills directory
 
-Kept because a composited canvas-plus-chrome screenshot is a real thing to want,
-but it **will not write into `stills/`** any more (`--outdir` elsewhere). It
-screenshots `.single-canvas-region` — the engine canvas *with* the DOM/SVG
-chrome over it — and records no adapter; those two properties are why the stills
-it produced stayed upside down for three months with nothing in the frame
-contradicting it (LIMITATIONS.md DC-L15, `specs/2026-09-19-chart-quality-bar/SPEC.md`
-D8 and D10). It also needs Playwright from the `~/pw` harness, which does not
-exist on this machine.
+Kept because a composited canvas-plus-chrome screenshot is a real thing to want
+— it is how the app *looks* — but it **will not write into `stills/`**
+(`--outdir` elsewhere). It screenshots `.single-canvas-region`, the engine canvas
+*with* the DOM/SVG chrome and the FPS HUD over it, so **nothing it produces is
+tier-1 scorable**: a DOM overlay in a still passes a tier-1 check on the engine's
+behalf, which is half of why the stills it produced stayed upside down for three
+months with nothing in the frame contradicting it (LIMITATIONS.md DC-L15,
+`specs/2026-09-19-chart-quality-bar/SPEC.md` D8 and D10).
+
+```bash
+pnpm --filter @repo/showcase build
+pnpm --filter @repo/showcase preview --port 5608 --strictPort
+node apps/showcase/tools/snap-stills.mjs \
+  --url http://localhost:5608/ --port 9430 --outdir /tmp/<ENC>-stills
+```
+
+The other half of DC-L15 — *"records no adapter"* — is fixed (ENC-1267). It probes
+`navigator.gpu.requestAdapter()` on the showcase's own origin **before any PNG is
+written** and records `adapter.info.isFallbackAdapter` (the property that
+discriminates on Chromium 1228; the top-level `GPUAdapter.isFallbackAdapter` is
+`undefined` on hardware *and* on SwiftShader, which is the ENC-1248 → ENC-1263
+correction) into `render-tally.json`. A software adapter **exits 4** and writes
+nothing; `--allow-software` opts out, `--force-software` is the negative control
+for that gate. `DISPLAY` is no longer inherited from the caller's shell: it
+launches headless with the display cleared, `--headed` opts back in, and the
+resolved value goes into the tally.
+
+Per-view it also records a measured frame rate: `frame.rafHz` (this harness's own
+count of rAF callbacks over `--raf-window`, default 1000ms, ending inside the
+dwell) beside `frame.hudFps` (what the FPS HUD is showing). Both are the
+main-thread rAF callback rate — a responsiveness number, **not** a render rate and
+not a frame budget (ENC-1265) — and `renderCpuMs` is `null`, never `1000 / fps`,
+when the HUD has no measurement.
+
+It speaks CDP directly to the `chromium-1228` binary in the Playwright browser
+cache (`CHROMEDIR` / `--chrome` override); it no longer needs the `~/pw`
+Playwright harness, which does not exist on this machine.
 
 ## How to add a view
 
