@@ -369,14 +369,28 @@ tier above it NOT SCORED.
 > early return in `core/src/host/JsonHost.cpp`, and CHART_AUTHORING.md §15 all
 > spell this out. Full mechanism: LIMITATIONS.md **DC-L02**.
 >
-> **`--png` is also pathologically slow (LIMITATIONS.md DC-L03).** It does one
+> ~~**`--png` is also pathologically slow (LIMITATIONS.md DC-L03).** It does one
 > `readPixel()` GPU round trip *per pixel* — 540,000 of them at the default
 > 900×600 — so a full-size capture exceeds 300 seconds. Being fixed under
-> ENC-1093; re-check DC-L03 before planning around it.
+> ENC-1093; re-check DC-L03 before planning around it.~~ — **struck 2026-09-22
+> (ENC-1268): FIXED, and DC-L03 is RETIRED.** ENC-1093 landed the fix at
+> `7169457` and retired the entry the same day at `937538a`, both on `main`.
+> `JsonHost.cpp` now makes one `DawnDevice::readFramebufferRGBA()` call
+> (`core/src/host/JsonHost.cpp:182` — re-derive that line before quoting it; the
+> per-pixel loop survives just *below* it as a fallback for the cases the
+> whole-frame readback declines). Measured at 900×600 on
+> `charts/072-polar-rose.json`: **302.0 s → 1.399 s (216×)** on an NVIDIA RTX
+> 3070 Ti via Mesa NVK and **516.8 s → 1.397 s (370×)** on lavapipe, with the
+> output proven byte-identical as PNG *and* as raw FRME. So `--png` is no longer
+> a reason to capture at a reduced size. The figures, their adapters, and the two
+> corrections the retirement carries live in **LIMITATIONS.md DC-L03** — kept in
+> place rather than deleted (§H device 4) — and the decision is **D6** of
+> `specs/2026-09-14-dynacharting-render-correctness/SPEC.md`. **DC-L02 above is
+> untouched:** a `--png` capture still contains no text.
 
 - **Pinned Dawn revision:** commit `58263faefe3c52fac4656825c6d55f85ee3c7536` — the immutable tip of branch `chromium/7880` as of **2026-06-09**. We pin an explicit commit hash (never a moving branch) for reproducibility. Update this hash deliberately when bumping Dawn.
 - **Source:** `https://dawn.googlesource.com/dawn`. Dawn's own dependencies are fetched with its `fetch_dawn_dependencies.py` helper (`DAWN_FETCH_DEPENDENCIES=ON`), so `depot_tools` is **not** required.
-- **Build cost (heads-up):** build-from-source is **slow** — the first configure clones ~3-4 GB of Dawn + its third-party deps, and a full compile takes **30-60+ minutes** and needs `python3` and `ninja`. Subsequent incremental builds are fast. The full Dawn build is validated in CI (ENC-499).
+- **Build cost (heads-up):** build-from-source is **slow** — the first configure clones ~3-4 GB of Dawn + its third-party deps, and a full compile takes ~~**30-60+ minutes**~~ **~55-60 min** (struck 2026-09-22, ENC-1268: nothing ever measured the 30-minute floor, and the two figures in this repo disagreed — the measured one is `LIMITATIONS.md` **DC-L01**'s *"Working around it"*, which three sessions built on 2026-09-14: ENC-992, ENC-993, ENC-995) and needs `python3` and `ninja`. Subsequent incremental builds are fast. The full Dawn build is validated in CI (ENC-499).
 - **Lean build:** Dawn samples, tests, benchmarks, fuzzers, node bindings, install rules, and Tint command-line tools/tests are all disabled. Dawn is built as a single monolithic static library.
 - **Linked target:** `dc_gpu` links the Dawn monolithic WebGPU target `dawn::webgpu_dawn` (alias of `webgpu_dawn`) plus `dc`. When `DC_FETCH_DAWN=OFF` (or Dawn is unavailable), `DC_HAS_DAWN` is FALSE and `dc_gpu` (and everything that needs it — the host, the servers, the render tests) is gracefully skipped; the default `dc` + logic-test build is unaffected.
 - `dc_gpu` is the full WebGPU/Dawn renderer: `DawnDevice` (offscreen target + readback), `DawnSceneRenderer` (the scene-walk mirror of the old GL `Renderer::render`), and the 10 per-pipeline backends (triSolid/triGradient/triAA/line2d/lineAA/points/instancedRect/instancedCandle/textSDF/texturedQuad) + picking.
