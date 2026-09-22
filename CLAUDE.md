@@ -481,3 +481,72 @@ Pipeline types (owned by the C++ core's `PipelineCatalog`; the retired TS protot
      files you already have open.
   4. **Did you disprove something everyone believed?** That goes in §C (Corrections), not into
      a commit message nobody will search.
+
+## Design records — the workspace-root SPECs that decided this engine (ENC-1374)
+
+`LIMITATIONS.md` is the **open** log — what is not true of the engine, alive until falsified.
+These four are the **closed** ones — what a project *decided*, fixed unless superseded. The rule
+is stated once, in the render-correctness SPEC's `### The division of labour with LIMITATIONS.md`
+section: they point at each other and never restate each other, so a reader who finds one and not
+the other will assume the other does not exist.
+
+They live at the **workspace root**, not in this repo (`specs/2026-09-14-gsd-proposal-backfill/SPEC.md`
+D2), which is why each needs a pointer from here at all (that SPEC's D13, installed per its D14).
+From a worktree they are two levels up, beside the other service repos. Cite them by **heading**,
+never by line number — `LIMITATIONS.md` and these SPECs are append-only, so a line pin goes stale
+on growth rather than on the claim changing (ENC-1307).
+
+- **`specs/2026-09-14-dynacharting-render-correctness/SPEC.md`** — the primary record for this
+  repo. §2's ten locked decisions, of which this repo owns **D1–D6, D7(a) and D8–D10** (only
+  D7(b), `stack.sh doctor`'s skipped-target warning, is the workspace's): `lineAA@1` as THE
+  default line pipeline driven from `markSpecOf`'s default argument rather than a flag (D2); the
+  lineAA quad's perpendicular computed in **pixel** space and single-sourced between shader and
+  test as `DC_LINEAA_QUAD_EXPAND` (D3); arc chords sized by angular span at `segmentsPerTurn = 72`
+  (D4); `--png` dropping text ruled `DOCUMENT, not fix`, deliberately without a test (D5); one
+  whole-frame `DawnDevice::readFramebufferRGBA` preferred over a GPU round trip per pixel (D6);
+  every `assert()` → `DC_CHECK`, because `NDEBUG` had made five tests vacuous (D7a); a wasm
+  rebuild reproducible across checkout *locations* (D8); `getSceneDocument(compact)` returning a
+  copied `std::string` rather than a `typed_memory_view` (D9); and `LIMITATIONS.md`'s own charter
+  (D10). **Most of this is not checkable in a default build** — the deciding evidence for D4, D5
+  and D6, and the Dawn-side half of D1 and D3, sits in the render/golden tests and in
+  `dc_gpu`/`dc_json_host`, all excluded at *configure* time by `DC_FETCH_DAWN=OFF` (DC-L01, and
+  the `ctest` warning under **C++ Core (CMake)** above). §5 **Q1** goes further: `EncodePass` is
+  not linked into the shipped wasm, so D2 and D4 are true of the native/Dawn path and of nothing
+  a browser user sees. §5 **Q2** records the twenty recipes reachable only from C++.
+
+- **`specs/2026-06-20-rich-chart-research/SPEC.md`** (with its `GAPS.md`) — the rich-chart
+  authoring record. It has **no `D<n>` ids of its own**: its decisions are **`GAPS.md` G1–G8**,
+  and the ledger is SPEC **§7.2** (the G-number ↔ ticket mapping) and **§7.4** (the per-repo
+  split). Six of the eleven tasks landed here — **G1a/G1b**, the one canonical Y-flip applied
+  *centrally* in `EngineHost.blitFramebuffer` with the `EngineHost.blit.test.ts` golden; **G2**
+  `packages/dc-wasm/src/chart/SceneBuilder.ts`; **G4** `chart/scale.ts`; **G5a** `chart/ids.ts`;
+  **G5b** `EngineHost.rejections.test.ts` (`ids.ts` and the blit site cite tickets only, so this
+  is their path citation). G3a and G6's client half are customer-layer, G6's server half and G7
+  embassy, G8 forum. Nothing here rests on the Dawn-gated targets — the record renders through
+  `@repo/dc-wasm` in Chrome on SwiftShader, and §7.5 **Q4** notes its harness needs a local
+  `pnpm --filter @repo/dc-wasm build:wasm` because `harness/wasm/` is gitignored.
+
+- **`specs/2026-06-21-dynacharting-authoring-corpus/SPEC.md`** — §2 runs **D1–D9**, and **D4** is
+  the one that reaches into this repo: the corpus reads the framebuffer raw and row-flips it
+  itself, which makes it the **third** raw consumer that `LIMITATIONS.md` **DC-L05** warns about
+  and structurally cannot see — DC-L05's re-check greps `core.framebuffer()` under
+  `packages/dc-wasm/src`, while the corpus calls `host.framebuffer()` on the embind object from a
+  file outside this repo, so it is invisible to that census twice over (SPEC §5 **Q1**). When
+  DC-L05's deferred deep fix lands, **three** flips must come out in lockstep:
+  `EngineHost.blitFramebuffer`'s row loop, `thumbnail.ts`'s `flipRowsRGBA`, and the corpus's own
+  `runner/gallery.html` flip. **D2** pins the corpus to the committed
+  `packages/dc-wasm/wasm/dc_engine_host.{js,wasm}` **by copy**, never a rebuild; **D9** records
+  that the corpus's `docs/LIMITATIONS.md` is the ancestor of this repo's file. §3 rules the
+  corpus **read-only** against this repo — no corpus ticket has ever edited it — which is the
+  other half of why **DC-L09** says a trial writeup is a dated observation, not current behaviour.
+
+- **`specs/2026-09-14-session-continuity/SPEC.md`** — **decides nothing for this repo.** None of
+  §2's D1–D10 is DynaCharting's; D9, the `scene_state` document, is forum's and customer-layer's.
+  What it holds here is **§3's DynaCharting row** — the engine is the only possible *producer* of
+  the camera state D9 stores, because pan/zoom lives in the engine and nothing above it can
+  synthesise the state — and **§5 Q3**, which is the live one: `getSceneDocument` is already bound
+  through embind and in the shipped `.wasm`, but `sceneToDocument`
+  (`core/src/document/SceneExport.cpp`) **never populates `viewports`/`DocViewport`**, so the
+  document that now crosses the wasm boundary carries no camera. The wasm host bolts on
+  `viewportWidth`/`viewportHeight` from the last `render()`, which is surface pixels, not a
+  camera. Both halves are default-build territory — no Dawn needed to work on this.
