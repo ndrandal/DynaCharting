@@ -607,7 +607,11 @@ async function main() {
     env: { ...process.env, DISPLAY: DISPLAY_VALUE, WAYLAND_DISPLAY: HEADED ? (process.env.WAYLAND_DISPLAY ?? '') : '' },
   });
 
-  let exitCode = 0;
+  /* Every early exit from here on must go through the `finally` that kills
+   * chrome — `process.exit()` does NOT run it, and a leaked browser holds the CDP
+   * port, so the very next run aborts with "something already answers CDP on
+   * <port>" and looks like another session's fault. Set `refusal` and return. */
+  let refusal = 0;
   const results = [];
   let adapter = null;
   const capture = {
@@ -629,7 +633,7 @@ async function main() {
 
   try {
     for (let i = 0; i < 60; i++) { if (await cdpUp()) break; await sleep(500); }
-    if (!(await cdpUp())) { console.error('[snap] FATAL chrome never answered CDP'); process.exit(1); }
+    if (!(await cdpUp())) { console.error('[snap] FATAL chrome never answered CDP'); refusal = 1; return; }
 
     /* ENC-1267 / SPEC D8 — ASK BEFORE SHOOTING. The probe runs on the showcase's
      * own origin (WebGPU needs a secure context; `about:blank` reports
@@ -661,7 +665,8 @@ async function main() {
         `[snap] fact, and any frame-rate taken off one describes a CPU rasterizer (SPEC D8,\n` +
         `[snap] ENC-1263). Nothing has been written to ${resolve(OUTDIR)}.\n` +
         `[snap] Fix the flags, or pass --allow-software to record it as software on purpose.`);
-      process.exit(4);
+      refusal = 4;
+      return;
     }
     if (noHardware) {
       console.warn('[snap] WARNING --allow-software: capturing on a software adapter. The tally ' +
@@ -752,6 +757,10 @@ async function main() {
     try { rmSync(profile, { recursive: true, force: true }); } catch { /* best effort */ }
   }
 
+  // A refusal writes NOTHING: the acceptance criterion for the D8 gate is that a
+  // software run leaves the output directory exactly as it found it.
+  if (refusal) process.exit(refusal);
+
   // Contact sheet + machine-readable tally.
   writeFileSync(join(OUTDIR, 'contact-sheet.html'), contactSheet(results, adapter, capture));
   writeFileSync(
@@ -791,7 +800,6 @@ async function main() {
   console.log(`[snap] adapter: ${adapterLabel(adapter)}`);
   console.log(`[snap] contact sheet: ${join(resolve(OUTDIR), 'contact-sheet.html')}`);
   console.log(`[snap] tally:         ${join(resolve(OUTDIR), 'render-tally.json')}`);
-  process.exit(exitCode);
 }
 
 main().catch((err) => {
