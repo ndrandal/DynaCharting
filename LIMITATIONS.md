@@ -1363,7 +1363,7 @@ grep -n 'FpsHud' apps/showcase/src/chrome/ChromeOverlay.tsx      # -> 53 (import
 #     screenshot; the badge is the top-left corner and reads `1 fps · 1000.7 ms`.
 d=$(mktemp -d)   # never a fixed /tmp path: agents share this box
 git show 537c995:apps/showcase/stills/price-line-area.png > "$d/old.png"
-python3 -c "import struct,os;d=open(os.environ['D']+'/old.png','rb').read();print(struct.unpack('>II',d[16:24]))" D="$d"
+D="$d" python3 -c "import struct,os;d=open(os.environ['D']+'/old.png','rb').read();print(struct.unpack('>II',d[16:24]))"
 # -> (800, 600)        …and today's, canvas-only, with no badge in it:
 python3 -c "import struct;d=open('apps/showcase/stills/price-line-area.png','rb').read();print(struct.unpack('>II',d[16:24]))"
 # -> (900, 497)
