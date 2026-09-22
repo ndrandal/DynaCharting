@@ -1292,6 +1292,106 @@ command 3 run over all 22 views, 3 cold loads each, headless Chrome 149,
 
 ---
 
+## DC-L-1266 — The showcase records no frame rate anywhere: every fps figure it ever published was pixels 🟠
+
+**Claim.** Nothing in the showcase's capture path has ever written an fps or a frame-time
+number to a machine-readable artifact. The **47** committed JSON files under
+`apps/showcase/stills/` — `render-tally.json`, 22 `*.png.capture.json`, 22 `*.png.probe.json`,
+`capture-manifest.json` and `contact-sheet.png.capture.json` — record coverage, chroma,
+distinct colours, adapter, replay progress, readiness rule and raster sha256. **No `fps` key
+occurs in any of them**, and no capture tool ever asks the engine for one: `getStats` and
+`renderCpuMs` appear **zero** times under `apps/showcase/tools/`.
+
+The only frame-rate record this project ever produced was **a picture**. The FPS HUD is a DOM
+overlay (`src/chrome/FpsHud.tsx`, mounted at `src/chrome/ChromeOverlay.tsx:273`) composited
+over the WebGPU canvas, and the 2026-06 stills were *region* screenshots, so the badge landed
+in the raster as a side effect. That is how
+`specs/2026-06-11-dynacharting-capabilities-showcase/REPORT.md:36` came to assert *"it reads
+~60 fps · 16.7 ms across the captures, the proof the renderer holds frame budget"* — a summary
+of an instrument that did not exist. At contact-sheet thumbnail scale a 14 px badge is
+illegible, which is how it stood for three months.
+
+It was not even true of the pixels: `price-line-area` at `537c995` reads **`1 fps · 1000.7 ms`**
+— read back out of git and verified for this entry. The ENC-1263 audit read all 22 badges and
+found the sentence false of roughly nine of them
+(`specs/2026-09-19-chart-quality-bar/PERF-CLAIMS.md` **C2**, workspace repo). That tally is
+**cited here, not restated**: it measures pixels ENC-1288 has since overwritten, it can no
+longer be re-taken by anyone, and it does not reconcile with itself — `12 at 60, 1 at 52, 2 at
+2, 7 at 1` sums to 22 while C2's own list names ten views below 60. One is off by one and there
+is no longer an artifact that could settle which. That is this entry, not a footnote to it.
+
+**Two later tickets removed the pixels as well, so the claim is now unfalsifiable rather than
+merely wrong.** ENC-1265 deleted the `1000 / fps` arithmetic that the `ms` half always was
+(`dc::Stats::frameMs` was assigned nowhere in `core/`, so `1000.7 = 1000/0.9993` was rounding,
+not information — **DC-L-1265**). ENC-1288 (`cb92615`) then recaptured all 22 stills
+**canvas-only** through `canvas.toDataURL('image/png')`, and a DOM overlay cannot appear in a
+canvas readback — so **no committed still contains a badge to read**. The showcase today holds
+*less* frame-rate evidence than when the claim was made: not a wrong number, no number. ENC-1266
+struck the sentence and deliberately put **no figure in its place**.
+
+Be precise about the scope, because the adjacent entry is about the opposite half. This entry is
+about the **showcase's artifacts**, not about what the engine can measure: `EngineHost.getStats()`
+does report `fps`, `renderCpuMs`, `renderCpuMsP95` and `readbackMs` live in the browser, and what
+those two figures do and do not mean — and that no GPU time is measured at all — is
+**DC-L-1265**. The limitation here is that nothing writes them down, so no showcase claim about
+frame budget can be re-checked by anyone, including its author.
+
+**Re-check.**
+```bash
+# 1 — no committed artifact carries a frame-rate figure
+ls apps/showcase/stills/*.json | wc -l                 # -> 47
+grep -lci fps apps/showcase/stills/*.json | wc -l      # -> 0
+git grep -lniE '"fps"' -- '*.json' | wc -l             # -> 0   (whole repo)
+
+# 2 — what IS recorded, per view and per still
+python3 -c "import json;print(sorted(json.load(open('apps/showcase/stills/render-tally.json'))['views'][0]))"
+# -> ['chroma','coverage','distinctColors','id','referenceTool','tier','title','verdict']
+python3 -c "import json;print(sorted(json.load(open('apps/showcase/stills/candles-aapl.png.capture.json'))))"
+# -> ['adapter','backingStore','bytes','canvasIndex','canvasReady','canvasesOnPage','captureMode',
+#     'capturedAt','cssSize','dwellMs','matched','selector','sha256','source','spec','tier1Scorable','url']
+
+# 3 — no capture tool ever asks the engine for its stats
+grep -rniE 'getStats|renderCpuMs' apps/showcase/tools | wc -l    # -> 0
+
+# 4 — and the badge is not in the raster either: the HUD is DOM, the still is the canvas alone
+grep -n '"source"' apps/showcase/stills/candles-aapl.png.capture.json
+# -> 33:  "source": "canvas.toDataURL('image/png')",
+grep -n 'FpsHud' apps/showcase/src/chrome/ChromeOverlay.tsx      # -> 53 (import), 273 (mounted)
+
+# 5 — the POSITIVE CONTROL, so an empty result above is not read as a broken search: the one
+#     fps record that ever existed is a picture, and it survives only in git. 800x600 region
+#     screenshot; the badge is the top-left corner and reads `1 fps · 1000.7 ms`.
+d=$(mktemp -d)   # never a fixed /tmp path: agents share this box
+git show 537c995:apps/showcase/stills/price-line-area.png > "$d/old.png"
+D="$d" python3 -c "import struct,os;d=open(os.environ['D']+'/old.png','rb').read();print(struct.unpack('>II',d[16:24]))"
+# -> (800, 600)        …and today's, canvas-only, with no badge in it:
+python3 -c "import struct;d=open('apps/showcase/stills/price-line-area.png','rb').read();print(struct.unpack('>II',d[16:24]))"
+# -> (900, 497)
+```
+
+**Working around it.** Measure it yourself, live: run the showcase, press `F`, and read
+`EngineHost.getStats()` — and read **DC-L-1265** first for what the two figures mean, because
+`fps` is the main-thread rAF rate and the `ms` is CPU encode time only. Do **not** quote any
+committed still, `render-tally.json`, or any `*.capture.json` for a frame rate: there is no such
+number in them, and an absence here is genuinely an absence rather than a failed search (check 5
+is the positive control that proves the search works). A frame-rate claim in a showcase document
+with no artifact behind it should be **struck**, not re-estimated by eye.
+
+**Ticket.** [ENC-1266](https://linear.app/encultured/issue/ENC-1266) struck the REPORT.md
+sentence and filed this entry; it deliberately did not replace the number.
+[ENC-1267](https://linear.app/encultured/issue/ENC-1267) is the ticket that would make
+`apps/showcase/tools/snap-stills.mjs` record the adapter and the frame stats, which is what
+would turn this entry's "no artifact" into an artifact — until it lands, there is nothing to
+re-check. Registered as `specs/2026-09-19-chart-quality-bar/PERF-CLAIMS.md` **C2** (in the
+workspace repo), whose 2026-09-22 re-stamp reached the same finding independently.
+
+**Verified at** `6395df5`, 2026-09-22 — all five checks run in the ENC-1266 worktree at that
+commit and produced exactly the output shown. Check 5's badge was read by cropping the top-left
+260×60 of the 537c995 still and viewing it; the same crop of the current `price-line-area.png`
+contains only the `Price` axis title.
+
+---
+
 # §C — Corrections
 
 Beliefs that were held confidently and were wrong. They are here because each one cost real
