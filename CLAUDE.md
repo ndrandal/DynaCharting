@@ -529,7 +529,7 @@ and `:513-519`, rich-chart §7.3 cites `EngineHost.ts:918`, and `LIMITATIONS.md`
   and the ledger is SPEC **§7.2** (the G-number ↔ ticket mapping, eleven tasks across twelve
   tickets) and **§7.4** (the per-repo split). Six of the eleven landed here: **G1b**, the Y-flip
   in `EngineHost.blitFramebuffer` plus its `EngineHost.blit.test.ts` golden — **G1a** is its
-  separate verify harness, `examples/yaxis_orientation_verify.html`, not the fix — and the
+  separate verify harness, `packages/dc-wasm/examples/yaxis_orientation_verify.html`, not the fix — and the
   authoring vocabulary, **G2** `chart/SceneBuilder.ts`, **G4** `chart/scale.ts`, **G5a**
   `chart/ids.ts`, **G5b** `EngineHost.rejections.test.ts`. Of those, `scale.ts` and
   `SceneBuilder.ts` already carry the path; `ids.ts` cites *"GAPS.md G5 / SPEC §5.5"* by document
@@ -548,14 +548,15 @@ and `:513-519`, rich-chart §7.3 cites `EngineHost.ts:918`, and `LIMITATIONS.md`
   literal `core.framebuffer()` under `packages/dc-wasm/src`, while the corpus calls
   `host.framebuffer()` from a file outside this repo (SPEC §5 **Q1**). **Treat DC-L05's "exactly
   two consumers" as a floor, not a census**: that same literal-string grep also misses
-  `examples/engine_host_demo.html` (flips, with its own inline loop) and
-  `examples/yaxis_orientation_verify.html` (deliberately does not flip). When DC-L05's deferred
+  `packages/dc-wasm/examples/engine_host_demo.html` (flips, with its own inline loop) and
+  `packages/dc-wasm/examples/yaxis_orientation_verify.html` (deliberately does not flip). When DC-L05's deferred
   deep fix lands, every one of those flips has to come out together, the corpus's
   `runner/gallery.html` included. **D2** is *"the engine build artifact is copied in, not
   committed"* — the corpus's own `runner/dc_engine_host.{js,wasm}` are gitignored, and §5 **Q3**
   records the cost: nothing says where the copy comes from, and it is rebuilt here when the
-  pipelines move (ENC-713, `9f1d2c9`). **D5** promoted the authoring kit into
-  `packages/authoring-kit/` (ENC-714). **D9** records that the corpus's `docs/LIMITATIONS.md` is
+  pipelines move (ENC-713, `9f1d2c9`). **D5** rules that authoring
+  goes through one kit rather than raw draw commands; ENC-714 promoted that kit into this repo
+  as `packages/authoring-kit/` (`@repo/authoring-kit`). **D9** records that the corpus's `docs/LIMITATIONS.md` is
   the direct ancestor of this repo's file. One caution: §3 calls the corpus *"Read only … No
   corpus ticket has ever edited it"*, and **that sentence is contradicted by the SPEC's own §6**,
   which lists ENC-713, ENC-714 and ENC-715 as `Done` DynaCharting tickets. Believe §6.
