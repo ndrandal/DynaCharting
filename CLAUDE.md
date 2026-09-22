@@ -486,92 +486,97 @@ Pipeline types (owned by the C++ core's `PipelineCatalog`; the retired TS protot
 
 `LIMITATIONS.md` is the **open** log — what is not true of the engine, alive until falsified.
 These four are the **closed** ones — what a project *decided*. The rule is stated once, in the
-render-correctness SPEC's `### The division of labour with LIMITATIONS.md` section: they point at
-each other and never restate each other, so a reader who finds one and not the other will assume
-the other does not exist.
+render-correctness SPEC's `### The division of labour with LIMITATIONS.md` section: they point
+at each other and never restate each other, so a reader who finds one and not the other will
+assume the other does not exist.
 
-They live at the **workspace root**, not in this repo (`specs/2026-09-14-gsd-proposal-backfill/SPEC.md`
-D2), which is why each needs a pointer from here at all (that SPEC's D13, installed per its D14).
-They sit beside the other service repos in the workspace checkout — note that a ticket worktree
-under `trees/<group>/` is *three* levels below that root, not one.
+They live at the **workspace root**, not in this repo
+(`specs/2026-09-14-gsd-proposal-backfill/SPEC.md` D2), which is why each needs a pointer from
+here at all (that SPEC's D13, installed per its D14). They sit beside the other service repos in
+the workspace checkout — note that a ticket worktree under `trees/<group>/` is *three* levels
+below that root, not one.
 
 **Cite these by heading, not by line.** Not because they grow — the render-correctness SPEC says
-of itself *"Grows by nothing; this document is finished"* — but because their own source pins have
-already drifted against this repo: session-continuity §5 Q3 cites `core/wasm/dc_engine_host.cpp:624`
-and `:513-519`, rich-chart §7.3 cites `EngineHost.ts:918`, and `LIMITATIONS.md` DC-L05 cites
-`:894`/`:626`. Every one of those now lands on unrelated code. Re-derive a line before quoting it.
+of itself *"Grows by nothing; this document is finished"* — but because their own source pins
+have already drifted against this repo: session-continuity §5 Q3 cites
+`core/wasm/dc_engine_host.cpp:624` and `:513-519`, rich-chart §7.3 cites `EngineHost.ts:918`,
+and `LIMITATIONS.md` DC-L05 cites `:894`/`:626`. Every one of those now lands on unrelated code.
+Re-derive a line before quoting it.
 
 - **`specs/2026-09-14-dynacharting-render-correctness/SPEC.md`** — the primary record for this
   repo. §2's ten locked decisions, of which this repo owns **D1–D6, D7(a) and D8–D10** (only
   D7(b), `stack.sh doctor`'s skipped-target warning, is the workspace's): `lineAA@1` as THE
   default line pipeline driven from `markSpecOf`'s default argument rather than a flag (D2); the
   lineAA quad's perpendicular computed in **pixel** space and single-sourced between shader and
-  test as `DC_LINEAA_QUAD_EXPAND` (D3); arc chords sized by angular span at `segmentsPerTurn = 72`
-  (D4); `--png` dropping text ruled `DOCUMENT, not fix`, deliberately without a test (D5); one
-  whole-frame `DawnDevice::readFramebufferRGBA` preferred over a GPU round trip per pixel (D6);
-  every `assert()` → `DC_CHECK`, because `NDEBUG` had made five tests vacuous (D7a); a wasm
-  rebuild reproducible across checkout *locations* (D8); `getSceneDocument(compact)` returning a
-  copied `std::string` rather than a `typed_memory_view` (D9); and `LIMITATIONS.md`'s own charter
-  (D10). **Four of these are checkable in a plain default build, deliberately** — `dc_enc993_lineaa_default`
-  (D2), `dc_enc981_lineaa_width` (D3), `dc_enc995_arc_tessellation` (D4) and `dc_enc984_scene_export`
-  (D9) all link `dc`, not `dc_gpu`. D3's own CMake comment says why: *"Deliberately a plain `dc`
-  test (not Dawn-gated) … the Dawn lineAA test rendered at 128x128, where this bug is exactly
-  zero"* — for D3 the Dawn path is the **blind** one. What a default build cannot show is the
-  *rendered result*: D6's measurement is a `dc_json_host` figure, D5 has no test by design, and
-  D2's golden-parity companion `dc_enc993_dawn_default_line` links `dc_gpu` and is excluded at
-  *configure* time with everything else behind `DC_FETCH_DAWN=OFF` (DC-L01, and the `ctest`
-  warning under **C++ Core (CMake)** above). §5 **Q1** is the sharper limit: `EncodePass` is not
-  linked into the shipped wasm at all, so D2 and D4 hold on the native path and on nothing a
-  browser user sees. §5 **Q2** records the twenty recipes reachable only from C++.
+  test as `DC_LINEAA_QUAD_EXPAND` (D3); arc chords sized by angular span at `segmentsPerTurn =
+  72` (D4); `--png` dropping text ruled `DOCUMENT, not fix`, deliberately without a test (D5);
+  one whole-frame `DawnDevice::readFramebufferRGBA` preferred over a GPU round trip per pixel
+  (D6); every `assert()` → `DC_CHECK`, because `NDEBUG` had made five tests vacuous (D7a); a
+  wasm rebuild reproducible across checkout *locations* (D8); `getSceneDocument(compact)`
+  returning a copied `std::string` rather than a `typed_memory_view` (D9); and
+  `LIMITATIONS.md`'s own charter (D10). **Four of these are checkable in a plain default build,
+  deliberately** — `dc_enc993_lineaa_default` (D2), `dc_enc981_lineaa_width` (D3),
+  `dc_enc995_arc_tessellation` (D4) and `dc_enc984_scene_export` (D9) all link `dc`, not
+  `dc_gpu`. D3's own CMake comment says why: *"Deliberately a plain `dc` test (not Dawn-gated) …
+  the Dawn lineAA test rendered at 128x128, where this bug is exactly zero"* — for D3 the Dawn
+  path is the **blind** one. What a default build cannot show is the *rendered result*: D6's
+  measurement is a `dc_json_host` figure, D5 has no test by design, and D2's golden-parity
+  companion `dc_enc993_dawn_default_line` links `dc_gpu` and is excluded at *configure* time
+  with everything else behind `DC_FETCH_DAWN=OFF` (DC-L01, and the `ctest` warning under **C++
+  Core (CMake)** above). §5 **Q1** is the sharper limit: `EncodePass` is not linked into the
+  shipped wasm at all, so D2 and D4 hold on the native path and on nothing a browser user sees.
+  §5 **Q2** records the twenty recipes reachable only from C++.
 
 - **`specs/2026-06-20-rich-chart-research/SPEC.md`** (with its `GAPS.md`) — the rich-chart
   authoring record. It has **no `D<n>` ids of its own**: its decisions are **`GAPS.md` G1–G8**,
   and the ledger is SPEC **§7.2** (the G-number ↔ ticket mapping, eleven tasks across twelve
   tickets) and **§7.4** (the per-repo split). Six of the eleven landed here: **G1b**, the Y-flip
   in `EngineHost.blitFramebuffer` plus its `EngineHost.blit.test.ts` golden — **G1a** is its
-  separate verify harness, `packages/dc-wasm/examples/yaxis_orientation_verify.html`, not the fix — and the
-  authoring vocabulary, **G2** `chart/SceneBuilder.ts`, **G4** `chart/scale.ts`, **G5a**
-  `chart/ids.ts`, **G5b** `EngineHost.rejections.test.ts`. Of those, `scale.ts` and
-  `SceneBuilder.ts` already carry the path; `ids.ts` cites *"GAPS.md G5 / SPEC §5.5"* by document
-  name without the path, and the blit site and both test files cite ticket ids only — so this
-  line is their path citation. Elsewhere: **G3a** is customer-layer's DOM label overlay; **G3b**
-  and **G8** produced **no code** (their output is the two `ENC-70{4,5}-*-spike.md` files in that
-  directory — G8 ruled that forum's `pipelinetranslate` already did what was needed, so forum
-  shipped nothing under this project); **G6** splits client (customer-layer) / server (embassy);
-  **G7** is embassy. Nothing here rests on the Dawn-gated targets — the record renders through
-  `@repo/dc-wasm` in Chrome on SwiftShader — but §7.5 **Q4** notes its harness needs a local
-  `pnpm --filter @repo/dc-wasm build:wasm`, because `harness/wasm/` is gitignored.
+  separate verify harness, `packages/dc-wasm/examples/yaxis_orientation_verify.html`, not the
+  fix — and the authoring vocabulary, **G2** `chart/SceneBuilder.ts`, **G4** `chart/scale.ts`,
+  **G5a** `chart/ids.ts`, **G5b** `EngineHost.rejections.test.ts`. Of those, `scale.ts` and
+  `SceneBuilder.ts` already carry the path; `ids.ts` cites *"GAPS.md G5 / SPEC §5.5"* by
+  document name without the path, and the blit site and both test files cite ticket ids only —
+  so this line is their path citation. Elsewhere: **G3a** is customer-layer's DOM label overlay;
+  **G3b** and **G8** produced **no code** (their output is the two `ENC-70{4,5}-*-spike.md`
+  files in that directory — G8 ruled that forum's `pipelinetranslate` already did what was
+  needed, so forum shipped nothing under this project); **G6** splits client (customer-layer) /
+  server (embassy); **G7** is embassy. Nothing here rests on the Dawn-gated targets — the record
+  renders through `@repo/dc-wasm` in Chrome on SwiftShader — but §7.5 **Q4** notes its harness
+  needs a local `pnpm --filter @repo/dc-wasm build:wasm`, because `harness/wasm/` is gitignored.
 
 - **`specs/2026-06-21-dynacharting-authoring-corpus/SPEC.md`** — §2 runs **D1–D9**, and four of
   them reach into this repo. **D4** is the sharpest: the corpus reads the framebuffer raw and
-  row-flips it itself, which `LIMITATIONS.md` **DC-L05** cannot see — DC-L05's re-check greps the
-  literal `core.framebuffer()` under `packages/dc-wasm/src`, while the corpus calls
+  row-flips it itself, which `LIMITATIONS.md` **DC-L05** cannot see — DC-L05's re-check greps
+  the literal `core.framebuffer()` under `packages/dc-wasm/src`, while the corpus calls
   `host.framebuffer()` from a file outside this repo (SPEC §5 **Q1**). **Treat DC-L05's "exactly
   two consumers" as a floor, not a census**: that same literal-string grep also misses
   `packages/dc-wasm/examples/engine_host_demo.html` (flips, with its own inline loop) and
-  `packages/dc-wasm/examples/yaxis_orientation_verify.html` (deliberately does not flip). When DC-L05's deferred
-  deep fix lands, every one of those flips has to come out together, the corpus's
-  `runner/gallery.html` included. **D2** is *"the engine build artifact is copied in, not
-  committed"* — the corpus's own `runner/dc_engine_host.{js,wasm}` are gitignored, and §5 **Q3**
-  records the cost: nothing says where the copy comes from, and it is rebuilt here when the
-  pipelines move (ENC-713, `9f1d2c9`). **D5** rules that authoring
-  goes through one kit rather than raw draw commands; ENC-714 promoted that kit into this repo
-  as `packages/authoring-kit/` (`@repo/authoring-kit`). **D9** records that the corpus's `docs/LIMITATIONS.md` is
-  the direct ancestor of this repo's file. One caution: §3 calls the corpus *"Read only … No
-  corpus ticket has ever edited it"*, and **that sentence is contradicted by the SPEC's own §6**,
-  which lists ENC-713, ENC-714 and ENC-715 as `Done` DynaCharting tickets. Believe §6.
+  `packages/dc-wasm/examples/yaxis_orientation_verify.html` (deliberately does not flip). When
+  DC-L05's deferred deep fix lands, every one of those flips has to come out together, the
+  corpus's `runner/gallery.html` included. **D2** is *"the engine build artifact is copied in,
+  not committed"* — the corpus's own `runner/dc_engine_host.{js,wasm}` are gitignored, and §5
+  **Q3** records the cost: nothing says where the copy comes from, and it is rebuilt here when
+  the pipelines move (ENC-713, `9f1d2c9`). **D5** rules that authoring goes through one kit
+  rather than raw draw commands; ENC-714 promoted that kit into this repo as
+  `packages/authoring-kit/` (`@repo/authoring-kit`). **D9** records that the corpus's
+  `docs/LIMITATIONS.md` is the direct ancestor of this repo's file. One caution: §3 calls the
+  corpus *"Read only … No corpus ticket has ever edited it"*, and **that sentence is
+  contradicted by the SPEC's own §6**, which lists ENC-713, ENC-714 and ENC-715 as `Done`
+  DynaCharting tickets. Believe §6.
 
-- **`specs/2026-09-14-session-continuity/SPEC.md`** — this repo holds **one half of one decision**
-  and no whole one. §6's ledger gives DynaCharting a single ticket — **ENC-949** (`Backlog`, est
-  5), implementing **D9**, *"the camera producer"*. D9 itself (`scene_state` is a server-derived
-  document; camera state must be a **field** of it, never a PATCH replacing it) is ruled by forum
-  and customer-layer; what is DynaCharting's is that nothing above the engine can *produce* that
-  state — §3's row: pan/zoom lives here, `customer-layer`'s `EngineContextValue` is write-only,
-  and transforms arrive server→browser as wire commands. Read **§5 Q3 before starting ENC-949**:
-  its premise has moved twice and the ticket says neither thing. `getSceneDocument` is already
-  bound through embind and in the shipped `.wasm` (ENC-984), but `sceneToDocument`
-  (`core/src/document/SceneExport.cpp`) **never populates `viewports`/`DocViewport`**, so the
-  document that now crosses the wasm boundary carries no camera; the host bolts on
-  `viewportWidth`/`viewportHeight` from the last `render()`, which is surface pixels, not a
-  camera. The `SceneExport.cpp` half is default-build work (`dc_enc984_scene_export`); the
-  wasm-host half is not — `dc_engine_host` is gated on `if (EMSCRIPTEN)` and needs emsdk.
+- **`specs/2026-09-14-session-continuity/SPEC.md`** — this repo holds **one half of one
+  decision** and no whole one. §6's ledger gives DynaCharting a single ticket — **ENC-949**
+  (`Backlog`, est 5), implementing **D9**, *"the camera producer"*. D9 itself (`scene_state` is
+  a server-derived document; camera state must be a **field** of it, never a PATCH replacing it)
+  is ruled by forum and customer-layer; what is DynaCharting's is that nothing above the engine
+  can *produce* that state — §3's row: pan/zoom lives here, `customer-layer`'s
+  `EngineContextValue` is write-only, and transforms arrive server→browser as wire commands.
+  Read **§5 Q3 before starting ENC-949**: its premise has moved twice and the ticket says
+  neither thing. `getSceneDocument` is already bound through embind and in the shipped `.wasm`
+  (ENC-984), but `sceneToDocument` (`core/src/document/SceneExport.cpp`) **never populates
+  `viewports`/`DocViewport`**, so the document that now crosses the wasm boundary carries no
+  camera; the host bolts on `viewportWidth`/`viewportHeight` from the last `render()`, which is
+  surface pixels, not a camera. The `SceneExport.cpp` half is default-build work
+  (`dc_enc984_scene_export`); the wasm-host half is not — `dc_engine_host` is gated on `if
+  (EMSCRIPTEN)` and needs emsdk.
