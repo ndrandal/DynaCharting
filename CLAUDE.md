@@ -492,7 +492,8 @@ the other will assume the other does not exist.
 
 They live at the **workspace root**, not in this repo (`specs/2026-09-14-gsd-proposal-backfill/SPEC.md`
 D2), which is why each needs a pointer from here at all (that SPEC's D13, installed per its D14).
-From a worktree they are two levels up, beside the other service repos. Cite them by **heading**,
+They sit beside the other service repos in the workspace checkout — note that a ticket worktree
+under `trees/<group>/` is *three* levels below that root, not one. Cite them by **heading**,
 never by line number — `LIMITATIONS.md` and these SPECs are append-only, so a line pin goes stale
 on growth rather than on the claim changing (ENC-1307).
 
