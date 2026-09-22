@@ -1308,10 +1308,17 @@ over the WebGPU canvas, and the 2026-06 stills were *region* screenshots, so the
 in the raster as a side effect. That is how
 `specs/2026-06-11-dynacharting-capabilities-showcase/REPORT.md:36` came to assert *"it reads
 ~60 fps · 16.7 ms across the captures, the proof the renderer holds frame budget"* — a summary
-of an instrument that did not exist. It was not even true of the pixels: **9 of the 22 read
-below 60** (12 at 60, 1 at 52, 2 at 2, 7 at 1), `price-line-area` at **`1 fps · 1000.7 ms`**.
-At contact-sheet thumbnail scale a 14 px badge is illegible, which is how it stood for three
-months.
+of an instrument that did not exist. At contact-sheet thumbnail scale a 14 px badge is
+illegible, which is how it stood for three months.
+
+It was not even true of the pixels: `price-line-area` at `537c995` reads **`1 fps · 1000.7 ms`**
+— read back out of git and verified for this entry. The ENC-1263 audit read all 22 badges and
+found the sentence false of roughly nine of them
+(`specs/2026-09-19-chart-quality-bar/PERF-CLAIMS.md` **C2**, workspace repo). That tally is
+**cited here, not restated**: it measures pixels ENC-1288 has since overwritten, it can no
+longer be re-taken by anyone, and it does not reconcile with itself — `12 at 60, 1 at 52, 2 at
+2, 7 at 1` sums to 22 while C2's own list names ten views below 60. One is off by one and there
+is no longer an artifact that could settle which. That is this entry, not a footnote to it.
 
 **Two later tickets removed the pixels as well, so the claim is now unfalsifiable rather than
 merely wrong.** ENC-1265 deleted the `1000 / fps` arithmetic that the `ms` half always was
@@ -1354,8 +1361,9 @@ grep -n 'FpsHud' apps/showcase/src/chrome/ChromeOverlay.tsx      # -> 53 (import
 # 5 — the POSITIVE CONTROL, so an empty result above is not read as a broken search: the one
 #     fps record that ever existed is a picture, and it survives only in git. 800x600 region
 #     screenshot; the badge is the top-left corner and reads `1 fps · 1000.7 ms`.
-git show 537c995:apps/showcase/stills/price-line-area.png > /tmp/dc-l-1266-old.png
-python3 -c "import struct;d=open('/tmp/dc-l-1266-old.png','rb').read();print(struct.unpack('>II',d[16:24]))"
+d=$(mktemp -d)   # never a fixed /tmp path: agents share this box
+git show 537c995:apps/showcase/stills/price-line-area.png > "$d/old.png"
+python3 -c "import struct,os;d=open(os.environ['D']+'/old.png','rb').read();print(struct.unpack('>II',d[16:24]))" D="$d"
 # -> (800, 600)        …and today's, canvas-only, with no badge in it:
 python3 -c "import struct;d=open('apps/showcase/stills/price-line-area.png','rb').read();print(struct.unpack('>II',d[16:24]))"
 # -> (900, 497)
