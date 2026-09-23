@@ -255,6 +255,21 @@ export type TimeLabelStyle =
   | "year" /** 2026 */;
 
 /**
+ * Every style, so a caller can ask "is this label ANY rendering of this
+ * instant?" without hand-listing them — which is how the fixed list in
+ * `time.test.ts` used to drift behind the union.
+ */
+export const TIME_LABEL_STYLES: readonly TimeLabelStyle[] = [
+  "time-ms",
+  "time-second",
+  "time-minute",
+  "date-time",
+  "date",
+  "month",
+  "year",
+];
+
+/**
  * The label style for a (domain, step) pair.
  *
  * The step sets the RESOLUTION (you do not print seconds on an hourly axis),
@@ -286,7 +301,28 @@ export function timeLabelStyle(domain: Range, step: TimeStep, zone: TimeZoneMode
 
 const p2 = (n: number) => String(Math.trunc(n)).padStart(2, "0");
 const p3 = (n: number) => String(Math.trunc(n)).padStart(3, "0");
-const p4 = (n: number) => String(Math.trunc(n)).padStart(4, "0");
+
+/**
+ * The YEAR field.
+ *
+ * 0000-9999 is the ordinary 4-digit form. Outside it — which a degenerate
+ * `IndexTimeTracker` basis can reach — this emits the ECMAScript / ISO-8601
+ * EXPANDED form: a sign and six digits, `+010000` / `-000500`, the same shape
+ * `Date.prototype.toISOString` uses.
+ *
+ * This used to be `padStart(4, "0")` while the header claimed years were clamped
+ * "by padding/truncation". Padding a 5-digit year does nothing, so the formatter
+ * emitted `10000-01-01` and `-500-01-01` — and `parsesAsTimestamp`, its own
+ * predicate, REJECTED both (ENC-1390). The two have to be closed over each
+ * other: a producer whose output its own checker fails is a checker that has
+ * never been run on the producer. Truncating instead would have been worse than
+ * the bug — year 10000 printed as `0000` is a wrong answer, not a clamped one.
+ */
+const yearField = (y: number): string => {
+  const t = Math.trunc(y);
+  if (t >= 0 && t <= 9999) return String(t).padStart(4, "0");
+  return (t < 0 ? "-" : "+") + String(Math.abs(t)).padStart(6, "0");
+};
 
 /**
  * Format one instant in a given style.
@@ -297,18 +333,19 @@ const p4 = (n: number) => String(Math.trunc(n)).padStart(4, "0");
  * `parsesAsTimestamp` below is D1's tier-1 assertion and it needs a grammar,
  * not a best-effort `Date.parse`.
  *
- * Years outside 0000-9999 are clamped into the 4-digit form by padding/truncation
- * at the grammar level; a chart with a 5-digit year is out of this ladder's remit.
+ * Years outside 0000-9999 are emitted in the ECMAScript / ISO-8601 EXPANDED
+ * form (`+010000`, `-000500`) rather than clamped — `yearField` above, and the
+ * grammar accepts exactly what it emits (ENC-1390).
  */
 export function formatTimeTick(ms: number, style: TimeLabelStyle, zone: TimeZoneMode = "local"): string {
   if (!Number.isFinite(ms)) return "";
   const p = partsOf(ms, zone);
-  const date = `${p4(p.year)}-${p2(p.month)}-${p2(p.day)}`;
+  const date = `${yearField(p.year)}-${p2(p.month)}-${p2(p.day)}`;
   switch (style) {
     case "year":
-      return p4(p.year);
+      return yearField(p.year);
     case "month":
-      return `${p4(p.year)}-${p2(p.month)}`;
+      return `${yearField(p.year)}-${p2(p.month)}`;
     case "date":
       return date;
     case "date-time":
