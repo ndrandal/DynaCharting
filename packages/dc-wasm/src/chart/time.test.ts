@@ -258,7 +258,7 @@ describe("parsesAsTimestamp — D1's tier-1 predicate", () => {
   });
 
   it("REJECTS a record index PAST THREE DIGITS — the hole the old control stopped short of", () => {
-    // ENC-1390 H1. The control above stops at "270", and `^(\\d{4})$` returned
+    // ENC-1390 H1. The control above stops at "270", and `^(\d{4})$` returned
     // true unconditionally, so every 4-digit index was a "year": this predicate
     // PASSED the exact axis it exists to fail as soon as a view reached 1000
     // records. `footprint` / `depth-ladder` / `volume-profile` ship 42720 /

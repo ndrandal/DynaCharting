@@ -131,14 +131,36 @@ describe('the negative control — the axis these views used to ship', () => {
     // for six months.
     const legacy = axisTicks({ label: 'Index', format: 'index', ticks: 6, min: 4, max: 160 });
     expect(legacy.length).toBeGreaterThan(0);
-    const passing = legacy.map((t) => t.label).filter(parsesAsTimestamp);
+    const passing = legacy.map((t) => t.label).filter((l) => parsesAsTimestamp(l));
     expect(passing, `INDEX labels ${JSON.stringify(legacy.map((t) => t.label))} must NOT parse`).toEqual([]);
   });
 
   it('and so does elapsed m:ss, which is a duration rather than an instant', () => {
     const elapsed = axisTicks({ label: 'Time', format: 'time', ticks: 4, min: 0, max: 4 });
     expect(elapsed.map((t) => t.label)).toEqual(['0:00', '0:01', '0:02', '0:03', '0:04']);
-    expect(elapsed.map((t) => t.label).filter(parsesAsTimestamp)).toEqual([]);
+    expect(elapsed.map((t) => t.label).filter((l) => parsesAsTimestamp(l))).toEqual([]);
+  });
+
+  it('holds PAST 999 RECORDS, which is where the old control stopped (ENC-1390 H1)', () => {
+    // `min: 4, max: 160` above is candles-aapl's literal axis, and it is three
+    // digits wide — so it could not see that `^(\d{4})$` passed EVERY 4-digit
+    // index as a year. `footprint` / `depth-ladder` / `volume-profile` already
+    // ship 42720 / 10680 / 6408 records, so this is the axis those views get.
+    const big = axisTicks({ label: 'Index', format: 'index', ticks: 6, min: 1000, max: 6408 });
+    expect(big.length).toBeGreaterThan(0);
+    expect(big.map((t) => t.label).some((l) => /^\d{4}$/.test(l)), JSON.stringify(big.map((t) => t.label))).toBe(true);
+    const passing = big.map((t) => t.label).filter((l) => parsesAsTimestamp(l));
+    expect(passing, `INDEX labels ${JSON.stringify(big.map((t) => t.label))} must NOT parse`).toEqual([]);
+  });
+
+  it('and elapsed m:ss holds AT AND ABOVE TEN MINUTES, where it gains a zero pad (ENC-1390 H2)', () => {
+    // Under 600 s the duration formatter emits `0:12` — rejected for the missing
+    // zero pad rather than for being a duration. At and above ten minutes it
+    // emits `10:00`, `22:05`: well-formed clock times, and the control above
+    // never reached them.
+    const long = axisTicks({ label: 'Time', format: 'time', ticks: 4, min: 600, max: 1325 });
+    expect(long.map((t) => t.label)).toEqual(['10:00', '13:20', '16:40', '20:00']);
+    expect(long.map((t) => t.label).filter((l) => parsesAsTimestamp(l))).toEqual([]);
   });
 });
 
