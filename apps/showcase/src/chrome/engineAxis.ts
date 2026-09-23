@@ -95,7 +95,9 @@ export const SHOWCASE_AXIS_THEME: AxisTheme = darkAxisTheme;
 /** Ticks for one resolved axis, in the shape `EngineAxis` takes. */
 function ticksFor(spec: Parameters<typeof axisTicks>[0] | undefined): AxisTick[] {
   if (!spec) return [];
-  return axisTicks(spec).map((t) => ({ value: t.value, label: t.label }));
+  // `instantMs` rides along: `checkTier1Labels` needs it to settle a label that
+  // is equally a timestamp and a record index (ENC-1390).
+  return axisTicks(spec).map((t) => ({ value: t.value, label: t.label, instantMs: t.instantMs }));
 }
 
 /**

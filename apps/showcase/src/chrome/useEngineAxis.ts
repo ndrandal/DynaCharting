@@ -50,6 +50,7 @@ import {
   type Tier1LabelVerdict,
 } from '@repo/dc-wasm';
 import { engineAxisSpec, SHOWCASE_AXIS_THEME, type EngineAxisRefusal } from './engineAxis';
+import { zoneFor } from './axisTicks';
 import type { ResolvedAxes } from './deriveAxes';
 import type { EffectiveTransform } from './mapping';
 
@@ -276,7 +277,13 @@ export function useEngineAxis(
     const publishPlan = (plan: ReturnType<EngineAxis['sync']>) =>
       publish({
         plan,
-        tier1: checkTier1Labels(plan, canvas, { xIsTime: axes.x?.format === 'timestamp' }),
+        tier1: checkTier1Labels(plan, canvas, {
+          xIsTime: axes.x?.format === 'timestamp',
+          // The clock the labels were rendered in, so the tier-1 round trip that
+          // settles an ambiguous label ("1234", "10:00") checks the one the axis
+          // actually used rather than either (ENC-1390).
+          zone: axes.x?.timeBasis ? zoneFor(axes.x.timeBasis.epochKnown) : undefined,
+        }),
         scene: axisSceneFragment(plan, SHOWCASE_AXIS_THEME, GRID_BACKDROP),
         refusal: null,
         fontLoaded,

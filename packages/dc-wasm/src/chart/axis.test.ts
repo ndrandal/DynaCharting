@@ -410,6 +410,31 @@ describe("checkTier1Labels — D1's tier-1 label row, without a raster", () => {
     expect(v.failures.join(" ")).toContain("does not parse as a timestamp");
   });
 
+  it("fails a 4-digit INDEX axis, which the predicate used to pass as years (ENC-1390)", () => {
+    // The §1.3 failure at scale: `formatTick(v,'index')` on a view with >= 1000
+    // records emits exactly the year grammar, and `checkTier1Labels` defaults
+    // `xIsTime` to true. This row is the reason the tier-1 check exists, and for
+    // the life of the predicate it was the one axis that passed.
+    const p = planAxis(
+      spec({ x: { ticks: [1000, 2000, 3000, 4000].map((v, i) => ({ value: i * 25, label: String(v) })) } }),
+    );
+    const v = checkTier1Labels(p, CANVAS);
+    expect(v.pass).toBe(false);
+    expect(v.failures.join(" ")).toContain("is ambiguous");
+    expect(v.failures.length).toBe(4);
+  });
+
+  it("passes the SAME label once the tick carries the instant it was rendered from", () => {
+    // The ambiguity is settled by evidence, not by a flag: the label has to be a
+    // rendering of the instant the tick sits at. Record 1234 of an index axis is
+    // 1234 ms past the epoch and renders as "1970-01-01 00:00", not "1234".
+    const real = Date.UTC(1234, 0, 1);
+    const ok = planAxis(spec({ x: { ticks: [{ value: 50, label: "1234", instantMs: real }] } }));
+    expect(checkTier1Labels(ok, CANVAS, { zone: "utc" }).failures).toEqual([]);
+    const forged = planAxis(spec({ x: { ticks: [{ value: 50, label: "1234", instantMs: 1234 }] } }));
+    expect(checkTier1Labels(forged, CANVAS, { zone: "utc" }).pass).toBe(false);
+  });
+
   it("catches an overlap the planner was not asked to prune", () => {
     const p = planAxis(spec());
     // Forge a collision: two declared boxes on the same pixels.
