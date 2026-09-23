@@ -32,15 +32,18 @@ int main() {
     check(std::strcmp(fmt, "%H:%M") == 0,
           "chooseTimeFormat(300) -> \"%H:%M\"");
   }
+  // ENC-1391: these two rungs were "%b %d" / "%b %Y". "Nov 15" names no year, so it is not
+  // an instant and time.ts's `parsesAsTimestamp` (THE grammar since ENC-1296) rejects it.
+  // dc_enc1391_time_grammar asserts the conformance; these rows pin the format strings.
   {
     const char* fmt = dc::chooseTimeFormat(86400.0f);
-    check(std::strcmp(fmt, "%b %d") == 0,
-          "chooseTimeFormat(86400) -> \"%b %d\"");
+    check(std::strcmp(fmt, "%Y-%m-%d") == 0,
+          "chooseTimeFormat(86400) -> \"%Y-%m-%d\"");
   }
   {
     const char* fmt = dc::chooseTimeFormat(2592000.0f);
-    check(std::strcmp(fmt, "%b %Y") == 0,
-          "chooseTimeFormat(2592000) -> \"%b %Y\"");
+    check(std::strcmp(fmt, "%Y-%m") == 0,
+          "chooseTimeFormat(2592000) -> \"%Y-%m\"");
   }
   {
     const char* fmt = dc::chooseTimeFormat(31536000.0f);
@@ -64,9 +67,15 @@ int main() {
     std::printf("    got: '%s'\n", s.c_str());
   }
   {
-    std::string s = dc::formatTimestamp(1700000000.0f, "%b %d", true);
-    check(s.size() >= 5 && s.find(' ') != std::string::npos,
-          "formatTimestamp(%b %d) -> \"Mon DD\" format");
+    std::string s = dc::formatTimestamp(1700000000.0f, "%Y-%m-%d", true);
+    check(s.size() == 10 && s[4] == '-' && s[7] == '-',
+          "formatTimestamp(%Y-%m-%d) -> \"YYYY-MM-DD\" format");
+    std::printf("    got: '%s'\n", s.c_str());
+  }
+  {
+    std::string s = dc::formatTimestamp(1700000000.0f, "%Y-%m", true);
+    check(s.size() == 7 && s[4] == '-',
+          "formatTimestamp(%Y-%m) -> \"YYYY-MM\" format");
     std::printf("    got: '%s'\n", s.c_str());
   }
   {
