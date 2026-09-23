@@ -263,8 +263,8 @@ export type TimeLabelStyle =
 
 /**
  * Every style, so a caller can ask "is this label ANY rendering of this
- * instant?" without hand-listing them — which is how the fixed list in
- * `time.test.ts` used to drift behind the union.
+ * instant?" without hand-listing them — a hand-listed copy is what drifts
+ * behind the union when a style is added.
  */
 export const TIME_LABEL_STYLES: readonly TimeLabelStyle[] = [
   "time-ms",
@@ -476,7 +476,7 @@ export function timeTicks(domain: Range, targetTicks: number, opts: TimeTicksOpt
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * The five shapes `formatTimeTick` emits, at the five resolutions.
+ * The five grammars `formatTimeTick`'s seven styles land in.
  *
  * The YEAR field is `\d{4}` in the ordinary range plus the expanded `[+-]\d{6}`
  * form `yearField` emits outside it, so the grammar accepts exactly what the
