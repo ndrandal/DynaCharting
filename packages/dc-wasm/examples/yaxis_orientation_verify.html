@@ -36,11 +36,13 @@
        convention). Correct orientation => the series visually climbs up-and-right.
 
   The page reads back host.framebuffer() and emits a machine verdict into
-  #result (class pass|fail) so cdp-shot.mjs can wait on it and screenshot.
+  #result (class pass|fail) so a CDP driver can wait on it and screenshot.
 
   apexAtTop === false  =>  the RAW readback is bottom-up, i.e. DC-L05 still holds.
-  That is today's expected outcome. It would only mean a product bug if some
-  consumer painted these bytes without flipping them.
+  That is today's EXPECTED outcome, so it is reported as `pass` (polarity fixed
+  under ENC-717; it used to report the expected state as `fail`, which read as a
+  standing product bug). A `fail` here now means the raw convention has CHANGED
+  and every flipping consumer has silently become a double flip.
 -->
 <html lang="en">
 <head>
@@ -170,17 +172,19 @@
       log(`triangle red rows: top=${minRow} (w=${topW})  bottom=${maxRow} (w=${botW})`);
       log(`=> apex is at the ${apexAtTop ? 'TOP' : 'BOTTOM'} of the image`);
 
-      if (apexAtTop) {
-        verdict('pass', `apex at TOP (top width ${topW} < bottom width ${botW}). ` +
-          `The RAW readback is upright — DC-L05 would no longer hold, and every ` +
-          `flipping consumer (EngineHost.blitFramebuffer, thumbnail.ts, engine_host_demo.html, ` +
-          `the authoring corpus's runner/gallery.html) has just become a DOUBLE flip. ` +
-          `Re-verify DC-L05 before believing this.`);
+      // POLARITY (ENC-717): `pass` means the RAW readback still behaves as DC-L05
+      // describes. It is NOT a statement that the browser path is upside down —
+      // EngineHost.blitFramebuffer flips, so the browser path is upright.
+      if (!apexAtTop) {
+        verdict('pass', `EXPECTED — apex at BOTTOM (top width ${topW} > bottom width ${botW}). ` +
+          `The RAW readback is bottom-up, so LIMITATIONS.md DC-L05 HOLDS. Not a product ` +
+          `bug: ENC-696 flips at the blit. Any consumer reading these bytes raw must flip them.`);
       } else {
-        verdict('fail', `INVERTED — apex at BOTTOM (top width ${topW} > bottom width ${botW}). ` +
-          `The RAW readback is bottom-up: LIMITATIONS.md DC-L05 HOLDS. This is the ` +
-          `EXPECTED result and not a product bug — ENC-696 flips at the blit, so the ` +
-          `browser path is upright. Any consumer reading these bytes raw must flip them.`);
+        verdict('fail', `CONVENTION MOVED — apex at TOP (top width ${topW} < bottom width ${botW}). ` +
+          `The RAW readback is now upright, so DC-L05 no longer holds and every consumer that ` +
+          `flips (EngineHost.blitFramebuffer, thumbnail.ts, engine_host_demo.html, and the ` +
+          `authoring corpus's runner/gallery.html) has just become a DOUBLE flip. ` +
+          `They must be retired together — re-verify DC-L05 before believing this.`);
       }
       host.dispose();
     }
