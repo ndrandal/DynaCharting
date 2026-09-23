@@ -33,6 +33,16 @@ export interface AxisTick {
   value: number;
   /** The label to draw. */
   label: string;
+  /**
+   * The epoch-ms instant a `timestamp` tick was labelled from, before
+   * `timeToIndex` carried it back into data space. Absent on every other format.
+   *
+   * It is kept because the label alone cannot always prove it is one: `1234` is
+   * both a year and record 1234, and `10:00` is both a clock time and ten
+   * minutes elapsed. D1's tier-1 predicate settles those against this number
+   * rather than guessing (ENC-1390, `parsesAsTimestamp`). Nothing draws with it.
+   */
+  instantMs?: number;
 }
 
 /** Default tick intervals when an axis declares none. */
@@ -89,7 +99,7 @@ export function axisTicks(spec: ResolvedAxisSpec): AxisTick[] {
       domain = { min: Math.max(0, domain.min), max: Math.max(0, domain.max) };
     }
     const { ticks } = timeTicks(domain, count, { zone });
-    return ticks.map((t) => ({ value: timeToIndex(basis, t.ms), label: t.label }));
+    return ticks.map((t) => ({ value: timeToIndex(basis, t.ms), label: t.label, instantMs: t.ms }));
   }
 
   // Everything else: round marks, and a precision derived from the step between
