@@ -1127,6 +1127,16 @@ if (DC_BUILD_TESTS)
   target_link_libraries(dc_d13_2_time_format PRIVATE dc)
   add_test(NAME dc_d13_2_time_format COMMAND dc_d13_2_time_format)
 
+  # ENC-1391 — x-axis time labels conform to THE timestamp grammar (pure C++).
+  # Runs the real computeNiceTimeTicks -> chooseTimeFormat -> formatTimestamp pipeline over
+  # every reachable rung (including the >1-day and >1-month steps that were the defect) and
+  # asserts each label satisfies a transcription of time.ts's `parsesAsTimestamp`.
+  add_executable(dc_enc1391_time_grammar
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dc_enc1391_time_grammar.cpp"
+  )
+  target_link_libraries(dc_enc1391_time_grammar PRIVATE dc)
+  add_test(NAME dc_enc1391_time_grammar COMMAND dc_enc1391_time_grammar)
+
   # D13.3 Time-axis integration (needs font)
   if (EXISTS "${DC_TEST_FONT}")
     add_executable(dc_d13_3_time_axis
