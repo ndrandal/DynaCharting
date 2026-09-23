@@ -946,19 +946,21 @@ which is proof rather than a flag: a record index carried in as an instant rende
 **Why it bites.** Any one-argument call sited on a minute-resolution or year-resolution axis
 flips from `true` to `false` without the axis changing — including the in-page snippet **DC-L16**
 quotes as the primary evidence for its retirement, `parsesAsTimestamp` over
-`["12:15","12:16","12:17","12:18","12:19"]` → `[true,true,true,true,true]`. Re-run today with one
-argument that is `[false,false,false,false,false]`, and it is not a regression in the axis: those
-labels are a minute ladder with no instant attached. Pass `{ instantMs: tick.ms }` (or read
-`window.__dcEngineAxis[viewId].tier1`, which carries the instants through the plan) and it is
-`[true × 5]` again. The engine-side check is unaffected — `checkTier1Labels` reads
+`["12:15","12:16","12:17","12:18","12:19"]` → `[true,true,true,true,true]`. Re-run today with one argument
+it is `[false × 5]`, and that is not a regression in the axis: those labels are a minute ladder
+with no instant attached, and the predicate now declines to guess rather than answering. The
+in-page re-check has to pass the tick's own `ms` — `parsesAsTimestamp(t.label, { instantMs: t.ms
+})` over `timeTicks(...)` — or read `window.__dcEngineAxis[viewId].tier1`, which carries the
+instants through the plan. Neither form has been re-run against a live capture since the change;
+what is executed here is the unit evidence below. The engine-side check is unaffected — `checkTier1Labels` reads
 `AxisLabel.instantMs`, which `planAxis` carries from the tick.
 
 **Re-check.**
 ```bash
 # 1 — the two undecidable shapes, and the five decidable ones
 grep -n 'ambiguous" : "instant"' packages/dc-wasm/src/chart/time.ts
-# -> 579:  /^\d{4}$/.test(s) ? "ambiguous" : "instant"   // bare 4 digits <-> a record index
-# -> 589:  m[3] === undefined ? "ambiguous" : "instant"   // bare HH:MM   <-> elapsed m:ss
+# -> 579:      return /^\d{4}$/.test(s) ? "ambiguous" : "instant"; // bare 4 digits <-> a record index
+# -> 589:    return m[3] === undefined ? "ambiguous" : "instant"; // bare HH:MM <-> elapsed m:ss
 
 # 2 — asserted in both directions, with the controls run PAST the hole
 pnpm test -- time.test
