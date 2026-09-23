@@ -53,7 +53,14 @@
  *   '0:12'   — elapsed m:ss (a DURATION, not an instant; the old `time` format)
  *
  * A check that cannot fail is not a check, so both are pinned as negative
- * controls in time.test.ts.
+ * controls in time.test.ts — and ENC-1390 is what happens when those controls
+ * stop one digit short of the failure. Both of the above are rejected on a
+ * DETAIL (three digits; a missing zero pad) rather than on the thing that is
+ * wrong with them, so the same two formatters slipped straight through at 1000
+ * records (`1234`) and at ten minutes (`10:00`). Those shapes are genuinely
+ * undecidable from the label alone, so the predicate now says so and takes the
+ * tick's instant as evidence instead of guessing — `classifyTimestampLabel`,
+ * and the controls now run to five digits and to 23:59.
  */
 
 import type { Range } from "./scale";
@@ -468,13 +475,121 @@ export function timeTicks(domain: Range, targetTicks: number, opts: TimeTicksOpt
 // 4. The tier-1 predicate
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * The five shapes `formatTimeTick` emits, at the five resolutions.
+ *
+ * The YEAR field is `\d{4}` in the ordinary range plus the expanded `[+-]\d{6}`
+ * form `yearField` emits outside it, so the grammar accepts exactly what the
+ * producer produces (ENC-1390). Capture-group positions are load-bearing:
+ * `parsesAsTimestamp` reads them by index, and `timestamp-grammar.json`
+ * transcribes these literals for the Python reader, so they stay free of named
+ * groups and inline flags — one string, two engines.
+ */
 const TIMESTAMP_GRAMMARS: RegExp[] = [
-  /^(\d{4})$/, // year
-  /^(\d{4})-(\d{2})$/, // year-month
-  /^(\d{4})-(\d{2})-(\d{2})$/, // date
-  /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{3}))?)?$/, // date-time
+  /^(\d{4}|[+-]\d{6})$/, // year
+  /^(\d{4}|[+-]\d{6})-(\d{2})$/, // year-month
+  /^(\d{4}|[+-]\d{6})-(\d{2})-(\d{2})$/, // date
+  /^(\d{4}|[+-]\d{6})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{3}))?)?$/, // date-time
   /^(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{3}))?)?$/, // time of day
 ];
+
+/**
+ * What a label can be shown to be FROM THE STRING ALONE.
+ *
+ *   `instant`          — only a timestamp has this shape.
+ *   `ambiguous`        — well-formed as a timestamp, and also exactly what a
+ *                        NON-time formatter in this repo emits. Undecidable here.
+ *   `not-a-timestamp`  — no grammar matches, or a field is out of range.
+ */
+export type TimestampLabelKind = "instant" | "ambiguous" | "not-a-timestamp";
+
+/**
+ * Evidence from OUTSIDE the string, which is the only thing that can settle an
+ * ambiguous label.
+ *
+ * `instantMs` is the epoch instant the tick sits at — `TimeTick.ms`, the number
+ * the label was rendered FROM. The label is accepted iff it is a rendering of
+ * that instant in some style, which is proof rather than assertion: a record
+ * index of 1234 carried in as an instant is 1970-01-01, and renders as nothing
+ * that reads `1234`.
+ *
+ * A bare "the axis is a time axis" flag is deliberately NOT accepted here. That
+ * is what `checkTier1Labels`'s `xIsTime` already was, and it is a claim about
+ * the axis, not about the label: an index axis mis-declared as time would pass
+ * every 4-digit label straight through it, which is the bug this replaces.
+ */
+export interface TimestampEvidence {
+  /** The epoch-ms instant this label was rendered from. */
+  instantMs?: number;
+  /**
+   * The clock it was rendered in. Omitted, BOTH are tried — a label matching
+   * the other zone's rendering still denotes that instant, and which clock an
+   * axis should use is `zoneFor`'s question, not this predicate's.
+   */
+  zone?: TimeZoneMode;
+}
+
+/** Is `label` any rendering of `ms`, in any style? The round-trip proof. */
+function rendersInstant(label: string, ms: number, zone?: TimeZoneMode): boolean {
+  if (!Number.isFinite(ms)) return false;
+  const zones: TimeZoneMode[] = zone ? [zone] : ["local", "utc"];
+  for (const z of zones) {
+    for (const style of TIME_LABEL_STYLES) {
+      if (formatTimeTick(ms, style, z) === label) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Classify a label without deciding what cannot be decided.
+ *
+ * ── THE TWO AMBIGUOUS SHAPES, AND WHY THEY ARE NOT GUESSES ──────────────────
+ *
+ * 1. A BARE 4-DIGIT STRING. `2026` is a year. `1234` is also exactly what
+ *    `formatTick(v, 'index')` — `String(Math.round(value))` — emits for record
+ *    1234, and `footprint` / `depth-ladder` / `volume-profile` ship 42720 /
+ *    10680 / 6408 records apiece. The two are the same string. This predicate
+ *    used to return `true` for the whole shape unconditionally, so the
+ *    `INDEX 4 → 160` axis it was written to FAIL passed it the moment a view
+ *    reached 1000 records (ENC-1390 H1). The expanded year form (`+010000`) is
+ *    NOT ambiguous — no index formatter emits a sign and six digits.
+ *
+ * 2. A BARE `HH:MM`. `14:32` is a clock time. `formatTick(v, 'time')` — elapsed
+ *    `m:ss` — emits `10:00` at 600 s and `22:05` at 1325 s, both well-formed
+ *    clock times, so every `HH:MM` from 10:00 to 23:59 is also a duration
+ *    (ENC-1390 H2). `HH:MM:SS` is not ambiguous: the duration formatter never
+ *    emits three fields.
+ *
+ * The rule is deliberately the WHOLE shape, not the colliding sub-range. A rule
+ * that accepted `09:30` and rejected `14:32` would make an axis legible or not
+ * depending on the hour the market opened, and `0042` legible while `1042` is
+ * not. Both halves of such a rule pass for reasons the reader cannot see, which
+ * is the property that hid this bug for the life of the predicate.
+ */
+export function classifyTimestampLabel(label: string): TimestampLabelKind {
+  if (typeof label !== "string") return "not-a-timestamp";
+  const s = label.trim();
+  if (s.length === 0) return "not-a-timestamp";
+  for (const re of TIMESTAMP_GRAMMARS) {
+    const m = re.exec(s);
+    if (!m) continue;
+    const n = (i: number) => (m[i] === undefined ? undefined : Number(m[i]));
+    if (re === TIMESTAMP_GRAMMARS[0]) {
+      return /^\d{4}$/.test(s) ? "ambiguous" : "instant"; // bare 4 digits ↔ a record index
+    }
+    if (re === TIMESTAMP_GRAMMARS[1]) return inRange(n(2)!, 1, 12) ? "instant" : "not-a-timestamp";
+    if (re === TIMESTAMP_GRAMMARS[2]) return validDate(n(1)!, n(2)!, n(3)!) ? "instant" : "not-a-timestamp";
+    if (re === TIMESTAMP_GRAMMARS[3]) {
+      return validDate(n(1)!, n(2)!, n(3)!) && validClock(n(4)!, n(5)!, n(6), n(7))
+        ? "instant"
+        : "not-a-timestamp";
+    }
+    if (!validClock(n(1)!, n(2)!, n(3), n(4))) return "not-a-timestamp";
+    return m[3] === undefined ? "ambiguous" : "instant"; // bare HH:MM ↔ elapsed m:ss
+  }
+  return "not-a-timestamp";
+}
 
 /**
  * D1's tier-1 predicate: does this axis label denote an INSTANT?
@@ -485,34 +600,36 @@ const TIMESTAMP_GRAMMARS: RegExp[] = [
  * REJECTS:
  *
  *   '162', '4'      a record index — the `INDEX 4→160` failure this exists to catch
+ *   '1234', '9999'  the SAME failure past 999 records (ENC-1390 H1)
  *   '0:12'          elapsed m:ss — a DURATION, and not zero-padded
+ *   '10:00'         elapsed m:ss once it is (ENC-1390 H2)
  *   '$408.00'       a price
  *   '2026-13-01'    a well-shaped impossible date
+ *
+ * ── AMBIGUITY IS ANSWERED WITH EVIDENCE, NOT WITH A DEFAULT ─────────────────
+ *
+ * Two shapes cannot be decided from the label alone (`classifyTimestampLabel`):
+ * a bare 4-digit string and a bare `HH:MM`. Both are produced verbatim by
+ * non-time formatters this repo ships. A predicate over one string has no way
+ * to tell them apart, and the version that quietly picked "year" is what let
+ * the INDEX axis pass.
+ *
+ * So the CALLER supplies the instant the tick sits at (`TimestampEvidence`) and
+ * the label is checked against it by round trip. With no evidence, an ambiguous
+ * label is REJECTED: D1 tier 1 asks a reader to take a value off the chart, and
+ * a label that two formatters could have written does not let them. That is a
+ * decision the predicate states rather than one it hides — an unambiguous label
+ * (`2026-09-19`, `14:32:05`) still needs nothing.
  *
  * It intentionally does NOT use `Date.parse`: `Date.parse` is implementation
  * defined for non-ISO input and accepts things like '162' in some engines, which
  * would make the tier-1 check pass on the exact axis it was written to fail.
  */
-export function parsesAsTimestamp(label: string): boolean {
-  if (typeof label !== "string") return false;
-  const s = label.trim();
-  if (s.length === 0) return false;
-  for (const re of TIMESTAMP_GRAMMARS) {
-    const m = re.exec(s);
-    if (!m) continue;
-    const n = (i: number) => (m[i] === undefined ? undefined : Number(m[i]));
-    if (re === TIMESTAMP_GRAMMARS[0]) return true; // 4-digit year
-    if (re === TIMESTAMP_GRAMMARS[1]) return inRange(n(2)!, 1, 12);
-    if (re === TIMESTAMP_GRAMMARS[2]) return validDate(n(1)!, n(2)!, n(3)!);
-    if (re === TIMESTAMP_GRAMMARS[3]) {
-      return (
-        validDate(n(1)!, n(2)!, n(3)!) &&
-        validClock(n(4)!, n(5)!, n(6), n(7))
-      );
-    }
-    return validClock(n(1)!, n(2)!, n(3), n(4));
-  }
-  return false;
+export function parsesAsTimestamp(label: string, evidence?: TimestampEvidence): boolean {
+  const kind = classifyTimestampLabel(label);
+  if (kind !== "ambiguous") return kind === "instant";
+  const ms = evidence?.instantMs;
+  return ms !== undefined && rendersInstant(label.trim(), ms, evidence?.zone);
 }
 
 function inRange(v: number, lo: number, hi: number): boolean {
