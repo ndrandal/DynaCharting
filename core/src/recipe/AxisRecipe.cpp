@@ -474,6 +474,11 @@ AxisRecipe::AxisData AxisRecipe::computeAxisDataV2(
     // X-axis label — centered below tick
     std::string labelStr;
     if (config_.xAxisIsTime) {
+      // ENC-1391: chooseTimeFormat emits the SAME grammar as time.ts's formatTimeTick
+      // (`TIMESTAMP_GRAMMARS`, adopted by ENC-1296) — ISO forms only, never `%b %d`.
+      // Every label produced here must satisfy `parsesAsTimestamp`; the C++ transcription
+      // of that predicate and the ladder-wide assertion live in
+      // core/tests/dc_enc1391_time_grammar.cpp.
       const char* timeFmt = chooseTimeFormat(xStep);
       labelStr = formatTimestamp(val, timeFmt, config_.useUTC);
     } else {

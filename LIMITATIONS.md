@@ -1392,6 +1392,104 @@ contains only the `Price` axis title.
 
 ---
 
+## DC-L-1391 — The C++ x-axis speaks the same time grammar as `time.ts` now; its *style selection* still does not, and nothing scored draws it 🟡
+
+**Claim.** DynaCharting has **two** x-axis time-label emitters, not one. The browser path uses
+`formatTimeTick` (`packages/dc-wasm/src/chart/time.ts`), whose grammar ENC-1296 adopted as THE
+rule for D1's tier-1 predicate. The engine path uses `strftime` via `chooseTimeFormat`
+(`core/include/dc/math/TimeFormat.hpp`). Until ENC-1391 the second emitted `%b %d` / `%b %Y` —
+`Nov 15`, `Nov 2023` — which `parsesAsTimestamp` **rejects**, because neither names an instant:
+`Nov 15` has no year. ENC-1391 moved the day and month rungs onto `%Y-%m-%d` / `%Y-%m`, the forms
+`formatTimeTick` already emits for the same rungs, and `dc_enc1391_time_grammar` asserts every
+label the real `computeNiceTimeTicks → chooseTimeFormat → formatTimestamp` pipeline produces
+satisfies a transcription of that predicate.
+
+Three things that does **not** buy, and the third is why this entry exists rather than a closed
+ticket.
+
+1. **The two emitters agree on grammar, not on STYLE SELECTION.** `timeLabelStyle`
+   (`time.ts`) promotes a sub-day step to `date-time` (`2026-09-19 14:32`) when the **domain**
+   crosses a calendar day, so two ticks 24 h apart cannot both read `09:30`. `chooseTimeFormat`
+   takes only `stepSeconds` — it never sees the domain — so it **cannot** make that call and will
+   print the bare clock. Both forms parse, so this is an ambiguity, not a grammar break, and it is
+   deliberately left open rather than half-fixed: closing it changes rendered label widths in a
+   target that cannot be built in the default configuration (3).
+
+2. **`AxisRecipe`'s time labels are computed and thrown away, in every configuration.**
+   `AxisRecipe::computeAxisDataV2` is the site the ticket named, and its only non-test caller is
+   `core/demos/live_server.cpp:224` — which sets the label geometry's vertex count to **0** at all
+   four call sites (`"Suppress GL text — HTML overlay handles labels"`). The labels a human
+   actually reads come from the demo's *own* `chooseTimeFormat` call at `live_server.cpp:123`,
+   feeding an HTML text overlay. `AxisRecipe` is also not bound into the WASM module: the single
+   occurrence of the string in `core/wasm/dc_engine_host.cpp` is a comment, and its
+   `EMSCRIPTEN_BINDINGS` block exposes no axis type. So the browser can never reach this code.
+
+3. **The day rung was already REACHED — the path is unscored, not unreached.** ENC-1391's ticket
+   said "every scored tape is ~20 s, so `stepSeconds` never reaches a day". That is true of the
+   scorer and false of this call site: `live_server` draws a hard-coded **100 × 1-hour** candle
+   series (`live_server.cpp:390-392`), i.e. a 4.25-day domain, and `computeNiceTimeTicks(...,5)`
+   selects **86400 s** on it — the `%b %d` rung, on every run, since the demo was written. What
+   makes it latent is that `dc_live_server` is Dawn-gated (**DC-L01**) and its labels never enter
+   `score.py`. The corollary: ENC-1391 **does** change human-visible output, the moment anyone
+   configures `-DDC_FETCH_DAWN=ON`, and that output has not been looked at.
+
+**Re-check** (from the repo root; `build/` from a default `cmake -B build`):
+
+```bash
+# 1 — the month-name forms are gone and the ISO rungs are in
+grep -n 'return "%' core/include/dc/math/TimeFormat.hpp
+# -> %H:%M:%S / %H:%M / %H:%M / %Y-%m-%d / %Y-%m / %Y   (no %b anywhere)
+grep -c '%b' core/include/dc/math/TimeFormat.hpp
+# -> 2   (both in the prose explaining what was removed, neither in a return)
+
+# 2 — and the whole reachable tick ladder parses as a timestamp
+ctest --test-dir build -R dc_enc1391_time_grammar --output-on-failure
+# -> ENC-1391 time grammar: 77/77 PASS
+
+# 3 — style selection still diverges: time.ts promotes on the DOMAIN, C++ sees only the step
+grep -n 'crossesDay' packages/dc-wasm/src/chart/time.ts
+# -> 277:  const crossesDay =   /   281:  if (crossesDay) return "date-time";
+grep -n 'inline const char\* chooseTimeFormat' core/include/dc/math/TimeFormat.hpp
+# -> 39:inline const char* chooseTimeFormat(float stepSeconds) {     (one argument)
+
+# 4 — AxisRecipe's labels are suppressed by its only non-test caller
+grep -n 'labelGeomId(), 0' core/demos/live_server.cpp
+# -> 595, 603, 779, 788   (all four recompute sites)
+
+# 5 — and AxisRecipe is not bound into the browser module
+grep -n 'AxisRecipe' core/wasm/dc_engine_host.cpp
+# -> 259:  // Steps mirror the d3_3 textSDF test + AxisRecipe/TooltipRecipe: ...   (a comment)
+
+# 6 — the day rung IS selected by the demo's own data (4.25 d / 5 ticks -> 86400 s)
+cmake -B build >/dev/null && cmake --build build --target dc_enc1391_time_grammar >/dev/null
+ctest --test-dir build -R dc_enc1391_time_grammar -V | grep '4.25d'
+# -> step is 86400s as expected  /  label='2023-11-15' parsesAsTimestamp  (was 'Nov 15')
+
+# 7 — but that consumer is not built in the default configuration
+cmake -B build 2>&1 | grep 'Skipping headless demo servers'
+# -> -- Skipping headless demo servers (require DC_FETCH_DAWN=ON)
+```
+
+**Verified at** `ENC-1391 HEAD`, 2026-09-22 — every command above run in the ENC-1391 worktree at
+that commit. `ctest --test-dir build` is **197/197** there (196 before this ticket). The
+falsification is recorded in the PR: reverting the two rungs to `%b %d` / `%b %Y` turns
+`dc_enc1391_time_grammar` red at `label='Nov 15'` produced by the real pipeline, not merely at the
+format-string rows — the rung-string assertions were removed from a scratch copy of the test to
+prove the ladder rows are not vacuous. **Nothing renderer-side was exercised**: `dc_gpu`,
+`dc_json_host` and `dc_live_server` were never compiled (DC-L01).
+
+**Workspace gate.** `specs/2026-09-19-chart-quality-bar/recheck.sh` pins the *old* behaviour on
+purpose, and **two of its rows go RED** once this merges — which is the mechanism working, not a
+regression. Both cite lines 1-20 of this header: `'chooseTimeFormat'` (the symbol is now at line
+39, below the grammar comment) and `'%b %d|%b %Y'` (the month-name forms survive only as prose at
+lines 26-27, deliberately placed **outside** the cited window so the row cannot pass on the
+explanation of its own removal — DC-L01's sibling failure mode). Hole **H3** in
+`harness/timestamp-grammar.json` / `harness/README.md` is closed on the emitter side and the spec
+directory has to follow; it is not this repo's to edit (ENC-1384).
+
+---
+
+
 # §C — Corrections
 
 Beliefs that were held confidently and were wrong. They are here because each one cost real
