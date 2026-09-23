@@ -930,6 +930,70 @@ symptom was observed and then removed on a canvas-only capture of the showcase, 
 
 ---
 
+## DC-L-1390 — D1's tier-1 predicate cannot decide a bare `1234` or `14:32`, and no longer pretends to 🟡
+
+**Claim.** `parsesAsTimestamp` (`packages/dc-wasm/src/chart/time.ts`) called with ONE argument
+now returns `false` for two label shapes it used to accept: a bare 4-digit string and a bare
+`HH:MM`. Neither is decidable from the string. `1234` is a year *and* exactly what
+`formatTick(v,'index')` emits for record 1234 — and `footprint` / `depth-ladder` /
+`volume-profile` ship 42720 / 10680 / 6408 records, so the `INDEX 4 → 160` axis the predicate
+exists to FAIL passed it at every view over 999 records. `10:00` is a clock time *and* what
+`formatTick(v,'time')` emits at 600 s elapsed. The caller settles it by handing over the instant
+the tick was rendered from (`parsesAsTimestamp(label, { instantMs })`, `AxisTick.instantMs`),
+which is proof rather than a flag: a record index carried in as an instant renders as
+`1970-01-01`, not as `1234`.
+
+**Why it bites.** Any one-argument call sited on a minute-resolution or year-resolution axis
+flips from `true` to `false` without the axis changing — including the in-page snippet **DC-L16**
+quotes as the primary evidence for its retirement, `parsesAsTimestamp` over
+`["12:15","12:16","12:17","12:18","12:19"]` → `[true,true,true,true,true]`. Re-run today with one
+argument that is `[false,false,false,false,false]`, and it is not a regression in the axis: those
+labels are a minute ladder with no instant attached. Pass `{ instantMs: tick.ms }` (or read
+`window.__dcEngineAxis[viewId].tier1`, which carries the instants through the plan) and it is
+`[true × 5]` again. The engine-side check is unaffected — `checkTier1Labels` reads
+`AxisLabel.instantMs`, which `planAxis` carries from the tick.
+
+**Re-check.**
+```bash
+# 1 — the two undecidable shapes, and the five decidable ones
+grep -n 'ambiguous" : "instant"' packages/dc-wasm/src/chart/time.ts
+# -> 579:  /^\d{4}$/.test(s) ? "ambiguous" : "instant"   // bare 4 digits <-> a record index
+# -> 589:  m[3] === undefined ? "ambiguous" : "instant"   // bare HH:MM   <-> elapsed m:ss
+
+# 2 — asserted in both directions, with the controls run PAST the hole
+pnpm test -- time.test
+# -> 53 passed, incl. "names the two shapes it cannot decide, and decides the other five",
+#    "REJECTS a record index PAST THREE DIGITS" (to 42720) and
+#    "REJECTS elapsed m:ss AT AND ABOVE TEN MINUTES" (to 23:59)
+pnpm test -- axisTicks
+# -> 18 passed, incl. the INDEX control at min 1000 / max 6408 and the m:ss one at 600..1325 s
+```
+
+**Working around it.** Do not re-add a default. The honest single-argument answer for these two
+shapes is "cannot tell", and anything that picks one interpretation re-creates the bug — carry
+the instant instead. `classifyTimestampLabel(label)` is exported when you need to tell
+*ambiguous* from *not a timestamp* (the fix for the first is on the tick, for the second on the
+label).
+
+**Knock-on.** `specs/2026-09-19-chart-quality-bar/harness/timestamp-grammar.json` pins all five
+`corpus.known_holes.labels` and all five `known_self_contradictions.labels` as strings the
+executed predicate still accepts/rejects; this change invalidates both lists, and
+`harness/timestamp-conformance.py` is RED until that file follows. That red row is the mechanism
+working — it is what stops the hole being closed on one side only.
+
+**Ticket.** [ENC-1390](https://linear.app/encultured/issue/ENC-1390). The C++ `strftime` emitter
+(`Jan 15`, `Jan 2024`) is a separate grammar and a separate ticket,
+[ENC-1391](https://linear.app/encultured/issue/ENC-1391) — note `"%Y"` used to be accepted
+*through this hole*, so it needs the instant or a different form now.
+
+**Verified at** `ENC-1390 HEAD`, 2026-09-22 — both commands run in the ENC-1390 worktree, whole
+suite `pnpm test` green at 28 files / 443 tests. No raster was captured and none is claimed:
+this entry is about a pure predicate.
+
+---
+
+
+
 ## DC-L-1273 — The stacked view is REFUSED by the plot box, and the product has not adopted it 🟡
 
 > **Narrowed by ENC-1316, 2026-09-20.** This entry used to say *"only a single-pane view is
