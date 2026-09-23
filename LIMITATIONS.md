@@ -1479,10 +1479,13 @@ prove the ladder rows are not vacuous. **Nothing renderer-side was exercised**: 
 `dc_json_host` and `dc_live_server` were never compiled (DC-L01).
 
 **Workspace gate.** `specs/2026-09-19-chart-quality-bar/recheck.sh` pins the *old* behaviour on
-purpose — its row `cite DynaCharting core/include/dc/math/TimeFormat.hpp 1 20 '%b %d|%b %Y'` goes
-**RED** against this commit, which is the mechanism working: hole **H3** in
-`harness/timestamp-grammar.json` / `harness/README.md` is now closed on the emitter side and the
-spec directory has to follow. That directory is not this repo's to edit (ENC-1384).
+purpose, and **two of its rows go RED** once this merges — which is the mechanism working, not a
+regression. Both cite lines 1-20 of this header: `'chooseTimeFormat'` (the symbol is now at line
+39, below the grammar comment) and `'%b %d|%b %Y'` (the month-name forms survive only as prose at
+lines 26-27, deliberately placed **outside** the cited window so the row cannot pass on the
+explanation of its own removal — DC-L01's sibling failure mode). Hole **H3** in
+`harness/timestamp-grammar.json` / `harness/README.md` is closed on the emitter side and the spec
+directory has to follow; it is not this repo's to edit (ENC-1384).
 
 ---
 

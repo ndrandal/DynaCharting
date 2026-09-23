@@ -10,24 +10,24 @@ namespace dc {
 // emitters; the other is `formatTimeTick` in packages/dc-wasm/src/chart/time.ts, whose
 // grammar (`TIMESTAMP_GRAMMARS` / `parsesAsTimestamp`, ENC-1254) was adopted as THE rule
 // by ENC-1296 and is carried as data in
-// specs/2026-09-19-chart-quality-bar/harness/timestamp-grammar.json.
+// specs/2026-09-19-chart-quality-bar/harness/timestamp-grammar.json. The rungs below are
+// the ISO forms `formatTimeTick` already emits, so the two emitters now agree label for
+// label, and `core/tests/dc_enc1391_time_grammar.cpp` asserts it over the whole ladder:
 //
-// Until ENC-1391 this ladder emitted `%b %d` ("Nov 15") and `%b %Y` ("Nov 2023") at the
-// day and month rungs, which that grammar REJECTS. The rungs below are the ISO forms
-// `formatTimeTick` already emits, so the two emitters now agree label-for-label:
+//   stepSeconds          this ladder    time.ts TimeLabelStyle    example
+//   ------------------   ------------   ----------------------    ------------
+//   < 60                 %H:%M:%S       "time-second"             14:30:15
+//   < 3600               %H:%M          "time-minute"             14:30
+//   < 86400              %H:%M          "time-minute"             14:00
+//   < 2592000   (day)    %Y-%m-%d       "date"                    2023-11-15
+//   < 31536000  (month)  %Y-%m          "month"                   2023-11
+//   >=          (year)   %Y             "year"                    2024
 //
-//   stepSeconds        this ladder      time.ts TimeLabelStyle    example
-//   ---------------    -------------    ----------------------    -------------------
-//   < 60               %H:%M:%S         "time-second"             14:30:15
-//   < 3600             %H:%M            "time-minute"             14:30
-//   < 86400            %H:%M            "time-minute"             14:00
-//   < 2592000  (day)   %Y-%m-%d         "date"                    2023-11-15
-//   < 31536000 (month) %Y-%m            "month"                   2023-11
-//   >=         (year)  %Y               "year"                    2024
-//
-// Why this side moved rather than the grammar widening to admit `%b %d`: "Nov 15" names
-// no year, so it is not an instant — no grammar can parse it back to a timestamp, and
-// `parsesAsTimestamp` is exactly the predicate D1 tier 1 asserts. Widening would also have
+// Until ENC-1391 the day and month rungs emitted the month-name forms `%b %d` ("Nov 15")
+// and `%b %Y` ("Nov 2023"), which that grammar REJECTS. This side moved rather than the
+// grammar widening to admit them, because "Nov 15" names no year and so is not an instant:
+// no grammar can parse it back to a timestamp, and `parsesAsTimestamp` is exactly the
+// predicate the chart-quality bar's tier-1 check asserts. Widening would also have
 // re-admitted the `Mon 09` shape ENC-1296 removed from the superseded `_TIME_PATTERNS`,
 // which is strictly weaker as a gate.
 //
