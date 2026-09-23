@@ -40,8 +40,8 @@ inline const char* chooseTimeFormat(float stepSeconds) {
   if (stepSeconds < 60)       return "%H:%M:%S";   // 14:30:15
   if (stepSeconds < 3600)     return "%H:%M";       // 14:30
   if (stepSeconds < 86400)    return "%H:%M";       // 14:00
-  if (stepSeconds < 2592000)  return "%Y-%m-%d";    // 2023-11-15
-  if (stepSeconds < 31536000) return "%Y-%m";       // 2023-11
+  if (stepSeconds < 2592000)  return "%b %d";       // Nov 15
+  if (stepSeconds < 31536000) return "%b %Y";       // Nov 2023
   return "%Y";                                       // 2024
 }
 
