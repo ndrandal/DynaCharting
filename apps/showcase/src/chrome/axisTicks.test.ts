@@ -35,7 +35,7 @@ import candlesView from '../../views/candles-aapl/view.json';
 import ohlcView from '../../views/ohlc-bars/view.json';
 import overlaysView from '../../views/candle-overlays/view.json';
 import { resolveAxes } from './deriveAxes';
-import { axisTicks } from './axisTicks';
+import { axisTicks, type AxisTick } from './axisTicks';
 import type { AxisDomainSpec } from '../views/registry';
 import type { ChromeSpec } from './types';
 import type { GrowthSync } from '../engine/useReplay';
@@ -84,10 +84,26 @@ function replay(
   return { domain: tracker.domain(), basis: time.basis(), capture };
 }
 
-/** The x tick labels the chart will draw, resolved exactly as ChromeOverlay does. */
-function xLabels(chrome: ChromeSpec, domain: ObservedDomain, basis: TimeBasis | null): string[] {
+/** The x ticks the chart will draw, resolved exactly as ChromeOverlay does. */
+function xTicks(chrome: ChromeSpec, domain: ObservedDomain, basis: TimeBasis | null): AxisTick[] {
   const { axes } = resolveAxes(chrome.axes, domain, basis);
-  return axes.x ? axisTicks(axes.x).map((t) => t.label) : [];
+  return axes.x ? axisTicks(axes.x) : [];
+}
+
+/** Just the label text, for the assertions that are about the strings. */
+function xLabels(chrome: ChromeSpec, domain: ObservedDomain, basis: TimeBasis | null): string[] {
+  return xTicks(chrome, domain, basis).map((t) => t.label);
+}
+
+/**
+ * The tier-1 question, asked the way a caller with the tick in hand asks it:
+ * the label AND the instant it was rendered from. Two of the seven label shapes
+ * ("2026", "14:32") are equally a record index and an elapsed duration, so the
+ * predicate takes the instant as evidence rather than guessing (ENC-1390) — and
+ * the axis has it, because `axisTicks` now carries it.
+ */
+function tier1(tick: AxisTick): boolean {
+  return parsesAsTimestamp(tick.label, { instantMs: tick.instantMs });
 }
 
 const MARKET_VIEWS = [
@@ -101,10 +117,11 @@ describe('D1 tier 1 — every x tick label parses as a timestamp', () => {
     it(`${v.id}: the whole tape`, () => {
       const { domain, basis } = replay(v.id, v.spec, v.growth as GrowthSync);
       expect(basis, 'no time basis was fitted from the capture').not.toBeNull();
-      const labels = xLabels(v.meta.chrome as ChromeSpec, domain, basis);
-      expect(labels.length, 'the axis stated no ticks at all').toBeGreaterThan(0);
-      for (const label of labels) {
-        expect(parsesAsTimestamp(label), `${v.id}: ${JSON.stringify(label)}`).toBe(true);
+      const ticks = xTicks(v.meta.chrome as ChromeSpec, domain, basis);
+      expect(ticks.length, 'the axis stated no ticks at all').toBeGreaterThan(0);
+      for (const tick of ticks) {
+        expect(tick.instantMs, `${v.id}: ${JSON.stringify(tick.label)} carried no instant`).toBeTypeOf('number');
+        expect(tier1(tick), `${v.id}: ${JSON.stringify(tick.label)}`).toBe(true);
       }
     });
 
@@ -115,9 +132,8 @@ describe('D1 tier 1 — every x tick label parses as a timestamp', () => {
       const total = loadCapture(v.id).frames.length;
       for (const upTo of [3, 10, 40, Math.floor(total / 2), total]) {
         const { domain, basis } = replay(v.id, v.spec, v.growth as GrowthSync, upTo);
-        const labels = xLabels(v.meta.chrome as ChromeSpec, domain, basis);
-        for (const label of labels) {
-          expect(parsesAsTimestamp(label), `${v.id} @${upTo} frames: ${label}`).toBe(true);
+        for (const tick of xTicks(v.meta.chrome as ChromeSpec, domain, basis)) {
+          expect(tier1(tick), `${v.id} @${upTo} frames: ${tick.label}`).toBe(true);
         }
       }
     });
@@ -131,14 +147,39 @@ describe('the negative control — the axis these views used to ship', () => {
     // for six months.
     const legacy = axisTicks({ label: 'Index', format: 'index', ticks: 6, min: 4, max: 160 });
     expect(legacy.length).toBeGreaterThan(0);
-    const passing = legacy.map((t) => t.label).filter(parsesAsTimestamp);
+    const passing = legacy.map((t) => t.label).filter((l) => parsesAsTimestamp(l));
     expect(passing, `INDEX labels ${JSON.stringify(legacy.map((t) => t.label))} must NOT parse`).toEqual([]);
   });
 
   it('and so does elapsed m:ss, which is a duration rather than an instant', () => {
     const elapsed = axisTicks({ label: 'Time', format: 'time', ticks: 4, min: 0, max: 4 });
     expect(elapsed.map((t) => t.label)).toEqual(['0:00', '0:01', '0:02', '0:03', '0:04']);
-    expect(elapsed.map((t) => t.label).filter(parsesAsTimestamp)).toEqual([]);
+    expect(elapsed.map((t) => t.label).filter((l) => parsesAsTimestamp(l))).toEqual([]);
+  });
+
+  it('holds PAST 999 RECORDS, which is where the old control stopped (ENC-1390 H1)', () => {
+    // `min: 4, max: 160` above is candles-aapl's literal axis, and it is three
+    // digits wide — so it could not see that `^(\d{4})$` passed EVERY 4-digit
+    // index as a year. `footprint` / `depth-ladder` / `volume-profile` already
+    // ship 42720 / 10680 / 6408 records, so this is the axis those views get.
+    const big = axisTicks({ label: 'Index', format: 'index', ticks: 6, min: 1000, max: 6408 });
+    expect(big.length).toBeGreaterThan(0);
+    expect(big.map((t) => t.label).some((l) => /^\d{4}$/.test(l)), JSON.stringify(big.map((t) => t.label))).toBe(true);
+    // And they carry no instant, because an index axis has none to carry — so
+    // there is nothing that could settle them either.
+    expect(big.every((t) => t.instantMs === undefined)).toBe(true);
+    const passing = big.filter(tier1).map((t) => t.label);
+    expect(passing, `INDEX labels ${JSON.stringify(big.map((t) => t.label))} must NOT parse`).toEqual([]);
+  });
+
+  it('and elapsed m:ss holds AT AND ABOVE TEN MINUTES, where it gains a zero pad (ENC-1390 H2)', () => {
+    // Under 600 s the duration formatter emits `0:12` — rejected for the missing
+    // zero pad rather than for being a duration. At and above ten minutes it
+    // emits `10:00`, `22:05`: well-formed clock times, and the control above
+    // never reached them.
+    const long = axisTicks({ label: 'Time', format: 'time', ticks: 4, min: 600, max: 1325 });
+    expect(long.map((t) => t.label)).toEqual(['10:00', '13:20', '16:40', '20:00']);
+    expect(long.filter(tier1).map((t) => t.label)).toEqual([]);
   });
 });
 
@@ -182,7 +223,9 @@ describe('what the measurement actually says about candles-aapl', () => {
     // collapsing every tick onto the same label.
     expect(new Set(earlyLabels).size).toBe(earlyLabels.length);
     expect(new Set(lateLabels).size).toBe(lateLabels.length);
-    for (const l of [...earlyLabels, ...lateLabels]) expect(parsesAsTimestamp(l)).toBe(true);
+    const earlyTicks = xTicks(candlesView.chrome as ChromeSpec, early.domain, early.basis);
+    const lateTicks = xTicks(candlesView.chrome as ChromeSpec, late.domain, late.basis);
+    for (const t of [...earlyTicks, ...lateTicks]) expect(tier1(t), t.label).toBe(true);
   });
 
   it('DROPS the x axis while no basis has been fitted — it never captions it', () => {

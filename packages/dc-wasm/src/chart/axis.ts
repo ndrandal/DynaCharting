@@ -82,7 +82,7 @@ import { clipXToPx, clipYToPx, type TextTarget } from "./text";
 import { createIdAllocator, type IdAllocator } from "./ids";
 import { encodeAppendRecord, type Rgba } from "./SceneBuilder";
 import { defaultAxisTheme, gridRgba, rgba, type AxisTheme } from "./theme";
-import { parsesAsTimestamp } from "./time";
+import { classifyTimestampLabel, parsesAsTimestamp, type TimeZoneMode } from "./time";
 
 // ── Inputs ──────────────────────────────────────────────────────────────────
 
@@ -92,6 +92,16 @@ export interface AxisTick {
   value: number;
   /** The label to draw. An empty string draws a tick with no label. */
   label: string;
+  /**
+   * The epoch-ms INSTANT this tick sits at, when there is one (`TimeTick.ms`,
+   * before `timeToIndex` carried it back into data space).
+   *
+   * Carried so D1's tier-1 label check can settle an ambiguous label against
+   * the number it was rendered from rather than guessing: `1234` is both a year
+   * and record 1234, and `10:00` is both a clock time and ten minutes elapsed
+   * (ENC-1390, `parsesAsTimestamp`). Nothing draws with it.
+   */
+  instantMs?: number;
 }
 
 /** Which gutter an axis lives in, and therefore how its labels are aligned. */
@@ -172,6 +182,8 @@ export interface AxisLabel {
   /** Clip-space baseline origin handed to `setTextGeometry`. */
   clipX: number;
   clipY: number;
+  /** The instant the tick sits at, carried through from `AxisTick`. */
+  instantMs?: number;
   /** Label size in CSS pixels, and the clip `fontSize` that produces it. */
   fontPx: number;
   fontSizeClip: number;
@@ -454,6 +466,7 @@ export function planAxis(spec: AxisSpec): AxisPlan {
         axis: "x",
         role: "xTickLabel",
         text: t.label,
+        instantMs: t.instantMs,
         clipX: clipXBaseline,
         clipY: clipYBaseline,
         fontPx,
@@ -547,6 +560,14 @@ export interface Tier1LabelVerdict {
  * frame, and — when the x axis states time — every x label parsing as a
  * timestamp (`parsesAsTimestamp`, ENC-1254).
  *
+ * `xIsTime` says whether to ask the timestamp question at all; it is NOT taken
+ * as an answer to it. A bare `1234` or `10:00` is settled by the instant the
+ * tick carries (`AxisTick.instantMs`) and by nothing else — an index axis
+ * mis-declared as time therefore fails here instead of passing on the
+ * declaration, which is exactly what it did while `^(\d{4})$` was unconditional
+ * (ENC-1390). `zone` narrows the round trip to one clock; omitted, both are
+ * tried.
+ *
  * This is the same question `score.py`'s T1.1/T1.4/T1.5 ask of the delivered
  * raster, asked of the plan instead, so a collision is a unit-test failure
  * rather than something found by rendering. It does NOT replace scoring the
@@ -555,7 +576,7 @@ export interface Tier1LabelVerdict {
 export function checkTier1Labels(
   plan: AxisPlan,
   canvas: CanvasSize,
-  opts: { xIsTime?: boolean } = {},
+  opts: { xIsTime?: boolean; zone?: TimeZoneMode } = {},
 ): Tier1LabelVerdict {
   const failures: string[] = [];
   const labels = plan.labels;
@@ -582,9 +603,17 @@ export function checkTier1Labels(
   }
   if (opts.xIsTime ?? true) {
     for (const l of x) {
-      if (!parsesAsTimestamp(l.text)) {
-        failures.push(`x tick label ${JSON.stringify(l.text)} does not parse as a timestamp`);
-      }
+      if (parsesAsTimestamp(l.text, { instantMs: l.instantMs, zone: opts.zone })) continue;
+      // Say WHICH failure it is. "1234" and "$408.00" are both rejected, but the
+      // first one is the axis declining to say whether it is a year or a record
+      // index, and the fix for it is on the TICK (carry `instantMs`), not on the
+      // label (ENC-1390).
+      failures.push(
+        classifyTimestampLabel(l.text) === "ambiguous"
+          ? `x tick label ${JSON.stringify(l.text)} is ambiguous — it is equally a timestamp and ` +
+            `what a non-time formatter emits, and the tick carried no instant to settle it`
+          : `x tick label ${JSON.stringify(l.text)} does not parse as a timestamp`,
+      );
     }
   }
   return {
