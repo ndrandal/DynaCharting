@@ -15,7 +15,9 @@ import {
   timeTicks,
   timeLabelStyle,
   formatTimeTick,
+  TIME_LABEL_STYLES,
   parsesAsTimestamp,
+  classifyTimestampLabel,
   decimalsForStep,
   decimalsForTicks,
   IndexTimeTracker,
@@ -224,18 +226,15 @@ describe("the label grammar", () => {
 
 describe("parsesAsTimestamp — D1's tier-1 predicate", () => {
   it("accepts every label the formatter can emit, across every style and step", () => {
-    const styles = [
-      "year",
-      "month",
-      "date",
-      "date-time",
-      "time-minute",
-      "time-second",
-      "time-ms",
-    ] as const;
     const t = Date.UTC(2026, 8, 19, 14, 32, 5, 250);
-    for (const s of styles) {
-      expect(parsesAsTimestamp(formatTimeTick(t, s, "utc")), s).toBe(true);
+    for (const s of TIME_LABEL_STYLES) {
+      // The tick's own instant is the evidence. Two of the seven shapes — "2026"
+      // and "14:32" — are equally a record index and an elapsed duration, and the
+      // predicate states that rather than guessing (ENC-1390); the caller has the
+      // instant, so it hands it over.
+      const label = formatTimeTick(t, s, "utc");
+      expect(parsesAsTimestamp(label, { instantMs: t, zone: "utc" }), s).toBe(true);
+      expect(classifyTimestampLabel(label), s).not.toBe("not-a-timestamp");
     }
     // And over a real sweep of spans, every generated label parses.
     const spans = [2 * SEC, 45 * SEC, 20 * MIN, 9 * HOUR, 6 * DAY, 90 * DAY, 900 * DAY, 8000 * DAY];
@@ -245,8 +244,68 @@ describe("parsesAsTimestamp — D1's tier-1 predicate", () => {
       });
       expect(ticks.length, `span ${span} produced no ticks`).toBeGreaterThan(0);
       for (const tick of ticks) {
-        expect(parsesAsTimestamp(tick.label), `${span}ms → ${tick.label}`).toBe(true);
+        expect(parsesAsTimestamp(tick.label, { instantMs: tick.ms, zone: "utc" }), `${span}ms → ${tick.label}`).toBe(true);
       }
+    }
+  });
+
+  it("names the two shapes it cannot decide, and decides the other five", () => {
+    // The ambiguity is a property of the SHAPE, not of the hour or of the digit:
+    // "09:30" is no more decidable than "14:32", and "0042" no more than "1042".
+    // A rule that split those would pass for reasons a reader cannot see.
+    for (const label of ["2026", "1234", "0042", "9999", "14:32", "09:30", "00:00", "23:59"]) {
+      expect(classifyTimestampLabel(label), label).toBe("ambiguous");
+      expect(parsesAsTimestamp(label), `${label} with no evidence`).toBe(false);
+    }
+    for (const label of ["2026-09", "2026-09-19", "2026-09-19 14:32", "14:32:05", "14:32:05.250", "+010000"]) {
+      expect(classifyTimestampLabel(label), label).toBe("instant");
+      expect(parsesAsTimestamp(label), label).toBe(true);
+    }
+    for (const label of ["162", "0:12", "$408.00", "2026-13-01", "24:00"]) {
+      expect(classifyTimestampLabel(label), label).toBe("not-a-timestamp");
+    }
+  });
+
+  it("settles an ambiguous label against the instant, and only the right one", () => {
+    const t = Date.UTC(2026, 8, 19, 14, 32, 0);
+    expect(parsesAsTimestamp("14:32", { instantMs: t, zone: "utc" })).toBe(true);
+    expect(parsesAsTimestamp("2026", { instantMs: t, zone: "utc" })).toBe(true);
+    // The same string, carried by a tick that is NOT that instant, is rejected —
+    // which is what makes this evidence rather than a flag. Record 1234 of an
+    // index axis is 1234 ms past the epoch and renders as nothing reading "1234".
+    expect(parsesAsTimestamp("14:33", { instantMs: t, zone: "utc" })).toBe(false);
+    expect(parsesAsTimestamp("1234", { instantMs: 1234, zone: "utc" })).toBe(false);
+    expect(parsesAsTimestamp("1234", { instantMs: Date.UTC(1234, 0, 1), zone: "utc" })).toBe(true);
+    // Evidence cannot rescue a label that is not a timestamp at all.
+    expect(parsesAsTimestamp("162", { instantMs: t, zone: "utc" })).toBe(false);
+    expect(parsesAsTimestamp("10:00", { instantMs: Number.NaN })).toBe(false);
+  });
+
+  it("is closed over its own formatter at the year edges", () => {
+    // ENC-1390. `p4` was `padStart(4,"0")` while the header claimed years were
+    // clamped "by padding/truncation", so the formatter emitted `10000-01-01`
+    // and `-500-01-01` and its own predicate rejected both. Expanded years now
+    // carry a sign and six digits, the shape `toISOString` uses.
+    const far = Date.UTC(10000, 0, 1);
+    const deep = Date.UTC(-500, 0, 1);
+    expect(formatTimeTick(far, "year", "utc")).toBe("+010000");
+    expect(formatTimeTick(far, "date", "utc")).toBe("+010000-01-01");
+    expect(formatTimeTick(far, "month", "utc")).toBe("+010000-01");
+    expect(formatTimeTick(far, "date-time", "utc")).toBe("+010000-01-01 00:00");
+    expect(formatTimeTick(deep, "date", "utc")).toBe("-000500-01-01");
+    for (const ms of [far, deep]) {
+      for (const s of TIME_LABEL_STYLES) {
+        const label = formatTimeTick(ms, s, "utc");
+        expect(parsesAsTimestamp(label, { instantMs: ms, zone: "utc" }), `${s}: ${label}`).toBe(true);
+      }
+    }
+    // The expanded form is NOT ambiguous: no index formatter emits a sign and
+    // six digits, so it needs no evidence.
+    expect(parsesAsTimestamp("+010000")).toBe(true);
+    expect(parsesAsTimestamp("-000500-01-01")).toBe(true);
+    // And the strings the old formatter emitted are still not timestamps.
+    for (const label of ["10000", "10000-01", "10000-01-01", "-500-01-01"]) {
+      expect(parsesAsTimestamp(label), label).toBe(false);
     }
   });
 
