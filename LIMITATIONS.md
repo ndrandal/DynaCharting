@@ -273,31 +273,75 @@ vertex lands in the **bottom** rows of `core.framebuffer()`. `putImageData` is a
 **a raw blit renders the scene upside down.**
 
 **This is the residue of ENC-696, not a regression.** That ticket fixed the *symptom* at the one
-place browser frames are painted (`packages/dc-wasm/src/EngineHost.ts:910-915`) and its comment
-says plainly that the real fix — normalizing the shader Y-negation and the C++ readback — was
-deferred because it needs the Dawn golden PNGs re-baselined and the wasm rebuilt. So the
-convention is unchanged; only the two known consumers compensate.
+place browser frames are painted — `EngineHost.blitFramebuffer` (**cited by symbol: its old
+`:910-915` / `:894` pins now land on unrelated code**) — and its comment says plainly that the
+real fix, normalizing the shader Y-negation and the C++ readback, was deferred because it needs
+the Dawn golden PNGs re-baselined and the wasm rebuilt. So the convention is unchanged; each
+consumer compensates on its own.
 
-**Consequence for new code.** There are exactly two consumers today and both flip:
-`blitFramebuffer` (`EngineHost.ts:894`) and `captureThumbnail` (`EngineHost.ts:626` →
-`thumbnail.ts:147`), which deliberately share the single `flipRowsRGBA` helper so results are
-never double-flipped. **A third consumer that reads `core.framebuffer()` raw will render
+**Measured, not argued (ENC-717).** The direction claim above was re-demonstrated live against
+the committed wasm, in headless Chrome on SwiftShader, using this repo's own
+`packages/dc-wasm/examples/yaxis_orientation_verify.html` — a real WebGPU render
+(`status=1 backend=WebGPU drawCalls=2`), a real `host.framebuffer()` readback, no mock and no
+replay. An apex-**up** triangle authored directly in clip space (apex `y=+0.7`, base `y=-0.7`)
+at 600x400 reads back as:
+
+| | apex (clip `y=+0.7`) | base (clip `y=-0.7`) |
+|---|---|---|
+| **raw readback** — `row = (1+y)/2·H` | row **338** (predicted 340) | row **60** (predicted 60) |
+| **after one row flip** — `row = (1-y)/2·H` | row **61** (predicted 60) | row **339** (predicted 340) |
+
+Both hypotheses differ in **sign**, so this is decisive: the raw buffer is bottom-up and exactly
+one flip puts it upright. It also settles a contradiction inside this repo —
+`core/tests/parity_golden.hpp`'s `ORIGIN CONVENTION` block claims *"higher clip y ⇒ smaller row
+index (toward the top)"*, i.e. an upright raw readback. **That is false**, and its goldens cannot
+detect it because their probe pixel coordinates are baked from the same assumption.
+
+**Consequence for new code.** **A third consumer that reads `core.framebuffer()` raw will render
 inverted**, and the failure is silent on any vertically symmetric scene — which is how this
 survived undetected until the only live demo stopped being an orientation-ambiguous line.
 
-**Re-check.**
+**This entry used to say "there are exactly two consumers today and both flip". Both halves were
+wrong** — corrected under ENC-717, and the correction is the point of the re-check below.
+
+- **The count is a floor, not a census.** The old re-check greps the literal string
+  `core.framebuffer()` under `packages/dc-wasm/src --include='*.ts'`, so it cannot see the
+  receiver spelled `host.` , the sibling `examples/` directory, the `HEAPU8` + `dcFramebufferPtr()`
+  readers of the very same bytes, or anything outside this repo. Counting *raw readers of the
+  engine framebuffer* rather than that one literal gives **seven** on the JS side, not two.
+- **"Both flip" is false.** `packages/dc-wasm/examples/yaxis_orientation_verify.html` deliberately
+  does not (that is what makes it the instrument above). `core/wasm/dc_webgpu.html`,
+  `core/wasm/dc_webgpu_all.html`, `apps/live-viewer/server.mjs` and `apps/live-viewer/src/App.tsx`
+  do not flip and have no comment saying why — four **latent inversions**, each masked by a
+  vertically symmetric test scene, exactly as this entry warns. Untriaged and unticketed here.
+- **"They share the single `flipRowsRGBA` helper" is false.** Only `captureThumbnail` →
+  `thumbnail.ts` uses it. `blitFramebuffer` has its own inline loop, and so do
+  `examples/engine_host_demo.html` and the authoring corpus's `runner/gallery.html`. There are
+  **four independent copies** of the same direction constant, not one shared one — which is the
+  real hazard when the deep fix lands, because they have to come out in lockstep.
+- **The corpus is one of them, and it is outside this repo.** `specs/2026-06-21-dynacharting-authoring-corpus/runner/gallery.html`
+  constructs `Module.DcEngineHost` by embind, never `@repo/dc-wasm` (zero imports, zero
+  `blitFramebuffer` references), reads the framebuffer raw and flips it itself. **It therefore
+  does not double-flip with ENC-696 and its flip must not be removed** — deleting it would invert
+  all 48 corpus outputs, silently for the symmetric ones. That design record is
+  `specs/2026-06-21-dynacharting-authoring-corpus/SPEC.md` §2 **D4** / §5 **Q1** (ENC-717).
+
+**Re-check.** The old one-liner is retained as the *narrow* check; the wide one is what this
+entry now claims.
 ```bash
-grep -rn 'core.framebuffer()' packages/dc-wasm/src --include='*.ts' | grep -v test
-# every hit must be followed by a flip (flipRowsRGBA, or the fbH-1-y loop)
-sed -n '921,940p' packages/dc-wasm/src/EngineHost.ts    # the deferral is stated in the comment
+# wide — every raw reader of the engine framebuffer, whatever the receiver is called
+grep -rnI -E 'framebuffer\(\)|dcFramebufferPtr' . \
+  --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=build
+git grep -n 'readFramebufferRGBA('
+# every hit must either flip (flipRowsRGBA, or an fbH-1-y loop) or say in a comment why not
 ```
 
 **Ticket.** None for the deep fix. [ENC-696](https://linear.app/encultured/issue/ENC-696)
-(`d6b5acd`) fixed the blit only.
+(`d6b5acd`) fixed the blit only. The four latent inversions and `parity_golden.hpp`'s wrong
+origin note are likewise unticketed — ENC-717 measured them, and fixing them is not its scope.
 
-**Verified at** `5ac198a`, 2026-09-14 — re-run in the ENC-984 worktree (which edits
-`EngineHost.ts`, shifting the `sed` range by +25): both real `core.framebuffer()` consumers
-(`captureThumbnail`, `blitFramebuffer`) still copy-then-flip.
+**Verified at** `376d545`, 2026-09-23 (ENC-717) — direction re-measured live (table above);
+consumer census re-derived across the whole worktree plus the corpus, not from the narrow grep.
 
 ---
 

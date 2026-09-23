@@ -2,10 +2,27 @@
 <!--
   yaxis_orientation_verify.html — ENC-695 (G1a)
 
-  Verifies the Y-axis orientation of the @repo/dc-wasm WebGPU render -> canvas
-  path, using the EXACT production blit (raw putImageData(host.framebuffer()),
-  NO row flip — identical to EngineHost.blitFramebuffer() at EngineHost.ts:633
-  and to engine_host_demo.html).
+  Verifies the Y-axis orientation of the RAW engine readback: it does a raw
+  putImageData(host.framebuffer()) with NO row flip, then rules on the pixels.
+
+  WHAT THIS MEASURES, AND WHAT IT NO LONGER MEASURES (corrected ENC-717).
+  When this file was written for ENC-695 the raw blit WAS the production blit,
+  so the header said "identical to EngineHost.blitFramebuffer() at
+  EngineHost.ts:633 and to engine_host_demo.html". ENC-696 (d6b5acd) then made
+  blitFramebuffer flip, and engine_host_demo.html flips too, so that sentence
+  has been false since the day after this file landed — and read literally it
+  says the shipping browser path is broken, which it is not.
+
+  This harness is still correct and still useful; only its subject changed. It
+  measures the RAW `framebuffer()` convention — LIMITATIONS.md DC-L05 — which is
+  unchanged and is what every consumer that bypasses the TS wrapper must
+  compensate for (the authoring corpus's runner/gallery.html is one such
+  consumer). So a FAIL/"INVERTED" verdict here is the EXPECTED result and is
+  DC-L05 holding, NOT a regression in EngineHost. Do not add a flip to this
+  file: the un-flipped read is the whole instrument.
+
+  ENC-717 ran it headless on SwiftShader at 376d545: apex clip y=+0.7 read back
+  at row 338 of 400 (bottom); one row flip moves it to row 61 (top).
 
   Two probes, both authored DIRECTLY in clip space so the result depends ONLY on
   the engine readback + blit, not on any transform-sign convention:
@@ -21,7 +38,9 @@
   The page reads back host.framebuffer() and emits a machine verdict into
   #result (class pass|fail) so cdp-shot.mjs can wait on it and screenshot.
 
-  apexAtTop === false  =>  Y-axis is INVERTED in the production blit (bug G1 confirmed).
+  apexAtTop === false  =>  the RAW readback is bottom-up, i.e. DC-L05 still holds.
+  That is today's expected outcome. It would only mean a product bug if some
+  consumer painted these bytes without flipping them.
 -->
 <html lang="en">
 <head>
@@ -124,7 +143,8 @@
       log('message: ' + host.renderMessage());
       if (st !== 1) { fail('render status ' + st + ': ' + host.renderMessage()); return; }
 
-      // PRODUCTION BLIT: raw putImageData, NO flip (identical to EngineHost.blitFramebuffer)
+      // RAW READBACK: putImageData with NO flip. This is deliberately NOT the production
+      // blit any more — EngineHost.blitFramebuffer flips since ENC-696. See the header.
       const fbW = host.framebufferWidth(), fbH = host.framebufferHeight();
       const view = host.framebuffer();
       const bytes = new Uint8ClampedArray(view.slice(0, fbW*fbH*4));
