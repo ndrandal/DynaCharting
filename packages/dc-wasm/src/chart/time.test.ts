@@ -257,8 +257,31 @@ describe("parsesAsTimestamp — D1's tier-1 predicate", () => {
     }
   });
 
+  it("REJECTS a record index PAST THREE DIGITS — the hole the old control stopped short of", () => {
+    // ENC-1390 H1. The control above stops at "270", and `^(\\d{4})$` returned
+    // true unconditionally, so every 4-digit index was a "year": this predicate
+    // PASSED the exact axis it exists to fail as soon as a view reached 1000
+    // records. `footprint` / `depth-ladder` / `volume-profile` ship 42720 /
+    // 10680 / 6408 of them, and `formatTick(v,'index')` is `String(Math.round(v))`.
+    // A control set that stops exactly short of every real failure is the defect,
+    // not an oversight — so this one runs to five digits.
+    for (const label of ["1000", "1024", "1234", "4096", "6408", "9999", "10680", "42720"]) {
+      expect(parsesAsTimestamp(label), label).toBe(false);
+    }
+  });
+
   it("REJECTS elapsed m:ss — a duration is not an instant", () => {
     for (const label of ["0:12", "1:05", "12:0", "0:00"]) {
+      expect(parsesAsTimestamp(label), label).toBe(false);
+    }
+  });
+
+  it("REJECTS elapsed m:ss AT AND ABOVE TEN MINUTES, where it puts on a zero pad", () => {
+    // ENC-1390 H2. `0:12` is rejected for lacking a zero pad, not for being a
+    // duration — so the control above only held below 600 s. `formatTick(v,'time')`
+    // emits `10:00` at 600 s and `22:05` at 1325 s, and both are well-formed
+    // clock times. The whole window a duration can forge is m = 10..23.
+    for (const label of ["10:00", "10:30", "13:20", "16:40", "20:00", "22:05", "23:59"]) {
       expect(parsesAsTimestamp(label), label).toBe(false);
     }
   });
