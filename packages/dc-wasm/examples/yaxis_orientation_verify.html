@@ -150,7 +150,7 @@
       const bytes = new Uint8ClampedArray(view.slice(0, fbW*fbH*4));
       canvas.width = fbW; canvas.height = fbH;
       canvas.getContext('2d').putImageData(new ImageData(bytes, fbW, fbH), 0, 0);
-      log('blitted ' + fbW + 'x' + fbH + ' (raw putImageData, NO flip — production path)');
+      log('blitted ' + fbW + 'x' + fbH + ' (raw putImageData, NO flip — the raw readback, not the production path)');
 
       // ---- machine verdict from the framebuffer pixels ----
       const isRed = (i) => bytes[i] > 150 && bytes[i+1] < 110 && bytes[i+2] < 110;
@@ -171,12 +171,16 @@
       log(`=> apex is at the ${apexAtTop ? 'TOP' : 'BOTTOM'} of the image`);
 
       if (apexAtTop) {
-        verdict('pass', `PASS — apex at TOP (top width ${topW} < bottom width ${botW}). ` +
-          `Production blit is RIGHT-SIDE-UP. Y-axis NOT inverted.`);
+        verdict('pass', `apex at TOP (top width ${topW} < bottom width ${botW}). ` +
+          `The RAW readback is upright — DC-L05 would no longer hold, and every ` +
+          `flipping consumer (EngineHost.blitFramebuffer, thumbnail.ts, engine_host_demo.html, ` +
+          `the authoring corpus's runner/gallery.html) has just become a DOUBLE flip. ` +
+          `Re-verify DC-L05 before believing this.`);
       } else {
         verdict('fail', `INVERTED — apex at BOTTOM (top width ${topW} > bottom width ${botW}). ` +
-          `Production blit renders Y UPSIDE-DOWN. G1 (ENC-695) CONFIRMED. ` +
-          `An apex-up triangle points down; a candle chart shows high prices at the bottom.`);
+          `The RAW readback is bottom-up: LIMITATIONS.md DC-L05 HOLDS. This is the ` +
+          `EXPECTED result and not a product bug — ENC-696 flips at the blit, so the ` +
+          `browser path is upright. Any consumer reading these bytes raw must flip them.`);
       }
       host.dispose();
     }
