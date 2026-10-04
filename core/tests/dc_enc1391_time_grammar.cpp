@@ -23,8 +23,9 @@
 //      `yearField` emits. A divergence in the opposite direction, so "the copy is merely
 //      laxer than the authority" was never true either.
 //   4. `2026-02-30`, `2023-02-29`, `2026-04-31` — copy: true (`d <= 31`).  authority: false
-//      (days-in-month + leap year). This one was stale ON ARRIVAL: that logic has been in
-//      `validDate` since ENC-1254, four PRs before the transcription was written.
+//      (days-in-month + leap year). This one was stale ON ARRIVAL: the days-in-month table
+//      has been in `validDate` since ENC-1254 (#133), the commit that first wrote the
+//      predicate — so the copy never agreed with it, on any tree, for a moment.
 //
 // Classes 1-3 arrived when ENC-1390 (#149) merged two seconds after ENC-1391 (#148). Class 4
 // never agreed at all. The copy still PASSED throughout, because a transcription-based test
