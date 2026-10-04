@@ -364,9 +364,12 @@ git grep -n 'readFramebufferRGBA('
 **Ticket.** None for the deep fix. [ENC-696](https://linear.app/encultured/issue/ENC-696)
 (`d6b5acd`) fixed the blit only. `parity_golden.hpp`'s wrong origin note **is fixed** — ENC-1432,
 §C7. The four latent inversions are ENC-1431, which ENC-1432 does not touch; note that its
-population of seven is the **JS side only**, and the same convention is read raw by 30 C++ test
-files plus `JsonHost.cpp`, `dawn_server_util.hpp`, `dawn_window_demo.cpp` and the three
-`core/wasm/` hosts (`git grep -l 'readPixel\|readFramebufferRGBA' -- core apps packages`).
+population of seven is the **JS side only**, and the same convention is read raw by **29** C++
+test files plus the shared `parity_golden.hpp` harness, `JsonHost.cpp`, `dawn_server_util.hpp`,
+`dawn_window_demo.cpp`, `DawnWindowContext.cpp` and the three `core/wasm/` hosts — 48 tracked
+files in all (`git grep -l 'readPixel\|readFramebufferRGBA' -- core apps packages | wc -l`).
+ENC-1432 classified two of them: `d79_dawn_json_host`'s four probes are convention-blind
+(derived, not measured — it does not use this harness), and so is the whole pick path.
 
 **Verified at** `376d545`, 2026-09-23 (ENC-717) — direction re-measured live (table above);
 consumer census re-derived across the whole worktree plus the corpus, not from the narrow grep.
