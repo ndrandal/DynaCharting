@@ -1766,6 +1766,105 @@ committed image, check whether the image predates the fix — `git log -1 -- <im
 `git log -1 -S<the fix> -- <source>` is the whole test, and it cost three months here.
 See **DC-L15**.
 
+### C7 — `parity_golden.hpp`'s ORIGIN CONVENTION was backwards, and every probe it governs was right
+
+`core/tests/parity_golden.hpp` carried an `ORIGIN CONVENTION` block stating that a clip-space
+point maps to readback row `(H-1)/2*(1-y)` — *"higher clip y ⇒ smaller row index (toward the
+top)"* — an **upright** raw readback. The true mapping is `row = (1 + clipY)/2 * H`: higher clip
+y ⇒ **larger** row index. The two differ in **sign**, so this is decisive, not a matter of
+degree. **DC-L05 is the general statement**; this correction is about the four golden suites
+that stood on top of it for three months.
+
+**Measured on the real path (ENC-1432).** `core/tests/parity_origin.cpp`, a registered `ctest`
+case, through `DawnSceneRenderer` + `DawnDevice::readPixel` on Dawn/Vulkan (lavapipe) in a
+`-DDC_FETCH_DAWN=ON` build — the same renderer and the same readback the goldens use. No mock,
+no replay, no copied artifact.
+
+| fixture (asymmetric in BOTH axes) | measured | `row=(1+y)/2·H` predicts | `row=(1-y)/2·H` predicts |
+|---|---|---|---|
+| rect, clip y centroid **+0.65**, 240x160 | row **131.50** | 132.0 | 28.0 |
+| rect, clip y centroid **−0.65**, 240x160 | row **27.50** | 28.0 | 132.0 |
+
+The same run re-drove **ENC-717's own fixture at ENC-717's size** — apex-up triangle, apex clip
+`y=+0.70`, base `y=−0.70`, 600x400 — and read the base (the wide end) at row **60** and the apex
+at row **338**. ENC-717 measured **60** and **338** through the *browser* on the committed wasm.
+The C++ and wasm readbacks agree row-for-row, and both contradict the comment. The col centroids
+(59.50 / 179.50 for a left rect and a right rect) show clip x is **not** mirrored, so this is a
+vertical mirror and not a 180° rotation.
+
+**Why the goldens could not catch it, and why no probe coordinate moved.** The probes were never
+written from the comment — they were baked from the real output, so fixture and hardware agreed
+and only the prose was wrong. A green parity run was never evidence either way. Three inline
+comments in the suites already said the true thing in so many words (*"clip +y -> bottom rows"*
+in `parity_conformance`'s `transforms` scene, `parity_extended`'s `indexed-gather`, and
+`parity_multipane`'s scenes 1 and 4) while the header said the opposite, one file away. The
+withdrawn citation is part of the lesson: the block claimed `d79_dawn_json_host` had *"already
+established (and documented)"* the orientation. That file contains **no orientation claim at
+all**, and all four of its probes are convention-independent — it was evidence for neither side.
+
+**All 63 probes were re-derived, twice and independently** — once by geometry, once by
+measurement with the readback rows mirrored (`DC_GOLDEN_FLIP_READBACK`). The two agreed on every
+probe. **None moved.** 22 probes in 8 scenes are convention-dependent:
+
+| suite | scene | convention-dependent probes |
+|---|---|---|
+| `parity_conformance` | `transforms/scale+translate` | 1 — (65,62) |
+| `parity_conformance` | `pipelines/line2d-1px` | 1 — (48,48), by **half a pixel**: the clip midpoint lands on a pixel *corner* and the line leaves it downward under one convention, upward under the other |
+| `parity_multipane` | `multipane/per-pane-clear` | 2 |
+| `parity_multipane` | `multipane/content+clear` | 4 |
+| `parity_multipane` | `multipane/content+clear+border+sep` | 2 |
+| `parity_extended` | `texturedQuad/4-corner-texels` | 4 (row mapping ⊕ texture v axis) |
+| `parity_extended` | `indexed-gather/instRect-diagonal` | 4 |
+| `parity_extended` | `indexed-gather/texQuad-diagonal` | 4 |
+
+**The other 41 test nothing about origin**, and that is the part worth keeping: the **entire pick
+path** (10 probes — every pick scene either covers the whole frame or is y-symmetric with
+x-decided misses) and the **entire `parity_text` suite** (whole-frame population counts, which a
+row permutation leaves identical — convention-blind by construction despite a strongly
+asymmetric glyph run) are blind to it, and in the conformance suite only two probes see it. The
+reasons for the rest are vertical symmetry, a probe on the shape's vertical centre line, an
+x-decided verdict, or a uniform frame. The full table is in the header block.
+
+**The symmetric-fixture trap, demonstrated rather than warned about.** The triangle's vertical
+*span* is 60..338, and mirroring it gives 61..339 — so the span is ~invariant and
+`parity_origin`'s span assertion (`[B3-convention-blind]`) **passes under both conventions**, by
+design and in the actual negative-control run. A test that checked only the span would have
+measured nothing. What discriminates is *where the wide end is*.
+
+**Re-check** — the mutation is permanent and registered, so every run re-demonstrates that these
+checks can fail (the ENC-1249 pattern; a check never seen to fail is not a check):
+```bash
+cmake -B build-dawn -G Ninja -DDC_BUILD_TESTS=ON -DDC_FETCH_DAWN=ON \
+  -DFETCHCONTENT_SOURCE_DIR_DAWN=~/dawn-src        # ~55-60 min cold; see DC-L01
+export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json
+
+./build-dawn/core/dc_parity_origin                  # 8 passed, 0 failed
+./build-dawn/core/dc_parity_origin --flip-readback  # 3 passed, 5 failed  (exit 1)
+
+# and the suites, with and without the mutation
+ctest --test-dir build-dawn -R 'dc_parity_'         # 9/9: 5 plain + 4 WILL_FAIL controls
+DC_GOLDEN_FLIP_READBACK=1 ./build-dawn/core/dc_parity_conformance  # 15 pass, 2 FAIL
+DC_GOLDEN_FLIP_READBACK=1 ./build-dawn/core/dc_parity_multipane    #  2 pass, 3 FAIL (8 probes)
+DC_GOLDEN_FLIP_READBACK=1 ./build-dawn/core/dc_parity_extended     #  7 pass, 3 FAIL (12 probes)
+DC_GOLDEN_FLIP_READBACK=1 ./build-dawn/core/dc_parity_text         #  5 pass, 0 FAIL — blind, by construction
+```
+Each mirrored frame prints `FALSIFICATION ACTIVE: … readback rows mirrored`, and
+`dc_parity_origin` exits **4** if the mutation was requested and did not apply — a no-op mutation
+reads exactly like a passing gate.
+
+**The lesson.** A comment is not a measurement, and a fixture baked from real output will agree
+with the hardware while disagreeing with every word written above it — silently, forever, because
+nothing compares the two. If a test's subject is orientation, the fixture must be asymmetric and
+the check must be shown to fail under the opposite hypothesis. Related: **C5** (the same error in
+one test's own file header), **C6** (the same error one level up, at the level of a whole chart),
+and **DC-L05** (the convention itself, still unfixed at the source).
+
+**Verified at** `d66e500` + this branch, 2026-10-03 (ENC-1432) — `-DDC_FETCH_DAWN=ON`,
+Dawn/Vulkan lavapipe, 249/249 `ctest` green including the four new negative controls; the default
+build is unchanged at 197/197 and still proves none of it.
+
+---
+
 ---
 
 # §R — Retired
