@@ -103,23 +103,24 @@ while read -r m; do
     "$([ "$n" -eq 0 ] && printf '   <- extracted, then entirely --gc-sections-ed' )"
 done < "$d/extracted.txt"
 
-# gpu/ and host/ are deliberately NOT libdc.a members (core/CMakeLists.txt filters
-# them out of the dc glob): gpu/ is compiled straight into dc_engine_host, host/
-# is the standalone dc_json_host. Neither can appear in an archive-extraction
-# list, so neither belongs in this one.
-printf '\n--- core/src subdirectories with ZERO code in the module ----------------\n'
-for sub in "$ROOT"/core/src/*/; do
-  name="${sub%/}"; name="${name##*/}"
-  case "$name" in gpu|host) continue ;; esac
-  tus=0; present=0
-  for f in "$sub"*.cpp; do
-    [ -f "$f" ] || continue
-    tus=$((tus+1))
-    b="$(basename "$f" .cpp)"
-    [ "$(grep -cF "libdc.a($b.cpp.o):" "$d/link.map")" -gt 0 ] && present=$((present+1))
-  done
-  [ "$tus" -gt 0 ] && [ "$present" -eq 0 ] && printf '  %-24s %s TU(s), no code in the module\n' "core/src/$name" "$tus"
-done
+# Grouped by the subdirectory under core/src, at whatever depth — `transform/transforms`
+# is 17 TUs of its own and must not be folded into `transform`.
+# Only TUs that are actually `libdc.a` members are counted. gpu/ and host/ are
+# deliberately NOT members (core/CMakeLists.txt filters them out of the dc glob):
+# gpu/ is compiled straight into dc_engine_host and host/ is the standalone
+# dc_json_host, so neither can appear in an archive-extraction list, and
+# WebSocketDataSource.cpp is filtered out as well.
+printf '\n--- core/src subsystems with ZERO code in the module --------------------\n'
+find "$ROOT/core/src" -mindepth 2 -name '*.cpp' | while read -r f; do
+  rel="${f#"$ROOT"/core/src/}"
+  b="$(basename "$f" .cpp)"
+  grep -qx "$b.cpp.o" "$d/members.txt" || continue      # not a libdc.a member
+  n=$(grep -cF "libdc.a($b.cpp.o):" "$d/link.map")
+  printf '%s\t%s\n' "$(dirname "$rel")" "$n"
+done | sort | awk -F'\t' '
+  { tus[$1]++; if ($2+0 > 0) live[$1]++ }
+  END { for (dsub in tus) if (!(dsub in live)) printf "  %-24s %s TU(s), no code in the module\n", "core/src/" dsub, tus[dsub] }
+' | sort
 
 rc=0
 if [ "$#" -gt 0 ]; then
