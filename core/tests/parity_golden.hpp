@@ -85,10 +85,21 @@
 // `indexed-gather`, parity_multipane's (1) and (4)) already said "clip +y ->
 // bottom rows" in so many words.
 //
-// Each probe was classified twice and independently — by geometry, and by
-// measurement with the readback rows mirrored (`DC_GOLDEN_FLIP_READBACK`, below).
-// Both agreed on all 63 probes. 22 probes in 8 scenes are CONVENTION-DEPENDENT
-// and fail when mirrored:
+// Each probe was classified two ways — by hand geometry, and by MEASUREMENT with
+// the readback rows mirrored (`DC_GOLDEN_FLIP_READBACK`, below). They agreed on
+// 62 of 63, and the measurement is what settled the 63rd: the hand derivation
+// called `pipelines/line2d-1px` convention-INDEPENDENT (the segment runs through
+// the clip origin, so "it passes through the centre either way") and the mirrored
+// run shows it FAILING. The hand argument treated the mapping as continuous; the
+// raster is not. At an even H there is no pixel row centred on clip y=0 — the
+// origin falls on the boundary between rows 47 and 48 — and the probe's own
+// centre, (48.5, 48.5) -> clip (0.0104, 0.0104), sits above the line
+// (y = x/2 gives 0.0052, i.e. row 48.25). The 1px line therefore rasterises into
+// row 48, while the mirror of row 48 is row 47, which is background. The margin
+// is a QUARTER of a pixel. Where geometry and measurement disagree, believe the
+// measurement — that is the whole subject of this block.
+//
+// 22 probes in 8 scenes are CONVENTION-DEPENDENT and fail when mirrored:
 //
 //   parity_conformance  transforms/scale+translate            (65,62)
 //                       pipelines/line2d-1px                  (48,48)

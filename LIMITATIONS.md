@@ -1815,14 +1815,19 @@ withdrawn citation is part of the lesson: the block claimed `d79_dawn_json_host`
 established (and documented)"* the orientation. That file contains **no orientation claim at
 all**, and all four of its probes are convention-independent — it was evidence for neither side.
 
-**All 63 probes were re-derived, twice and independently** — once by geometry, once by
-measurement with the readback rows mirrored (`DC_GOLDEN_FLIP_READBACK`). The two agreed on every
-probe. **None moved.** 22 probes in 8 scenes are convention-dependent:
+**All 63 probes were re-derived two ways** — by hand geometry, and by measurement with the
+readback rows mirrored (`DC_GOLDEN_FLIP_READBACK`). **None moved.** The two methods agreed on 62
+of 63, and the disagreement is worth more than the agreement: the hand derivation called
+`pipelines/line2d-1px` convention-*independent* — the segment runs through the clip origin, so
+"it passes through the centre either way" — and the mirrored run shows it **failing**. The hand
+argument treated the mapping as continuous; the raster is not (details in the table below). Where
+geometry and measurement disagree, believe the measurement. 22 probes in 8 scenes are
+convention-dependent:
 
 | suite | scene | convention-dependent probes |
 |---|---|---|
 | `parity_conformance` | `transforms/scale+translate` | 1 — (65,62) |
-| `parity_conformance` | `pipelines/line2d-1px` | 1 — (48,48), by **half a pixel**: the clip midpoint lands on a pixel *corner* and the line leaves it downward under one convention, upward under the other |
+| `parity_conformance` | `pipelines/line2d-1px` | 1 — (48,48), by a **quarter of a pixel**. At an even `H` no pixel row is centred on clip y=0: the origin falls on the row-47/row-48 boundary. The probe's centre (48.5, 48.5) is clip (0.0104, 0.0104); the line `y = x/2` is at 0.0052 there, i.e. row **48.25**, so the 1px line rasterises into row 48 — and the mirror of row 48 is row **47**, which is background. This is the probe the hand derivation got wrong |
 | `parity_multipane` | `multipane/per-pane-clear` | 2 |
 | `parity_multipane` | `multipane/content+clear` | 4 |
 | `parity_multipane` | `multipane/content+clear+border+sep` | 2 |
