@@ -37,8 +37,8 @@
 // "Y-FLIP ... to match the GL bottom-left readback". Count them with
 // `grep -rnoE '\-(p|pos|clip|t0|t1)\.y' core/src/gpu/*.cpp`, NOT with the
 // `p.x, -p.y` literal: lineAA spells it `-t0.y`/`-t1.y` and instancedCandle
-// `-clip.y`, so the literal grep misses three of the thirteen files — including
-// lineAA@1, which is THE default line pipeline). So clip y=+0.7 becomes NDC
+// `-clip.y`, so the literal finds 11 of the 13 files and misses exactly those
+// two — one of them lineAA@1, THE default line pipeline). So clip y=+0.7 becomes NDC
 // y=-0.7, which WebGPU puts
 // near the BOTTOM of the target, and the faithful top-down readback reports it at
 // a high row index. The raw readback is therefore vertically MIRRORED relative to
