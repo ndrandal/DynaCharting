@@ -47,6 +47,8 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <functional>
 #include <string>
 #include <vector>
@@ -120,6 +122,8 @@ struct GoldenFrame {
   int height{0};
   std::string dawnBackend;
   std::vector<std::uint8_t> rgba;  // top-left origin, row-major RGBA, W*H*4
+  // True only when the ENC-1432 falsification knob mirrored the rows (below).
+  bool flippedForFalsification{false};
 
   // RGBA at (x,y) (top-left origin). Out-of-range returns {0,0,0,0}.
   const std::uint8_t* at(int x, int y) const {
@@ -128,6 +132,38 @@ struct GoldenFrame {
     return &rgba[(static_cast<std::size_t>(y) * width + x) * 4];
   }
 };
+
+// FALSIFICATION KNOB (ENC-1432) — present the readback under the REFUTED
+// convention.
+//
+// `DC_GOLDEN_FLIP_READBACK=1` (or the `--flip-readback` argv flag, via
+// flipReadbackRequested()) mirrors the readback rows before any probe sees them.
+// That is exactly the frame the old ORIGIN CONVENTION block described: an upright
+// raw readback where higher clip y means a smaller row index. It exists so the
+// claim "these probes test the origin convention" is falsifiable instead of
+// asserted — a probe that passes with the flip on AND off is not testing the
+// convention, which is precisely how the wrong comment survived (see the PROBE
+// RE-DERIVATION table above).
+//
+// It is NOT a compatibility switch. Nothing ships with it set; the three ctest
+// cases `dc_parity_{conformance,multipane,extended}_flipped` and
+// `dc_parity_origin_flipped` set it and are registered `WILL_FAIL TRUE`, so every
+// run of the suite re-demonstrates that the convention-dependent probes can fail.
+// When it is on, renderDawn prints a loud banner naming the mutation — a mutation
+// that did not apply reads exactly like a passing gate.
+inline bool& flipReadbackFlag() {
+  static bool v = (std::getenv("DC_GOLDEN_FLIP_READBACK") != nullptr &&
+                   std::getenv("DC_GOLDEN_FLIP_READBACK")[0] != '\0' &&
+                   std::getenv("DC_GOLDEN_FLIP_READBACK")[0] != '0');
+  return v;
+}
+
+// Opt in from argv too (`--flip-readback`), for a manual run without an env var.
+inline bool flipReadbackRequested(int argc, char** argv) {
+  for (int i = 1; i < argc; ++i)
+    if (std::strcmp(argv[i], "--flip-readback") == 0) flipReadbackFlag() = true;
+  return flipReadbackFlag();
+}
 
 // Render `builder` through Dawn into a top-left-origin RGBA readback.
 inline GoldenFrame renderDawn(const char* name, const SceneBuilder& builder, int W,
@@ -195,6 +231,26 @@ inline GoldenFrame renderDawn(const char* name, const SceneBuilder& builder, int
       f.rgba[idx + 2] = px[2];
       f.rgba[idx + 3] = px[3];
     }
+  }
+
+  // ENC-1432 falsification: mirror the rows so every probe sees the frame the
+  // REFUTED convention predicts. Banner on stdout so a run that claims the
+  // mutation cannot be confused with one where it silently did not apply.
+  if (flipReadbackFlag()) {
+    std::printf(
+        "[golden %s] FALSIFICATION ACTIVE: DC_GOLDEN_FLIP_READBACK -- readback "
+        "rows mirrored (%dx%d); probes now see the REFUTED convention\n",
+        name, W, H);
+    const std::size_t rowBytes = static_cast<std::size_t>(W) * 4;
+    std::vector<std::uint8_t> tmp(rowBytes);
+    for (int y = 0; y < H / 2; ++y) {
+      std::uint8_t* a = &f.rgba[static_cast<std::size_t>(y) * rowBytes];
+      std::uint8_t* b = &f.rgba[static_cast<std::size_t>(H - 1 - y) * rowBytes];
+      std::memcpy(tmp.data(), a, rowBytes);
+      std::memcpy(a, b, rowBytes);
+      std::memcpy(b, tmp.data(), rowBytes);
+    }
+    f.flippedForFalsification = true;
   }
   return f;
 }
