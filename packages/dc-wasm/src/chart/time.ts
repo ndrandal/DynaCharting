@@ -576,7 +576,7 @@ export function classifyTimestampLabel(label: string): TimestampLabelKind {
     if (!m) continue;
     const n = (i: number) => (m[i] === undefined ? undefined : Number(m[i]));
     if (re === TIMESTAMP_GRAMMARS[0]) {
-      return /^\d{4}$/.test(s) ? "instant" : "instant"; // MUTATED ENC-1403 H1 ↔ a record index
+      return /^\d{4}$/.test(s) ? "ambiguous" : "instant"; // bare 4 digits ↔ a record index
     }
     if (re === TIMESTAMP_GRAMMARS[1]) return inRange(n(2)!, 1, 12) ? "instant" : "not-a-timestamp";
     if (re === TIMESTAMP_GRAMMARS[2]) return validDate(n(1)!, n(2)!, n(3)!) ? "instant" : "not-a-timestamp";
