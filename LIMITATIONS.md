@@ -1937,6 +1937,14 @@ DC_GOLDEN_FLIP_READBACK=1 ./build-dawn/core/dc_parity_text         #  5 pass, 0 
 DC_GOLDEN_FLIP_READBACK=1 ./build-dawn/core/dc_parity_extended 2>&1 | grep -E 'golden-pick|pick/'
 #   -> 4 "FALSIFICATION ACTIVE ... probe y mirrored to H-1-y" banners, and all 4
 #      pick scenes still PASS: the pick path is convention-blind, measured.
+
+# THE ROW THAT MATTERS: run the whole thing with NO adapter and check nothing goes
+# green for nothing. Before ENC-1432's second fix, the four controls passed here.
+VK_ICD_FILENAMES=/nonexistent/none.json ctest --test-dir build-dawn -R 'dc_parity_'
+#   -> 4/9. The 4 plain probe suites PASS (skipped — graceful-skip contract),
+#      dc_parity_origin FAILS (exit 3, CANNOT RUN), and all 4 _flipped controls
+#      FAIL with "Required regular expression not found". Not one false green.
+ctest --test-dir build-dawn -R 'dc_parity_'          # real adapter -> 9/9 passed
 ```
 Each mirrored frame prints `FALSIFICATION ACTIVE: … readback rows mirrored`, and
 `dc_parity_origin` exits **4** if the mutation was requested and did not apply — a no-op mutation
