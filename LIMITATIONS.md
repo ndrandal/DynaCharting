@@ -1740,11 +1740,19 @@ writing `\x00` at offset 0 changes nothing, the sha256 does not move, and the sc
 clean census that looks exactly like the gate passing. That attempt was made first here. Assert
 the mutation applied.
 
-Toolchain-free partial check — the causal condition, not the artifact:
+Toolchain-free partial checks — the causal condition and the premise, not the artifact:
 ```bash
 grep -rn 'EncodePass' core/wasm/dc_engine_host.cpp core/src/gpu/   # 0 hits -> nothing can reach it
 grep -rl 'DawnSceneRenderer' core/wasm/dc_engine_host.cpp core/src/gpu/ | wc -l   # 4 — positive control
+pnpm test   # incl. packages/dc-wasm/wasm/dc_engine_host.sections.test.ts (4 assertions)
 ```
+That test needs no toolchain and pins what the census *rests on*: the committed module has no
+`name` custom section, so it has no symbol table, so `strings` can only report literals. Two of
+its four assertions fail if a `-g`/`--profiling-funcs` build is ever committed — demonstrated by
+swapping this entry's own name-bearing probe build in (`expected [ 'name', 'target_features' ]
+to not include 'name'`). Its fourth assertion passed even against that build, because
+`EncodePass`, `markSpecOf`, `treemap`, `LinearScale` and `DChartFileIO` are absent from the
+*code*, not merely from the literals.
 
 **Ticket.** ENC-1112 is the measurement and stops here, by its own terms. Exposing any of the
 above is its own ticket (ENC-987/988/990 for recipes, ENC-949/986 for session state), and each
