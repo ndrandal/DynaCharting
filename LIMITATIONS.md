@@ -1630,9 +1630,10 @@ setTextGeometry setTextGeometryX setTexturePixels stats
 **ENC-995's premise was right and its diagnosis was one step off.** A substantive `EncodePass`
 change produced a byte-identical rebuild. The reason is **not** that the encode pass is excluded
 from the link — `target_link_libraries(dc_engine_host PRIVATE dc)` puts the whole archive on the
-link line, and `EncodePass.cpp.o` is a member of it, carrying all six `dc::EncodePass` symbols.
+link line, and `EncodePass.cpp.o` is a member of it, carrying all five `dc::EncodePass`
+symbols (`compile`, `compileInto`, the ctor, the dtor and move-assign).
 It is that **wasm-ld never extracts the member**, because nothing in the link's own sources
-(`core/wasm/dc_engine_host.cpp` + the 18 `core/src/gpu/*.cpp` objects) names anything in it. So
+(`core/wasm/dc_engine_host.cpp` + the 17 `core/src/gpu/*.cpp` objects) names anything in it. So
 editing it cannot move a byte. **That matters because the two have different remedies**, which is
 what ENC-1112 was asked to settle: this is the *reachability* case, so the fix is a reference
 from the module (one `.function(…)` + an adapter, ENC-984's recipe), **not** a CMake change.
@@ -1659,10 +1660,11 @@ from the module (one `.function(…)` + an adapter, ENC-984's recipe), **not** a
 | `scene/ResourceRegistry` | 149 | `transform/ComputeWgsl` | 0 |
 | `event/EventBus` | 87 | `transform/ExprWgsl` | 0 |
 
-plus the 19 `core/src/gpu/*.cpp` TUs, which are **not** `libdc.a` members — `core/CMakeLists.txt`
-filters them out of the `dc` glob and compiles them straight into `dc_engine_host`, so they are
-whole-object-linked and the renderer *is* there (`DawnDevice` 2016 names, `DawnSceneRenderer` 39,
-all 11 backends).
+plus **17 of the 19** `core/src/gpu/*.cpp` TUs, which are **not** `libdc.a` members — `core/CMakeLists.txt`
+filters them out of the `dc` glob and compiles them straight into `dc_engine_host` (all but
+`DawnWindowContext.cpp`, native-windowed only, and `placeholder.cpp`), so they are
+whole-object-linked and the renderer *is* there — `DawnDevice` contributes 2016 names,
+`DawnSceneRenderer` 39, and every Dawn backend class is present (13 of them, picking included).
 
 **The five ENC-950 named, settled.** ENC-950 found these implemented and none bound. Binding is
 not the only question — reachability is:
