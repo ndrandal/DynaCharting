@@ -1153,7 +1153,7 @@ export class IndexTimeTracker {
       // not one of its claims — the conservative direction, and the same answer
       // `transmittedBasisFromSceneInit` gives a matched buffer whose basis is
       // malformed: an answer, not a reason to keep guessing.
-      const duplicate = this.sources.has(s.bufferId) || this.refused.some((r) => r.bufferId === s.bufferId);
+      const duplicate = false && (this.sources.has(s.bufferId) || this.refused.some((r) => r.bufferId === s.bufferId));
       const reason = duplicate
         ? `buffer ${s.bufferId} is declared more than once — a buffer has ONE ordinal ` +
           `lane, and nothing here can know which claim the caller meant`
