@@ -451,7 +451,11 @@ reason than "the engine has no layout".
    (`core/src/commands/CommandProcessor.cpp:619`, `:644`), with no `op` field. Passing
    `{"cmd":"createTransform","op":"treemap"}` returns `ok:true` and silently creates an identity
    transform.
-3. **Dead-stripped from the shipped wasm**, because nothing reaches it.
+3. **Not in the shipped wasm**, because nothing reaches it — confirmed at the archive level by
+   **DC-L-1112**: every `transform/transforms/` (17 TUs) and `layout/` (5) member is among the
+   132 of `libdc.a`'s 148 that wasm-ld never extracts. The `strings … | grep -ci treemap` row
+   below agrees, but only because `Treemap::op()` returns `"treemap"` as a literal — `strings`
+   is an Embind-name test, not a code-presence test (**§C7**).
 
 Likewise four of the six layout headers have **zero** non-test callers — they are tested and
 otherwise unused.
