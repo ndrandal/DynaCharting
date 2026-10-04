@@ -8,7 +8,7 @@
  * repo has actually shipped in a time axis's place — a record index (`INDEX
  * 4→160`) and elapsed m:ss.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   TIME_STEPS,
   chooseTimeStep,
@@ -29,6 +29,7 @@ import {
   isSceneInitFrame,
   type TimeBasis,
 } from "./time";
+import { RECORD_LAYOUTS } from "./domain";
 
 const SEC = 1000;
 const MIN = 60 * SEC;
@@ -692,5 +693,225 @@ describe("isSceneInitFrame — the gate that stops a good basis being retracted"
     for (const v of ["", "{", "not json", null, undefined, 7, [], { type: "other" }, {}]) {
       expect(isSceneInitFrame(v)).toBe(false);
     }
+  });
+});
+
+
+/* ───────────────────────────────────────────────────────────────────────────
+ * ENC-1452 — THE STRIDE CONTRACT
+ *
+ * `IndexTimeTracker` reads the bar ordinal with `getFloat32(r + indexOffset)`
+ * at an offset the CALLER supplies. For a STRIDE-4 buffer — a bare float32 per
+ * record, which is what embassy's simple/`append` route emits — `r + 0` is the
+ * sample itself, so the fit would be `t = originMs + price·msPerIndex` and
+ * would be published as `source: 'observed'`, a measurement.
+ *
+ * That is the symptom class this whole module exists to kill, in its worst
+ * form: not a wrong LABEL, which a reader can catch, but a smooth, monotonic,
+ * entirely plausible time axis derived from price. `the wrong axis, measured`
+ * below puts a number on it — 20× too wide and 2.57 days early, on real-shaped
+ * 1-minute bars.
+ *
+ * The producer refuses it too (embassy ENC-1319 withholds the `timeBasis` from
+ * any buffer whose routes stamp no ordinal; `recipe_showcase_explicit_v1.go`
+ * rejects a compound binding whose "stride must be > 4"). These are the
+ * consumer half: a producer-side guard in another repo is not a guarantee here.
+ *
+ * BOTH DIRECTIONS ARE ASSERTED. A guard that refused everything would satisfy
+ * the refusal cases and break every chart, so `every legitimate stride still
+ * fits` drives all five `RECORD_LAYOUTS` strides and the two that actually
+ * reach a tracker in production.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+describe("the stride contract — a record with no ordinal lane is REFUSED (ENC-1452)", () => {
+  const BUF = 10100;
+  const CANDLE_STRIDE = 24;
+
+  // 20 one-minute bars of a gently trending price, the shape a real feed has.
+  // ordinal i rides offset 0; the price rides offset 4; frame i is observed at
+  // i·60 000 ms. The SAME numbers drive the stride-4 and the stride-8 cases, so
+  // the refusal and the wrong axis it prevents are measured off one tape.
+  const BARS = 20;
+  const PERIOD_MS = 60_000;
+  const price = (i: number) => 185 + i * 0.05;
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("a stride-4 source publishes NO index→time mapping, and names itself", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    // A bare float32 per record: all value, no lane. embassy's simple/append
+    // route shape.
+    const tr = new IndexTimeTracker([{ bufferId: BUF, stride: 4 }], false);
+
+    for (let i = 0; i < BARS; i++) {
+      tr.observe(batch(BUF, [[price(i)]], 4, i * 4), i * PERIOD_MS);
+    }
+
+    // Nothing was folded, so there is no basis — and `deriveAxes.ts` drops a
+    // `format: 'timestamp'` axis on `!basis`. Loss renders as a MISSING axis.
+    expect(tr.basis()).toBeNull();
+    expect(tr.samples).toBe(0);
+    expect(tr.bufferIds).toEqual([]);
+
+    // Refused, not quietly skipped: published on the object regardless of
+    // whether anybody is reading the console (DC-L06's residual 2).
+    expect(tr.refusals).toHaveLength(1);
+    expect(tr.refusals[0]).toMatchObject({ bufferId: BUF, stride: 4, indexOffset: 0 });
+    expect(tr.refusals[0].reason).toContain("stride 4");
+    expect(tr.refusals[0].reason).toContain("no bar-ordinal lane");
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0][0])).toContain("IndexTimeTracker refused buffer 10100");
+  });
+
+  it("the wrong axis, measured: fitting the VALUE lane is 20× too wide and 2.57 days early", () => {
+    // Both trackers are legal under the guard (stride 8 ≥ indexOffset + 4) and
+    // both are the real class folding the real bytes. The only difference is
+    // WHICH LANE is read as the ordinal — which is exactly the difference a
+    // stride-4 buffer erases, because there offset 0 IS the value.
+    const right = new IndexTimeTracker([{ bufferId: BUF, stride: 8, indexOffset: 0 }], false);
+    const wrong = new IndexTimeTracker([{ bufferId: BUF, stride: 8, indexOffset: 4 }], false);
+    for (let i = 0; i < BARS; i++) {
+      const b = batch(BUF, [[i, price(i)]], 8, i * 8);
+      right.observe(b, i * PERIOD_MS);
+      wrong.observe(b, i * PERIOD_MS);
+    }
+    expect(right.refusals).toHaveLength(0);
+    expect(wrong.refusals).toHaveLength(0); // the guard cannot catch THIS one
+
+    const r = right.basis()!;
+    const w = wrong.basis()!;
+    expect(r.msPerIndex).toBeCloseTo(60_000, 3);
+    expect(r.originMs).toBeCloseTo(0, 3);
+
+    // 0.05 of price per minute reads as 1 200 002.2 ms per unit of x — 20
+    // minutes a penny — and puts bar 0 at 2.569 days BEFORE the tape started.
+    // The 2.2 ms over the exact 1 200 000 is the lane being a float32: 185.05
+    // is not representable, which is its own small reminder of what is being
+    // read here. These are EXACT, to the millisecond, on purpose.
+    expect(w.msPerIndex).toBeCloseTo(1_200_002.2, 1);
+    expect(w.originMs).toBeCloseTo(-222_000_408.5, 1);
+    expect(w.msPerIndex / r.msPerIndex).toBeCloseTo(20.000037, 5);
+
+    // What the chart would draw over its real ordinal domain 0…19: a 19-minute
+    // window rendered as 6 h 20 m, shifted back 2.569 days. Both monotonic,
+    // both smooth, neither an error.
+    const domain = { min: 0, max: BARS - 1 };
+    expect(timeDomainFor(r, domain)).toEqual({ min: 0, max: 1_140_000 });
+    const drawn = timeDomainFor(w, domain);
+    expect(drawn.min).toBeCloseTo(-222_000_408.5, 1);
+    expect(drawn.max - drawn.min).toBeCloseTo(22_800_041.8, 1);
+    expect(drawn.max - drawn.min).toBeGreaterThan(6 * 3_600_000); // 6 h 20 m …
+    expect(timeDomainFor(r, domain).max).toBe(19 * PERIOD_MS); // … for 19 min
+    // And it reports itself as a MEASUREMENT over every sample it folded.
+    expect(w.source).toBe("observed");
+    expect(w.samples).toBe(BARS);
+  });
+
+  it("every legitimate stride still fits — the guard cannot be satisfied by refusing everything", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    // Every stride this engine declares (`RECORD_LAYOUTS`), de-duplicated: 8,
+    // 12, 16, 24, 32. The minimum is pos2_clip's 8; there is no stride-4 entry.
+    const declared = [...new Set(Object.values(RECORD_LAYOUTS).map((l) => l.stride))].sort(
+      (a, b) => a - b,
+    );
+    expect(declared).toEqual([8, 12, 16, 24, 32]);
+
+    for (const stride of declared) {
+      const tr = new IndexTimeTracker([{ bufferId: BUF, stride }], false);
+      expect(tr.refusals, `stride ${stride}`).toEqual([]);
+      expect(tr.bufferIds, `stride ${stride}`).toEqual([BUF]);
+      const lanes = stride / 4;
+      for (let i = 0; i < BARS; i++) {
+        const rec = Array.from({ length: lanes }, (_, f) => (f === 0 ? i : price(i)));
+        tr.observe(batch(BUF, [rec], stride, i * stride), i * PERIOD_MS);
+      }
+      const b = tr.basis()!;
+      expect(b, `stride ${stride}`).not.toBeNull();
+      expect(b.msPerIndex, `stride ${stride}`).toBeCloseTo(PERIOD_MS, 3);
+      expect(b.samples, `stride ${stride}`).toBe(BARS);
+    }
+    // Not one of them printed anything.
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("accepts the two shapes production actually builds (16 and 24 at indexOffset 0)", () => {
+    // Every showcase view with a `growth` descriptor — the sole production
+    // construction site, `useViewSwitch.ts` — is candle6 (24) or rect4 (16),
+    // and all nine declare `xField: 0`. `views/growthStride.test.ts` asserts
+    // that against the real manifests; this is the tracker's half.
+    for (const stride of [16, 24]) {
+      const tr = new IndexTimeTracker([{ bufferId: BUF, stride, indexOffset: 0 }], false);
+      expect(tr.refusals, `stride ${stride}`).toEqual([]);
+    }
+  });
+
+  it("draws the boundary exactly where SPEC D7 puts it: stride > 4, not stride ≥ 4", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const refusedFor = (stride: number, indexOffset?: number) =>
+      new IndexTimeTracker([{ bufferId: BUF, stride, indexOffset }], false).refusals;
+
+    // stride >= indexOffset + 4 alone would ADMIT stride 4 at the default
+    // offset. The second clause is the one that matters.
+    expect(refusedFor(4)).toHaveLength(1);
+    expect(refusedFor(5)).toEqual([]); // > 4: a lane exists, however odd
+    expect(refusedFor(8)).toEqual([]);
+
+    // Well-formedness. A stride of 0 used to make `observe`'s phase NaN and the
+    // fold loop silently never ran — a quiet no-op, not a refusal.
+    for (const bad of [0, -8, 3, 24.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(refusedFor(bad), `stride ${bad}`).toHaveLength(1);
+    }
+
+    // The lane must fit INSIDE the record, or the read walks into the next one.
+    expect(refusedFor(8, 4)).toEqual([]); // 8 >= 4 + 4, exactly
+    expect(refusedFor(8, 8)).toHaveLength(1);
+    expect(refusedFor(24, 20)).toEqual([]); // candle6's last lane (halfWidth)
+    expect(refusedFor(24, 24)).toHaveLength(1);
+    expect(refusedFor(24, -4)).toHaveLength(1);
+    expect(refusedFor(24, 2.5)).toHaveLength(1);
+    expect(refusedFor(8, 8)[0].reason).toContain("indexOffset 8");
+  });
+
+  it("refuses the ordinal-less source WITHOUT taking down a legitimate sibling", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const BARE = 10999;
+    // Registration DROPS the bad source rather than throwing: a throw in the
+    // scene-init path kills the whole view, and the ruled outcome is narrower.
+    const tr = new IndexTimeTracker(
+      [
+        { bufferId: BARE, stride: 4 },
+        { bufferId: BUF, stride: CANDLE_STRIDE },
+      ],
+      false,
+    );
+    expect(tr.refusals.map((r) => r.bufferId)).toEqual([BARE]);
+    expect(tr.bufferIds).toEqual([BUF]);
+
+    for (let i = 0; i < BARS; i++) {
+      // The bare buffer's bytes arrive and are ignored, price and all.
+      expect(tr.observe(batch(BARE, [[price(i)]], 4, i * 4), i * PERIOD_MS)).toBe(0);
+      tr.observe(batch(BUF, [[i, 1, 2, 3, 4, 0.4]], CANDLE_STRIDE, i * CANDLE_STRIDE), i * PERIOD_MS);
+    }
+    const b = tr.basis()!;
+    expect(b.msPerIndex).toBeCloseTo(PERIOD_MS, 3);
+    expect(b.samples).toBe(BARS); // the candles only — not 40
+  });
+
+  it("says it ONCE per source, not once per record, and keeps saying it after reset()", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const tr = new IndexTimeTracker([{ bufferId: BUF, stride: 4 }], false);
+    expect(warn).toHaveBeenCalledTimes(1); // at registration, before any byte
+
+    for (let i = 0; i < 200; i++) tr.observe(batch(BUF, [[price(i)]], 4, i * 4), i * PERIOD_MS);
+    expect(warn).toHaveBeenCalledTimes(1);
+
+    // A refusal is a property of the REGISTRATION, not of the tape: a replay
+    // loop restarting does not give a stride-4 buffer an ordinal lane.
+    tr.reset();
+    expect(tr.refusals).toHaveLength(1);
+    expect(tr.basis()).toBeNull();
   });
 });
