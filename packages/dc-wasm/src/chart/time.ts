@@ -980,10 +980,102 @@ const RECORD_HEADER_SIZE = 13; // [1B op][4B bufferId][4B offset][4B payloadByte
 export interface IndexTimeSource {
   /** Dataplane buffer id. */
   bufferId: number;
-  /** Bytes per record. */
+  /**
+   * Bytes per record. **Must be > 4** — see `REFUSED_SOURCE` below. A 4-byte
+   * record is all value and has no ordinal lane, so there is nothing here to
+   * fit a clock against.
+   */
   stride: number;
   /** Byte offset of the index field within a record (candle6 / rect4: 0). */
   indexOffset?: number;
+}
+
+/**
+ * A source `IndexTimeTracker` DECLINED to register, and why (ENC-1452).
+ *
+ * Published on `IndexTimeTracker.refusals` unconditionally, not only written to
+ * the console. `console.warn` alone is the DC-L06 residual: it is invisible in a
+ * headless runner, in CI and in the corpus runner unless console is explicitly
+ * captured, and LIMITATIONS.md's own guidance for product code is to *count*
+ * refusals rather than hope somebody reads a warning. A caller that wants to
+ * fail loudly asserts `tracker.refusals.length === 0`.
+ */
+export interface RefusedIndexTimeSource {
+  bufferId: number;
+  stride: number;
+  /** The resolved offset (`indexOffset ?? 0`), not the raw input. */
+  indexOffset: number;
+  /** Human-readable, and the only place the rule is spelled out at runtime. */
+  reason: string;
+}
+
+/**
+ * THE STRIDE CONTRACT, and why reading an ordinal needs one (ENC-1452).
+ *
+ * `IndexTimeTracker` reads the bar ordinal with `getFloat32(r + indexOffset)`
+ * at a byte offset the CALLER supplies. For every record format this repo
+ * declares that is the x lane — `RECORD_LAYOUTS` (`domain.ts`) has ten entries,
+ * each with an explicit x byte offset, and the smallest stride among them is 8
+ * (`pos2` / `pos2_clip`). There is no stride-4 entry anywhere.
+ *
+ * But a **stride-4** buffer — a bare `float32` per record, which is exactly what
+ * embassy's simple/`append` route emits — has no lane at all: `r + 0` is the
+ * sample itself. Folding it would fit `t = originMs + price·msPerIndex` and
+ * publish the result as a MEASUREMENT (`source: 'observed'`). The failure mode
+ * is the one this whole module exists to kill: not a wrong label, which a reader
+ * can catch, but a smooth, plausible, monotonic-looking time axis derived from
+ * price. SPEC D7 — "the record's x lane carries a BAR ORDINAL, not a count of
+ * records delivered" — and its corollary that a consumer with no basis DROPS the
+ * axis rather than inventing one.
+ *
+ * The producer already refuses this: ENC-1319 made embassy withhold the
+ * `timeBasis` cell from any buffer one of whose routes stamps no ordinal, and
+ * `recipe_showcase_explicit_v1.go` rejects a compound binding whose "stride must
+ * be > 4". That is the same rule, on the other side of the socket — and a
+ * producer-side guard in another repo is not a guarantee here. A buffer can
+ * reach this tracker from a replayed capture, a hand-written manifest or an
+ * older embassy; the consumer must hold the line itself.
+ *
+ * TWO CLAUSES, and the second is the one that matters:
+ *
+ *   1. `stride >= indexOffset + 4` — the lane must fit inside the record.
+ *      Without it the read walks into the NEXT record (`observe`'s loop bound is
+ *      `r + stride <= end`, so it does not even run off the payload) and folds a
+ *      neighbour's field.
+ *   2. `stride > 4` — a 4-byte record is all value. This clause is not implied
+ *      by (1): at the default `indexOffset: 0`, (1) alone admits `stride === 4`.
+ *
+ * Plus well-formedness: `stride` a positive integer and `indexOffset` a
+ * non-negative integer. A `stride` of 0 made `observe`'s phase `NaN` and the
+ * loop silently never ran; a negative one was undefined behaviour.
+ *
+ * WHAT IS DELIBERATELY *NOT* CHECKED. `stride % 4 === 0`, though every
+ * `RECORD_LAYOUTS` stride is a multiple of 4. The rule above is the one the
+ * platform ruled on, and refusing a legitimate caller is worse than the hole
+ * this closes — a future packed format with a 2-byte lane beside the ordinal is
+ * not this ticket's business. Nor is `indexOffset` checked against a format
+ * table: `IndexTimeSource` takes a raw stride by design and names no format.
+ */
+function refuseReason(stride: number, indexOffset: number): string | null {
+  if (!Number.isInteger(stride) || stride <= 0) {
+    return `stride ${stride} is not a positive integer`;
+  }
+  if (!Number.isInteger(indexOffset) || indexOffset < 0) {
+    return `indexOffset ${indexOffset} is not a non-negative integer`;
+  }
+  if (stride <= 4) {
+    return (
+      `stride ${stride} is a bare float32 per record — it is all sample value and ` +
+      `carries no bar-ordinal lane (SPEC D7 needs stride > 4)`
+    );
+  }
+  if (stride < indexOffset + 4) {
+    return (
+      `stride ${stride} cannot hold a 4-byte ordinal lane at indexOffset ` +
+      `${indexOffset} (needs stride >= ${indexOffset + 4})`
+    );
+  }
+  return null;
 }
 
 /**
