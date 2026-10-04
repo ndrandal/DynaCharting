@@ -105,7 +105,7 @@ number changed nothing about what the default build proves.
 **And ENC-1249 is the case that shows why the gap matters rather than merely being untidy.** The
 tier-0 check (`scripts/tier0.sh` -> `dc_enc1249_tier0_truthful`) is the one that asserts a chart
 depicts its data — that a rising series rises. It is a claim about pixels, so it needs the
-renderer, so it is inside the 47. A green default `ctest` therefore proves nothing about tier 0
+renderer, so it is inside the 52. A green default `ctest` therefore proves nothing about tier 0
 either. The check exits **3** (never 0) when no adapter comes up, and `scripts/tier0.sh` turns
 that into exit 2 "CANNOT RUN", precisely so it cannot join the class of things this entry is
 about.
@@ -122,6 +122,16 @@ giving a gap of **47**. Executable counts are carried forward from the ENC-1249 
 (`build-dawn` 239 against `build` 190); no Dawn build was made in this worktree, which is itself
 this entry's point — ENC-1253's renderer change (`DawnTextSdfBackend`, §C0) is inside the 47 and
 was verified by a browser capture rather than by `ctest`.
+**Verified at** `d66e500` + the ENC-1432 branch, 2026-10-03 — counted statically from
+`core/CMakeLists.txt` (**249**) and empirically from a real default configure in the ENC-1432
+worktree (**197**, all 197 passing), giving a gap of **52**; executable counts re-measured in
+this worktree, `build-dawn` (**246**) against `build` (**195**). This is the first stamp in a
+while made from a **real Dawn build**: `ctest --test-dir build-dawn` ran **249 of 249** green on
+Dawn/Vulkan lavapipe, which is also the run that proved ENC-1432's five new tests (§C7) — and
+every one of those five is inside the 52, so the default build proves none of them. Two
+corrections carried by this stamp: the left-hand number was already **197**, not the 196 stated
+since ENC-1265, so Q6's `declared - registered = gap` identity was red on `main` by one; and the
+`if (DC_HAS_DAWN)` range moved from `1916-2489` to `1986-2615` — **re-derive it, never quote it**.
 
 ---
 
