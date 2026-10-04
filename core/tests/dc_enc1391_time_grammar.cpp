@@ -45,8 +45,8 @@
 //
 // ── THE ASYMMETRY THAT IS THE POINT, NOT A DETAIL ────────────────────────────────────────
 //
-// The corpus carries each label's INSTANT, which is why this split works at all. 16 of the 35
-// labels the real ladder emits are `ambiguous` under the authority — every `%Y` row (a bare
+// The corpus carries each label's INSTANT, which is why this split works at all. 18 of the 40
+// corpus rows are `ambiguous` under the authority — every `%Y` row (a bare
 // 4-digit string is also a record index) and every `%H:%M` row (a bare `HH:MM` is also an
 // elapsed `m:ss`). Those are REJECTED by `parsesAsTimestamp(label)` and ACCEPTED by
 // `parsesAsTimestamp(label, {instantMs})`, which is the round-trip proof. A test that demanded
