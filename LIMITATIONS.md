@@ -1887,6 +1887,11 @@ DC_GOLDEN_FLIP_READBACK=1 ./build-dawn/core/dc_parity_conformance  # 15 pass, 2 
 DC_GOLDEN_FLIP_READBACK=1 ./build-dawn/core/dc_parity_multipane    #  2 pass, 3 FAIL (8 probes)
 DC_GOLDEN_FLIP_READBACK=1 ./build-dawn/core/dc_parity_extended     #  7 pass, 3 FAIL (12 probes)
 DC_GOLDEN_FLIP_READBACK=1 ./build-dawn/core/dc_parity_text         #  5 pass, 0 FAIL — blind, by construction
+
+# the pick path needs the QUERY mirrored, not the frame — its own banner, its own result
+DC_GOLDEN_FLIP_READBACK=1 ./build-dawn/core/dc_parity_extended 2>&1 | grep -E 'golden-pick|pick/'
+#   -> 4 "FALSIFICATION ACTIVE ... probe y mirrored to H-1-y" banners, and all 4
+#      pick scenes still PASS: the pick path is convention-blind, measured.
 ```
 Each mirrored frame prints `FALSIFICATION ACTIVE: … readback rows mirrored`, and
 `dc_parity_origin` exits **4** if the mutation was requested and did not apply — a no-op mutation
@@ -1899,9 +1904,18 @@ the check must be shown to fail under the opposite hypothesis. Related: **C5** (
 one test's own file header), **C6** (the same error one level up, at the level of a whole chart),
 and **DC-L05** (the convention itself, still unfixed at the source).
 
-**Verified at** `d66e500` + this branch, 2026-10-03 (ENC-1432) — `-DDC_FETCH_DAWN=ON`,
-Dawn/Vulkan lavapipe, 249/249 `ctest` green including the four new negative controls; the default
-build is unchanged at 197/197 and still proves none of it.
+**Verified at** `d66e500` + this branch, 2026-10-03/04 (ENC-1432) — a real `-DDC_FETCH_DAWN=ON`
+build (Dawn pinned at `58263fae`), **Dawn's Vulkan backend on the Mesa lavapipe software ICD**
+(`VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json`), 249/249 `ctest` green including
+the four new negative controls; the default build is unchanged at 197/197 and still proves none
+of it. **Name the adapter honestly:** lavapipe is a *software* rasteriser, not hardware — but it
+is a real Vulkan driver running real WGSL through real Tint/SPIR-V compilation with a real
+texture readback, which is this repo's documented headless render path (DC-L01's *Working around
+it*, and what ENC-992/993/995 and `scripts/tier0.sh` use). No browser is involved, so Chrome's
+`--ignore-gpu-blocklist` / `adapter.info.isFallbackAdapter` checks do not apply here; there is no
+fallback-adapter concept in native Dawn, and `backendName()` reported `Vulkan`, not `Null`. An
+orientation convention is a property of the shader-plus-readback contract, which lavapipe
+implements faithfully — but this result has **not** been re-confirmed on hardware.
 
 ---
 
