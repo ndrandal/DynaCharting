@@ -489,10 +489,13 @@ is vertex-buffer byte packing (ENC-714).
 **Ticket.** None. Either expose the hierarchy transforms through the manifest op dispatch or
 mark them explicitly as internal/unshipped.
 
-**Verified at** `5ac198a`, 2026-09-14 — dispatch tables read; `strings` re-run on the wasm
-**as rebuilt by ENC-984** (`treemap` still 0, and so is `recipe`), per-header includer counts
-re-run. A rebuild that adds one export does not resurrect dead-stripped code — only a binding
-does.
+**Verified at** `d66e500`, 2026-10-03 (ENC-1112; previously `5ac198a`, 2026-09-14) — the whole
+`Re-check` block re-run unchanged: 1 hit for `"treemap"` (`Treemap.hpp:51`, its own `op()`),
+`strings … | grep -ci treemap` = 0, and the six includer counts still
+`0 0 0 0 8 2`. Additionally confirmed by the ENC-1112 census, which does not depend on `strings`:
+all 17 `transform/transforms/` and all 5 `layout/` TUs are among the 132 `libdc.a` members
+wasm-ld never extracts. A rebuild that adds one export does not resurrect unreachable code —
+only a reference does.
 
 ---
 
