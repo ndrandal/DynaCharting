@@ -2530,6 +2530,74 @@ if (DC_BUILD_TESTS)
     target_link_libraries(dc_parity_extended PRIVATE dc_gpu)
     add_test(NAME dc_parity_extended COMMAND dc_parity_extended)
 
+    # ENC-1432 — the ORIGIN-CONVENTION measurement for the golden harness, plus
+    # the negative controls that make the four suites above falsifiable on it.
+    #
+    # parity_golden.hpp's ORIGIN CONVENTION block used to claim the raw readback
+    # was upright ("higher clip y => smaller row index"). It is bottom-up: every
+    # Dawn backend negates clip y while DawnDevice::readPixel is faithfully
+    # top-down, so row = (1 + clipY)/2 * H. The probe coordinates in the suites
+    # above were always baked from the real output, so they agreed with the
+    # hardware and disagreed with the comment — and a green run could not tell.
+    #
+    # dc_parity_origin MEASURES the mapping (asymmetric in both axes, so a
+    # vertical mirror is visible and a 180-degree rotation is distinguishable
+    # from one) and does NOT skip gracefully: no adapter is exit 3, never 0.
+    add_executable(dc_parity_origin
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/parity_origin.cpp"
+    )
+    target_link_libraries(dc_parity_origin PRIVATE dc_gpu)
+    add_test(NAME dc_parity_origin COMMAND dc_parity_origin)
+
+    # The NEGATIVE CONTROLS (the ENC-1249 pattern). DC_GOLDEN_FLIP_READBACK
+    # mirrors the readback rows inside parity_golden.hpp, presenting exactly the
+    # frame the REFUTED convention predicts; each case is WILL_FAIL, so ctest
+    # reports PASSED only when the suite DOES fail under it. That is the proof
+    # these suites test the convention at all — a probe that passes with the
+    # mutation on and off is testing nothing about origin, which is how the
+    # wrong comment survived for three months.
+    #
+    # dc_parity_text is deliberately ABSENT here: its assertions are whole-frame
+    # population counts (strong-stroke / partial-coverage / background pixel
+    # totals), every one of which is invariant under a vertical mirror. It is
+    # convention-independent BY CONSTRUCTION, not by luck, and a WILL_FAIL case
+    # for it would never fail.
+    # These pin the EXACT expected failure counts with PASS_REGULAR_EXPRESSION
+    # rather than a bare WILL_FAIL, and that distinction is load-bearing.
+    #
+    # WILL_FAIL alone certifies "exited non-zero" — for ANY reason. Dawn does not
+    # fail init() when there is no usable Vulkan ICD; it falls back to its Null
+    # backend, which accepts every command and draws nothing. So on a box with no
+    # adapter all four of these went GREEN while the renderer had never run, and
+    # dc_parity_origin's own exit-3 ("CANNOT RUN") and exit-4 ("mutation did not
+    # apply") guards were inverted into passes by the same mechanism. That is
+    # DC-L01's defect reproduced inside the instrument built to detect it
+    # (measured, ENC-1432; parity_golden.hpp now also treats Null as no adapter).
+    #
+    # A regex on the summary line cannot be satisfied by a renderer that did not
+    # run: a Null-backend run prints different counts, and a skipped run prints
+    # "0 passed, 0 failed, N skipped". PASS_REGULAR_EXPRESSION decides the verdict
+    # on its own (the exit code is ignored), so each case now asserts that the
+    # convention-dependent probes failed AND how many of them there were.
+    add_test(NAME dc_parity_origin_flipped COMMAND dc_parity_origin --flip-readback)
+    set_tests_properties(dc_parity_origin_flipped PROPERTIES
+      PASS_REGULAR_EXPRESSION "origin measurement: 3 passed, 5 failed")
+
+    add_test(NAME dc_parity_conformance_flipped COMMAND dc_parity_conformance)
+    set_tests_properties(dc_parity_conformance_flipped PROPERTIES
+      ENVIRONMENT "DC_GOLDEN_FLIP_READBACK=1"
+      PASS_REGULAR_EXPRESSION "golden conformance: 15 passed, 2 failed, 0 skipped")
+
+    add_test(NAME dc_parity_multipane_flipped COMMAND dc_parity_multipane)
+    set_tests_properties(dc_parity_multipane_flipped PROPERTIES
+      ENVIRONMENT "DC_GOLDEN_FLIP_READBACK=1"
+      PASS_REGULAR_EXPRESSION "golden multi-pane: 2 passed, 3 failed, 0 skipped")
+
+    add_test(NAME dc_parity_extended_flipped COMMAND dc_parity_extended)
+    set_tests_properties(dc_parity_extended_flipped PROPERTIES
+      ENVIRONMENT "DC_GOLDEN_FLIP_READBACK=1"
+      PASS_REGULAR_EXPRESSION "golden extended: 7 passed, 3 failed, 0 skipped")
+
     # ENC-501 (was ENC-500) — Dawn-only JsonHost golden conformance + streaming
     # sweep. Drives the JsonHost embedding pipeline (parseSceneDocument ->
     # SceneReconciler -> IngestProcessor -> store -> render -> readback) on the Dawn

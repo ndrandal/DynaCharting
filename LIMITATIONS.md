@@ -25,33 +25,49 @@ and corrected them.
 
 ## DC-L01 — A green default `ctest` says nothing about the renderer 🔴
 
-**Claim.** `cmake -B build && ctest --test-dir build` runs **196** tests and builds **no
-renderer at all**. `dc_gpu`, `dc_json_host`, all four headless demo servers and **47 render
+**Claim.** `cmake -B build && ctest --test-dir build` runs **197** tests and builds **no
+renderer at all**. `dc_gpu`, `dc_json_host`, all four headless demo servers and **52 render
 tests** are excluded at *configure* time by `DC_FETCH_DAWN` (default `OFF`,
 `core/CMakeLists.txt:165`). They are not "skipped" — they never enter `CTestTestfile.cmake`,
 so nothing reports them as missing.
 
-**Why it bites.** "196/196 passed" is the most reassuring possible output and it is compatible
+**Why it bites.** "197/197 passed" is the most reassuring possible output and it is compatible
 with the renderer being completely broken. Every pixel-level guarantee in this engine lives in
-the 47 tests that did not run — **including the tier-0 check that the chart depicts its data at
-all** (ENC-1249, `scripts/tier0.sh`).
+the 52 tests that did not run — **including the tier-0 check that the chart depicts its data at
+all** (ENC-1249, `scripts/tier0.sh`), and **every test that knows which way up the renderer
+draws** (ENC-1432, `dc_parity_origin` + the three `dc_parity_*_flipped` negative controls).
 
 **Re-check.**
 ```bash
-grep -cE '^\s*add_test\(' core/CMakeLists.txt            # 243  — all tests that exist
-grep -c '^add_test('  build/core/CTestTestfile.cmake     # 196  — all tests you just ran
+grep -cE '^\s*add_test\(' core/CMakeLists.txt            # 249  — all tests that exist
+grep -c '^add_test('  build/core/CTestTestfile.cmake     # 197  — all tests you just ran
 grep -n 'DC_FETCH_DAWN:BOOL' build/CMakeCache.txt        # OFF
 ```
-The 47-test gap is the single `if (DC_HAS_DAWN)` block at `core/CMakeLists.txt:1916-2489`.
-Target-level gap: **52** targets (`dc_gpu`, `dc_glfw_system`, `dc_json_host`,
-`dc_dawn_window_demo`, 4 servers, 44 test executables) behind the four `if (DC_HAS_DAWN)`
-guards at lines 274, 374, 391 and 1916. Measured directly:
+All **52** excluded tests sit in the single `if (DC_HAS_DAWN)` block at
+`core/CMakeLists.txt:1986-2636` — verified by counting, not assumed: 52 `add_test(` inside that
+one block, 197 outside, 249 total. (It was `1916-2489` at ENC-1249's stamp and `1899-…` before
+that — **re-derive the range, do not quote it.** The four `if (DC_HAS_DAWN)` guards are at 274,
+374, 391 and 1986, and the first three contain **no** `add_test` at all, so the "fourth hit"
+is the one that matters.)
+
+**Target-level gap: 51 executables**, and the breakdown matters because two of the things people
+list here are not executables at all:
+`dc_json_host` (1, guard at 374) + the four headless demo binaries `dc_showcase_server`,
+`dc_live_server`, `dc_dashboard_server`, `dc_gallery` (guard at 391) + **46** test executables
+(the 1986 block) = **51**, which is exactly the on-disk delta below. `dc_gpu` and
+`dc_glfw_system` are **libraries**, so they are missing from the default build but were never in
+an executable count; and `dc_dawn_window_demo` is behind a *second* gate
+(`if (DC_HAS_DAWN AND DC_DAWN_WINDOWED)`, line 361), so it is absent from **both** builds here
+and belongs in neither figure. Measured directly:
 ```bash
-find build-dawn/core -maxdepth 1 -type f -executable | wc -l   # 242
-find build/core      -maxdepth 1 -type f -executable | wc -l   # 192  -> 50 executables missing
+find build-dawn/core -maxdepth 1 -type f -executable | wc -l   # 246
+find build/core      -maxdepth 1 -type f -executable | wc -l   # 195  -> 51 executables missing
 ```
-(50 executables, not 52 targets: `dc_gpu` is a library, and `dc_glfw_system` /
-`dc_dawn_window_demo` need the *second* gate `-DDC_DAWN_WINDOWED=ON`.)
+*(ENC-1432 corrected this paragraph twice over: it previously claimed "51 targets (`dc_gpu`,
+`dc_glfw_system`, `dc_json_host`, `dc_dawn_window_demo`, 4 servers, 43 test executables)" — a
+breakdown that summed wrong and double-counted two libraries and a doubly-gated demo — directly
+above a stale parenthetical still saying "50 executables, not 52 targets". Both are replaced by
+the counted figures above.)*
 
 **ENC-1249 corrected two stale details here**, both dating from before ENC-995's stamp: the
 block was already at 1916, not 1899, and the "five guarded ranges" list named boundaries
@@ -89,7 +105,12 @@ ENC-1257 added one default-build and two Dawn-only tests, taking it to 191/238 a
 to 47; ENC-1251 added one default-build test, taking it to 192/239 with the gap unchanged at
 47** (measured, not predicted). The gap is still exactly the `DC_HAS_DAWN` block, every time. Read the *difference*, not
 to 47; ENC-1253 added one default-build test, taking it to 192/239 with the gap UNCHANGED at
-47** (measured post-merge, not predicted). The gap is still exactly the `DC_HAS_DAWN` block, every time. Read the *difference*, not
+47; ENC-1432 added five Dawn-only tests (`dc_parity_origin` and four negative controls),
+taking it to 197/249 and the gap from 47 to 52 — the first move in the gap since ENC-1257, and
+the first restamp of the LEFT-hand number since ENC-1265 (it was already 197, not 196, before
+this ticket: 244 declared minus 196 stated is 48, so the `declared - registered = gap`
+identity that `specs/2026-09-14-dynacharting-render-correctness/recheck.sh` Q6 asserts was
+**already red on `main`** at `d66e500`, by one)** (measured post-merge, not predicted). The gap is still exactly the `DC_HAS_DAWN` block, every time. Read the *difference*, not
 the left-hand number: a change that grows the registered count tells you nothing about the
 renderer either — which is the whole point, and is why three consecutive tickets moving this
 number changed nothing about what the default build proves.
@@ -97,7 +118,7 @@ number changed nothing about what the default build proves.
 **And ENC-1249 is the case that shows why the gap matters rather than merely being untidy.** The
 tier-0 check (`scripts/tier0.sh` -> `dc_enc1249_tier0_truthful`) is the one that asserts a chart
 depicts its data — that a rising series rises. It is a claim about pixels, so it needs the
-renderer, so it is inside the 47. A green default `ctest` therefore proves nothing about tier 0
+renderer, so it is inside the 52. A green default `ctest` therefore proves nothing about tier 0
 either. The check exits **3** (never 0) when no adapter comes up, and `scripts/tier0.sh` turns
 that into exit 2 "CANNOT RUN", precisely so it cannot join the class of things this entry is
 about.
@@ -114,6 +135,16 @@ giving a gap of **47**. Executable counts are carried forward from the ENC-1249 
 (`build-dawn` 239 against `build` 190); no Dawn build was made in this worktree, which is itself
 this entry's point — ENC-1253's renderer change (`DawnTextSdfBackend`, §C0) is inside the 47 and
 was verified by a browser capture rather than by `ctest`.
+**Verified at** `d66e500` + the ENC-1432 branch, 2026-10-03 — counted statically from
+`core/CMakeLists.txt` (**249**) and empirically from a real default configure in the ENC-1432
+worktree (**197**, all 197 passing), giving a gap of **52**; executable counts re-measured in
+this worktree, `build-dawn` (**246**) against `build` (**195**). This is the first stamp in a
+while made from a **real Dawn build**: `ctest --test-dir build-dawn` ran **249 of 249** green on
+Dawn/Vulkan lavapipe, which is also the run that proved ENC-1432's five new tests (§C7) — and
+every one of those five is inside the 52, so the default build proves none of them. Two
+corrections carried by this stamp: the left-hand number was already **197**, not the 196 stated
+since ENC-1265, so Q6's `declared - registered = gap` identity was red on `main` by one; and the
+`if (DC_HAS_DAWN)` range moved from `1916-2489` to `1986-2636` — **re-derive it, never quote it**.
 
 ---
 
@@ -296,6 +327,13 @@ one flip puts it upright. It also settles a contradiction inside this repo —
 `core/tests/parity_golden.hpp`'s `ORIGIN CONVENTION` block claims *"higher clip y ⇒ smaller row
 index (toward the top)"*, i.e. an upright raw readback. **That is false**, and its goldens cannot
 detect it because their probe pixel coordinates are baked from the same assumption.
+**Corrected under ENC-1432**, which re-measured the convention on the *C++* path the goldens
+actually use (`DawnSceneRenderer` + `DawnDevice::readPixel`, Dawn/Vulkan lavapipe) and got the
+same rows this table gives for the browser — base **60**, apex **338** at 600x400 — then
+re-derived all 63 probe coordinates and found that **none of them moves**: they were baked from
+the real output all along. 22 probes in 8 scenes are convention-dependent and the other 41 pass
+under either convention; `dc_parity_origin` and the `DC_GOLDEN_FLIP_READBACK` negative controls
+are what keeps that true. See **§C7**.
 
 **Consequence for new code.** **A third consumer that reads `core.framebuffer()` raw will render
 inverted**, and the failure is silent on any vertically symmetric scene — which is how this
@@ -337,8 +375,31 @@ git grep -n 'readFramebufferRGBA('
 ```
 
 **Ticket.** None for the deep fix. [ENC-696](https://linear.app/encultured/issue/ENC-696)
-(`d6b5acd`) fixed the blit only. The four latent inversions and `parity_golden.hpp`'s wrong
-origin note are likewise unticketed — ENC-717 measured them, and fixing them is not its scope.
+(`d6b5acd`) fixed the blit only. `parity_golden.hpp`'s wrong origin note **is fixed** — ENC-1432,
+§C7. The four latent inversions are ENC-1431, which ENC-1432 does not touch; note that its
+population of seven is the **JS side only**. Counted on the C++ side, and counted carefully,
+because the obvious grep over-reports as badly as the narrow one under-reports:
+
+```bash
+git grep -l 'readPixel\|readFramebufferRGBA' -- core apps packages | wc -l   # 49 files
+git grep -l 'readPixel\|readFramebufferRGBA' -- core/tests | wc -l           # 30 of them
+```
+
+**49 is not 49 consumers.** It includes the declarations (`DawnDevice.hpp`, `GpuDevice.hpp`,
+`DawnSceneRenderer.hpp`, `DawnPostProcess.hpp`, `DawnWindowContext.hpp`, `ChartSnapshot.hpp`),
+the definition (`DawnDevice.cpp`), one internal user (`DawnPickBackend.cpp`), a `CMakeLists.txt`
+comment and a `README.md`. Subtract those and the **raw-consumer** population is:
+
+- **30 under `core/tests`** — 29 `.cpp` test files plus the shared `parity_golden.hpp` harness;
+- **9 elsewhere** — `core/src/host/JsonHost.cpp`, `core/demos/dawn_server_util.hpp`,
+  `core/demos/dawn_window_demo.cpp`, `core/src/gpu/DawnWindowContext.cpp`, the three
+  `core/wasm/` hosts (`dc_engine_host.cpp`, `dc_webgpu.cpp`, `dc_webgpu_all.cpp`), and on the JS
+  side `packages/dc-wasm/src/{EngineHost,wasm}.ts`.
+
+**39 raw consumers, then — not 7, and not 49.** ENC-1432 classified two of them:
+`d79_dawn_json_host`'s four probes are convention-blind (*derived*, not measured — it does not
+use this harness, so the knob cannot reach it), and the whole pick path is convention-blind
+(*measured*, via the query-mirror instrument). The other 37 are unclassified.
 
 **Verified at** `376d545`, 2026-09-23 (ENC-717) — direction re-measured live (table above);
 consumer census re-derived across the whole worktree plus the corpus, not from the narrow grep.
@@ -451,7 +512,11 @@ reason than "the engine has no layout".
    (`core/src/commands/CommandProcessor.cpp:619`, `:644`), with no `op` field. Passing
    `{"cmd":"createTransform","op":"treemap"}` returns `ok:true` and silently creates an identity
    transform.
-3. **Dead-stripped from the shipped wasm**, because nothing reaches it.
+3. **Not in the shipped wasm**, because nothing reaches it — confirmed at the archive level by
+   **DC-L-1112**: every `transform/transforms/` (17 TUs) and `layout/` (5) member is among the
+   132 of `libdc.a`'s 148 that wasm-ld never extracts. The `strings … | grep -ci treemap` row
+   below agrees, but only because `Treemap::op()` returns `"treemap"` as a literal — `strings`
+   is an Embind-name test, not a code-presence test (**§C7**).
 
 Likewise four of the six layout headers have **zero** non-test callers — they are tested and
 otherwise unused.
@@ -485,10 +550,13 @@ is vertex-buffer byte packing (ENC-714).
 **Ticket.** None. Either expose the hierarchy transforms through the manifest op dispatch or
 mark them explicitly as internal/unshipped.
 
-**Verified at** `5ac198a`, 2026-09-14 — dispatch tables read; `strings` re-run on the wasm
-**as rebuilt by ENC-984** (`treemap` still 0, and so is `recipe`), per-header includer counts
-re-run. A rebuild that adds one export does not resurrect dead-stripped code — only a binding
-does.
+**Verified at** `d66e500`, 2026-10-03 (ENC-1112; previously `5ac198a`, 2026-09-14) — the whole
+`Re-check` block re-run unchanged: 1 hit for `"treemap"` (`Treemap.hpp:51`, its own `op()`),
+`strings … | grep -ci treemap` = 0, and the six includer counts still
+`0 0 0 0 8 2`. Additionally confirmed by the ENC-1112 census, which does not depend on `strings`:
+all 17 `transform/transforms/` and all 5 `layout/` TUs are among the 132 `libdc.a` members
+wasm-ld never extracts. A rebuild that adds one export does not resurrect unreachable code —
+only a reference does.
 
 ---
 
@@ -1600,6 +1668,171 @@ directory has to follow; it is not this repo's to edit (ENC-1384).
 ---
 
 
+## DC-L-1112 — The browser wasm contains 16 of the core's 148 translation units, and 22 whole subsystems are not in it at all 🔴
+
+**Claim.** `packages/dc-wasm/wasm/dc_engine_host.wasm` — the artifact `customer-layer` ships —
+contains **16 of `libdc.a`'s 148 translation units**. **Twenty-two of the 32**
+`core/src/` subsystem directories that hold archive members contribute **zero functions**:
+`recipe/` (20 TUs), `transform/transforms/` (17), `data/` (16), `interaction/` (13),
+`viewport/` (8), `anim/` and `layout/` (5 each), `math/`, `scale/`, `session/` and `drawing/`
+(4 each), `export/` and `manifest/` (3 each), `encode/`, `debug/`, `selection/` and `style/`
+(2 each), `binding/`, `geo/`, `geometry/`, `measure/` and `minimap/` (1 each). Measured, not
+inferred — see the gate below.
+
+The browser surface is **26 methods on one Embind class**, enumerated from the running module:
+
+```
+applyControl applyDataBatch backend bufferCount bufferSize dispose drawItemCount framebuffer
+framebufferHeight framebufferWidth geometryCount getBufferBytes getSceneDocument layerCount
+listResources loadFont measureText paneCount pick render renderMessage selfTestCompute
+setTextGeometry setTextGeometryX setTexturePixels stats
+```
+
+**ENC-995's premise was right and its diagnosis was one step off.** A substantive `EncodePass`
+change produced a byte-identical rebuild. The reason is **not** that the encode pass is excluded
+from the link — `target_link_libraries(dc_engine_host PRIVATE dc)` puts the whole archive on the
+link line, and `EncodePass.cpp.o` is a member of it, carrying all five `dc::EncodePass`
+symbols (`compile`, `compileInto`, the ctor, the dtor and move-assign).
+It is that **wasm-ld never extracts the member**, because nothing in the link's own sources
+(`core/wasm/dc_engine_host.cpp` + the 17 `core/src/gpu/*.cpp` objects) names anything in it. So
+editing it cannot move a byte. **That matters because the two have different remedies**, which is
+what ENC-1112 was asked to settle: this is the *reachability* case, so the fix is a reference
+from the module (one `.function(…)` + an adapter, ENC-984's recipe), **not** a CMake change.
+
+**Two levels of removal, in this order.** Both have to be reasoned about separately:
+
+1. **Archive extraction** (before any optimisation). 132 of the 148 members are never pulled in.
+2. **`--gc-sections`**, which runs *after*. Within the 16 extracted members roughly half the
+   functions are still dropped — `SceneExport.cpp.o` lands **10** of its 652, and
+   `ComputeWgsl.cpp.o`/`ExprWgsl.cpp.o` are extracted and then collected **entirely**, 0
+   functions each. *Extraction is necessary, not sufficient*: judge by the link map, never by the
+   extraction list.
+
+**What IS in it**, by functions emitted (link map):
+
+| TU | fns | TU | fns |
+|---|---:|---|---:|
+| `commands/CommandProcessor` | 633 | `metadata/AnnotationStore` | 86 |
+| `document/SceneDocument` | 548 | `render/BackendRegistry` | 84 |
+| `scene/Scene` | 476 | `pipelines/PipelineCatalog` | 83 |
+| `ingest/IngestProcessor` | 274 | `render/BarSizing` | 44 |
+| `text/GlyphAtlas` | 220 | `document/SceneExport` | 10 |
+| `render/CpuBufferStore` | 199 | `transform/CustomCompute` | 1 |
+| `scene/ResourceRegistry` | 149 | `transform/ComputeWgsl` | 0 |
+| `event/EventBus` | 87 | `transform/ExprWgsl` | 0 |
+
+plus **17 of the 19** `core/src/gpu/*.cpp` TUs, which are **not** `libdc.a` members — `core/CMakeLists.txt`
+filters them out of the `dc` glob and compiles them straight into `dc_engine_host` (all but
+`DawnWindowContext.cpp`, native-windowed only, and `placeholder.cpp`), so they are
+whole-object-linked and the renderer *is* there — `DawnDevice` contributes 2016 names,
+`DawnSceneRenderer` 39, and every Dawn backend class is present (13 of them, picking included).
+
+**The five ENC-950 named, settled.** ENC-950 found these implemented and none bound. Binding is
+not the only question — reachability is:
+
+| symbol | TU | in the shipped wasm |
+|---|---|---|
+| `dc::serializeSceneDocument` | `document/SceneDocument` | **yes** (ENC-984 reaches it via `getSceneDocument`) |
+| `dc::sceneToDocument` | `document/SceneExport` | **yes** |
+| `dc::serializeScene` | `session/SceneSerializer` | no — member not extracted |
+| `dc::deserializeScene` | `session/SceneSerializer` | no — member not extracted |
+| `dc::serializeChartState` | `session/ChartState` | no — member not extracted |
+| `dc::DChartFileIO::{serialize,deserialize,save,load}` | `export/DChartFile` | no — member not extracted |
+| `dc::EncodePass::{compile,compileInto}` | `encode/EncodePass` | no — member not extracted |
+
+**What it costs to reach one** — measured by forcing a single GC root onto the real link and
+re-reading the CODE section (`-Wl,--export=<mangled>`, no source edit), against a baseline CODE
+of 2,896,051 bytes:
+
+| forced root | CODE growth | libdc TUs pulled in |
+|---|---:|---|
+| `dc::CandleRecipe::build` | +32,004 B | +1 |
+| `serializeScene` + `serializeChartState` + `DChartFileIO::serialize` | +58,715 B | +3 |
+| `dc::EncodePass::compile` | +125,046 B | +4 (`EncodePass`, `Encoding`, `RowIdentity`, `TableStore`) |
+
+That is the *floor* for a binding, and it is the number ENC-984's "+209 KB for one function" was
+the first instance of. Budget it; do not read it as unrelated churn.
+
+**Consequences worth stating plainly.**
+
+- The `EncodePass` decisions in
+  `specs/2026-09-14-dynacharting-render-correctness/SPEC.md` **D2** (`lineAA@1` as the default
+  line pipeline, driven from `markSpecOf`'s default argument) and **D4** (arc chords at
+  `segmentsPerTurn = 72`) hold on the native path and on **nothing a browser user sees**.
+  `dc::markSpecOf` and `dc::arcSegmentsFor` are both absent. That is SPEC §5 **Q1**, now
+  measured rather than suspected.
+- `scale/` is absent in full, so **no `dc::LinearScale` runs in the browser**; the browser's
+  scale, plot box and axis maths are the TypeScript reimplementations in
+  `packages/dc-wasm/src/chart/{scale,plotbox,axis}.ts`. A C++ test of a scale is not a test of
+  what the browser computes.
+- DC-L08's third proof of unreachability ("dead-stripped from the shipped wasm") is confirmed by
+  a stronger instrument: every `transform/transforms/` and `layout/` TU is among the 132 never
+  extracted.
+- Nothing above is specific to `EncodePass`. **Before binding anything, run the census** — that
+  is the whole point of ENC-1112's AC for ENC-949/985/986/987/988/990.
+
+**Re-check.**
+```bash
+source ~/emsdk/emsdk_env.sh
+bash packages/dc-wasm/scripts/build-wasm.sh                     # expect: no diff under packages/dc-wasm/wasm/
+bash packages/dc-wasm/scripts/wasm-census.sh \
+     dc::EncodePass dc::markSpecOf Recipe dc::LinearScale dc::TableStore \
+     dc::serializeScene dc::serializeChartState dc::DChartFileIO \
+     dc::serializeSceneDocument dc::sceneToDocument
+#  -> 148 total, 16 extracted; 22 zero-code subsystems;
+#     the first eight ABSENT, the last two PRESENT; exit 1 (an ABSENT answer, not a failure)
+```
+`wasm-census.sh` relinks the **same** link command (read out of `build-wasm/build.ninja`, so it cannot drift
+from `core/CMakeLists.txt`) with `--profiling-funcs`, and then **proves that is all it did**: it
+strips the added `name` section back off and refuses to report unless the bytes equal the
+committed artifact. Observed at the stamp below:
+`ok probe module == committed artifact after stripping 'name' (sha256 d7bbf1fce8660b9d…)`.
+Without that gate the census would describe a module nobody ships.
+
+**The gate has been seen to fail, which is the only reason to trust it.** Flip one byte of the
+committed artifact and the script refuses with exit **2**, naming both hashes:
+```bash
+W=packages/dc-wasm/wasm/dc_engine_host.wasm; B=$(sha256sum "$W" | cut -d' ' -f1)
+printf '\xff' | dd of="$W" bs=1 seek=$(( $(stat -c%s "$W") - 1 )) count=1 conv=notrunc status=none
+[ "$B" != "$(sha256sum "$W" | cut -d' ' -f1)" ] || echo 'MUTATION DID NOT APPLY — control invalid'
+bash packages/dc-wasm/scripts/wasm-census.sh dc::EncodePass; echo "exit=$?"   # CANNOT RUN, exit 2
+git checkout -- "$W"
+```
+Flip the **first** byte instead and the control is vacuous: a wasm file begins `\0asm`, so
+writing `\x00` at offset 0 changes nothing, the sha256 does not move, and the script reports a
+clean census that looks exactly like the gate passing. That attempt was made first here. Assert
+the mutation applied.
+
+Toolchain-free partial checks — the causal condition and the premise, not the artifact:
+```bash
+grep -rn 'EncodePass' core/wasm/dc_engine_host.cpp core/src/gpu/   # 0 hits -> nothing can reach it
+grep -rl 'DawnSceneRenderer' core/wasm/dc_engine_host.cpp core/src/gpu/ | wc -l   # 4 — positive control
+pnpm test   # incl. packages/dc-wasm/wasm/dc_engine_host.sections.test.ts (4 assertions)
+```
+That test needs no toolchain and pins what the census *rests on*: the committed module has no
+`name` custom section, so it has no symbol table, so `strings` can only report literals. Two of
+its four assertions fail if a `-g`/`--profiling-funcs` build is ever committed — demonstrated by
+swapping this entry's own name-bearing probe build in (`expected [ 'name', 'target_features' ]
+to not include 'name'`). Its fourth assertion passed even against that build, because
+`EncodePass`, `markSpecOf`, `treemap`, `LinearScale` and `DChartFileIO` are absent from the
+*code*, not merely from the literals.
+
+**Ticket.** ENC-1112 is the measurement and stops here, by its own terms. Exposing any of the
+above is its own ticket (ENC-987/988/990 for recipes, ENC-949/986 for session state), and each
+one is now a known quantity rather than a discovery.
+
+**Verified at** `d66e500`, 2026-10-03 — `build-wasm.sh` rebuilt the committed artifact
+byte-identically (`sha256 d7bbf1fc…`, `git diff --stat -- packages/dc-wasm/wasm/` empty); the
+name-stripped `--profiling-funcs` relink equals it byte-for-byte; `llvm-nm` reports 8,760 defined
+functions and 0 matching `EncodePass`, `markSpecOf`, `Recipe`, `Manifest`, `TableStore` or
+`LinearScale`; the 26-method surface was enumerated by loading the committed module under node;
+`node packages/dc-wasm/scripts/validate-node.mjs` PASS; default `ctest --test-dir build`
+197/197 with `dc_gpu`, `dc_json_host` and the headless servers excluded at configure time
+(DC-L01).
+
+---
+
+
 # §C — Corrections
 
 Beliefs that were held confidently and were wrong. They are here because each one cost real
@@ -1748,7 +1981,250 @@ committed image, check whether the image predates the fix — `git log -1 -- <im
 `git log -1 -S<the fix> -- <source>` is the whole test, and it cost three months here.
 See **DC-L15**.
 
+### C7 — `parity_golden.hpp`'s ORIGIN CONVENTION was backwards, and every probe it governs was right
+
+`core/tests/parity_golden.hpp` carried an `ORIGIN CONVENTION` block stating that a clip-space
+point maps to readback row `(H-1)/2*(1-y)` — *"higher clip y ⇒ smaller row index (toward the
+top)"* — an **upright** raw readback. The true mapping is `row = (1 + clipY)/2 * H`: higher clip
+y ⇒ **larger** row index. The two differ in **sign**, so this is decisive, not a matter of
+degree. **DC-L05 is the general statement**; this correction is about the four golden suites
+that stood on top of it for three months.
+
+**Measured on the real path (ENC-1432).** `core/tests/parity_origin.cpp`, a registered `ctest`
+case, through `DawnSceneRenderer` + `DawnDevice::readPixel` on Dawn/Vulkan (lavapipe) in a
+`-DDC_FETCH_DAWN=ON` build — the same renderer and the same readback the goldens use. No mock,
+no replay, no copied artifact.
+
+| fixture (asymmetric in BOTH axes) | measured | `row=(1+y)/2·H` predicts | `row=(1-y)/2·H` predicts |
+|---|---|---|---|
+| rect, clip y centroid **+0.65**, 240x160 | row **131.50** | 132.0 | 28.0 |
+| rect, clip y centroid **−0.65**, 240x160 | row **27.50** | 28.0 | 132.0 |
+
+The same run re-drove **ENC-717's own fixture at ENC-717's size** — apex-up triangle, apex clip
+`y=+0.70`, base `y=−0.70`, 600x400 — and read the base (the wide end) at row **60** and the apex
+at row **338**. ENC-717 measured **60** and **338** through the *browser* on the committed wasm.
+The C++ and wasm readbacks agree row-for-row, and both contradict the comment. The col centroids
+(59.50 / 179.50 for a left rect and a right rect) show clip x is **not** mirrored, so this is a
+vertical mirror and not a 180° rotation.
+
+**Why the goldens could not catch it, and why no probe coordinate moved.** The probes were never
+written from the comment — they were baked from the real output, so fixture and hardware agreed
+and only the prose was wrong. A green parity run was never evidence either way. Three inline
+comments in the suites already said the true thing in so many words (*"clip +y -> bottom rows"*
+in `parity_conformance`'s `transforms` scene, `parity_extended`'s `indexed-gather`, and
+`parity_multipane`'s scenes 1 and 4) while the header said the opposite, one file away. The
+withdrawn citation is part of the lesson: the block claimed `d79_dawn_json_host` had *"already
+established (and documented)"* the orientation. That file contains **no orientation claim at
+all**, and all four of its probes are convention-independent — it was evidence for neither side.
+
+**All 63 probes were re-derived two ways** — by hand geometry, and by measurement with the
+readback rows mirrored (`DC_GOLDEN_FLIP_READBACK`). **None moved.** The two methods agreed on 62
+of 63, and the disagreement is worth more than the agreement: the hand derivation called
+`pipelines/line2d-1px` convention-*independent* — the segment runs through the clip origin, so
+"it passes through the centre either way" — and the mirrored run shows it **failing**. The hand
+argument treated the mapping as continuous; the raster is not (details in the table below). Where
+geometry and measurement disagree, believe the measurement. 22 probes in 8 scenes are
+convention-dependent:
+
+| suite | scene | convention-dependent probes |
+|---|---|---|
+| `parity_conformance` | `transforms/scale+translate` | 1 — (65,62) |
+| `parity_conformance` | `pipelines/line2d-1px` | 1 — (48,48), by a **quarter of a pixel**. At an even `H` no pixel row is centred on clip y=0: the origin falls on the row-47/row-48 boundary. The probe's centre (48.5, 48.5) is clip (0.0104, 0.0104); the line `y = x/2` is at 0.0052 there, i.e. row **48.25**, so the 1px line rasterises into row 48 — and the mirror of row 48 is row **47**, which is background. This is the probe the hand derivation got wrong |
+| `parity_multipane` | `multipane/per-pane-clear` | 2 |
+| `parity_multipane` | `multipane/content+clear` | 4 |
+| `parity_multipane` | `multipane/content+clear+border+sep` | 2 |
+| `parity_extended` | `texturedQuad/4-corner-texels` | 4 (row mapping ⊕ texture v axis) |
+| `parity_extended` | `indexed-gather/instRect-diagonal` | 4 |
+| `parity_extended` | `indexed-gather/texQuad-diagonal` | 4 |
+
+**The other 41 test nothing about origin, and that is the sharper half of this correction.** Two
+whole families of the parity suite cannot detect an origin flip at all, so no past green from
+either was ever evidence about orientation — the same error as the comment itself, one level up.
+Both are **measured**, and the pick half needed its own instrument:
+
+- **`parity_text`** — the row-mirror knob does reach it, and all five checks still pass with the
+  mutation applied and its banner printed. Its assertions are whole-frame *population counts*,
+  which a row permutation leaves identical; convention-blind by construction despite a strongly
+  asymmetric glyph run.
+- **The entire pick path (10 probes, 4 scenes)** — the row-mirror knob **cannot** reach it:
+  `renderPick` answers a point query and never builds a frame, so "pick passes with the knob on"
+  would have been a no-op masquerading as evidence. `pickDawn` now mirrors the **query** instead
+  (`y -> H-1-y`, the point-query analogue of the refuted convention) and prints its own banner.
+  Measured: every probe still returns its expected id.
+
+In the conformance suite only two probes see the convention at all. The reasons for the rest are
+vertical symmetry, a probe on the shape's vertical centre line, an x-decided verdict, or a
+uniform frame — the full table is in the header block.
+
+**Not all 22 witnesses are equally solid, either.** The robust single-shape witness is
+`transforms/scale+translate` (65,62), which clears the wrong answer by **~24 rows** (body at rows
+57.6–76.8 measured, 19.2–38.4 under the refuted mapping). `pipelines/line2d-1px` must **not** be
+load-bearing: quarter-pixel margin, a 1px unantialiased primitive, and clip (0,0) maps to
+continuous row 48.0 under *both* conventions because row `H/2` is the reflection's fixed line —
+widen `line2d@1` or give it AA and the probe silently becomes convention-blind.
+`texturedQuad/4-corner-texels` pins the **composition** of the row mapping and the texture v
+axis, not the row mapping alone (mirror both and all four pass again), so it is not a pure origin
+witness. And `indexed-gather/instRect-diagonal` fails in both directions at once — its two
+"expect clear" probes go red while its two red probes go clear.
+
+**The symmetric-fixture trap, demonstrated rather than warned about.** The triangle's vertical
+*span* is 60..338, and mirroring it gives 61..339 — so the span is ~invariant and
+`parity_origin`'s span assertion (`[B3-convention-blind]`) **passes under both conventions**, by
+design and in the actual negative-control run. A test that checked only the span would have
+measured nothing. What discriminates is *where the wide end is*.
+
+**Three of `parity_origin`'s eight checks survive the mutation, and all three now say so in their
+own names** — `[A0-precondition]` (both rects rendered), `[A4-convention-blind]` (clip x is not
+mirrored) and `[B3-convention-blind]` (the span). Only `A1`, `A2`, `A3`, `B1` and `B2` are origin
+assertions, and exactly those five fail under `--flip-readback`. `A4` was initially unlabelled
+while being presented as part of the origin finding; it is a real discriminator, but against a
+*different* hypothesis — 180° rotation versus vertical mirror — and being decided purely by x it
+can say nothing about origin. An unlabelled assertion that passes under both conventions is how
+the original defect survived, so the rule is applied to this entry's own test too.
+
+**`row = (1 + clipY)/2 · H` is an EDGE coordinate, not a pixel-centre index.** The centre of
+integer row `r` is at clip `y = (r + 0.5)/H·2 − 1`, so the centre form is
+`(1 + clipY)/2 · H − 0.5`. That half-pixel is precisely why the measured centroids read
+**131.50 / 27.50** against edge predictions of 132.0 / 28.0 — the agreement is *exact*, and the
+±4 px tolerance is absorbing nothing.
+
+**Re-check** — the mutation is permanent and registered, so every run re-demonstrates that these
+checks can fail (the ENC-1249 pattern; a check never seen to fail is not a check):
+```bash
+cmake -B build-dawn -G Ninja -DDC_BUILD_TESTS=ON -DDC_FETCH_DAWN=ON \
+  -DFETCHCONTENT_SOURCE_DIR_DAWN=~/dawn-src        # ~55-60 min cold; see DC-L01
+export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json
+
+./build-dawn/core/dc_parity_origin                  # 8 passed, 0 failed
+./build-dawn/core/dc_parity_origin --flip-readback  # 3 passed, 5 failed  (exit 1)
+
+# and the suites, with and without the mutation
+ctest --test-dir build-dawn -R 'dc_parity_'         # 9/9: 5 plain + 4 WILL_FAIL controls
+DC_GOLDEN_FLIP_READBACK=1 ./build-dawn/core/dc_parity_conformance  # 15 pass, 2 FAIL
+DC_GOLDEN_FLIP_READBACK=1 ./build-dawn/core/dc_parity_multipane    #  2 pass, 3 FAIL (8 probes)
+DC_GOLDEN_FLIP_READBACK=1 ./build-dawn/core/dc_parity_extended     #  7 pass, 3 FAIL (12 probes)
+DC_GOLDEN_FLIP_READBACK=1 ./build-dawn/core/dc_parity_text         #  5 pass, 0 FAIL — blind, by construction
+
+# the pick path needs the QUERY mirrored, not the frame — its own banner, its own result
+DC_GOLDEN_FLIP_READBACK=1 ./build-dawn/core/dc_parity_extended 2>&1 | grep -E 'golden-pick|pick/'
+#   -> 4 "FALSIFICATION ACTIVE ... probe y mirrored to H-1-y" banners, and all 4
+#      pick scenes still PASS: the pick path is convention-blind, measured.
+
+# THE ROW THAT MATTERS: run the whole thing with NO adapter and check nothing goes
+# green for nothing. Before ENC-1432's second fix, the four controls passed here.
+VK_ICD_FILENAMES=/nonexistent/none.json ctest --test-dir build-dawn -R 'dc_parity_'
+#   -> 4/9. The 4 plain probe suites PASS (skipped — graceful-skip contract),
+#      dc_parity_origin FAILS (exit 3, CANNOT RUN), and all 4 _flipped controls
+#      FAIL with "Required regular expression not found". Not one false green.
+ctest --test-dir build-dawn -R 'dc_parity_'          # real adapter -> 9/9 passed
+```
+Each mirrored frame prints `FALSIFICATION ACTIVE: … readback rows mirrored`, and
+`dc_parity_origin` exits **4** if the mutation was requested and did not apply — a no-op mutation
+reads exactly like a passing gate.
+
+**This entry's own instrument had the same defect, and that is the most useful thing in it.** An
+adversarial re-check of ENC-1432 found that the four `WILL_FAIL` negative controls **passed on a
+box with no adapter**, certifying nothing at all. Dawn does *not* fail `init()` when there is no
+usable Vulkan ICD — it falls back to its **Null backend**, which accepts every command and draws
+nothing. So `renderDawn` never set `skipped`, the suites rendered empty frames and exited
+non-zero, and bare `WILL_FAIL` — which asserts only "exited non-zero, for any reason" — turned
+that into PASSED. The same mechanism inverted `dc_parity_origin`'s own exit-3 ("CANNOT RUN") and
+exit-4 ("mutation did not apply") guards into passes, and the four suites' advertised
+graceful-skip never fired either (no adapter gave `2 passed, 15 failed`, not `0 passed, 0 failed,
+17 skipped`). **DC-L01's defect, reproduced inside the instrument built to detect it.** Fixed two
+ways, because either alone is insufficient:
+
+1. `parity_golden.hpp` treats a `Null` backend as **no adapter** in both `renderDawn` and
+   `pickDawn`, restoring the graceful-skip contract; `dc_parity_origin` then exits 3 as designed.
+2. The controls pin their **exact expected failure counts** with `PASS_REGULAR_EXPRESSION`
+   (e.g. `golden conformance: 15 passed, 2 failed, 0 skipped`) rather than an exit code. A
+   regex on the summary line cannot be satisfied by a renderer that never ran.
+
+Measured both ways afterwards — this is the row that matters, and a single green column would
+have hidden it:
+
+| `ctest -R dc_parity_` | real adapter (lavapipe) | `VK_ICD_FILENAMES=/nonexistent` |
+|---|---|---|
+| 4 plain probe suites | **Passed** | Passed *(skipped — contract restored)* |
+| `dc_parity_origin` | **Passed** | ***Failed*** *(exit 3, CANNOT RUN)* |
+| 4 `_flipped` controls | **Passed** | ***Failed*** *(regex not found)* |
+| total | **9/9 passed** | 4/9 — and **not one false green** |
+
+Before the fix that right-hand column read `Passed` for all four controls. **If you add a
+`WILL_FAIL` test to this repo, assert what failed, not that something did.**
+
+**Two numbers in this entry were wrong before they were right, both the same way.** The
+clip-y negation census was published first as "16 call sites", then "17 sites / 13 files", and is
+**21 sites across 14 files** — each wrong figure came from a grep, and each grep missed a
+spelling (`-pos2.y`, `-(c.y)`, and with it the whole `instancedPointColor` backend). The fix is
+to enumerate the `@vertex` stages, not to pattern-match; the table is in the header block. The
+raw-reader census in **DC-L05** was likewise restated from counted figures. A number written down
+beside the thing it describes and never re-derived is this file's recurring failure, and it does
+not stop being so inside an entry about exactly that.
+
+**The lesson.** A comment is not a measurement, and a fixture baked from real output will agree
+with the hardware while disagreeing with every word written above it — silently, forever, because
+nothing compares the two. If a test's subject is orientation, the fixture must be asymmetric and
+the check must be shown to fail under the opposite hypothesis. Related: **C5** (the same error in
+one test's own file header), **C6** (the same error one level up, at the level of a whole chart),
+and **DC-L05** (the convention itself, still unfixed at the source).
+
+**Verified at** `d66e500` + this branch, 2026-10-03/04 (ENC-1432) — a real `-DDC_FETCH_DAWN=ON`
+build (Dawn pinned at `58263fae`), **Dawn's Vulkan backend on the Mesa lavapipe software ICD**
+(`VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json`), 249/249 `ctest` green including
+the four new negative controls; the default build is unchanged at 197/197 and still proves none
+of it. **Name the adapter honestly:** lavapipe is a *software* rasteriser, not hardware — but it
+is a real Vulkan driver running real WGSL through real Tint/SPIR-V compilation with a real
+texture readback, which is this repo's documented headless render path (DC-L01's *Working around
+it*, and what ENC-992/993/995 and `scripts/tier0.sh` use). No browser is involved, so Chrome's
+`--ignore-gpu-blocklist` / `adapter.info.isFallbackAdapter` checks do not apply here; there is no
+fallback-adapter concept in native Dawn, and `backendName()` reported `Vulkan`, not `Null`. An
+orientation convention is a property of the shader-plus-readback contract, which lavapipe
+implements faithfully — but this result has **not** been re-confirmed on hardware.
+
 ---
+
+---
+
+### C7 — `strings dc_engine_host.wasm | grep -ci <name>` is an EMBIND-NAME test, not a code-presence test
+
+**The belief.** ENC-984 established the house method for "is this thing in the shipped wasm?":
+`strings packages/dc-wasm/wasm/dc_engine_host.wasm | grep -ci sceneDocument` went **0 → 1** when
+the binding landed, and `… | grep -ci recipe` is **0** because the recipe family is
+dead-stripped. `CLAUDE.md` and **DC-L08** both state the method, and three entries rest on it.
+
+**Why it is weaker than it looks.** The committed `.wasm` carries **no `name` custom section**
+(`llvm-objdump --section-headers` lists `TYPE IMPORT FUNCTION TABLE MEMORY GLOBAL EXPORT ELEM
+DATACOUNT CODE DATA target_features` and nothing else), so it has no symbol table at all.
+`strings` can therefore only see **string literals in `DATA`** — which for this module means the
+Embind names, `applyControl`'s command vocabulary, WGSL shader text, and assertion messages. It
+is blind to code, and it is wrong in **both** directions:
+
+| probe | `strings` | actually in the module |
+|---|---:|---|
+| `dc::sceneToDocument` | 0 | **yes** — 1 function |
+| `dc::serializeSceneDocument` | 0 | **yes** — 1 function (what ENC-984 bound!) |
+| `dc::layoutText` | 0 | **yes** — 1 function |
+| `encode` | **25** | **no** encode-pass code — all 25 are `wgpu*CommandEncoder*` / `emwgpuCreate*Encoder` import names |
+
+ENC-984's own 0 → 1 did not measure its function; it measured the *method name*
+`getSceneDocument`, which happens to contain `sceneDocument` case-insensitively. The function it
+bound, `dc::serializeSceneDocument`, is in the module and `strings` scores it **0**.
+
+**What it is still good for.** A probe that *is* a literal in the target TU — DC-L08's
+`treemap`, which `Treemap::op()` returns as a `const char*` — works, but by coincidence of the
+code having that literal, not by construction. Neither conclusion changed: `recipe` and
+`treemap` really are absent, confirmed by the authoritative instrument below.
+
+**Use instead.** `bash packages/dc-wasm/scripts/wasm-census.sh <symbol> …` — it relinks the real
+link with `--profiling-funcs`, proves the result *is* the committed artifact by stripping the
+added `name` section and comparing sha256, and then reads the symbol table. **DC-L-1112** has the
+full mechanism and the census. A `strings` count that disagrees with it is `strings` being wrong.
+
+**Found at** `d66e500`, 2026-10-03 (ENC-1112).
+
+---
+
 
 # §R — Retired
 
