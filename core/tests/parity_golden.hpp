@@ -85,10 +85,21 @@
 // `indexed-gather`, parity_multipane's (1) and (4)) already said "clip +y ->
 // bottom rows" in so many words.
 //
-// Each probe was classified twice and independently — by geometry, and by
-// measurement with the readback rows mirrored (`DC_GOLDEN_FLIP_READBACK`, below).
-// Both agreed on all 63 probes. 22 probes in 8 scenes are CONVENTION-DEPENDENT
-// and fail when mirrored:
+// Each probe was classified two ways — by hand geometry, and by MEASUREMENT with
+// the readback rows mirrored (`DC_GOLDEN_FLIP_READBACK`, below). They agreed on
+// 62 of 63, and the measurement is what settled the 63rd: the hand derivation
+// called `pipelines/line2d-1px` convention-INDEPENDENT (the segment runs through
+// the clip origin, so "it passes through the centre either way") and the mirrored
+// run shows it FAILING. The hand argument treated the mapping as continuous; the
+// raster is not. At an even H there is no pixel row centred on clip y=0 — the
+// origin falls on the boundary between rows 47 and 48 — and the probe's own
+// centre, (48.5, 48.5) -> clip (0.0104, 0.0104), sits above the line
+// (y = x/2 gives 0.0052, i.e. row 48.25). The 1px line therefore rasterises into
+// row 48, while the mirror of row 48 is row 47, which is background. The margin
+// is a QUARTER of a pixel. Where geometry and measurement disagree, believe the
+// measurement — that is the whole subject of this block.
+//
+// 22 probes in 8 scenes are CONVENTION-DEPENDENT and fail when mirrored:
 //
 //   parity_conformance  transforms/scale+translate            (65,62)
 //                       pipelines/line2d-1px                  (48,48)
@@ -99,6 +110,23 @@
 //   parity_extended     texturedQuad/4-corner-texels          4 quadrant probes
 //                       indexed-gather/instRect-diagonal      4 quadrant probes
 //                       indexed-gather/texQuad-diagonal       4 quadrant probes
+//
+// NOT ALL 22 ARE EQUALLY SOLID — pick your witness deliberately:
+//   * The ROBUST single-shape witness is `transforms/scale+translate` (65,62):
+//     the body spans rows 57.6..76.8 measured and 19.2..38.4 under the refuted
+//     mapping, so the probe clears the wrong answer by ~24 rows.
+//   * `pipelines/line2d-1px` (48,48) is FRAGILE and must not be load-bearing.
+//     Its margin is a quarter of a pixel (above), it is a 1px unantialiased
+//     primitive, and clip (0,0) maps to continuous row 48.0 under BOTH
+//     conventions — row H/2 is the reflection's fixed line. Widen `line2d@1`
+//     past 1px, or give it AA, and this probe becomes convention-BLIND without
+//     anything failing to announce it.
+//   * `texturedQuad/4-corner-texels` pins the COMPOSITION of the row mapping and
+//     the texture v axis, not the row mapping alone: mirror BOTH and all four
+//     probes pass again. A frame mirror alone does break them, which is what the
+//     knob below applies — but do not cite it as a pure origin witness.
+//   * `indexed-gather/instRect-diagonal` fails in both directions at once: its
+//     two "expect clear" probes go red while its two red probes go clear.
 //
 // The remaining 41 probes pass under BOTH conventions, i.e. they test nothing
 // about origin. That is not a defect in them, but it is worth knowing which
@@ -126,9 +154,26 @@
 //     either full-frame-covering or y-symmetric with x-decided misses.
 //
 // So the ENTIRE pick path and the ENTIRE text suite are blind to the convention,
-// and in the conformance suite only two probes see it. If you add a scene whose
-// correctness depends on orientation, make the fixture asymmetric and check it
-// against DC_GOLDEN_FLIP_READBACK before believing it.
+// and in the conformance suite only two probes see it. Both of those are
+// MEASURED, not merely argued, and the pick half needed its own instrument:
+//
+//   * parity_text — the row-mirror knob reaches it (it renders through
+//     renderDawn), and all five checks still pass with the mutation applied and
+//     its banner printed. Convention-blind, demonstrated.
+//   * the pick path — the row-mirror knob CANNOT reach it, because renderPick
+//     answers a point query and never builds a frame. "Pick passes with the knob
+//     on" would therefore have been a no-op masquerading as evidence. pickDawn
+//     now mirrors the QUERY instead (y -> H-1-y, the point-query analogue of the
+//     refuted convention) and prints its own banner. Measured: all 10 probes in
+//     all 4 pick scenes still return the expected ids. Convention-blind,
+//     demonstrated.
+//
+// That is the sharper half of this correction: two whole families of the parity
+// suite cannot detect an origin flip at all, so no past green from either was
+// ever evidence about orientation — the same error as the comment itself, one
+// level up. If you add a scene whose correctness depends on orientation, make the
+// fixture asymmetric and check it against DC_GOLDEN_FLIP_READBACK before
+// believing it.
 //
 // SKIP-GRACEFULLY
 // ---------------
@@ -367,6 +412,7 @@ struct PickProbe {
 
 struct PickResultRow {
   int x{0}, y{0};
+  int queriedY{0};  // y actually handed to renderPick (mirrored under the knob)
   std::uint32_t expectId{0};
   std::uint32_t gotId{0};
   bool match{false};
@@ -377,6 +423,8 @@ struct PickFrame {
   std::string skipReason;
   std::string dawnBackend;
   std::vector<PickResultRow> rows;
+  // True only when the ENC-1432 knob mirrored the probe y (see pickDawn).
+  bool flippedForFalsification{false};
 };
 
 inline PickFrame pickDawn(const char* name, const SceneBuilder& builder, int W,
@@ -400,11 +448,27 @@ inline PickFrame pickDawn(const char* name, const SceneBuilder& builder, int W,
     store.setCpuData(b.id, b.bytes.data(),
                      static_cast<std::uint32_t>(b.bytes.size()));
 
+  // ENC-1432 falsification, pick edition. `renderPick` takes a SCREEN (x, y) and
+  // reads that one pixel of the pick target — there is no frame to mirror, so the
+  // readback-row knob above cannot reach this path. The analogue of presenting the
+  // refuted convention to a point query is to mirror the query itself: under the
+  // other convention the same scene point sits at row H-1-y. Without this, "the
+  // pick probes pass with the knob on" would be a no-op masquerading as evidence.
+  const bool flip = flipReadbackFlag();
+  if (flip)
+    std::printf(
+        "[golden-pick %s] FALSIFICATION ACTIVE: DC_GOLDEN_FLIP_READBACK -- probe "
+        "y mirrored to H-1-y (H=%d); probes now query the REFUTED convention\n",
+        name, H);
+  f.flippedForFalsification = flip;
+
   for (const auto& p : probes) {
-    DawnPickResult pr = renderer.renderPick(scene, store, W, H, p.x, p.y);
+    const int qy = flip ? (H - 1 - p.y) : p.y;
+    DawnPickResult pr = renderer.renderPick(scene, store, W, H, p.x, qy);
     PickResultRow row;
     row.x = p.x;
     row.y = p.y;
+    row.queriedY = qy;
     row.expectId = p.expectId;
     row.gotId = pr.drawItemId;
     row.match = (row.gotId == row.expectId);

@@ -1815,14 +1815,19 @@ withdrawn citation is part of the lesson: the block claimed `d79_dawn_json_host`
 established (and documented)"* the orientation. That file contains **no orientation claim at
 all**, and all four of its probes are convention-independent — it was evidence for neither side.
 
-**All 63 probes were re-derived, twice and independently** — once by geometry, once by
-measurement with the readback rows mirrored (`DC_GOLDEN_FLIP_READBACK`). The two agreed on every
-probe. **None moved.** 22 probes in 8 scenes are convention-dependent:
+**All 63 probes were re-derived two ways** — by hand geometry, and by measurement with the
+readback rows mirrored (`DC_GOLDEN_FLIP_READBACK`). **None moved.** The two methods agreed on 62
+of 63, and the disagreement is worth more than the agreement: the hand derivation called
+`pipelines/line2d-1px` convention-*independent* — the segment runs through the clip origin, so
+"it passes through the centre either way" — and the mirrored run shows it **failing**. The hand
+argument treated the mapping as continuous; the raster is not (details in the table below). Where
+geometry and measurement disagree, believe the measurement. 22 probes in 8 scenes are
+convention-dependent:
 
 | suite | scene | convention-dependent probes |
 |---|---|---|
 | `parity_conformance` | `transforms/scale+translate` | 1 — (65,62) |
-| `parity_conformance` | `pipelines/line2d-1px` | 1 — (48,48), by **half a pixel**: the clip midpoint lands on a pixel *corner* and the line leaves it downward under one convention, upward under the other |
+| `parity_conformance` | `pipelines/line2d-1px` | 1 — (48,48), by a **quarter of a pixel**. At an even `H` no pixel row is centred on clip y=0: the origin falls on the row-47/row-48 boundary. The probe's centre (48.5, 48.5) is clip (0.0104, 0.0104); the line `y = x/2` is at 0.0052 there, i.e. row **48.25**, so the 1px line rasterises into row 48 — and the mirror of row 48 is row **47**, which is background. This is the probe the hand derivation got wrong |
 | `parity_multipane` | `multipane/per-pane-clear` | 2 |
 | `parity_multipane` | `multipane/content+clear` | 4 |
 | `parity_multipane` | `multipane/content+clear+border+sep` | 2 |
@@ -1830,13 +1835,35 @@ probe. **None moved.** 22 probes in 8 scenes are convention-dependent:
 | `parity_extended` | `indexed-gather/instRect-diagonal` | 4 |
 | `parity_extended` | `indexed-gather/texQuad-diagonal` | 4 |
 
-**The other 41 test nothing about origin**, and that is the part worth keeping: the **entire pick
-path** (10 probes — every pick scene either covers the whole frame or is y-symmetric with
-x-decided misses) and the **entire `parity_text` suite** (whole-frame population counts, which a
-row permutation leaves identical — convention-blind by construction despite a strongly
-asymmetric glyph run) are blind to it, and in the conformance suite only two probes see it. The
-reasons for the rest are vertical symmetry, a probe on the shape's vertical centre line, an
-x-decided verdict, or a uniform frame. The full table is in the header block.
+**The other 41 test nothing about origin, and that is the sharper half of this correction.** Two
+whole families of the parity suite cannot detect an origin flip at all, so no past green from
+either was ever evidence about orientation — the same error as the comment itself, one level up.
+Both are **measured**, and the pick half needed its own instrument:
+
+- **`parity_text`** — the row-mirror knob does reach it, and all five checks still pass with the
+  mutation applied and its banner printed. Its assertions are whole-frame *population counts*,
+  which a row permutation leaves identical; convention-blind by construction despite a strongly
+  asymmetric glyph run.
+- **The entire pick path (10 probes, 4 scenes)** — the row-mirror knob **cannot** reach it:
+  `renderPick` answers a point query and never builds a frame, so "pick passes with the knob on"
+  would have been a no-op masquerading as evidence. `pickDawn` now mirrors the **query** instead
+  (`y -> H-1-y`, the point-query analogue of the refuted convention) and prints its own banner.
+  Measured: every probe still returns its expected id.
+
+In the conformance suite only two probes see the convention at all. The reasons for the rest are
+vertical symmetry, a probe on the shape's vertical centre line, an x-decided verdict, or a
+uniform frame — the full table is in the header block.
+
+**Not all 22 witnesses are equally solid, either.** The robust single-shape witness is
+`transforms/scale+translate` (65,62), which clears the wrong answer by **~24 rows** (body at rows
+57.6–76.8 measured, 19.2–38.4 under the refuted mapping). `pipelines/line2d-1px` must **not** be
+load-bearing: quarter-pixel margin, a 1px unantialiased primitive, and clip (0,0) maps to
+continuous row 48.0 under *both* conventions because row `H/2` is the reflection's fixed line —
+widen `line2d@1` or give it AA and the probe silently becomes convention-blind.
+`texturedQuad/4-corner-texels` pins the **composition** of the row mapping and the texture v
+axis, not the row mapping alone (mirror both and all four pass again), so it is not a pure origin
+witness. And `indexed-gather/instRect-diagonal` fails in both directions at once — its two
+"expect clear" probes go red while its two red probes go clear.
 
 **The symmetric-fixture trap, demonstrated rather than warned about.** The triangle's vertical
 *span* is 60..338, and mirroring it gives 61..339 — so the span is ~invariant and
@@ -1860,6 +1887,11 @@ DC_GOLDEN_FLIP_READBACK=1 ./build-dawn/core/dc_parity_conformance  # 15 pass, 2 
 DC_GOLDEN_FLIP_READBACK=1 ./build-dawn/core/dc_parity_multipane    #  2 pass, 3 FAIL (8 probes)
 DC_GOLDEN_FLIP_READBACK=1 ./build-dawn/core/dc_parity_extended     #  7 pass, 3 FAIL (12 probes)
 DC_GOLDEN_FLIP_READBACK=1 ./build-dawn/core/dc_parity_text         #  5 pass, 0 FAIL — blind, by construction
+
+# the pick path needs the QUERY mirrored, not the frame — its own banner, its own result
+DC_GOLDEN_FLIP_READBACK=1 ./build-dawn/core/dc_parity_extended 2>&1 | grep -E 'golden-pick|pick/'
+#   -> 4 "FALSIFICATION ACTIVE ... probe y mirrored to H-1-y" banners, and all 4
+#      pick scenes still PASS: the pick path is convention-blind, measured.
 ```
 Each mirrored frame prints `FALSIFICATION ACTIVE: … readback rows mirrored`, and
 `dc_parity_origin` exits **4** if the mutation was requested and did not apply — a no-op mutation
@@ -1872,9 +1904,18 @@ the check must be shown to fail under the opposite hypothesis. Related: **C5** (
 one test's own file header), **C6** (the same error one level up, at the level of a whole chart),
 and **DC-L05** (the convention itself, still unfixed at the source).
 
-**Verified at** `d66e500` + this branch, 2026-10-03 (ENC-1432) — `-DDC_FETCH_DAWN=ON`,
-Dawn/Vulkan lavapipe, 249/249 `ctest` green including the four new negative controls; the default
-build is unchanged at 197/197 and still proves none of it.
+**Verified at** `d66e500` + this branch, 2026-10-03/04 (ENC-1432) — a real `-DDC_FETCH_DAWN=ON`
+build (Dawn pinned at `58263fae`), **Dawn's Vulkan backend on the Mesa lavapipe software ICD**
+(`VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json`), 249/249 `ctest` green including
+the four new negative controls; the default build is unchanged at 197/197 and still proves none
+of it. **Name the adapter honestly:** lavapipe is a *software* rasteriser, not hardware — but it
+is a real Vulkan driver running real WGSL through real Tint/SPIR-V compilation with a real
+texture readback, which is this repo's documented headless render path (DC-L01's *Working around
+it*, and what ENC-992/993/995 and `scripts/tier0.sh` use). No browser is involved, so Chrome's
+`--ignore-gpu-blocklist` / `adapter.info.isFallbackAdapter` checks do not apply here; there is no
+fallback-adapter concept in native Dawn, and `backendName()` reported `Vulkan`, not `Null`. An
+orientation convention is a property of the shader-plus-readback contract, which lavapipe
+implements faithfully — but this result has **not** been re-confirmed on hardware.
 
 ---
 
