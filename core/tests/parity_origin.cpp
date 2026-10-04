@@ -279,10 +279,15 @@ int main(int argc, char** argv) {
     check(widthAt[topRow + 3] > 300 && widthAt[botRow - 3] < 40,
           "[B2] wide near span-lo, narrow near span-hi — the apex (clip y "
           "+0.70) is at the BOTTOM");
-    // B3 — the two paths agree. Base ~ (1-0.70)/2*400 = 60; apex ~ 340.
+    // B3 — the two paths agree on the SPAN, which pins the magnitude of the
+    // mapping and nothing about its sign. It is CONVENTION-BLIND on purpose and
+    // says so in its own name: it passes with --flip-readback too, and that is
+    // the trap demonstrated rather than described. Do not read a green B3 as
+    // evidence about origin; B1/B2 are the origin assertions.
     check(std::abs(topRow - 60) <= 4 && std::abs(botRow - 339) <= 4,
-          "[B3] span matches ENC-717's browser-path rows (base 60, apex ~338) "
-          "within 4px — the C++ and wasm readbacks share the convention");
+          "[B3-convention-blind] span matches ENC-717's browser-path rows (raw "
+          "base 60 / apex 338, flipped 61/339) within 4px — pins the MAGNITUDE "
+          "across the C++ and wasm paths; passes under both conventions");
   }
 
   std::printf("\n=== ENC-1432 origin measurement: %d passed, %d failed ===\n",
