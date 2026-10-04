@@ -313,6 +313,31 @@ inline bool flipReadbackRequested(int argc, char** argv) {
   return flipReadbackFlag();
 }
 
+// ENC-1432 — "an adapter came up" is not "a renderer came up".
+//
+// Dawn does NOT fail init() when there is no usable Vulkan ICD: it falls back to
+// its **Null backend**, which accepts every command and draws nothing. init()
+// returns true, backendName() reports "Null", and a probe suite then renders an
+// empty frame and reports ordinary FAILURES — not a skip. That broke two things
+// this file claims, and it broke them silently:
+//
+//   * the SKIP-GRACEFULLY contract below never fired (no adapter gave
+//     "2 passed, 15 failed", not "0 passed, 0 failed, 17 skipped"), and
+//   * the `*_flipped` negative controls, which were registered as bare
+//     `WILL_FAIL TRUE`, went GREEN on a box with no adapter — certifying only
+//     "exited non-zero", for any reason at all, including a renderer that never
+//     ran. `dc_parity_origin`'s own exit-3 ("CANNOT RUN") and exit-4 ("mutation
+//     did not apply") guards were inverted into passes by the same mechanism.
+//
+// That is DC-L01's defect reproduced inside the instrument built to detect it.
+// So: treat the Null backend as NO ADAPTER. Both helpers below return SKIPPED,
+// which restores the graceful-skip contract, and the ctest controls additionally
+// pin their exact expected failure counts with PASS_REGULAR_EXPRESSION rather
+// than trusting an exit code (core/CMakeLists.txt).
+inline bool backendIsNull(const std::string& name) {
+  return name.empty() || name == "Null" || name == "null";
+}
+
 // Render `builder` through Dawn into a top-left-origin RGBA readback.
 inline GoldenFrame renderDawn(const char* name, const SceneBuilder& builder, int W,
                               int H, GlyphAtlas* atlas = nullptr,
@@ -337,6 +362,13 @@ inline GoldenFrame renderDawn(const char* name, const SceneBuilder& builder, int
     return f;
   }
   f.dawnBackend = renderer.device().backendName();
+  if (backendIsNull(f.dawnBackend)) {
+    f.skipped = true;
+    f.skipReason =
+        "Dawn fell back to the Null backend (no real adapter) — it draws nothing";
+    std::printf("[golden %s] SKIP: %s\n", name, f.skipReason.c_str());
+    return f;
+  }
 
   if (style.enabled) {
     DawnRenderStyle rs;
@@ -438,6 +470,13 @@ inline PickFrame pickDawn(const char* name, const SceneBuilder& builder, int W,
     return f;
   }
   f.dawnBackend = renderer.device().backendName();
+  if (backendIsNull(f.dawnBackend)) {
+    f.skipped = true;
+    f.skipReason =
+        "Dawn fell back to the Null backend (no real adapter) — it draws nothing";
+    std::printf("[golden-pick %s] SKIP: %s\n", name, f.skipReason.c_str());
+    return f;
+  }
 
   Scene scene;
   ResourceRegistry reg;
