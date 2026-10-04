@@ -1901,6 +1901,21 @@ witness. And `indexed-gather/instRect-diagonal` fails in both directions at once
 design and in the actual negative-control run. A test that checked only the span would have
 measured nothing. What discriminates is *where the wide end is*.
 
+**Three of `parity_origin`'s eight checks survive the mutation, and all three now say so in their
+own names** — `[A0-precondition]` (both rects rendered), `[A4-convention-blind]` (clip x is not
+mirrored) and `[B3-convention-blind]` (the span). Only `A1`, `A2`, `A3`, `B1` and `B2` are origin
+assertions, and exactly those five fail under `--flip-readback`. `A4` was initially unlabelled
+while being presented as part of the origin finding; it is a real discriminator, but against a
+*different* hypothesis — 180° rotation versus vertical mirror — and being decided purely by x it
+can say nothing about origin. An unlabelled assertion that passes under both conventions is how
+the original defect survived, so the rule is applied to this entry's own test too.
+
+**`row = (1 + clipY)/2 · H` is an EDGE coordinate, not a pixel-centre index.** The centre of
+integer row `r` is at clip `y = (r + 0.5)/H·2 − 1`, so the centre form is
+`(1 + clipY)/2 · H − 0.5`. That half-pixel is precisely why the measured centroids read
+**131.50 / 27.50** against edge predictions of 132.0 / 28.0 — the agreement is *exact*, and the
+±4 px tolerance is absorbing nothing.
+
 **Re-check** — the mutation is permanent and registered, so every run re-demonstrates that these
 checks can fail (the ENC-1249 pattern; a check never seen to fail is not a check):
 ```bash
@@ -1926,6 +1941,46 @@ DC_GOLDEN_FLIP_READBACK=1 ./build-dawn/core/dc_parity_extended 2>&1 | grep -E 'g
 Each mirrored frame prints `FALSIFICATION ACTIVE: … readback rows mirrored`, and
 `dc_parity_origin` exits **4** if the mutation was requested and did not apply — a no-op mutation
 reads exactly like a passing gate.
+
+**This entry's own instrument had the same defect, and that is the most useful thing in it.** An
+adversarial re-check of ENC-1432 found that the four `WILL_FAIL` negative controls **passed on a
+box with no adapter**, certifying nothing at all. Dawn does *not* fail `init()` when there is no
+usable Vulkan ICD — it falls back to its **Null backend**, which accepts every command and draws
+nothing. So `renderDawn` never set `skipped`, the suites rendered empty frames and exited
+non-zero, and bare `WILL_FAIL` — which asserts only "exited non-zero, for any reason" — turned
+that into PASSED. The same mechanism inverted `dc_parity_origin`'s own exit-3 ("CANNOT RUN") and
+exit-4 ("mutation did not apply") guards into passes, and the four suites' advertised
+graceful-skip never fired either (no adapter gave `2 passed, 15 failed`, not `0 passed, 0 failed,
+17 skipped`). **DC-L01's defect, reproduced inside the instrument built to detect it.** Fixed two
+ways, because either alone is insufficient:
+
+1. `parity_golden.hpp` treats a `Null` backend as **no adapter** in both `renderDawn` and
+   `pickDawn`, restoring the graceful-skip contract; `dc_parity_origin` then exits 3 as designed.
+2. The controls pin their **exact expected failure counts** with `PASS_REGULAR_EXPRESSION`
+   (e.g. `golden conformance: 15 passed, 2 failed, 0 skipped`) rather than an exit code. A
+   regex on the summary line cannot be satisfied by a renderer that never ran.
+
+Measured both ways afterwards — this is the row that matters, and a single green column would
+have hidden it:
+
+| `ctest -R dc_parity_` | real adapter (lavapipe) | `VK_ICD_FILENAMES=/nonexistent` |
+|---|---|---|
+| 4 plain probe suites | **Passed** | Passed *(skipped — contract restored)* |
+| `dc_parity_origin` | **Passed** | ***Failed*** *(exit 3, CANNOT RUN)* |
+| 4 `_flipped` controls | **Passed** | ***Failed*** *(regex not found)* |
+| total | **9/9 passed** | 4/9 — and **not one false green** |
+
+Before the fix that right-hand column read `Passed` for all four controls. **If you add a
+`WILL_FAIL` test to this repo, assert what failed, not that something did.**
+
+**Two numbers in this entry were wrong before they were right, both the same way.** The
+clip-y negation census was published first as "16 call sites", then "17 sites / 13 files", and is
+**21 sites across 14 files** — each wrong figure came from a grep, and each grep missed a
+spelling (`-pos2.y`, `-(c.y)`, and with it the whole `instancedPointColor` backend). The fix is
+to enumerate the `@vertex` stages, not to pattern-match; the table is in the header block. The
+raw-reader census in **DC-L05** was likewise restated from counted figures. A number written down
+beside the thing it describes and never re-derived is this file's recurring failure, and it does
+not stop being so inside an entry about exactly that.
 
 **The lesson.** A comment is not a measurement, and a fixture baked from real output will agree
 with the hardware while disagreeing with every word written above it — silently, forever, because
