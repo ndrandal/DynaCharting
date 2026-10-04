@@ -1600,6 +1600,147 @@ directory has to follow; it is not this repo's to edit (ENC-1384).
 ---
 
 
+## DC-L-1112 — The browser wasm contains 16 of the core's 148 translation units, and 22 whole subsystems are not in it at all 🔴
+
+**Claim.** `packages/dc-wasm/wasm/dc_engine_host.wasm` — the artifact `customer-layer` ships —
+contains **16 of `libdc.a`'s 148 translation units**. **Twenty-two of the 32**
+`core/src/` subsystem directories that hold archive members contribute **zero functions**:
+`recipe/` (20 TUs), `transform/transforms/` (17), `data/` (16), `interaction/` (13),
+`viewport/` (8), `anim/` and `layout/` (5 each), `math/`, `scale/`, `session/` and `drawing/`
+(4 each), `export/` and `manifest/` (3 each), `encode/`, `debug/`, `selection/` and `style/`
+(2 each), `binding/`, `geo/`, `geometry/`, `measure/` and `minimap/` (1 each). Measured, not
+inferred — see the gate below.
+
+The browser surface is **26 methods on one Embind class**, enumerated from the running module:
+
+```
+applyControl applyDataBatch backend bufferCount bufferSize dispose drawItemCount framebuffer
+framebufferHeight framebufferWidth geometryCount getBufferBytes getSceneDocument layerCount
+listResources loadFont measureText paneCount pick render renderMessage selfTestCompute
+setTextGeometry setTextGeometryX setTexturePixels stats
+```
+
+**ENC-995's premise was right and its diagnosis was one step off.** A substantive `EncodePass`
+change produced a byte-identical rebuild. The reason is **not** that the encode pass is excluded
+from the link — `target_link_libraries(dc_engine_host PRIVATE dc)` puts the whole archive on the
+link line, and `EncodePass.cpp.o` is a member of it, carrying all six `dc::EncodePass` symbols.
+It is that **wasm-ld never extracts the member**, because nothing in the link's own sources
+(`core/wasm/dc_engine_host.cpp` + the 18 `core/src/gpu/*.cpp` objects) names anything in it. So
+editing it cannot move a byte. **That matters because the two have different remedies**, which is
+what ENC-1112 was asked to settle: this is the *reachability* case, so the fix is a reference
+from the module (one `.function(…)` + an adapter, ENC-984's recipe), **not** a CMake change.
+
+**Two levels of removal, in this order.** Both have to be reasoned about separately:
+
+1. **Archive extraction** (before any optimisation). 132 of the 148 members are never pulled in.
+2. **`--gc-sections`**, which runs *after*. Within the 16 extracted members roughly half the
+   functions are still dropped — `SceneExport.cpp.o` lands **10** of its 652, and
+   `ComputeWgsl.cpp.o`/`ExprWgsl.cpp.o` are extracted and then collected **entirely**, 0
+   functions each. *Extraction is necessary, not sufficient*: judge by the link map, never by the
+   extraction list.
+
+**What IS in it**, by functions emitted (link map):
+
+| TU | fns | TU | fns |
+|---|---:|---|---:|
+| `commands/CommandProcessor` | 633 | `metadata/AnnotationStore` | 86 |
+| `document/SceneDocument` | 548 | `render/BackendRegistry` | 84 |
+| `scene/Scene` | 476 | `pipelines/PipelineCatalog` | 83 |
+| `ingest/IngestProcessor` | 274 | `render/BarSizing` | 44 |
+| `text/GlyphAtlas` | 220 | `document/SceneExport` | 10 |
+| `render/CpuBufferStore` | 199 | `transform/CustomCompute` | 1 |
+| `scene/ResourceRegistry` | 149 | `transform/ComputeWgsl` | 0 |
+| `event/EventBus` | 87 | `transform/ExprWgsl` | 0 |
+
+plus the 19 `core/src/gpu/*.cpp` TUs, which are **not** `libdc.a` members — `core/CMakeLists.txt`
+filters them out of the `dc` glob and compiles them straight into `dc_engine_host`, so they are
+whole-object-linked and the renderer *is* there (`DawnDevice` 2016 names, `DawnSceneRenderer` 39,
+all 11 backends).
+
+**The five ENC-950 named, settled.** ENC-950 found these implemented and none bound. Binding is
+not the only question — reachability is:
+
+| symbol | TU | in the shipped wasm |
+|---|---|---|
+| `dc::serializeSceneDocument` | `document/SceneDocument` | **yes** (ENC-984 reaches it via `getSceneDocument`) |
+| `dc::sceneToDocument` | `document/SceneExport` | **yes** |
+| `dc::serializeScene` | `session/SceneSerializer` | no — member not extracted |
+| `dc::deserializeScene` | `session/SceneSerializer` | no — member not extracted |
+| `dc::serializeChartState` | `session/ChartState` | no — member not extracted |
+| `dc::DChartFileIO::{serialize,deserialize,save,load}` | `export/DChartFile` | no — member not extracted |
+| `dc::EncodePass::{compile,compileInto}` | `encode/EncodePass` | no — member not extracted |
+
+**What it costs to reach one** — measured by forcing a single GC root onto the real link and
+re-reading the CODE section (`-Wl,--export=<mangled>`, no source edit), against a baseline CODE
+of 2,896,051 bytes:
+
+| forced root | CODE growth | libdc TUs pulled in |
+|---|---:|---|
+| `dc::CandleRecipe::build` | +32,004 B | +1 |
+| `serializeScene` + `serializeChartState` + `DChartFileIO::serialize` | +58,715 B | +3 |
+| `dc::EncodePass::compile` | +125,046 B | +4 (`EncodePass`, `Encoding`, `RowIdentity`, `TableStore`) |
+
+That is the *floor* for a binding, and it is the number ENC-984's "+209 KB for one function" was
+the first instance of. Budget it; do not read it as unrelated churn.
+
+**Consequences worth stating plainly.**
+
+- The `EncodePass` decisions in
+  `specs/2026-09-14-dynacharting-render-correctness/SPEC.md` **D2** (`lineAA@1` as the default
+  line pipeline, driven from `markSpecOf`'s default argument) and **D4** (arc chords at
+  `segmentsPerTurn = 72`) hold on the native path and on **nothing a browser user sees**.
+  `dc::markSpecOf` and `dc::arcSegmentsFor` are both absent. That is SPEC §5 **Q1**, now
+  measured rather than suspected.
+- `scale/` is absent in full, so **no `dc::LinearScale` runs in the browser**; the browser's
+  scale, plot box and axis maths are the TypeScript reimplementations in
+  `packages/dc-wasm/src/chart/{scale,plotbox,axis}.ts`. A C++ test of a scale is not a test of
+  what the browser computes.
+- DC-L08's third proof of unreachability ("dead-stripped from the shipped wasm") is confirmed by
+  a stronger instrument: every `transform/transforms/` and `layout/` TU is among the 132 never
+  extracted.
+- Nothing above is specific to `EncodePass`. **Before binding anything, run the census** — that
+  is the whole point of ENC-1112's AC for ENC-949/985/986/987/988/990.
+
+**Re-check.**
+```bash
+source ~/emsdk/emsdk_env.sh
+bash packages/dc-wasm/scripts/build-wasm.sh                     # expect: no diff under packages/dc-wasm/wasm/
+bash packages/dc-wasm/scripts/wasm-census.sh \
+     dc::EncodePass dc::markSpecOf Recipe dc::LinearScale dc::TableStore \
+     dc::serializeScene dc::serializeChartState dc::DChartFileIO \
+     dc::serializeSceneDocument dc::sceneToDocument
+#  -> 148 total, 16 extracted; 22 zero-code subsystems;
+#     the first eight ABSENT, the last two PRESENT; exit 1 (an ABSENT answer, not a failure)
+```
+`wasm-census.sh` relinks the **same** link command (read out of `build-wasm/build.ninja`, so it cannot drift
+from `core/CMakeLists.txt`) with `--profiling-funcs`, and then **proves that is all it did**: it
+strips the added `name` section back off and refuses to report unless the bytes equal the
+committed artifact. Observed at the stamp below:
+`ok probe module == committed artifact after stripping 'name' (sha256 d7bbf1fce8660b9d…)`.
+Without that gate the census would describe a module nobody ships.
+
+Toolchain-free partial check — the causal condition, not the artifact:
+```bash
+grep -rn 'EncodePass' core/wasm/dc_engine_host.cpp core/src/gpu/   # 0 hits -> nothing can reach it
+grep -rl 'DawnSceneRenderer' core/wasm/dc_engine_host.cpp core/src/gpu/ | wc -l   # 4 — positive control
+```
+
+**Ticket.** ENC-1112 is the measurement and stops here, by its own terms. Exposing any of the
+above is its own ticket (ENC-987/988/990 for recipes, ENC-949/986 for session state), and each
+one is now a known quantity rather than a discovery.
+
+**Verified at** `d66e500`, 2026-10-03 — `build-wasm.sh` rebuilt the committed artifact
+byte-identically (`sha256 d7bbf1fc…`, `git diff --stat -- packages/dc-wasm/wasm/` empty); the
+name-stripped `--profiling-funcs` relink equals it byte-for-byte; `llvm-nm` reports 8,760 defined
+functions and 0 matching `EncodePass`, `markSpecOf`, `Recipe`, `Manifest`, `TableStore` or
+`LinearScale`; the 26-method surface was enumerated by loading the committed module under node;
+`node packages/dc-wasm/scripts/validate-node.mjs` PASS; default `ctest --test-dir build`
+197/197 with `dc_gpu`, `dc_json_host` and the headless servers excluded at configure time
+(DC-L01).
+
+---
+
+
 # §C — Corrections
 
 Beliefs that were held confidently and were wrong. They are here because each one cost real
