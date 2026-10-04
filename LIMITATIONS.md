@@ -25,30 +25,33 @@ and corrected them.
 
 ## DC-L01 — A green default `ctest` says nothing about the renderer 🔴
 
-**Claim.** `cmake -B build && ctest --test-dir build` runs **196** tests and builds **no
-renderer at all**. `dc_gpu`, `dc_json_host`, all four headless demo servers and **47 render
+**Claim.** `cmake -B build && ctest --test-dir build` runs **197** tests and builds **no
+renderer at all**. `dc_gpu`, `dc_json_host`, all four headless demo servers and **52 render
 tests** are excluded at *configure* time by `DC_FETCH_DAWN` (default `OFF`,
 `core/CMakeLists.txt:165`). They are not "skipped" — they never enter `CTestTestfile.cmake`,
 so nothing reports them as missing.
 
-**Why it bites.** "196/196 passed" is the most reassuring possible output and it is compatible
+**Why it bites.** "197/197 passed" is the most reassuring possible output and it is compatible
 with the renderer being completely broken. Every pixel-level guarantee in this engine lives in
-the 47 tests that did not run — **including the tier-0 check that the chart depicts its data at
-all** (ENC-1249, `scripts/tier0.sh`).
+the 52 tests that did not run — **including the tier-0 check that the chart depicts its data at
+all** (ENC-1249, `scripts/tier0.sh`), and **every test that knows which way up the renderer
+draws** (ENC-1432, `dc_parity_origin` + the three `dc_parity_*_flipped` negative controls).
 
 **Re-check.**
 ```bash
-grep -cE '^\s*add_test\(' core/CMakeLists.txt            # 243  — all tests that exist
-grep -c '^add_test('  build/core/CTestTestfile.cmake     # 196  — all tests you just ran
+grep -cE '^\s*add_test\(' core/CMakeLists.txt            # 249  — all tests that exist
+grep -c '^add_test('  build/core/CTestTestfile.cmake     # 197  — all tests you just ran
 grep -n 'DC_FETCH_DAWN:BOOL' build/CMakeCache.txt        # OFF
 ```
-The 47-test gap is the single `if (DC_HAS_DAWN)` block at `core/CMakeLists.txt:1916-2489`.
-Target-level gap: **52** targets (`dc_gpu`, `dc_glfw_system`, `dc_json_host`,
-`dc_dawn_window_demo`, 4 servers, 44 test executables) behind the four `if (DC_HAS_DAWN)`
-guards at lines 274, 374, 391 and 1916. Measured directly:
+The 52-test gap is the single `if (DC_HAS_DAWN)` block at `core/CMakeLists.txt:1986-2615`
+(it was `1916-2489` at ENC-1249's stamp and `1899-…` before that — **re-derive the range, do
+not quote it**: `grep -n 'if (DC_HAS_DAWN)' core/CMakeLists.txt` and take the fourth hit).
+Target-level gap: **51** targets (`dc_gpu`, `dc_glfw_system`, `dc_json_host`,
+`dc_dawn_window_demo`, 4 servers, 43 test executables) behind the four `if (DC_HAS_DAWN)`
+guards at lines 274, 374, 391 and 1986. Measured directly:
 ```bash
-find build-dawn/core -maxdepth 1 -type f -executable | wc -l   # 242
-find build/core      -maxdepth 1 -type f -executable | wc -l   # 192  -> 50 executables missing
+find build-dawn/core -maxdepth 1 -type f -executable | wc -l   # 246
+find build/core      -maxdepth 1 -type f -executable | wc -l   # 195  -> 51 executables missing
 ```
 (50 executables, not 52 targets: `dc_gpu` is a library, and `dc_glfw_system` /
 `dc_dawn_window_demo` need the *second* gate `-DDC_DAWN_WINDOWED=ON`.)
@@ -89,7 +92,12 @@ ENC-1257 added one default-build and two Dawn-only tests, taking it to 191/238 a
 to 47; ENC-1251 added one default-build test, taking it to 192/239 with the gap unchanged at
 47** (measured, not predicted). The gap is still exactly the `DC_HAS_DAWN` block, every time. Read the *difference*, not
 to 47; ENC-1253 added one default-build test, taking it to 192/239 with the gap UNCHANGED at
-47** (measured post-merge, not predicted). The gap is still exactly the `DC_HAS_DAWN` block, every time. Read the *difference*, not
+47; ENC-1432 added five Dawn-only tests (`dc_parity_origin` and four negative controls),
+taking it to 197/249 and the gap from 47 to 52 — the first move in the gap since ENC-1257, and
+the first restamp of the LEFT-hand number since ENC-1265 (it was already 197, not 196, before
+this ticket: 244 declared minus 196 stated is 48, so the `declared - registered = gap`
+identity that `specs/2026-09-14-dynacharting-render-correctness/recheck.sh` Q6 asserts was
+**already red on `main`** at `d66e500`, by one)** (measured post-merge, not predicted). The gap is still exactly the `DC_HAS_DAWN` block, every time. Read the *difference*, not
 the left-hand number: a change that grows the registered count tells you nothing about the
 renderer either — which is the whole point, and is why three consecutive tickets moving this
 number changed nothing about what the default build proves.
@@ -97,7 +105,7 @@ number changed nothing about what the default build proves.
 **And ENC-1249 is the case that shows why the gap matters rather than merely being untidy.** The
 tier-0 check (`scripts/tier0.sh` -> `dc_enc1249_tier0_truthful`) is the one that asserts a chart
 depicts its data — that a rising series rises. It is a claim about pixels, so it needs the
-renderer, so it is inside the 47. A green default `ctest` therefore proves nothing about tier 0
+renderer, so it is inside the 52. A green default `ctest` therefore proves nothing about tier 0
 either. The check exits **3** (never 0) when no adapter comes up, and `scripts/tier0.sh` turns
 that into exit 2 "CANNOT RUN", precisely so it cannot join the class of things this entry is
 about.
@@ -114,6 +122,16 @@ giving a gap of **47**. Executable counts are carried forward from the ENC-1249 
 (`build-dawn` 239 against `build` 190); no Dawn build was made in this worktree, which is itself
 this entry's point — ENC-1253's renderer change (`DawnTextSdfBackend`, §C0) is inside the 47 and
 was verified by a browser capture rather than by `ctest`.
+**Verified at** `d66e500` + the ENC-1432 branch, 2026-10-03 — counted statically from
+`core/CMakeLists.txt` (**249**) and empirically from a real default configure in the ENC-1432
+worktree (**197**, all 197 passing), giving a gap of **52**; executable counts re-measured in
+this worktree, `build-dawn` (**246**) against `build` (**195**). This is the first stamp in a
+while made from a **real Dawn build**: `ctest --test-dir build-dawn` ran **249 of 249** green on
+Dawn/Vulkan lavapipe, which is also the run that proved ENC-1432's five new tests (§C7) — and
+every one of those five is inside the 52, so the default build proves none of them. Two
+corrections carried by this stamp: the left-hand number was already **197**, not the 196 stated
+since ENC-1265, so Q6's `declared - registered = gap` identity was red on `main` by one; and the
+`if (DC_HAS_DAWN)` range moved from `1916-2489` to `1986-2615` — **re-derive it, never quote it**.
 
 ---
 
@@ -296,6 +314,13 @@ one flip puts it upright. It also settles a contradiction inside this repo —
 `core/tests/parity_golden.hpp`'s `ORIGIN CONVENTION` block claims *"higher clip y ⇒ smaller row
 index (toward the top)"*, i.e. an upright raw readback. **That is false**, and its goldens cannot
 detect it because their probe pixel coordinates are baked from the same assumption.
+**Corrected under ENC-1432**, which re-measured the convention on the *C++* path the goldens
+actually use (`DawnSceneRenderer` + `DawnDevice::readPixel`, Dawn/Vulkan lavapipe) and got the
+same rows this table gives for the browser — base **60**, apex **338** at 600x400 — then
+re-derived all 63 probe coordinates and found that **none of them moves**: they were baked from
+the real output all along. 22 probes in 8 scenes are convention-dependent and the other 41 pass
+under either convention; `dc_parity_origin` and the `DC_GOLDEN_FLIP_READBACK` negative controls
+are what keeps that true. See **§C7**.
 
 **Consequence for new code.** **A third consumer that reads `core.framebuffer()` raw will render
 inverted**, and the failure is silent on any vertically symmetric scene — which is how this
@@ -337,8 +362,14 @@ git grep -n 'readFramebufferRGBA('
 ```
 
 **Ticket.** None for the deep fix. [ENC-696](https://linear.app/encultured/issue/ENC-696)
-(`d6b5acd`) fixed the blit only. The four latent inversions and `parity_golden.hpp`'s wrong
-origin note are likewise unticketed — ENC-717 measured them, and fixing them is not its scope.
+(`d6b5acd`) fixed the blit only. `parity_golden.hpp`'s wrong origin note **is fixed** — ENC-1432,
+§C7. The four latent inversions are ENC-1431, which ENC-1432 does not touch; note that its
+population of seven is the **JS side only**, and the same convention is read raw by **29** C++
+test files plus the shared `parity_golden.hpp` harness, `JsonHost.cpp`, `dawn_server_util.hpp`,
+`dawn_window_demo.cpp`, `DawnWindowContext.cpp` and the three `core/wasm/` hosts — 48 tracked
+files in all (`git grep -l 'readPixel\|readFramebufferRGBA' -- core apps packages | wc -l`).
+ENC-1432 classified two of them: `d79_dawn_json_host`'s four probes are convention-blind
+(derived, not measured — it does not use this harness), and so is the whole pick path.
 
 **Verified at** `376d545`, 2026-09-23 (ENC-717) — direction re-measured live (table above);
 consumer census re-derived across the whole worktree plus the corpus, not from the narrow grep.
@@ -1747,6 +1778,105 @@ date of the code that drew it, not the date you look at it. Before reading a bug
 committed image, check whether the image predates the fix — `git log -1 -- <image>` against
 `git log -1 -S<the fix> -- <source>` is the whole test, and it cost three months here.
 See **DC-L15**.
+
+### C7 — `parity_golden.hpp`'s ORIGIN CONVENTION was backwards, and every probe it governs was right
+
+`core/tests/parity_golden.hpp` carried an `ORIGIN CONVENTION` block stating that a clip-space
+point maps to readback row `(H-1)/2*(1-y)` — *"higher clip y ⇒ smaller row index (toward the
+top)"* — an **upright** raw readback. The true mapping is `row = (1 + clipY)/2 * H`: higher clip
+y ⇒ **larger** row index. The two differ in **sign**, so this is decisive, not a matter of
+degree. **DC-L05 is the general statement**; this correction is about the four golden suites
+that stood on top of it for three months.
+
+**Measured on the real path (ENC-1432).** `core/tests/parity_origin.cpp`, a registered `ctest`
+case, through `DawnSceneRenderer` + `DawnDevice::readPixel` on Dawn/Vulkan (lavapipe) in a
+`-DDC_FETCH_DAWN=ON` build — the same renderer and the same readback the goldens use. No mock,
+no replay, no copied artifact.
+
+| fixture (asymmetric in BOTH axes) | measured | `row=(1+y)/2·H` predicts | `row=(1-y)/2·H` predicts |
+|---|---|---|---|
+| rect, clip y centroid **+0.65**, 240x160 | row **131.50** | 132.0 | 28.0 |
+| rect, clip y centroid **−0.65**, 240x160 | row **27.50** | 28.0 | 132.0 |
+
+The same run re-drove **ENC-717's own fixture at ENC-717's size** — apex-up triangle, apex clip
+`y=+0.70`, base `y=−0.70`, 600x400 — and read the base (the wide end) at row **60** and the apex
+at row **338**. ENC-717 measured **60** and **338** through the *browser* on the committed wasm.
+The C++ and wasm readbacks agree row-for-row, and both contradict the comment. The col centroids
+(59.50 / 179.50 for a left rect and a right rect) show clip x is **not** mirrored, so this is a
+vertical mirror and not a 180° rotation.
+
+**Why the goldens could not catch it, and why no probe coordinate moved.** The probes were never
+written from the comment — they were baked from the real output, so fixture and hardware agreed
+and only the prose was wrong. A green parity run was never evidence either way. Three inline
+comments in the suites already said the true thing in so many words (*"clip +y -> bottom rows"*
+in `parity_conformance`'s `transforms` scene, `parity_extended`'s `indexed-gather`, and
+`parity_multipane`'s scenes 1 and 4) while the header said the opposite, one file away. The
+withdrawn citation is part of the lesson: the block claimed `d79_dawn_json_host` had *"already
+established (and documented)"* the orientation. That file contains **no orientation claim at
+all**, and all four of its probes are convention-independent — it was evidence for neither side.
+
+**All 63 probes were re-derived, twice and independently** — once by geometry, once by
+measurement with the readback rows mirrored (`DC_GOLDEN_FLIP_READBACK`). The two agreed on every
+probe. **None moved.** 22 probes in 8 scenes are convention-dependent:
+
+| suite | scene | convention-dependent probes |
+|---|---|---|
+| `parity_conformance` | `transforms/scale+translate` | 1 — (65,62) |
+| `parity_conformance` | `pipelines/line2d-1px` | 1 — (48,48), by **half a pixel**: the clip midpoint lands on a pixel *corner* and the line leaves it downward under one convention, upward under the other |
+| `parity_multipane` | `multipane/per-pane-clear` | 2 |
+| `parity_multipane` | `multipane/content+clear` | 4 |
+| `parity_multipane` | `multipane/content+clear+border+sep` | 2 |
+| `parity_extended` | `texturedQuad/4-corner-texels` | 4 (row mapping ⊕ texture v axis) |
+| `parity_extended` | `indexed-gather/instRect-diagonal` | 4 |
+| `parity_extended` | `indexed-gather/texQuad-diagonal` | 4 |
+
+**The other 41 test nothing about origin**, and that is the part worth keeping: the **entire pick
+path** (10 probes — every pick scene either covers the whole frame or is y-symmetric with
+x-decided misses) and the **entire `parity_text` suite** (whole-frame population counts, which a
+row permutation leaves identical — convention-blind by construction despite a strongly
+asymmetric glyph run) are blind to it, and in the conformance suite only two probes see it. The
+reasons for the rest are vertical symmetry, a probe on the shape's vertical centre line, an
+x-decided verdict, or a uniform frame. The full table is in the header block.
+
+**The symmetric-fixture trap, demonstrated rather than warned about.** The triangle's vertical
+*span* is 60..338, and mirroring it gives 61..339 — so the span is ~invariant and
+`parity_origin`'s span assertion (`[B3-convention-blind]`) **passes under both conventions**, by
+design and in the actual negative-control run. A test that checked only the span would have
+measured nothing. What discriminates is *where the wide end is*.
+
+**Re-check** — the mutation is permanent and registered, so every run re-demonstrates that these
+checks can fail (the ENC-1249 pattern; a check never seen to fail is not a check):
+```bash
+cmake -B build-dawn -G Ninja -DDC_BUILD_TESTS=ON -DDC_FETCH_DAWN=ON \
+  -DFETCHCONTENT_SOURCE_DIR_DAWN=~/dawn-src        # ~55-60 min cold; see DC-L01
+export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json
+
+./build-dawn/core/dc_parity_origin                  # 8 passed, 0 failed
+./build-dawn/core/dc_parity_origin --flip-readback  # 3 passed, 5 failed  (exit 1)
+
+# and the suites, with and without the mutation
+ctest --test-dir build-dawn -R 'dc_parity_'         # 9/9: 5 plain + 4 WILL_FAIL controls
+DC_GOLDEN_FLIP_READBACK=1 ./build-dawn/core/dc_parity_conformance  # 15 pass, 2 FAIL
+DC_GOLDEN_FLIP_READBACK=1 ./build-dawn/core/dc_parity_multipane    #  2 pass, 3 FAIL (8 probes)
+DC_GOLDEN_FLIP_READBACK=1 ./build-dawn/core/dc_parity_extended     #  7 pass, 3 FAIL (12 probes)
+DC_GOLDEN_FLIP_READBACK=1 ./build-dawn/core/dc_parity_text         #  5 pass, 0 FAIL — blind, by construction
+```
+Each mirrored frame prints `FALSIFICATION ACTIVE: … readback rows mirrored`, and
+`dc_parity_origin` exits **4** if the mutation was requested and did not apply — a no-op mutation
+reads exactly like a passing gate.
+
+**The lesson.** A comment is not a measurement, and a fixture baked from real output will agree
+with the hardware while disagreeing with every word written above it — silently, forever, because
+nothing compares the two. If a test's subject is orientation, the fixture must be asymmetric and
+the check must be shown to fail under the opposite hypothesis. Related: **C5** (the same error in
+one test's own file header), **C6** (the same error one level up, at the level of a whole chart),
+and **DC-L05** (the convention itself, still unfixed at the source).
+
+**Verified at** `d66e500` + this branch, 2026-10-03 (ENC-1432) — `-DDC_FETCH_DAWN=ON`,
+Dawn/Vulkan lavapipe, 249/249 `ctest` green including the four new negative controls; the default
+build is unchanged at 197/197 and still proves none of it.
+
+---
 
 ---
 
