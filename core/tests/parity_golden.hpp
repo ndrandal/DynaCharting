@@ -20,20 +20,118 @@
 // and returns the TOP-LEFT-origin RGBA readback so a test can probe known pixels.
 // It deliberately pulls in NO GL headers and links only dc_gpu (no dc_gl / OSMesa).
 //
-// ORIGIN CONVENTION
-// -----------------
-// DawnDevice::readPixel is TOP-LEFT origin (row 0 = top). The Dawn backends negate
-// clip-space y so a scene lands on-screen the same way GL drew it; with the
-// top-left readback that means a clip-space point (x, y) maps to readback row
-// (H-1)/2*(1-y)... — i.e. higher clip y => smaller row index (toward the top).
-// The d79_dawn_json_host test already established (and documented) that the Dawn
-// readback matches GL orientation with NO extra flip, so the golden probe
-// coordinates below are just the on-screen pixel positions.
+// ORIGIN CONVENTION  (corrected under ENC-1432 — the old text was REFUTED)
+// ----------------------------------------------------------------------
+// `DawnDevice::readPixel(x, y)` is TOP-LEFT origin: it CopyTextureToBuffer's the
+// active target and indexes buffer row `y` with no flip (DawnDevice.cpp,
+// readPixel), and WebGPU texture row 0 is NDC y=+1. That part of the old note
+// was right. The mapping it drew from it was not:
+//
+//   WRONG (what this block used to say):  row = (H-1)/2 * (1 - clipY)
+//                                         "higher clip y => smaller row index"
+//   MEASURED:                             row = (1 + clipY)/2 * H
+//                                         higher clip y => LARGER row index
+//
+// Every Dawn backend negates clip y in its vertex stage (`vec4(p.x, -p.y, 0, 1)`
+// — 16 call sites across core/src/gpu, each commented "Y-FLIP ... to match the GL
+// bottom-left readback"). So clip y=+0.7 becomes NDC y=-0.7, which WebGPU puts
+// near the BOTTOM of the target, and the faithful top-down readback reports it at
+// a high row index. The raw readback is therefore vertically MIRRORED relative to
+// the authored scene — the general statement is LIMITATIONS.md DC-L05, and the
+// browser-side half of it is what EngineHost.blitFramebuffer flips on every frame.
+//
+// MEASURED, NOT ARGUED (ENC-1432, `dc_parity_origin`, Dawn/Vulkan lavapipe):
+//
+//   two solid rects, asymmetric in BOTH axes, 240x160
+//     RED  clip y +0.50..+0.80 (centroid +0.65), clip x -0.80..-0.20
+//          -> row centroid 131.50   (measured-convention prediction 132.0;
+//                                    refuted-convention prediction 28.0)
+//     BLUE clip y -0.80..-0.50 (centroid -0.65), clip x +0.20..+0.80
+//          -> row centroid  27.50   (measured 28.0; refuted 132.0)
+//     col centroids 59.50 / 179.50 — clip x is NOT mirrored, so this is a
+//     vertical mirror and not a 180-degree rotation.
+//
+//   ENC-717's own fixture, re-driven here: apex-up triangle, apex clip y=+0.70,
+//   base clip y=-0.70, at ENC-717's 600x400
+//     -> red spans rows 60..338; the WIDE end (the base, clip -0.70) is row 60.
+//        ENC-717 measured apex=338 / base=60 through the BROWSER on the committed
+//        wasm (headless Chrome, SwiftShader, status=1 backend=WebGPU drawCalls=2).
+//        Byte-for-byte the same rows: the C++ and wasm readbacks share the
+//        convention, and both differ in SIGN from the old note.
+//
+//   NOTE the span 60..338 is very nearly symmetric about H/2 — mirroring it gives
+//   61..339. A test that asserted only the vertical SPAN would pass under BOTH
+//   conventions. That is the symmetric-fixture trap, and it is why the fixtures
+//   above are asymmetric and why the discriminator is WHERE THE WIDE END IS.
+//
+// The d79_dawn_json_host citation that used to sit here is withdrawn: that file
+// contains no orientation claim at all (one label, "top-left RGBA readback"), and
+// all four of its probes are convention-independent by the derivation below — it
+// is evidence for neither convention.
+//
+// PROBE RE-DERIVATION (ENC-1432 — why no probe coordinate moved)
+// --------------------------------------------------------------
+// The goldens were never written against the comment. Every probe here was baked
+// from the real output, so the fixtures agreed with the hardware and disagreed
+// with the prose — which is exactly why a green run could not detect the error,
+// and why the ticket's "re-derive the probes" resolves to "re-derive, then
+// confirm unchanged" rather than a re-baseline. Three of the inline comments in
+// the suites (parity_conformance's `transforms`, parity_extended's
+// `indexed-gather`, parity_multipane's (1) and (4)) already said "clip +y ->
+// bottom rows" in so many words.
+//
+// Each probe was classified twice and independently — by geometry, and by
+// measurement with the readback rows mirrored (`DC_GOLDEN_FLIP_READBACK`, below).
+// Both agreed on all 63 probes. 22 probes in 8 scenes are CONVENTION-DEPENDENT
+// and fail when mirrored:
+//
+//   parity_conformance  transforms/scale+translate            (65,62)
+//                       pipelines/line2d-1px                  (48,48)
+//   parity_multipane    multipane/per-pane-clear              (64,32) (64,96)
+//                       multipane/content+clear               (64,32) (64,96)
+//                                                             (64,8)  (64,120)
+//                       multipane/content+clear+border+sep    (64,32) (64,96)
+//   parity_extended     texturedQuad/4-corner-texels          4 quadrant probes
+//                       indexed-gather/instRect-diagonal      4 quadrant probes
+//                       indexed-gather/texQuad-diagonal       4 quadrant probes
+//
+// The remaining 41 probes pass under BOTH conventions, i.e. they test nothing
+// about origin. That is not a defect in them, but it is worth knowing which
+// coverage you do NOT have, and the reasons group into four kinds:
+//
+//   * vertically symmetric geometry — instRect-sharp, rounded-rect, clip-mask,
+//     all four blend scenes, lineAA-solid/dashed (bands centred on clip y=0),
+//     volume/candles and recipe/full-chart's centre candle (open +0.3 / close
+//     -0.3 straddle 0 symmetrically), multipane/pane-borders and
+//     pane-separators (the two pane regions are exact reflections with identical
+//     clear colour and style, so the whole frame is mirror-symmetric);
+//   * probe on the shape's vertical centre line — triSolid and triAA probe the
+//     apex column, where coverage spans the same rows either way;
+//     gradient/per-vertex-color is an asymmetric scene probed one row off centre,
+//     where the mirror moves it 0.02 in clip y (~3/255 of colour, tol 24);
+//   * decided by x alone, or by a uniform frame — every "clear corner" probe,
+//     scissor/pane-region, cull/frustum, texturedQuad/solid-red and
+//     color-modulate;
+//   * permutation-invariant or not frame-shaped — parity_text asserts whole-frame
+//     POPULATION COUNTS (strong-stroke / partial-coverage / background totals),
+//     every one of which a row mirror leaves identical, so the whole file is
+//     convention-independent by construction despite an asymmetric glyph run;
+//     and all 10 pick probes go through pickDawn/renderPick, which reads one
+//     pixel of the pick target rather than building a frame — each pick scene is
+//     either full-frame-covering or y-symmetric with x-decided misses.
+//
+// So the ENTIRE pick path and the ENTIRE text suite are blind to the convention,
+// and in the conformance suite only two probes see it. If you add a scene whose
+// correctness depends on orientation, make the fixture asymmetric and check it
+// against DC_GOLDEN_FLIP_READBACK before believing it.
 //
 // SKIP-GRACEFULLY
 // ---------------
 // If Dawn can't bring up an adapter the helper returns a SKIPPED result and the
 // test exits 0 — matching every other Dawn test's graceful-skip behavior.
+// `dc_parity_origin` is the deliberate exception: it exits 3 ("CANNOT RUN"),
+// because an origin convention that was never measured is not a passing one
+// (DC-L01 / ENC-1095 — a skipped target looks exactly like a passing one).
 #pragma once
 
 #include "dc/scene/Scene.hpp"
