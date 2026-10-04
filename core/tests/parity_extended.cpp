@@ -89,8 +89,9 @@ static void runPick(const char* name, const SceneBuilder& b, int W, int H,
     }
     if (!row.match) {
       ok = false;
-      std::fprintf(stderr, "  FAIL [%s] probe(%d,%d): expect id=%u got id=%u\n",
-                   name, row.x, row.y, row.expectId, row.gotId);
+      std::fprintf(stderr,
+                   "  FAIL [%s] probe(%d,%d) queried y=%d: expect id=%u got id=%u\n",
+                   name, row.x, row.y, row.queriedY, row.expectId, row.gotId);
     }
   }
   if (g_capture) { std::printf("[%s] dawn=%s captured\n", name, f.dawnBackend.c_str()); return; }
