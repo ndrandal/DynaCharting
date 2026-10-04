@@ -37,12 +37,15 @@
 // with a grep — that is how this very number was got wrong twice in one session.
 // There are FIVE spellings and no single pattern catches them all:
 //
-//   -p.y      11 sites  triSolid, triGradient, triAA, line2d, points, textSDF,
-//                       instancedRect, instancedRectColor, SceneRenderer, pick x2
-//   -t0.y/-t1.y 2 sites lineAA  (ONE logical flip applied to both endpoints)
-//   -clip.y    2 sites  instancedCandle, pick
-//   -pos2.y    1 site   pick
-//   -(c.y)     2 sites  instancedPointColor, pick
+//   -p.y        13 sites / 11 files  triSolid, triGradient, triAA, line2d,
+//                                    points, textSDF, texturedQuad,
+//                                    instancedRect, instancedRectColor,
+//                                    SceneRenderer, pick
+//   -(c.y)       3 sites /  2 files  instancedPointColor, pick
+//   -clip.y      2 sites /  2 files  instancedCandle, pick
+//   -t0.y, -t1.y 2 sites /  1 file   lineAA (ONE logical flip, both endpoints)
+//   -pos2.y      1 site  /  1 file   pick
+//                        = 21 sites across 14 distinct files
 //
 // Count them by ENUMERATING THE VERTEX STAGES instead — `grep -c '@vertex'` per
 // file, then read each one. The two vertex stages that do NOT negate are correct
