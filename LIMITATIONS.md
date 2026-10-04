@@ -1891,6 +1891,46 @@ See **DC-L15**.
 
 ---
 
+### C7 — `strings dc_engine_host.wasm | grep -ci <name>` is an EMBIND-NAME test, not a code-presence test
+
+**The belief.** ENC-984 established the house method for "is this thing in the shipped wasm?":
+`strings packages/dc-wasm/wasm/dc_engine_host.wasm | grep -ci sceneDocument` went **0 → 1** when
+the binding landed, and `… | grep -ci recipe` is **0** because the recipe family is
+dead-stripped. `CLAUDE.md` and **DC-L08** both state the method, and three entries rest on it.
+
+**Why it is weaker than it looks.** The committed `.wasm` carries **no `name` custom section**
+(`llvm-objdump --section-headers` lists `TYPE IMPORT FUNCTION TABLE MEMORY GLOBAL EXPORT ELEM
+DATACOUNT CODE DATA target_features` and nothing else), so it has no symbol table at all.
+`strings` can therefore only see **string literals in `DATA`** — which for this module means the
+Embind names, `applyControl`'s command vocabulary, WGSL shader text, and assertion messages. It
+is blind to code, and it is wrong in **both** directions:
+
+| probe | `strings` | actually in the module |
+|---|---:|---|
+| `dc::sceneToDocument` | 0 | **yes** — 1 function |
+| `dc::serializeSceneDocument` | 0 | **yes** — 1 function (what ENC-984 bound!) |
+| `dc::layoutText` | 0 | **yes** — 1 function |
+| `encode` | **25** | **no** encode-pass code — all 25 are `wgpu*CommandEncoder*` / `emwgpuCreate*Encoder` import names |
+
+ENC-984's own 0 → 1 did not measure its function; it measured the *method name*
+`getSceneDocument`, which happens to contain `sceneDocument` case-insensitively. The function it
+bound, `dc::serializeSceneDocument`, is in the module and `strings` scores it **0**.
+
+**What it is still good for.** A probe that *is* a literal in the target TU — DC-L08's
+`treemap`, which `Treemap::op()` returns as a `const char*` — works, but by coincidence of the
+code having that literal, not by construction. Neither conclusion changed: `recipe` and
+`treemap` really are absent, confirmed by the authoritative instrument below.
+
+**Use instead.** `bash packages/dc-wasm/scripts/wasm-census.sh <symbol> …` — it relinks the real
+link with `--profiling-funcs`, proves the result *is* the committed artifact by stripping the
+added `name` section and comparing sha256, and then reads the symbol table. **DC-L-1112** has the
+full mechanism and the census. A `strings` count that disagrees with it is `strings` being wrong.
+
+**Found at** `d66e500`, 2026-10-03 (ENC-1112).
+
+---
+
+
 # §R — Retired
 
 Entries that stopped being true. Nothing is deleted: a log that shows its own falsifications is
