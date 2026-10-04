@@ -240,7 +240,7 @@ Four things about it are deliberate and easy to get wrong if you extend it:
 #### Which way up the renderer draws — and how to prove your test knows (ENC-1432)
 
 **`row = (1 + clipY)/2 * H`.** Higher authored clip y lands at a **larger** readback row index.
-Every Dawn backend negates clip y in its vertex stage (`vec4(p.x, -p.y, 0, 1)`, 16 sites under
+Every Dawn backend negates clip y in its vertex stage (17 negation sites across 13 files under
 `core/src/gpu/`) while `DawnDevice::readPixel` is faithfully top-down, so **the raw readback is
 vertically mirrored relative to the scene you authored**. `LIMITATIONS.md` **DC-L05** is the
 convention; **§C7** is the correction that measured it on this path.

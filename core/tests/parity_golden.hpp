@@ -33,8 +33,13 @@
 //                                         higher clip y => LARGER row index
 //
 // Every Dawn backend negates clip y in its vertex stage (`vec4(p.x, -p.y, 0, 1)`
-// — 16 call sites across core/src/gpu, each commented "Y-FLIP ... to match the GL
-// bottom-left readback"). So clip y=+0.7 becomes NDC y=-0.7, which WebGPU puts
+// — 17 negation sites across 13 files under core/src/gpu, each commented
+// "Y-FLIP ... to match the GL bottom-left readback". Count them with
+// `grep -rnoE '\-(p|pos|clip|t0|t1)\.y' core/src/gpu/*.cpp`, NOT with the
+// `p.x, -p.y` literal: lineAA spells it `-t0.y`/`-t1.y` and instancedCandle
+// `-clip.y`, so the literal finds 11 of the 13 files and misses exactly those
+// two — one of them lineAA@1, THE default line pipeline). So clip y=+0.7 becomes NDC
+// y=-0.7, which WebGPU puts
 // near the BOTTOM of the target, and the faithful top-down readback reports it at
 // a high row index. The raw readback is therefore vertically MIRRORED relative to
 // the authored scene — the general statement is LIMITATIONS.md DC-L05, and the
