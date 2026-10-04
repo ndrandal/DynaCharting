@@ -1723,6 +1723,20 @@ committed artifact. Observed at the stamp below:
 `ok probe module == committed artifact after stripping 'name' (sha256 d7bbf1fce8660b9d…)`.
 Without that gate the census would describe a module nobody ships.
 
+**The gate has been seen to fail, which is the only reason to trust it.** Flip one byte of the
+committed artifact and the script refuses with exit **2**, naming both hashes:
+```bash
+W=packages/dc-wasm/wasm/dc_engine_host.wasm; B=$(sha256sum "$W" | cut -d' ' -f1)
+printf '\xff' | dd of="$W" bs=1 seek=$(( $(stat -c%s "$W") - 1 )) count=1 conv=notrunc status=none
+[ "$B" != "$(sha256sum "$W" | cut -d' ' -f1)" ] || echo 'MUTATION DID NOT APPLY — control invalid'
+bash packages/dc-wasm/scripts/wasm-census.sh dc::EncodePass; echo "exit=$?"   # CANNOT RUN, exit 2
+git checkout -- "$W"
+```
+Flip the **first** byte instead and the control is vacuous: a wasm file begins `\0asm`, so
+writing `\x00` at offset 0 changes nothing, the sha256 does not move, and the script reports a
+clean census that looks exactly like the gate passing. That attempt was made first here. Assert
+the mutation applied.
+
 Toolchain-free partial check — the causal condition, not the artifact:
 ```bash
 grep -rn 'EncodePass' core/wasm/dc_engine_host.cpp core/src/gpu/   # 0 hits -> nothing can reach it
