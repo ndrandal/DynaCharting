@@ -32,20 +32,45 @@
 //   MEASURED:                             row = (1 + clipY)/2 * H
 //                                         higher clip y => LARGER row index
 //
-// Every Dawn backend negates clip y in its vertex stage (`vec4(p.x, -p.y, 0, 1)`
-// — 17 negation sites across 13 files under core/src/gpu, each commented
-// "Y-FLIP ... to match the GL bottom-left readback". Count them with
-// `grep -rnoE '\-(p|pos|clip|t0|t1)\.y' core/src/gpu/*.cpp`, NOT with the
-// `p.x, -p.y` literal: lineAA spells it `-t0.y`/`-t1.y` and instancedCandle
-// `-clip.y`, so the literal finds 11 of the 13 files and misses exactly those
-// two — one of them lineAA@1, THE default line pipeline). So clip y=+0.7 becomes NDC
-// y=-0.7, which WebGPU puts
+// Every Dawn vertex stage that consumes authored clip-space coordinates negates
+// y: **21 negation sites across 14 files** under core/src/gpu. Do NOT count them
+// with a grep — that is how this very number was got wrong twice in one session.
+// There are FIVE spellings and no single pattern catches them all:
+//
+//   -p.y      11 sites  triSolid, triGradient, triAA, line2d, points, textSDF,
+//                       instancedRect, instancedRectColor, SceneRenderer, pick x2
+//   -t0.y/-t1.y 2 sites lineAA  (ONE logical flip applied to both endpoints)
+//   -clip.y    2 sites  instancedCandle, pick
+//   -pos2.y    1 site   pick
+//   -(c.y)     2 sites  instancedPointColor, pick
+//
+// Count them by ENUMERATING THE VERTEX STAGES instead — `grep -c '@vertex'` per
+// file, then read each one. The two vertex stages that do NOT negate are correct
+// not to: DawnPostProcess and DawnWindowContext are fullscreen blits that build
+// NDC straight from @builtin(vertex_index) and never see authored coordinates.
+//
+// (The history, because it is the same bug as the subject of this block: the
+// first pass here said "16 call sites", counted off a grep whose output included
+// comment lines. The second said "17 sites / 13 files" from
+// `-(p|pos|clip|t0|t1)\.y`, which silently misses `-pos2.y` and `-(c.y)` — and
+// dropped instancedPointColor from the census entirely, a file whose own comment
+// reads "NDC y-flip matches every other backend". A third pass enumerated the
+// stages and got 21/14. Also do not grep for the string "Y-FLIP" to find them:
+// only 4 of the 14 files carry that label.)
+//
+// So clip y=+0.7 becomes NDC y=-0.7, which WebGPU puts
 // near the BOTTOM of the target, and the faithful top-down readback reports it at
 // a high row index. The raw readback is therefore vertically MIRRORED relative to
 // the authored scene — the general statement is LIMITATIONS.md DC-L05, and the
 // browser-side half of it is what EngineHost.blitFramebuffer flips on every frame.
 //
 // MEASURED, NOT ARGUED (ENC-1432, `dc_parity_origin`, Dawn/Vulkan lavapipe):
+//
+//   (`row = (1 + clipY)/2 * H` is an EDGE coordinate. The centre of integer row
+//    r sits at clip y = (r + 0.5)/H*2 - 1, so the centre-index form is
+//    `(1 + clipY)/2 * H - 0.5`. That half-pixel is exactly why the centroids
+//    below read 131.50 / 27.50 against edge predictions of 132.0 / 28.0 — the
+//    agreement is EXACT, not approximate, and the tolerance absorbs nothing.)
 //
 //   two solid rects, asymmetric in BOTH axes, 240x160
 //     RED  clip y +0.50..+0.80 (centroid +0.65), clip x -0.80..-0.20
