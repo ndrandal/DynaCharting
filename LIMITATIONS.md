@@ -43,18 +43,31 @@ grep -cE '^\s*add_test\(' core/CMakeLists.txt            # 249  — all tests th
 grep -c '^add_test('  build/core/CTestTestfile.cmake     # 197  — all tests you just ran
 grep -n 'DC_FETCH_DAWN:BOOL' build/CMakeCache.txt        # OFF
 ```
-The 52-test gap is the single `if (DC_HAS_DAWN)` block at `core/CMakeLists.txt:1986-2615`
-(it was `1916-2489` at ENC-1249's stamp and `1899-…` before that — **re-derive the range, do
-not quote it**: `grep -n 'if (DC_HAS_DAWN)' core/CMakeLists.txt` and take the fourth hit).
-Target-level gap: **51** targets (`dc_gpu`, `dc_glfw_system`, `dc_json_host`,
-`dc_dawn_window_demo`, 4 servers, 43 test executables) behind the four `if (DC_HAS_DAWN)`
-guards at lines 274, 374, 391 and 1986. Measured directly:
+All **52** excluded tests sit in the single `if (DC_HAS_DAWN)` block at
+`core/CMakeLists.txt:1986-2636` — verified by counting, not assumed: 52 `add_test(` inside that
+one block, 197 outside, 249 total. (It was `1916-2489` at ENC-1249's stamp and `1899-…` before
+that — **re-derive the range, do not quote it.** The four `if (DC_HAS_DAWN)` guards are at 274,
+374, 391 and 1986, and the first three contain **no** `add_test` at all, so the "fourth hit"
+is the one that matters.)
+
+**Target-level gap: 51 executables**, and the breakdown matters because two of the things people
+list here are not executables at all:
+`dc_json_host` (1, guard at 374) + the four headless demo binaries `dc_showcase_server`,
+`dc_live_server`, `dc_dashboard_server`, `dc_gallery` (guard at 391) + **46** test executables
+(the 1986 block) = **51**, which is exactly the on-disk delta below. `dc_gpu` and
+`dc_glfw_system` are **libraries**, so they are missing from the default build but were never in
+an executable count; and `dc_dawn_window_demo` is behind a *second* gate
+(`if (DC_HAS_DAWN AND DC_DAWN_WINDOWED)`, line 361), so it is absent from **both** builds here
+and belongs in neither figure. Measured directly:
 ```bash
 find build-dawn/core -maxdepth 1 -type f -executable | wc -l   # 246
 find build/core      -maxdepth 1 -type f -executable | wc -l   # 195  -> 51 executables missing
 ```
-(50 executables, not 52 targets: `dc_gpu` is a library, and `dc_glfw_system` /
-`dc_dawn_window_demo` need the *second* gate `-DDC_DAWN_WINDOWED=ON`.)
+*(ENC-1432 corrected this paragraph twice over: it previously claimed "51 targets (`dc_gpu`,
+`dc_glfw_system`, `dc_json_host`, `dc_dawn_window_demo`, 4 servers, 43 test executables)" — a
+breakdown that summed wrong and double-counted two libraries and a doubly-gated demo — directly
+above a stale parenthetical still saying "50 executables, not 52 targets". Both are replaced by
+the counted figures above.)*
 
 **ENC-1249 corrected two stale details here**, both dating from before ENC-995's stamp: the
 block was already at 1916, not 1899, and the "five guarded ranges" list named boundaries
@@ -131,7 +144,7 @@ Dawn/Vulkan lavapipe, which is also the run that proved ENC-1432's five new test
 every one of those five is inside the 52, so the default build proves none of them. Two
 corrections carried by this stamp: the left-hand number was already **197**, not the 196 stated
 since ENC-1265, so Q6's `declared - registered = gap` identity was red on `main` by one; and the
-`if (DC_HAS_DAWN)` range moved from `1916-2489` to `1986-2615` — **re-derive it, never quote it**.
+`if (DC_HAS_DAWN)` range moved from `1916-2489` to `1986-2636` — **re-derive it, never quote it**.
 
 ---
 
