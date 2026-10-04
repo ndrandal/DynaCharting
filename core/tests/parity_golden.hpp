@@ -111,6 +111,23 @@
 //                       indexed-gather/instRect-diagonal      4 quadrant probes
 //                       indexed-gather/texQuad-diagonal       4 quadrant probes
 //
+// NOT ALL 22 ARE EQUALLY SOLID — pick your witness deliberately:
+//   * The ROBUST single-shape witness is `transforms/scale+translate` (65,62):
+//     the body spans rows 57.6..76.8 measured and 19.2..38.4 under the refuted
+//     mapping, so the probe clears the wrong answer by ~24 rows.
+//   * `pipelines/line2d-1px` (48,48) is FRAGILE and must not be load-bearing.
+//     Its margin is a quarter of a pixel (above), it is a 1px unantialiased
+//     primitive, and clip (0,0) maps to continuous row 48.0 under BOTH
+//     conventions — row H/2 is the reflection's fixed line. Widen `line2d@1`
+//     past 1px, or give it AA, and this probe becomes convention-BLIND without
+//     anything failing to announce it.
+//   * `texturedQuad/4-corner-texels` pins the COMPOSITION of the row mapping and
+//     the texture v axis, not the row mapping alone: mirror BOTH and all four
+//     probes pass again. A frame mirror alone does break them, which is what the
+//     knob below applies — but do not cite it as a pure origin witness.
+//   * `indexed-gather/instRect-diagonal` fails in both directions at once: its
+//     two "expect clear" probes go red while its two red probes go clear.
+//
 // The remaining 41 probes pass under BOTH conventions, i.e. they test nothing
 // about origin. That is not a defect in them, but it is worth knowing which
 // coverage you do NOT have, and the reasons group into four kinds:
