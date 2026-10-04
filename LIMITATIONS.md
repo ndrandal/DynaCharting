@@ -43,18 +43,31 @@ grep -cE '^\s*add_test\(' core/CMakeLists.txt            # 249  — all tests th
 grep -c '^add_test('  build/core/CTestTestfile.cmake     # 197  — all tests you just ran
 grep -n 'DC_FETCH_DAWN:BOOL' build/CMakeCache.txt        # OFF
 ```
-The 52-test gap is the single `if (DC_HAS_DAWN)` block at `core/CMakeLists.txt:1986-2615`
-(it was `1916-2489` at ENC-1249's stamp and `1899-…` before that — **re-derive the range, do
-not quote it**: `grep -n 'if (DC_HAS_DAWN)' core/CMakeLists.txt` and take the fourth hit).
-Target-level gap: **51** targets (`dc_gpu`, `dc_glfw_system`, `dc_json_host`,
-`dc_dawn_window_demo`, 4 servers, 43 test executables) behind the four `if (DC_HAS_DAWN)`
-guards at lines 274, 374, 391 and 1986. Measured directly:
+All **52** excluded tests sit in the single `if (DC_HAS_DAWN)` block at
+`core/CMakeLists.txt:1986-2636` — verified by counting, not assumed: 52 `add_test(` inside that
+one block, 197 outside, 249 total. (It was `1916-2489` at ENC-1249's stamp and `1899-…` before
+that — **re-derive the range, do not quote it.** The four `if (DC_HAS_DAWN)` guards are at 274,
+374, 391 and 1986, and the first three contain **no** `add_test` at all, so the "fourth hit"
+is the one that matters.)
+
+**Target-level gap: 51 executables**, and the breakdown matters because two of the things people
+list here are not executables at all:
+`dc_json_host` (1, guard at 374) + the four headless demo binaries `dc_showcase_server`,
+`dc_live_server`, `dc_dashboard_server`, `dc_gallery` (guard at 391) + **46** test executables
+(the 1986 block) = **51**, which is exactly the on-disk delta below. `dc_gpu` and
+`dc_glfw_system` are **libraries**, so they are missing from the default build but were never in
+an executable count; and `dc_dawn_window_demo` is behind a *second* gate
+(`if (DC_HAS_DAWN AND DC_DAWN_WINDOWED)`, line 361), so it is absent from **both** builds here
+and belongs in neither figure. Measured directly:
 ```bash
 find build-dawn/core -maxdepth 1 -type f -executable | wc -l   # 246
 find build/core      -maxdepth 1 -type f -executable | wc -l   # 195  -> 51 executables missing
 ```
-(50 executables, not 52 targets: `dc_gpu` is a library, and `dc_glfw_system` /
-`dc_dawn_window_demo` need the *second* gate `-DDC_DAWN_WINDOWED=ON`.)
+*(ENC-1432 corrected this paragraph twice over: it previously claimed "51 targets (`dc_gpu`,
+`dc_glfw_system`, `dc_json_host`, `dc_dawn_window_demo`, 4 servers, 43 test executables)" — a
+breakdown that summed wrong and double-counted two libraries and a doubly-gated demo — directly
+above a stale parenthetical still saying "50 executables, not 52 targets". Both are replaced by
+the counted figures above.)*
 
 **ENC-1249 corrected two stale details here**, both dating from before ENC-995's stamp: the
 block was already at 1916, not 1899, and the "five guarded ranges" list named boundaries
@@ -131,7 +144,7 @@ Dawn/Vulkan lavapipe, which is also the run that proved ENC-1432's five new test
 every one of those five is inside the 52, so the default build proves none of them. Two
 corrections carried by this stamp: the left-hand number was already **197**, not the 196 stated
 since ENC-1265, so Q6's `declared - registered = gap` identity was red on `main` by one; and the
-`if (DC_HAS_DAWN)` range moved from `1916-2489` to `1986-2615` — **re-derive it, never quote it**.
+`if (DC_HAS_DAWN)` range moved from `1916-2489` to `1986-2636` — **re-derive it, never quote it**.
 
 ---
 
@@ -364,12 +377,29 @@ git grep -n 'readFramebufferRGBA('
 **Ticket.** None for the deep fix. [ENC-696](https://linear.app/encultured/issue/ENC-696)
 (`d6b5acd`) fixed the blit only. `parity_golden.hpp`'s wrong origin note **is fixed** — ENC-1432,
 §C7. The four latent inversions are ENC-1431, which ENC-1432 does not touch; note that its
-population of seven is the **JS side only**, and the same convention is read raw by **29** C++
-test files plus the shared `parity_golden.hpp` harness, `JsonHost.cpp`, `dawn_server_util.hpp`,
-`dawn_window_demo.cpp`, `DawnWindowContext.cpp` and the three `core/wasm/` hosts — 48 tracked
-files in all (`git grep -l 'readPixel\|readFramebufferRGBA' -- core apps packages | wc -l`).
-ENC-1432 classified two of them: `d79_dawn_json_host`'s four probes are convention-blind
-(derived, not measured — it does not use this harness), and so is the whole pick path.
+population of seven is the **JS side only**. Counted on the C++ side, and counted carefully,
+because the obvious grep over-reports as badly as the narrow one under-reports:
+
+```bash
+git grep -l 'readPixel\|readFramebufferRGBA' -- core apps packages | wc -l   # 49 files
+git grep -l 'readPixel\|readFramebufferRGBA' -- core/tests | wc -l           # 30 of them
+```
+
+**49 is not 49 consumers.** It includes the declarations (`DawnDevice.hpp`, `GpuDevice.hpp`,
+`DawnSceneRenderer.hpp`, `DawnPostProcess.hpp`, `DawnWindowContext.hpp`, `ChartSnapshot.hpp`),
+the definition (`DawnDevice.cpp`), one internal user (`DawnPickBackend.cpp`), a `CMakeLists.txt`
+comment and a `README.md`. Subtract those and the **raw-consumer** population is:
+
+- **30 under `core/tests`** — 29 `.cpp` test files plus the shared `parity_golden.hpp` harness;
+- **9 elsewhere** — `core/src/host/JsonHost.cpp`, `core/demos/dawn_server_util.hpp`,
+  `core/demos/dawn_window_demo.cpp`, `core/src/gpu/DawnWindowContext.cpp`, the three
+  `core/wasm/` hosts (`dc_engine_host.cpp`, `dc_webgpu.cpp`, `dc_webgpu_all.cpp`), and on the JS
+  side `packages/dc-wasm/src/{EngineHost,wasm}.ts`.
+
+**39 raw consumers, then — not 7, and not 49.** ENC-1432 classified two of them:
+`d79_dawn_json_host`'s four probes are convention-blind (*derived*, not measured — it does not
+use this harness, so the knob cannot reach it), and the whole pick path is convention-blind
+(*measured*, via the query-mirror instrument). The other 37 are unclassified.
 
 **Verified at** `376d545`, 2026-09-23 (ENC-717) — direction re-measured live (table above);
 consumer census re-derived across the whole worktree plus the corpus, not from the narrow grep.
@@ -1871,6 +1901,21 @@ witness. And `indexed-gather/instRect-diagonal` fails in both directions at once
 design and in the actual negative-control run. A test that checked only the span would have
 measured nothing. What discriminates is *where the wide end is*.
 
+**Three of `parity_origin`'s eight checks survive the mutation, and all three now say so in their
+own names** — `[A0-precondition]` (both rects rendered), `[A4-convention-blind]` (clip x is not
+mirrored) and `[B3-convention-blind]` (the span). Only `A1`, `A2`, `A3`, `B1` and `B2` are origin
+assertions, and exactly those five fail under `--flip-readback`. `A4` was initially unlabelled
+while being presented as part of the origin finding; it is a real discriminator, but against a
+*different* hypothesis — 180° rotation versus vertical mirror — and being decided purely by x it
+can say nothing about origin. An unlabelled assertion that passes under both conventions is how
+the original defect survived, so the rule is applied to this entry's own test too.
+
+**`row = (1 + clipY)/2 · H` is an EDGE coordinate, not a pixel-centre index.** The centre of
+integer row `r` is at clip `y = (r + 0.5)/H·2 − 1`, so the centre form is
+`(1 + clipY)/2 · H − 0.5`. That half-pixel is precisely why the measured centroids read
+**131.50 / 27.50** against edge predictions of 132.0 / 28.0 — the agreement is *exact*, and the
+±4 px tolerance is absorbing nothing.
+
 **Re-check** — the mutation is permanent and registered, so every run re-demonstrates that these
 checks can fail (the ENC-1249 pattern; a check never seen to fail is not a check):
 ```bash
@@ -1892,10 +1937,58 @@ DC_GOLDEN_FLIP_READBACK=1 ./build-dawn/core/dc_parity_text         #  5 pass, 0 
 DC_GOLDEN_FLIP_READBACK=1 ./build-dawn/core/dc_parity_extended 2>&1 | grep -E 'golden-pick|pick/'
 #   -> 4 "FALSIFICATION ACTIVE ... probe y mirrored to H-1-y" banners, and all 4
 #      pick scenes still PASS: the pick path is convention-blind, measured.
+
+# THE ROW THAT MATTERS: run the whole thing with NO adapter and check nothing goes
+# green for nothing. Before ENC-1432's second fix, the four controls passed here.
+VK_ICD_FILENAMES=/nonexistent/none.json ctest --test-dir build-dawn -R 'dc_parity_'
+#   -> 4/9. The 4 plain probe suites PASS (skipped — graceful-skip contract),
+#      dc_parity_origin FAILS (exit 3, CANNOT RUN), and all 4 _flipped controls
+#      FAIL with "Required regular expression not found". Not one false green.
+ctest --test-dir build-dawn -R 'dc_parity_'          # real adapter -> 9/9 passed
 ```
 Each mirrored frame prints `FALSIFICATION ACTIVE: … readback rows mirrored`, and
 `dc_parity_origin` exits **4** if the mutation was requested and did not apply — a no-op mutation
 reads exactly like a passing gate.
+
+**This entry's own instrument had the same defect, and that is the most useful thing in it.** An
+adversarial re-check of ENC-1432 found that the four `WILL_FAIL` negative controls **passed on a
+box with no adapter**, certifying nothing at all. Dawn does *not* fail `init()` when there is no
+usable Vulkan ICD — it falls back to its **Null backend**, which accepts every command and draws
+nothing. So `renderDawn` never set `skipped`, the suites rendered empty frames and exited
+non-zero, and bare `WILL_FAIL` — which asserts only "exited non-zero, for any reason" — turned
+that into PASSED. The same mechanism inverted `dc_parity_origin`'s own exit-3 ("CANNOT RUN") and
+exit-4 ("mutation did not apply") guards into passes, and the four suites' advertised
+graceful-skip never fired either (no adapter gave `2 passed, 15 failed`, not `0 passed, 0 failed,
+17 skipped`). **DC-L01's defect, reproduced inside the instrument built to detect it.** Fixed two
+ways, because either alone is insufficient:
+
+1. `parity_golden.hpp` treats a `Null` backend as **no adapter** in both `renderDawn` and
+   `pickDawn`, restoring the graceful-skip contract; `dc_parity_origin` then exits 3 as designed.
+2. The controls pin their **exact expected failure counts** with `PASS_REGULAR_EXPRESSION`
+   (e.g. `golden conformance: 15 passed, 2 failed, 0 skipped`) rather than an exit code. A
+   regex on the summary line cannot be satisfied by a renderer that never ran.
+
+Measured both ways afterwards — this is the row that matters, and a single green column would
+have hidden it:
+
+| `ctest -R dc_parity_` | real adapter (lavapipe) | `VK_ICD_FILENAMES=/nonexistent` |
+|---|---|---|
+| 4 plain probe suites | **Passed** | Passed *(skipped — contract restored)* |
+| `dc_parity_origin` | **Passed** | ***Failed*** *(exit 3, CANNOT RUN)* |
+| 4 `_flipped` controls | **Passed** | ***Failed*** *(regex not found)* |
+| total | **9/9 passed** | 4/9 — and **not one false green** |
+
+Before the fix that right-hand column read `Passed` for all four controls. **If you add a
+`WILL_FAIL` test to this repo, assert what failed, not that something did.**
+
+**Two numbers in this entry were wrong before they were right, both the same way.** The
+clip-y negation census was published first as "16 call sites", then "17 sites / 13 files", and is
+**21 sites across 14 files** — each wrong figure came from a grep, and each grep missed a
+spelling (`-pos2.y`, `-(c.y)`, and with it the whole `instancedPointColor` backend). The fix is
+to enumerate the `@vertex` stages, not to pattern-match; the table is in the header block. The
+raw-reader census in **DC-L05** was likewise restated from counted figures. A number written down
+beside the thing it describes and never re-derived is this file's recurring failure, and it does
+not stop being so inside an entry about exactly that.
 
 **The lesson.** A comment is not a measurement, and a fixture baked from real output will agree
 with the hardware while disagreeing with every word written above it — silently, forever, because

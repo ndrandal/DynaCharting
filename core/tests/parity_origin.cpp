@@ -166,6 +166,16 @@ int main(int argc, char** argv) {
   std::printf("[A] dawn=%s %dx%d  flippedForFalsification=%s\n",
               a.dawnBackend.c_str(), AW, AH,
               a.flippedForFalsification ? "true" : "false");
+  // Belt and braces on top of the harness's Null rejection: name the adapter in
+  // the output, so a reader of a green run can see WHICH renderer produced it.
+  // Dawn's Null backend accepts every command and draws nothing, and a suite that
+  // measured nothing must never be mistaken for one that agreed with us.
+  if (dc::golden::backendIsNull(a.dawnBackend)) {
+    std::fprintf(stderr,
+                 "CANNOT RUN: Dawn backend is '%s' — nothing was rendered.\n",
+                 a.dawnBackend.c_str());
+    return 3;
+  }
 
   double redRowSum = 0, redColSum = 0, blueRowSum = 0, blueColSum = 0;
   long redN = 0, blueN = 0;
@@ -176,7 +186,11 @@ int main(int argc, char** argv) {
       else if (isBlue(p)) { blueRowSum += y; blueColSum += x; ++blueN; }
     }
   }
-  check(redN > 1000 && blueN > 1000, "[A] both rects rendered (solid fills found)");
+  // PRECONDITION, not an origin finding: invariant under a row mirror, so it
+  // passes with --flip-readback too. Labelled, per the rule this file enforces.
+  check(redN > 1000 && blueN > 1000,
+        "[A0-precondition] both rects rendered (solid fills found) — "
+        "convention-blind by construction");
   if (redN == 0 || blueN == 0) {
     std::fprintf(stderr, "  (red=%ld blue=%ld px — cannot measure)\n", redN, blueN);
     return 1;
@@ -186,6 +200,14 @@ int main(int argc, char** argv) {
 
   // Predictions. MEASURED convention: row = (1 + clipY)/2 * H  (clip +y -> BOTTOM).
   // REFUTED convention:               row = (1 - clipY)/2 * H  (clip +y -> TOP).
+  //
+  // NOTE those are EDGE coordinates, not pixel-centre indices: the centre of
+  // integer row r is at clip y = (r + 0.5)/H*2 - 1, so the centre-index form is
+  // (1 + clipY)/2 * H - 0.5. That half-pixel is exactly why the measured
+  // centroids below come out at 131.50 / 27.50 against edge predictions of
+  // 132.0 / 28.0 — the agreement is exact, not approximate, and the +-4px
+  // tolerance is not absorbing an error. (The sign claim does not depend on it;
+  // the two hypotheses are ~104 rows apart at H=160.)
   const double redClipYMid = 0.65, blueClipYMid = -0.65;
   const double predMeasuredRed  = (1.0 + redClipYMid)  / 2.0 * AH;   // 132.0
   const double predMeasuredBlue = (1.0 + blueClipYMid) / 2.0 * AH;   //  28.0
@@ -214,9 +236,15 @@ int main(int argc, char** argv) {
             std::fabs(blueRow - predRefutedBlue) > 20.0,
         "[A3] row != (1 - clipY)/2 * H — the refuted mapping is off by >20px");
   // A4 — x is NOT mirrored, so this is a vertical mirror and not a 180 rotation.
+  // A4 discriminates a DIFFERENT hypothesis — 180-degree rotation vs vertical
+  // mirror — and is decided purely by x, so it is invariant under a row mirror
+  // and passes with --flip-readback. It is NOT evidence about origin; it is what
+  // rules out the rotation reading of A1-A3. Labelled for exactly the reason B3
+  // is: an unlabelled assertion that passes under both conventions is how the
+  // defect this file documents survived.
   check(redCol < AW / 2.0 && blueCol > AW / 2.0,
-        "[A4] clip x is NOT mirrored (HIGH-left stays left) — a vertical "
-        "mirror, not a 180-degree rotation");
+        "[A4-convention-blind] clip x is NOT mirrored (HIGH-left stays left) — "
+        "rules out a 180-degree rotation; says nothing about origin");
 
   // -----------------------------------------------------------------------
   // PART B — ENC-717's fixture at ENC-717's size, for cross-path comparison.

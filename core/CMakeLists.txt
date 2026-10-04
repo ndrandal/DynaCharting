@@ -2562,20 +2562,41 @@ if (DC_BUILD_TESTS)
     # totals), every one of which is invariant under a vertical mirror. It is
     # convention-independent BY CONSTRUCTION, not by luck, and a WILL_FAIL case
     # for it would never fail.
+    # These pin the EXACT expected failure counts with PASS_REGULAR_EXPRESSION
+    # rather than a bare WILL_FAIL, and that distinction is load-bearing.
+    #
+    # WILL_FAIL alone certifies "exited non-zero" — for ANY reason. Dawn does not
+    # fail init() when there is no usable Vulkan ICD; it falls back to its Null
+    # backend, which accepts every command and draws nothing. So on a box with no
+    # adapter all four of these went GREEN while the renderer had never run, and
+    # dc_parity_origin's own exit-3 ("CANNOT RUN") and exit-4 ("mutation did not
+    # apply") guards were inverted into passes by the same mechanism. That is
+    # DC-L01's defect reproduced inside the instrument built to detect it
+    # (measured, ENC-1432; parity_golden.hpp now also treats Null as no adapter).
+    #
+    # A regex on the summary line cannot be satisfied by a renderer that did not
+    # run: a Null-backend run prints different counts, and a skipped run prints
+    # "0 passed, 0 failed, N skipped". PASS_REGULAR_EXPRESSION decides the verdict
+    # on its own (the exit code is ignored), so each case now asserts that the
+    # convention-dependent probes failed AND how many of them there were.
     add_test(NAME dc_parity_origin_flipped COMMAND dc_parity_origin --flip-readback)
-    set_tests_properties(dc_parity_origin_flipped PROPERTIES WILL_FAIL TRUE)
+    set_tests_properties(dc_parity_origin_flipped PROPERTIES
+      PASS_REGULAR_EXPRESSION "origin measurement: 3 passed, 5 failed")
 
     add_test(NAME dc_parity_conformance_flipped COMMAND dc_parity_conformance)
     set_tests_properties(dc_parity_conformance_flipped PROPERTIES
-      ENVIRONMENT "DC_GOLDEN_FLIP_READBACK=1" WILL_FAIL TRUE)
+      ENVIRONMENT "DC_GOLDEN_FLIP_READBACK=1"
+      PASS_REGULAR_EXPRESSION "golden conformance: 15 passed, 2 failed, 0 skipped")
 
     add_test(NAME dc_parity_multipane_flipped COMMAND dc_parity_multipane)
     set_tests_properties(dc_parity_multipane_flipped PROPERTIES
-      ENVIRONMENT "DC_GOLDEN_FLIP_READBACK=1" WILL_FAIL TRUE)
+      ENVIRONMENT "DC_GOLDEN_FLIP_READBACK=1"
+      PASS_REGULAR_EXPRESSION "golden multi-pane: 2 passed, 3 failed, 0 skipped")
 
     add_test(NAME dc_parity_extended_flipped COMMAND dc_parity_extended)
     set_tests_properties(dc_parity_extended_flipped PROPERTIES
-      ENVIRONMENT "DC_GOLDEN_FLIP_READBACK=1" WILL_FAIL TRUE)
+      ENVIRONMENT "DC_GOLDEN_FLIP_READBACK=1"
+      PASS_REGULAR_EXPRESSION "golden extended: 7 passed, 3 failed, 0 skipped")
 
     # ENC-501 (was ENC-500) — Dawn-only JsonHost golden conformance + streaming
     # sweep. Drives the JsonHost embedding pipeline (parseSceneDocument ->

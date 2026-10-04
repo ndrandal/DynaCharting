@@ -240,8 +240,10 @@ Four things about it are deliberate and easy to get wrong if you extend it:
 #### Which way up the renderer draws — and how to prove your test knows (ENC-1432)
 
 **`row = (1 + clipY)/2 * H`.** Higher authored clip y lands at a **larger** readback row index.
-Every Dawn backend negates clip y in its vertex stage (17 negation sites across 13 files under
-`core/src/gpu/`) while `DawnDevice::readPixel` is faithfully top-down, so **the raw readback is
+Every Dawn vertex stage that consumes authored clip coordinates negates y (**21 negation sites
+across 14 files** under `core/src/gpu/` — five different spellings, so **no single grep finds
+them all**; enumerate the `@vertex` stages instead, and see the header block for the table)
+while `DawnDevice::readPixel` is faithfully top-down, so **the raw readback is
 vertically mirrored relative to the scene you authored**. `LIMITATIONS.md` **DC-L05** is the
 convention; **§C7** is the correction that measured it on this path.
 
@@ -254,6 +256,15 @@ hardware agreed while the prose disagreed with both. Two consequences for anythi
   visible at all and a 180° rotation is distinguishable from one. Unlike the four golden suites
   it does **not** skip gracefully — no adapter is exit **3**, because an unmeasured convention is
   not a passing one (DC-L01).
+- **"An adapter came up" is not "a renderer came up".** Dawn does **not** fail `init()` with no
+  usable Vulkan ICD — it falls back to its **Null backend**, which accepts every command and
+  draws nothing. A probe suite then renders an empty frame and reports ordinary *failures*, not a
+  skip. Measured under ENC-1432: that made all four `_flipped` negative controls go **green** on
+  a box with no adapter, because bare `WILL_FAIL` certifies only "exited non-zero", and it
+  inverted `dc_parity_origin`'s own exit-3 and exit-4 guards into passes. `parity_golden.hpp` now
+  treats a `Null` backend as no adapter, and the controls pin their exact expected failure counts
+  with `PASS_REGULAR_EXPRESSION` instead of an exit code. **If you add a `WILL_FAIL` test here,
+  assert what failed, not that something did.**
 - **Falsify it.** `DC_GOLDEN_FLIP_READBACK=1` (or `--flip-readback`) mirrors the readback rows
   inside `parity_golden.hpp`, presenting exactly the refuted convention, and prints
   `FALSIFICATION ACTIVE` per frame so a mutation that did not apply cannot be mistaken for a
