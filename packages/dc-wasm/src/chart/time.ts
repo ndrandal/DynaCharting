@@ -1094,6 +1094,7 @@ function refuseReason(stride: number, indexOffset: number): string | null {
  */
 export class IndexTimeTracker {
   private readonly sources = new Map<number, Required<IndexTimeSource>>();
+  private readonly refused: RefusedIndexTimeSource[] = [];
   private n = 0;
   private sx = 0;
   private sy = 0;
@@ -1107,10 +1108,38 @@ export class IndexTimeTracker {
     private readonly epochKnown: boolean,
   ) {
     for (const s of sources) {
+      const indexOffset = s.indexOffset ?? 0;
+      // REFUSE, DO NOT REPAIR — the same choice `timeBasisFromWire` makes one
+      // section up, for the same reason. There is no nearby offset to fall back
+      // to: if the record has no ordinal lane then no byte in it is an ordinal,
+      // and a best-effort read would fit the axis against the sample value.
+      //
+      // Refused once, HERE, at registration — not per record. A stride is a
+      // property of the source, so a per-record check would re-decide a settled
+      // question several thousand times a second and print as often.
+      //
+      // The source is DROPPED rather than the constructor throwing. A throw in
+      // the scene-init path takes the whole view down, and the ruled outcome is
+      // narrower and already implemented downstream: no basis, so `basis()`
+      // reports null and `deriveAxes.ts` drops the axis
+      // (`format === 'timestamp' && !basis -> null`). That is D7's corollary —
+      // loss renders as a MISSING axis, never as a confident wrong clock. A
+      // legitimate sibling buffer in the same group still fits; only the source
+      // with no ordinal stops contributing.
+      const reason = refuseReason(s.stride, indexOffset);
+      if (reason !== null) {
+        this.refused.push({ bufferId: s.bufferId, stride: s.stride, indexOffset, reason });
+        console.warn(
+          `[dc-wasm] IndexTimeTracker refused buffer ${s.bufferId}: ${reason}. ` +
+            `No index\u2192time basis will be fitted from it, so a timestamp axis is ` +
+            `DROPPED rather than fitted against the sample value (SPEC D7, ENC-1452).`,
+        );
+        continue;
+      }
       this.sources.set(s.bufferId, {
         bufferId: s.bufferId,
         stride: s.stride,
-        indexOffset: s.indexOffset ?? 0,
+        indexOffset,
       });
     }
   }
@@ -1118,6 +1147,24 @@ export class IndexTimeTracker {
   /** Records folded so far. */
   get samples(): number {
     return this.n;
+  }
+
+  /** Buffer ids this tracker actually folds — refused sources are absent. */
+  get bufferIds(): number[] {
+    return [...this.sources.keys()];
+  }
+
+  /**
+   * Sources declined at registration, in declaration order. Empty is the
+   * healthy state; non-empty means a time axis this tracker was asked to fit
+   * will be dropped, and names the buffer and the rule it broke.
+   *
+   * NOT cleared by `reset()`: a refusal is a property of the registration, not
+   * of the tape, and a replay loop restarting does not make a stride-4 buffer
+   * acquire an ordinal lane.
+   */
+  get refusals(): ReadonlyArray<RefusedIndexTimeSource> {
+    return this.refused;
   }
 
   /**
