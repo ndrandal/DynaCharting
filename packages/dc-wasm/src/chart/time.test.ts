@@ -786,20 +786,25 @@ describe("the stride contract — a record with no ordinal lane is REFUSED (ENC-
     expect(r.msPerIndex).toBeCloseTo(60_000, 3);
     expect(r.originMs).toBeCloseTo(0, 3);
 
-    // 0.05 of price per minute reads as 1 200 000 ms per unit of x — 20 minutes
-    // a penny — and puts bar 0 at 2.57 days BEFORE the tape started.
-    expect(w.msPerIndex).toBeCloseTo(1_200_000, 0);
-    expect(w.originMs).toBeCloseTo(-222_000_000, 0);
-    expect(w.msPerIndex / r.msPerIndex).toBeCloseTo(20, 6);
+    // 0.05 of price per minute reads as 1 200 002.2 ms per unit of x — 20
+    // minutes a penny — and puts bar 0 at 2.569 days BEFORE the tape started.
+    // The 2.2 ms over the exact 1 200 000 is the lane being a float32: 185.05
+    // is not representable, which is its own small reminder of what is being
+    // read here. These are EXACT, to the millisecond, on purpose.
+    expect(w.msPerIndex).toBeCloseTo(1_200_002.2, 1);
+    expect(w.originMs).toBeCloseTo(-222_000_408.5, 1);
+    expect(w.msPerIndex / r.msPerIndex).toBeCloseTo(20.000037, 5);
 
     // What the chart would draw over its real ordinal domain 0…19: a 19-minute
-    // window rendered as 6 h 20 m, shifted back 2.57 days. Both monotonic, both
-    // smooth, neither an error.
+    // window rendered as 6 h 20 m, shifted back 2.569 days. Both monotonic,
+    // both smooth, neither an error.
     const domain = { min: 0, max: BARS - 1 };
     expect(timeDomainFor(r, domain)).toEqual({ min: 0, max: 1_140_000 });
     const drawn = timeDomainFor(w, domain);
-    expect(drawn.min).toBeCloseTo(-222_000_000, 0);
-    expect(drawn.max - drawn.min).toBeCloseTo(22_800_000, 0);
+    expect(drawn.min).toBeCloseTo(-222_000_408.5, 1);
+    expect(drawn.max - drawn.min).toBeCloseTo(22_800_041.8, 1);
+    expect(drawn.max - drawn.min).toBeGreaterThan(6 * 3_600_000); // 6 h 20 m …
+    expect(timeDomainFor(r, domain).max).toBe(19 * PERIOD_MS); // … for 19 min
     // And it reports itself as a MEASUREMENT over every sample it folded.
     expect(w.source).toBe("observed");
     expect(w.samples).toBe(BARS);
