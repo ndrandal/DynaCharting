@@ -150,24 +150,53 @@ git diff --stat -- packages/dc-wasm/wasm/            # expect: no change
 rebuild, and commit the artifact churn on its own rather than folded into a
 source change.
 
-**What is *not* in the module.** The browser surface is the single Embind
-`DcEngineHost` class in `core/wasm/dc_engine_host.cpp`. The C++ `dc::*Recipe`
-family (`core/src/recipe/`) is **not bound**, so it is dead-code-eliminated and
-`strings dc_engine_host.wasm | grep -ci recipe` is `0` — before and after this
-build. Exposing recipes to the browser is ENC-990; provisioning the toolchain
-(ENC-989) is what unblocks it, and does not by itself change what the module
-exports.
+**What is *not* in the module — measure it, do not reason about it (ENC-1112,
+LIMITATIONS.md DC-L-1112).** The browser surface is **26 methods** on the single
+Embind `DcEngineHost` class in `core/wasm/dc_engine_host.cpp`, and the module
+behind it holds **16 of `libdc.a`'s 148 translation units**. Twenty-two of the
+32 `core/src/` subsystems that hold archive members contribute **zero**
+functions — `recipe/` (20 TUs), `transform/transforms/` (17), `data/` (16),
+`interaction/` (13), `viewport/` (8), `encode/`, `manifest/`, `scale/`,
+`session/`, `export/`, `layout/`, `anim/`, `math/` and nine more. So the C++
+`dc::*Recipe` family, `dc::EncodePass`, `dc::LinearScale`, `dc::TableStore`,
+`serializeScene`, `serializeChartState` and `DChartFileIO` are **not in the
+artifact a browser loads**. Exposing recipes is ENC-990; ENC-989 provisioned the
+toolchain and did not by itself change what the module contains.
 
-> **Unbound means dead-stripped, and that is the whole mechanism (ENC-984).** A
-> tested C++ function that nothing in `dc_engine_host.cpp` names is simply not in
-> the artifact — `serializeSceneDocument` had been round-trip tested since D77 and
-> `strings dc_engine_host.wasm | grep -ci sceneDocument` was **0**. Adding one
-> `.function(...)` line to `EMSCRIPTEN_BINDINGS` is what makes it real, and the
-> artifact is committed, so **the export does not exist until you rebuild the wasm
-> and commit it**. Check an export the same way: `strings` for the name, then call
-> it from `scripts/validate-node.mjs`. Binding one function pulled in its
-> transitive code and grew the wasm by ~209 KB (2.72 MB → 2.93 MB) — expect that,
-> and do not read it as unrelated churn.
+```bash
+source ~/emsdk/emsdk_env.sh
+bash packages/dc-wasm/scripts/wasm-census.sh dc::EncodePass dc::LinearScale   # ABSENT / ABSENT
+bash packages/dc-wasm/scripts/wasm-census.sh                                  # the whole census
+```
+
+`wasm-census.sh` relinks the real link with `--profiling-funcs` and **proves
+that is all it did** — it strips the added `name` section and refuses to report
+unless the bytes equal the committed artifact. Run it **before** doing any
+binding work: the thing you intend to export may not be reachable, which is a
+different problem with a different fix.
+
+> **Unbound means dead-stripped, and that is the whole mechanism (ENC-984) —
+> except the first cut is coarser than that (ENC-1112).** A tested C++ function
+> that nothing in `dc_engine_host.cpp` names is simply not in the artifact.
+> Removal happens at **two** levels, in this order: wasm-ld only extracts an
+> archive member that resolves an undefined symbol (132 of the 148 are never
+> extracted — `EncodePass.cpp.o` among them, which is why editing it rebuilt
+> byte-identically), and `--gc-sections` then runs over what *was* extracted
+> (`SceneExport.cpp.o` lands 10 of its 652 functions). Adding one
+> `.function(...)` line to `EMSCRIPTEN_BINDINGS` is what makes an export real,
+> and the artifact is committed, so **the export does not exist until you
+> rebuild the wasm and commit it**. Budget for size: a single reference to
+> `EncodePass::compile` pulls in four TUs and **+125 KB** of code; ENC-984's one
+> function cost ~209 KB (2.72 MB → 2.93 MB). Expect that; it is not unrelated
+> churn.
+>
+> **Do not check an export with `strings` (LIMITATIONS.md §C7).** The committed
+> `.wasm` has no `name` section, so `strings` sees only string literals — it is
+> an *Embind-name* test, not a code-presence test, and it is wrong both ways:
+> `strings … | grep -c serializeSceneDocument` is **0** for a function that is
+> in the module, and `grep -ci encode` is **25** with no encode-pass code
+> present (they are all `wgpu*CommandEncoder*` import names). Use
+> `wasm-census.sh`, then call the export from `scripts/validate-node.mjs`.
 
 **Scene export (ENC-984).** `getSceneDocument(compact)` returns the live scene as
 `SceneDocument` JSON — a **copied string**, not a `typed_memory_view` like
