@@ -55,7 +55,7 @@ LINK="${LINK#: && }"; LINK="${LINK% && :}"
 d="$(mktemp -d "${TMPDIR:-/tmp}/dc-wasm-census.XXXXXX")" || die2 "mktemp failed"
 trap 'rm -rf "$d"' EXIT
 
-PROBE_LINK="${LINK/-o core\/dc_engine_host.js/--profiling-funcs -Wl,--why-extract=$d/why.txt -o $d/dc_engine_host.js}"
+PROBE_LINK="${LINK/-o core\/dc_engine_host.js/--profiling-funcs -Wl,--why-extract=$d/why.txt -Wl,--Map=$d/link.map -o $d/dc_engine_host.js}"
 [ "$PROBE_LINK" != "$LINK" ] || die2 "could not rewrite the link command's -o (it moved)"
 
 ( cd "$BUILD_DIR" && eval "$PROBE_LINK" ) >"$d/link.log" 2>&1 \
@@ -92,36 +92,48 @@ printf '  libdc.a translation units       %s total, %s extracted into the link\n
   "$(grep -c . "$d/members.txt")" "$(grep -c . "$d/extracted.txt")"
 printf '  (extraction is necessary, not sufficient: --gc-sections runs AFTER it)\n'
 
-printf '\n--- libdc.a TUs that contribute at least one function -------------------\n'
+# Per-TU function counts come from the LINK MAP, which names the owning archive
+# member of every function wasm-ld emitted. A name-substring count would be a
+# guess (and would credit `SceneDocument.cpp.o` with the `DocPane` helpers that
+# `Scene.cpp.o` actually emitted).
+printf '\n--- libdc.a TUs in the module, by functions emitted ---------------------\n'
 while read -r m; do
-  base="${m%.cpp.o}"
-  n=$(grep -cE "(^|[^A-Za-z0-9_])$base" "$d/defined.txt")
-  [ "$n" -gt 0 ] && printf '  %-30s ~%s names\n' "$m" "$n"
+  n=$(grep -cF "libdc.a($m):" "$d/link.map")
+  printf '  %-30s %6s function(s)%s\n' "$m" "$n" \
+    "$([ "$n" -eq 0 ] && printf '   <- extracted, then entirely --gc-sections-ed' )"
 done < "$d/extracted.txt"
 
+# gpu/ and host/ are deliberately NOT libdc.a members (core/CMakeLists.txt filters
+# them out of the dc glob): gpu/ is compiled straight into dc_engine_host, host/
+# is the standalone dc_json_host. Neither can appear in an archive-extraction
+# list, so neither belongs in this one.
 printf '\n--- core/src subdirectories with ZERO code in the module ----------------\n'
 for sub in "$ROOT"/core/src/*/; do
   name="${sub%/}"; name="${name##*/}"
+  case "$name" in gpu|host) continue ;; esac
   tus=0; present=0
   for f in "$sub"*.cpp; do
     [ -f "$f" ] || continue
     tus=$((tus+1))
     b="$(basename "$f" .cpp)"
-    grep -qx "$b.cpp.o" "$d/extracted.txt" && present=$((present+1))
+    [ "$(grep -cF "libdc.a($b.cpp.o):" "$d/link.map")" -gt 0 ] && present=$((present+1))
   done
-  [ "$tus" -gt 0 ] && [ "$present" -eq 0 ] && printf '  %-24s %s TU(s), none linked\n' "core/src/$name" "$tus"
+  [ "$tus" -gt 0 ] && [ "$present" -eq 0 ] && printf '  %-24s %s TU(s), no code in the module\n' "core/src/$name" "$tus"
 done
 
 rc=0
 if [ "$#" -gt 0 ]; then
   printf '\n--- queried symbols -----------------------------------------------------\n'
   for q in "$@"; do
-    n=$(grep -c -- "$q" "$d/defined.txt")
-    s=$(strings "$SHIPPED" | grep -c -- "$q")
+    # Anchored at the END so a prefix cannot answer for its own extension:
+    # `dc::serializeScene` must not be satisfied by `dc::serializeSceneDocument`
+    # (the same trap as DC-L12 vs DC-L-1277 one file over).
+    n=$(grep -cE -- "${q}([^A-Za-z0-9_]|$)" "$d/defined.txt")
+    s=$(strings "$SHIPPED" | grep -cF -- "$q")
     if [ "$n" -gt 0 ]; then
-      printf '  PRESENT  %-28s %s function(s) in the module   (strings says %s)\n' "$q" "$n" "$s"
+      printf '  PRESENT  %-28s %4s function(s) in the module   (strings says %s)\n' "$q" "$n" "$s"
     else
-      printf '  ABSENT   %-28s 0 functions in the module      (strings says %s)\n' "$q" "$s"
+      printf '  ABSENT   %-28s    0 functions in the module    (strings says %s)\n' "$q" "$s"
       rc=1
     fi
   done
