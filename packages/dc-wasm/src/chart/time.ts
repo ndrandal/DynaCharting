@@ -14,6 +14,7 @@
  *   1. THE STEP LADDER + TICK GENERATOR  (`chooseTimeStep`, `timeTicks`)
  *   2. THE LABEL GRAMMAR                 (`formatTimeTick`, `parsesAsTimestamp`)
  *   3. THE INDEX → TIME BASIS            (`IndexTimeTracker`, `indexToTime`)
+ *      — including the STRIDE CONTRACT a source must satisfy (`refuseReason`)
  *
  * (1) and (2) are pure functions over epoch milliseconds. They do not know
  * whether an SVG overlay, a WebGPU text pipeline or a PNG exporter will draw
@@ -1091,6 +1092,14 @@ function refuseReason(stride: number, indexOffset: number): string | null {
  * It reports `null` until it has two records at DISTINCT indices — with one
  * sample the cadence is unknown, and an axis that invents one is the caption
  * D7 deletes. A caller with no basis must drop the axis, not fall back.
+ *
+ * IT ALSO REFUSES A SOURCE WITH NO ORDINAL LANE, loudly (ENC-1452). A buffer
+ * whose `stride` cannot hold a 4-byte ordinal at `indexOffset` — above all a
+ * stride-4 buffer, where `r + 0` is the sample itself — is declined at
+ * registration, never folded, named on `refusals` and warned about once. With
+ * no accepted source `basis()` is `null`, so the axis is DROPPED, which is the
+ * same outcome as "the cadence is not yet a measurement". See `refuseReason`
+ * for the contract and why a best-effort read is the worse failure.
  */
 export class IndexTimeTracker {
   private readonly sources = new Map<number, Required<IndexTimeSource>>();

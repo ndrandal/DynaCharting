@@ -112,6 +112,7 @@ export type {
   TimeBasis,
   TimeBasisSource,
   IndexTimeSource,
+  RefusedIndexTimeSource,
   WireTimeBasis,
 } from "./chart/time";
 // Client-builder helpers (ENC-700): id allocator over the unified namespace.

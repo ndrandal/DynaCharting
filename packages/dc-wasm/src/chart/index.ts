@@ -80,6 +80,7 @@ export type {
   TimeBasis,
   TimeBasisSource,
   IndexTimeSource,
+  RefusedIndexTimeSource,
   WireTimeBasis,
 } from "./time";
 
