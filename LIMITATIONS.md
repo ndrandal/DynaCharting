@@ -25,30 +25,33 @@ and corrected them.
 
 ## DC-L01 — A green default `ctest` says nothing about the renderer 🔴
 
-**Claim.** `cmake -B build && ctest --test-dir build` runs **196** tests and builds **no
-renderer at all**. `dc_gpu`, `dc_json_host`, all four headless demo servers and **47 render
+**Claim.** `cmake -B build && ctest --test-dir build` runs **197** tests and builds **no
+renderer at all**. `dc_gpu`, `dc_json_host`, all four headless demo servers and **52 render
 tests** are excluded at *configure* time by `DC_FETCH_DAWN` (default `OFF`,
 `core/CMakeLists.txt:165`). They are not "skipped" — they never enter `CTestTestfile.cmake`,
 so nothing reports them as missing.
 
-**Why it bites.** "196/196 passed" is the most reassuring possible output and it is compatible
+**Why it bites.** "197/197 passed" is the most reassuring possible output and it is compatible
 with the renderer being completely broken. Every pixel-level guarantee in this engine lives in
-the 47 tests that did not run — **including the tier-0 check that the chart depicts its data at
-all** (ENC-1249, `scripts/tier0.sh`).
+the 52 tests that did not run — **including the tier-0 check that the chart depicts its data at
+all** (ENC-1249, `scripts/tier0.sh`), and **every test that knows which way up the renderer
+draws** (ENC-1432, `dc_parity_origin` + the three `dc_parity_*_flipped` negative controls).
 
 **Re-check.**
 ```bash
-grep -cE '^\s*add_test\(' core/CMakeLists.txt            # 243  — all tests that exist
-grep -c '^add_test('  build/core/CTestTestfile.cmake     # 196  — all tests you just ran
+grep -cE '^\s*add_test\(' core/CMakeLists.txt            # 249  — all tests that exist
+grep -c '^add_test('  build/core/CTestTestfile.cmake     # 197  — all tests you just ran
 grep -n 'DC_FETCH_DAWN:BOOL' build/CMakeCache.txt        # OFF
 ```
-The 47-test gap is the single `if (DC_HAS_DAWN)` block at `core/CMakeLists.txt:1916-2489`.
-Target-level gap: **52** targets (`dc_gpu`, `dc_glfw_system`, `dc_json_host`,
-`dc_dawn_window_demo`, 4 servers, 44 test executables) behind the four `if (DC_HAS_DAWN)`
-guards at lines 274, 374, 391 and 1916. Measured directly:
+The 52-test gap is the single `if (DC_HAS_DAWN)` block at `core/CMakeLists.txt:1986-2615`
+(it was `1916-2489` at ENC-1249's stamp and `1899-…` before that — **re-derive the range, do
+not quote it**: `grep -n 'if (DC_HAS_DAWN)' core/CMakeLists.txt` and take the fourth hit).
+Target-level gap: **51** targets (`dc_gpu`, `dc_glfw_system`, `dc_json_host`,
+`dc_dawn_window_demo`, 4 servers, 43 test executables) behind the four `if (DC_HAS_DAWN)`
+guards at lines 274, 374, 391 and 1986. Measured directly:
 ```bash
-find build-dawn/core -maxdepth 1 -type f -executable | wc -l   # 242
-find build/core      -maxdepth 1 -type f -executable | wc -l   # 192  -> 50 executables missing
+find build-dawn/core -maxdepth 1 -type f -executable | wc -l   # 246
+find build/core      -maxdepth 1 -type f -executable | wc -l   # 195  -> 51 executables missing
 ```
 (50 executables, not 52 targets: `dc_gpu` is a library, and `dc_glfw_system` /
 `dc_dawn_window_demo` need the *second* gate `-DDC_DAWN_WINDOWED=ON`.)
@@ -89,7 +92,12 @@ ENC-1257 added one default-build and two Dawn-only tests, taking it to 191/238 a
 to 47; ENC-1251 added one default-build test, taking it to 192/239 with the gap unchanged at
 47** (measured, not predicted). The gap is still exactly the `DC_HAS_DAWN` block, every time. Read the *difference*, not
 to 47; ENC-1253 added one default-build test, taking it to 192/239 with the gap UNCHANGED at
-47** (measured post-merge, not predicted). The gap is still exactly the `DC_HAS_DAWN` block, every time. Read the *difference*, not
+47; ENC-1432 added five Dawn-only tests (`dc_parity_origin` and four negative controls),
+taking it to 197/249 and the gap from 47 to 52 — the first move in the gap since ENC-1257, and
+the first restamp of the LEFT-hand number since ENC-1265 (it was already 197, not 196, before
+this ticket: 244 declared minus 196 stated is 48, so the `declared - registered = gap`
+identity that `specs/2026-09-14-dynacharting-render-correctness/recheck.sh` Q6 asserts was
+**already red on `main`** at `d66e500`, by one)** (measured post-merge, not predicted). The gap is still exactly the `DC_HAS_DAWN` block, every time. Read the *difference*, not
 the left-hand number: a change that grows the registered count tells you nothing about the
 renderer either — which is the whole point, and is why three consecutive tickets moving this
 number changed nothing about what the default build proves.
@@ -296,6 +304,13 @@ one flip puts it upright. It also settles a contradiction inside this repo —
 `core/tests/parity_golden.hpp`'s `ORIGIN CONVENTION` block claims *"higher clip y ⇒ smaller row
 index (toward the top)"*, i.e. an upright raw readback. **That is false**, and its goldens cannot
 detect it because their probe pixel coordinates are baked from the same assumption.
+**Corrected under ENC-1432**, which re-measured the convention on the *C++* path the goldens
+actually use (`DawnSceneRenderer` + `DawnDevice::readPixel`, Dawn/Vulkan lavapipe) and got the
+same rows this table gives for the browser — base **60**, apex **338** at 600x400 — then
+re-derived all 63 probe coordinates and found that **none of them moves**: they were baked from
+the real output all along. 22 probes in 8 scenes are convention-dependent and the other 41 pass
+under either convention; `dc_parity_origin` and the `DC_GOLDEN_FLIP_READBACK` negative controls
+are what keeps that true. See **§C7**.
 
 **Consequence for new code.** **A third consumer that reads `core.framebuffer()` raw will render
 inverted**, and the failure is silent on any vertically symmetric scene — which is how this
@@ -337,8 +352,11 @@ git grep -n 'readFramebufferRGBA('
 ```
 
 **Ticket.** None for the deep fix. [ENC-696](https://linear.app/encultured/issue/ENC-696)
-(`d6b5acd`) fixed the blit only. The four latent inversions and `parity_golden.hpp`'s wrong
-origin note are likewise unticketed — ENC-717 measured them, and fixing them is not its scope.
+(`d6b5acd`) fixed the blit only. `parity_golden.hpp`'s wrong origin note **is fixed** — ENC-1432,
+§C7. The four latent inversions are ENC-1431, which ENC-1432 does not touch; note that its
+population of seven is the **JS side only**, and the same convention is read raw by 30 C++ test
+files plus `JsonHost.cpp`, `dawn_server_util.hpp`, `dawn_window_demo.cpp` and the three
+`core/wasm/` hosts (`git grep -l 'readPixel\|readFramebufferRGBA' -- core apps packages`).
 
 **Verified at** `376d545`, 2026-09-23 (ENC-717) — direction re-measured live (table above);
 consumer census re-derived across the whole worktree plus the corpus, not from the narrow grep.
