@@ -65,17 +65,27 @@ ctest --test-dir build -R dc_d1_1_smoke              # run a single test by name
 The **default** build (no `-DDC_FETCH_DAWN`) builds `dc` + the pure-logic tests only — no renderer, fast, and needs no graphics API. To get the renderer + render/golden tests, opt into Dawn (see below).
 
 > **A green default `ctest` proves nothing about the renderer (LIMITATIONS.md DC-L01).** The
-> default configure registers **196** of the repo's **243** tests; the other **47** — every
-> Dawn render and golden-parity test, and the tier-0 check below — plus `dc_gpu`,
-> `dc_json_host` and the four headless servers are excluded at *configure* time, so nothing
-> reports them as missing. "196/196 passed" is compatible with the renderer being completely
+> default configure registers **197** of the repo's **249** tests; the other **52** — every
+> Dawn render and golden-parity test, the tier-0 check below, and every test that knows which
+> way up the renderer draws (ENC-1432) — plus `dc_gpu`, `dc_json_host` and the four headless
+> servers are excluded at *configure* time, so nothing
+> reports them as missing. "197/197 passed" is compatible with the renderer being completely
 > broken. Verify with
-> `grep -c '^add_test(' build/core/CTestTestfile.cmake` (196) against
-> `grep -cE '^\s*add_test\(' core/CMakeLists.txt` (243). The pair moves as tests are added
+> `grep -c '^add_test(' build/core/CTestTestfile.cmake` (197) against
+> `grep -cE '^\s*add_test\(' core/CMakeLists.txt` (249). The pair moves as tests are added
 > (188/231 before ENC-984, 189/232 before ENC-995, 190/233 before ENC-1249, 190/236 before
 > ENC-1257, 191/238 before ENC-1251 and before ENC-1253, 193/240 measured at `f907f93` under
-> ENC-1277, 193/240 before ENC-1265); the **47-test gap** is the number that matters — it has
-> not moved through any of them.
+> ENC-1277, 193/240 before ENC-1265, 197/244 before ENC-1432); the **gap** is the number that
+> matters — it sat at **47** from ENC-1257 through ENC-1265, and **ENC-1432 moved it to 52** by
+> adding `dc_parity_origin` plus four Dawn-only negative controls. It is still exactly the
+> `DC_HAS_DAWN` block, every time: read the *difference*, not the left-hand number.
+>
+> *(Two things measured while restamping this, ENC-1432. The left-hand number was **already
+> 197**, not 196, before this ticket, so `declared − registered = gap` — the identity
+> `specs/2026-09-14-dynacharting-render-correctness/recheck.sh` Q6 asserts against DC-L01 —
+> was already red on `main` at `d66e500` by one. And adding a **Dawn-only** test moves the
+> declared half without moving the registered half, which is precisely what that gate is
+> watching for, so restamping DC-L01 is part of landing one.)*
 >
 > *(ENC-1251 and ENC-1253 each amended the parenthetical above on their own branch; git
 > auto-merged the two versions into a duplicated, orphaned copy of this blockquote with no
@@ -255,6 +265,45 @@ Four things about it are deliberate and easy to get wrong if you extend it:
   at all.
 - **It does not skip gracefully.** No Dawn adapter is exit **3** ("CANNOT RUN"), never 0 —
   DC-L01's lesson is that a skip which looks like a pass is how a green run came to mean nothing.
+
+#### Which way up the renderer draws — and how to prove your test knows (ENC-1432)
+
+**`row = (1 + clipY)/2 * H`.** Higher authored clip y lands at a **larger** readback row index.
+Every Dawn vertex stage that consumes authored clip coordinates negates y (**21 negation sites
+across 14 files** under `core/src/gpu/` — five different spellings, so **no single grep finds
+them all**; enumerate the `@vertex` stages instead, and see the header block for the table)
+while `DawnDevice::readPixel` is faithfully top-down, so **the raw readback is
+vertically mirrored relative to the scene you authored**. `LIMITATIONS.md` **DC-L05** is the
+convention; **§C7** is the correction that measured it on this path.
+
+`parity_golden.hpp`'s `ORIGIN CONVENTION` block asserted the opposite for three months and no
+run could tell, because its probe coordinates were baked from the real output — fixture and
+hardware agreed while the prose disagreed with both. Two consequences for anything you write:
+
+- **Measure it, don't quote it.** `core/tests/parity_origin.cpp` (`ctest -R dc_parity_origin`) is
+  the registered measurement: two fixtures asymmetric in *both* axes, so a vertical mirror is
+  visible at all and a 180° rotation is distinguishable from one. Unlike the four golden suites
+  it does **not** skip gracefully — no adapter is exit **3**, because an unmeasured convention is
+  not a passing one (DC-L01).
+- **"An adapter came up" is not "a renderer came up".** Dawn does **not** fail `init()` with no
+  usable Vulkan ICD — it falls back to its **Null backend**, which accepts every command and
+  draws nothing. A probe suite then renders an empty frame and reports ordinary *failures*, not a
+  skip. Measured under ENC-1432: that made all four `_flipped` negative controls go **green** on
+  a box with no adapter, because bare `WILL_FAIL` certifies only "exited non-zero", and it
+  inverted `dc_parity_origin`'s own exit-3 and exit-4 guards into passes. `parity_golden.hpp` now
+  treats a `Null` backend as no adapter, and the controls pin their exact expected failure counts
+  with `PASS_REGULAR_EXPRESSION` instead of an exit code. **If you add a `WILL_FAIL` test here,
+  assert what failed, not that something did.**
+- **Falsify it.** `DC_GOLDEN_FLIP_READBACK=1` (or `--flip-readback`) mirrors the readback rows
+  inside `parity_golden.hpp`, presenting exactly the refuted convention, and prints
+  `FALSIFICATION ACTIVE` per frame so a mutation that did not apply cannot be mistaken for a
+  pass. `dc_parity_origin_flipped` and `dc_parity_{conformance,multipane,extended}_flipped` are
+  registered `WILL_FAIL TRUE`. **A probe that passes with the flip on and off tests nothing about
+  origin** — and 41 of the suite's 63 probes are in that class, including every pick probe and
+  all of `parity_text` (population counts are permutation-invariant). Run your new orientation
+  assertion both ways before believing it, and make the fixture asymmetric: the apex-up
+  triangle's vertical *span* is 60..338 and mirrors to 61..339, so a span check passes either
+  way. That is the symmetric-fixture trap, and it is why §C5, §C6 and this entry all exist.
 
 #### The plot box — the frame data is fitted into (ENC-1256)
 
