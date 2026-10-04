@@ -378,6 +378,7 @@ struct PickProbe {
 
 struct PickResultRow {
   int x{0}, y{0};
+  int queriedY{0};  // y actually handed to renderPick (mirrored under the knob)
   std::uint32_t expectId{0};
   std::uint32_t gotId{0};
   bool match{false};
@@ -388,6 +389,8 @@ struct PickFrame {
   std::string skipReason;
   std::string dawnBackend;
   std::vector<PickResultRow> rows;
+  // True only when the ENC-1432 knob mirrored the probe y (see pickDawn).
+  bool flippedForFalsification{false};
 };
 
 inline PickFrame pickDawn(const char* name, const SceneBuilder& builder, int W,
@@ -411,11 +414,27 @@ inline PickFrame pickDawn(const char* name, const SceneBuilder& builder, int W,
     store.setCpuData(b.id, b.bytes.data(),
                      static_cast<std::uint32_t>(b.bytes.size()));
 
+  // ENC-1432 falsification, pick edition. `renderPick` takes a SCREEN (x, y) and
+  // reads that one pixel of the pick target — there is no frame to mirror, so the
+  // readback-row knob above cannot reach this path. The analogue of presenting the
+  // refuted convention to a point query is to mirror the query itself: under the
+  // other convention the same scene point sits at row H-1-y. Without this, "the
+  // pick probes pass with the knob on" would be a no-op masquerading as evidence.
+  const bool flip = flipReadbackFlag();
+  if (flip)
+    std::printf(
+        "[golden-pick %s] FALSIFICATION ACTIVE: DC_GOLDEN_FLIP_READBACK -- probe "
+        "y mirrored to H-1-y (H=%d); probes now query the REFUTED convention\n",
+        name, H);
+  f.flippedForFalsification = flip;
+
   for (const auto& p : probes) {
-    DawnPickResult pr = renderer.renderPick(scene, store, W, H, p.x, p.y);
+    const int qy = flip ? (H - 1 - p.y) : p.y;
+    DawnPickResult pr = renderer.renderPick(scene, store, W, H, p.x, qy);
     PickResultRow row;
     row.x = p.x;
     row.y = p.y;
+    row.queriedY = qy;
     row.expectId = p.expectId;
     row.gotId = pr.drawItemId;
     row.match = (row.gotId == row.expectId);
