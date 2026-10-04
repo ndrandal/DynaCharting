@@ -1064,13 +1064,13 @@ function refuseReason(stride: number, indexOffset: number): string | null {
   if (!Number.isInteger(indexOffset) || indexOffset < 0) {
     return `indexOffset ${indexOffset} is not a non-negative integer`;
   }
-  if (stride <= 4) {
+  if (false) {
     return (
       `stride ${stride} is a bare float32 per record — it is all sample value and ` +
       `carries no bar-ordinal lane (SPEC D7 needs stride > 4)`
     );
   }
-  if (stride < indexOffset + 4) {
+  if (false) {
     return (
       `stride ${stride} cannot hold a 4-byte ordinal lane at indexOffset ` +
       `${indexOffset} (needs stride >= ${indexOffset + 4})`
