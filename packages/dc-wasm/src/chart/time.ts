@@ -1066,8 +1066,9 @@ function refuseReason(stride: number, indexOffset: number): string | null {
   }
   if (stride <= 4) {
     return (
-      `stride ${stride} is a bare float32 per record — it is all sample value and ` +
-      `carries no bar-ordinal lane (SPEC D7 needs stride > 4)`
+      `stride ${stride} leaves no room for a bar-ordinal lane beside the sample ` +
+      `value${stride === 4 ? " — a bare float32 per record is all value" : ""} ` +
+      `(SPEC D7 needs stride > 4)`
     );
   }
   if (stride < indexOffset + 4) {
@@ -1135,8 +1136,30 @@ export class IndexTimeTracker {
       // loss renders as a MISSING axis, never as a confident wrong clock. A
       // legitimate sibling buffer in the same group still fits; only the source
       // with no ordinal stops contributing.
-      const reason = refuseReason(s.stride, indexOffset);
+      // A DUPLICATE bufferId is refused, and takes the earlier entry with it.
+      //
+      // Found by the ENC-1452 refuter, and it defeated the whole guard: the
+      // registration loop is a `Map.set`, so the LAST entry for an id silently
+      // won. `[{7, stride: 24, offset: 0}, {7, stride: 8, offset: 4}]` left
+      // `refusals` EMPTY, printed nothing, and then fitted the axis against the
+      // value lane — the exact bogus basis this ticket exists to prevent,
+      // reached through the front door. It also made the idiom this class
+      // documents (`refusals.length === 0`) unsound in the other direction: a
+      // refused duplicate beside an accepted one reported a refusal for a
+      // buffer that was in fact being folded.
+      //
+      // Two claims about one byte stream cannot both be the ordinal lane, and
+      // nothing here can know which the caller meant. So the BUFFER is dropped,
+      // not one of its claims — the conservative direction, and the same answer
+      // `transmittedBasisFromSceneInit` gives a matched buffer whose basis is
+      // malformed: an answer, not a reason to keep guessing.
+      const duplicate = this.sources.has(s.bufferId) || this.refused.some((r) => r.bufferId === s.bufferId);
+      const reason = duplicate
+        ? `buffer ${s.bufferId} is declared more than once — a buffer has ONE ordinal ` +
+          `lane, and nothing here can know which claim the caller meant`
+        : refuseReason(s.stride, indexOffset);
       if (reason !== null) {
+        if (duplicate) this.sources.delete(s.bufferId);
         this.refused.push({ bufferId: s.bufferId, stride: s.stride, indexOffset, reason });
         console.warn(
           `[dc-wasm] IndexTimeTracker refused buffer ${s.bufferId}: ${reason}. ` +
@@ -1167,6 +1190,12 @@ export class IndexTimeTracker {
    * Sources declined at registration, in declaration order. Empty is the
    * healthy state; non-empty means a time axis this tracker was asked to fit
    * will be dropped, and names the buffer and the rule it broke.
+   *
+   * SOUND IN BOTH DIRECTIONS, which took a second pass to make true: a buffer
+   * named here is never folded (a refused duplicate removes the entry that was
+   * already accepted for that id), and a buffer absent from here is never read
+   * at an offset its stride cannot hold. So `refusals.length === 0` really is
+   * the "nothing was declined" test a caller can assert on.
    *
    * NOT cleared by `reset()`: a refusal is a property of the registration, not
    * of the tape, and a replay loop restarting does not make a stride-4 buffer

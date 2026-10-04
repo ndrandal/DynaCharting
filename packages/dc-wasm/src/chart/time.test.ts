@@ -760,7 +760,8 @@ describe("the stride contract — a record with no ordinal lane is REFUSED (ENC-
     expect(tr.refusals).toHaveLength(1);
     expect(tr.refusals[0]).toMatchObject({ bufferId: BUF, stride: 4, indexOffset: 0 });
     expect(tr.refusals[0].reason).toContain("stride 4");
-    expect(tr.refusals[0].reason).toContain("no bar-ordinal lane");
+    expect(tr.refusals[0].reason).toContain("no room for a bar-ordinal lane");
+    expect(tr.refusals[0].reason).toContain("bare float32 per record is all value");
 
     expect(warn).toHaveBeenCalledTimes(1);
     expect(String(warn.mock.calls[0][0])).toContain("IndexTimeTracker refused buffer 10100");
@@ -898,6 +899,75 @@ describe("the stride contract — a record with no ordinal lane is REFUSED (ENC-
     const b = tr.basis()!;
     expect(b.msPerIndex).toBeCloseTo(PERIOD_MS, 3);
     expect(b.samples).toBe(BARS); // the candles only — not 40
+  });
+
+  it("a DUPLICATE bufferId is refused, and takes the earlier claim with it", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    // The hole the ENC-1452 refuter found in the first cut of this guard. The
+    // registration loop is a `Map.set`, so the LAST entry for an id won
+    // silently: a legitimate candle6 claim followed by a value-lane claim on
+    // the SAME buffer left `refusals` empty, printed nothing, and fitted the
+    // axis against price — the bogus basis this ticket exists to prevent,
+    // reached through the front door with every clause of the guard satisfied.
+    const DUP = 7;
+    const tr = new IndexTimeTracker(
+      [
+        { bufferId: DUP, stride: CANDLE_STRIDE, indexOffset: 0 },
+        { bufferId: DUP, stride: 8, indexOffset: 4 },
+      ],
+      false,
+    );
+    // The BUFFER is dropped, not one of its two claims: nothing here can know
+    // which the caller meant, and guessing is how you get a confident wrong
+    // clock.
+    expect(tr.bufferIds).toEqual([]);
+    expect(tr.refusals).toHaveLength(1);
+    expect(tr.refusals[0].reason).toContain("declared more than once");
+    expect(warn).toHaveBeenCalledTimes(1);
+
+    for (let i = 0; i < BARS; i++) {
+      tr.observe(batch(DUP, [[i, price(i)]], 8, i * 8), i * PERIOD_MS);
+    }
+    expect(tr.samples).toBe(0);
+    // Pre-fix this read msPerIndex 1200002.2025117488, originMs -222000408.5.
+    expect(tr.basis()).toBeNull();
+  });
+
+  it("refusals is sound in BOTH directions — nothing named here is being folded", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const DUP = 7;
+    // The mirror defect: a refused duplicate beside an accepted one used to
+    // report a refusal for a buffer that WAS being folded, which made the
+    // documented `refusals.length === 0` idiom reject a working tracker.
+    for (const order of [
+      [
+        { bufferId: DUP, stride: 4 },
+        { bufferId: DUP, stride: CANDLE_STRIDE },
+      ],
+      [
+        { bufferId: DUP, stride: CANDLE_STRIDE },
+        { bufferId: DUP, stride: 4 },
+      ],
+    ]) {
+      const tr = new IndexTimeTracker(order, false);
+      const named = new Set(tr.refusals.map((r) => r.bufferId));
+      expect(named.has(DUP), JSON.stringify(order)).toBe(true);
+      // THE INVARIANT: refused and folded are disjoint sets.
+      for (const id of tr.bufferIds) expect(named.has(id)).toBe(false);
+      expect(tr.bufferIds, JSON.stringify(order)).toEqual([]);
+    }
+  });
+
+  it("names the right defect for a sub-float32 stride", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const reasonFor = (stride: number) =>
+      new IndexTimeTracker([{ bufferId: BUF, stride }], false).refusals[0].reason;
+    // A 3-byte record cannot hold a float32 at all, so calling it "a bare
+    // float32 per record" described the wrong thing while reaching the right
+    // verdict.
+    expect(reasonFor(3)).not.toContain("bare float32");
+    expect(reasonFor(3)).toContain("no room for a bar-ordinal lane");
+    expect(reasonFor(4)).toContain("bare float32");
   });
 
   it("says it ONCE per source, not once per record, and keeps saying it after reset()", () => {
