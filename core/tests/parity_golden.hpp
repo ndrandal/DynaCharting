@@ -113,6 +113,13 @@
 // `indexed-gather`, parity_multipane's (1) and (4)) already said "clip +y ->
 // bottom rows" in so many words.
 //
+// WHAT "63 PROBES" COUNTS. 63 is the probe-coordinate population of the three
+// PROBE suites only: parity_conformance 26 + parity_multipane 10 +
+// parity_extended 27 (17 colour + 10 pick) = 63. parity_text contributes ZERO
+// probes — it has no probe coordinates at all, just 5 whole-frame assertions —
+// so "parity_text is among the 41" is not literally true and is not claimed
+// here: its 5 assertions are separately convention-blind (measured, below).
+//
 // Each probe was classified two ways — by hand geometry, and by MEASUREMENT with
 // the readback rows mirrored (`DC_GOLDEN_FLIP_READBACK`, below). They agreed on
 // 62 of 63, and the measurement is what settled the 63rd: the hand derivation
@@ -156,9 +163,10 @@
 //   * `indexed-gather/instRect-diagonal` fails in both directions at once: its
 //     two "expect clear" probes go red while its two red probes go clear.
 //
-// The remaining 41 probes pass under BOTH conventions, i.e. they test nothing
-// about origin. That is not a defect in them, but it is worth knowing which
-// coverage you do NOT have, and the reasons group into four kinds:
+// The remaining 41 of the 63 pass under BOTH conventions, i.e. they test nothing
+// about origin (plus parity_text's 5 assertions, which are outside the 63). That
+// is not a defect in them, but it is worth knowing which coverage you do NOT
+// have, and the reasons group into four kinds:
 //
 //   * vertically symmetric geometry — instRect-sharp, rounded-rect, clip-mask,
 //     all four blend scenes, lineAA-solid/dashed (bands centred on clip y=0),
