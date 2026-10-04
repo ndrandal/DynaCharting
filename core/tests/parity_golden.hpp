@@ -154,9 +154,26 @@
 //     either full-frame-covering or y-symmetric with x-decided misses.
 //
 // So the ENTIRE pick path and the ENTIRE text suite are blind to the convention,
-// and in the conformance suite only two probes see it. If you add a scene whose
-// correctness depends on orientation, make the fixture asymmetric and check it
-// against DC_GOLDEN_FLIP_READBACK before believing it.
+// and in the conformance suite only two probes see it. Both of those are
+// MEASURED, not merely argued, and the pick half needed its own instrument:
+//
+//   * parity_text — the row-mirror knob reaches it (it renders through
+//     renderDawn), and all five checks still pass with the mutation applied and
+//     its banner printed. Convention-blind, demonstrated.
+//   * the pick path — the row-mirror knob CANNOT reach it, because renderPick
+//     answers a point query and never builds a frame. "Pick passes with the knob
+//     on" would therefore have been a no-op masquerading as evidence. pickDawn
+//     now mirrors the QUERY instead (y -> H-1-y, the point-query analogue of the
+//     refuted convention) and prints its own banner. Measured: all 10 probes in
+//     all 4 pick scenes still return the expected ids. Convention-blind,
+//     demonstrated.
+//
+// That is the sharper half of this correction: two whole families of the parity
+// suite cannot detect an origin flip at all, so no past green from either was
+// ever evidence about orientation — the same error as the comment itself, one
+// level up. If you add a scene whose correctness depends on orientation, make the
+// fixture asymmetric and check it against DC_GOLDEN_FLIP_READBACK before
+// believing it.
 //
 // SKIP-GRACEFULLY
 // ---------------

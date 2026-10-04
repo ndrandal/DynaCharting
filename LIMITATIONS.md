@@ -1835,13 +1835,35 @@ convention-dependent:
 | `parity_extended` | `indexed-gather/instRect-diagonal` | 4 |
 | `parity_extended` | `indexed-gather/texQuad-diagonal` | 4 |
 
-**The other 41 test nothing about origin**, and that is the part worth keeping: the **entire pick
-path** (10 probes — every pick scene either covers the whole frame or is y-symmetric with
-x-decided misses) and the **entire `parity_text` suite** (whole-frame population counts, which a
-row permutation leaves identical — convention-blind by construction despite a strongly
-asymmetric glyph run) are blind to it, and in the conformance suite only two probes see it. The
-reasons for the rest are vertical symmetry, a probe on the shape's vertical centre line, an
-x-decided verdict, or a uniform frame. The full table is in the header block.
+**The other 41 test nothing about origin, and that is the sharper half of this correction.** Two
+whole families of the parity suite cannot detect an origin flip at all, so no past green from
+either was ever evidence about orientation — the same error as the comment itself, one level up.
+Both are **measured**, and the pick half needed its own instrument:
+
+- **`parity_text`** — the row-mirror knob does reach it, and all five checks still pass with the
+  mutation applied and its banner printed. Its assertions are whole-frame *population counts*,
+  which a row permutation leaves identical; convention-blind by construction despite a strongly
+  asymmetric glyph run.
+- **The entire pick path (10 probes, 4 scenes)** — the row-mirror knob **cannot** reach it:
+  `renderPick` answers a point query and never builds a frame, so "pick passes with the knob on"
+  would have been a no-op masquerading as evidence. `pickDawn` now mirrors the **query** instead
+  (`y -> H-1-y`, the point-query analogue of the refuted convention) and prints its own banner.
+  Measured: every probe still returns its expected id.
+
+In the conformance suite only two probes see the convention at all. The reasons for the rest are
+vertical symmetry, a probe on the shape's vertical centre line, an x-decided verdict, or a
+uniform frame — the full table is in the header block.
+
+**Not all 22 witnesses are equally solid, either.** The robust single-shape witness is
+`transforms/scale+translate` (65,62), which clears the wrong answer by **~24 rows** (body at rows
+57.6–76.8 measured, 19.2–38.4 under the refuted mapping). `pipelines/line2d-1px` must **not** be
+load-bearing: quarter-pixel margin, a 1px unantialiased primitive, and clip (0,0) maps to
+continuous row 48.0 under *both* conventions because row `H/2` is the reflection's fixed line —
+widen `line2d@1` or give it AA and the probe silently becomes convention-blind.
+`texturedQuad/4-corner-texels` pins the **composition** of the row mapping and the texture v
+axis, not the row mapping alone (mirror both and all four pass again), so it is not a pure origin
+witness. And `indexed-gather/instRect-diagonal` fails in both directions at once — its two
+"expect clear" probes go red while its two red probes go clear.
 
 **The symmetric-fixture trap, demonstrated rather than warned about.** The triangle's vertical
 *span* is 60..338, and mirroring it gives 61..339 — so the span is ~invariant and
